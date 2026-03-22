@@ -498,6 +498,18 @@ class TestSSLContextBuilderPeerContext:
             assert context.verify_mode == ssl.CERT_NONE
             assert context.check_hostname is False
 
+    def test_create_peer_context_explicit_modes_conflict(self):
+        """Explicit peer_opportunistic and peer_strict are mutually exclusive."""
+        builder = SSLContextBuilder()
+
+        with pytest.raises(
+            ValueError, match="peer_opportunistic and peer_strict are mutually exclusive"
+        ):
+            builder.create_peer_context(
+                peer_opportunistic=True,
+                peer_strict=True,
+            )
+
 
 class TestSSLContextBuilderHelpers:
     """Tests for SSLContextBuilder helper methods."""

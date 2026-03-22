@@ -171,8 +171,12 @@ class StatusLoop:
                             actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
                             status["connected_peers"] = actual_peer_count
                             status["total_connections"] = actual_peer_count
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        self.s.logger.debug(
+                            "Failed to read peer connection summary for %s: %s",
+                            getattr(self.s, "info_hash", getattr(self.s, "info", None)),
+                            exc,
+                        )
 
                 connected_peers = status.get("connected_peers", 0)
                 productive_peers = status.get("productive_peers", connected_peers)

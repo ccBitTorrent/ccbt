@@ -31,10 +31,14 @@ def _normalize_tracker_peer(
             ip_value = peer.ip
             port_value = peer.port
             peer_ssl = getattr(peer, "ssl_capable", None)
+            tracker_encryption_preference = getattr(
+                peer, "_tracker_encryption_preference", None
+            )
         elif isinstance(peer, dict):
             ip_value = peer.get("ip")
             port_value = peer.get("port")
             peer_ssl = peer.get("ssl_capable")
+            tracker_encryption_preference = peer.get("_tracker_encryption_preference")
         else:
             return None
         if ip_value is None or port_value is None:
@@ -52,6 +56,7 @@ def _normalize_tracker_peer(
             "port": port_int,
             "peer_source": "tracker",
             "ssl_capable": peer_ssl,
+            "_tracker_encryption_preference": tracker_encryption_preference,
             "_tracker_seed_ratio": utility,
             "_replacement_priority": utility + (0.1 if bool(peer_ssl) else 0.0),
         }

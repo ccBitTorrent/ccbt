@@ -13,11 +13,21 @@ import logging
 import socket
 import struct
 from collections import deque
+from dataclasses import dataclass
 from typing import Any, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.models import MessageType
 from ccbt.models import PeerInfo as PeerInfoModel
+from ccbt.protocols.bittorrent_v2 import (
+    HANDSHAKE_HYBRID_SIZE,
+    HANDSHAKE_V1_SIZE,
+    HANDSHAKE_V2_SIZE,
+    INFO_HASH_V1_LEN,
+    INFO_HASH_V2_LEN,
+    PEER_ID_LEN,
+    PROTOCOL_STRING_LEN,
+)
 from ccbt.utils.exceptions import HandshakeError, MessageError
 
 # MessageType is now imported from models.py
@@ -53,6 +63,74 @@ class PeerState:
 # PeerInfo is now imported from models.py as PeerInfoModel
 # Keep backward compatibility
 PeerInfo = PeerInfoModel
+
+
+@dataclass(frozen=True)
+class ParsedInboundPlainHandshake:
+    """Parsed fields from a plaintext BitTorrent handshake.
+
+    Supports v1, v2-only, and hybrid plaintext handshake lengths.
+    """
+
+    protocol_len: int
+    protocol: bytes
+    reserved_bytes: bytes
+    info_hash_v1: Optional[bytes]
+    info_hash_v2: Optional[bytes]
+    peer_id: bytes
+
+
+def parse_plaintext_bittorrent_handshake(data: bytes) -> ParsedInboundPlainHandshake:
+    """Parse plaintext handshake bytes into a canonical structure."""
+    if len(data) not in {
+        HANDSHAKE_V1_SIZE,
+        HANDSHAKE_V2_SIZE,
+        HANDSHAKE_HYBRID_SIZE,
+    }:
+        msg = (
+            f"Invalid plaintext handshake size: {len(data)} (expected "
+            f"{HANDSHAKE_V1_SIZE}, {HANDSHAKE_V2_SIZE}, or {HANDSHAKE_HYBRID_SIZE})"
+        )
+        raise HandshakeError(msg)
+
+    protocol_len = struct.unpack("B", data[0:1])[0]
+    if protocol_len != PROTOCOL_STRING_LEN:
+        msg = f"Invalid protocol length: {protocol_len}"
+        raise HandshakeError(msg)
+
+    protocol_string = data[1 : 1 + PROTOCOL_STRING_LEN]
+    if protocol_string != Handshake.PROTOCOL_STRING:
+        msg = f"Invalid protocol string: {protocol_string}"
+        raise HandshakeError(msg)
+
+    reserved = data[1 + PROTOCOL_STRING_LEN : 1 + PROTOCOL_STRING_LEN + 8]
+    offset = 1 + PROTOCOL_STRING_LEN + 8
+
+    if len(data) == HANDSHAKE_V1_SIZE:
+        info_hash_v1 = data[offset : offset + INFO_HASH_V1_LEN]
+        info_hash_v2 = None
+        peer_id_start = offset + INFO_HASH_V1_LEN
+        peer_id = data[peer_id_start : peer_id_start + PEER_ID_LEN]
+    elif len(data) == HANDSHAKE_V2_SIZE:
+        info_hash_v1 = None
+        info_hash_v2 = data[offset : offset + INFO_HASH_V2_LEN]
+        peer_id_start = offset + INFO_HASH_V2_LEN
+        peer_id = data[peer_id_start : peer_id_start + PEER_ID_LEN]
+    else:
+        info_hash_v1 = data[offset : offset + INFO_HASH_V1_LEN]
+        next_offset = offset + INFO_HASH_V1_LEN
+        info_hash_v2 = data[next_offset : next_offset + INFO_HASH_V2_LEN]
+        peer_id_start = next_offset + INFO_HASH_V2_LEN
+        peer_id = data[peer_id_start : peer_id_start + PEER_ID_LEN]
+
+    return ParsedInboundPlainHandshake(
+        protocol_len=protocol_len,
+        protocol=protocol_string,
+        reserved_bytes=reserved,
+        info_hash_v1=info_hash_v1,
+        info_hash_v2=info_hash_v2,
+        peer_id=peer_id,
+    )
 
 
 class Handshake:
@@ -147,27 +225,17 @@ class Handshake:
             HandshakeError: If data is invalid
 
         """
-        if len(data) != 68:
-            msg = f"Handshake must be 68 bytes, got {len(data)}"
+        if len(data) != HANDSHAKE_V1_SIZE:
+            msg = f"Handshake must be {HANDSHAKE_V1_SIZE} bytes, got {len(data)}"
             raise HandshakeError(msg)
 
-        # Parse protocol length and string
-        protocol_len = struct.unpack("B", data[0:1])[0]
-        if protocol_len != 19:
-            msg = f"Invalid protocol length: {protocol_len}"
+        parsed = parse_plaintext_bittorrent_handshake(data)
+        if parsed.info_hash_v1 is None:
+            msg = "V1 info hash missing from plaintext handshake decode input"
             raise HandshakeError(msg)
-
-        protocol_string = data[1:20]
-        if protocol_string != cls.PROTOCOL_STRING:
-            msg = f"Invalid protocol string: {protocol_string}"
-            raise HandshakeError(msg)
-
-        # Parse reserved bytes
-        reserved = data[20:28]
-
-        # Parse info hash and peer ID
-        info_hash = data[28:48]
-        peer_id = data[48:68]
+        info_hash = parsed.info_hash_v1
+        peer_id = parsed.peer_id
+        reserved = parsed.reserved_bytes
 
         # Ed25519 fields are not part of standard 68-byte handshake
         # They are sent as extensions after the handshake

@@ -251,8 +251,8 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                     ip = peer.get("ip", "unknown")
                     port = peer.get("port", 0)
                     client = peer.get("client") or "?"
-                download_rate = float(peer.get("download_rate", 0.0))
-                upload_rate = float(peer.get("upload_rate", 0.0))
+                    download_rate = float(peer.get("download_rate", 0.0))
+                    upload_rate = float(peer.get("upload_rate", 0.0))
                     info_hashes = peer.get("info_hashes", [])
                     connection_duration = peer.get("connection_duration", 0.0)
                     
@@ -283,8 +283,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                         format_duration(connection_duration),
                         key=peer_key,
                     )
-                
-                logger.debug("PerPeerTabContent: Added peer %s:%d to table", ip, port)
+                    logger.debug("PerPeerTabContent: Added peer %s:%d to table", ip, port)
             
             logger.debug("PerPeerTabContent: Added %d peers to table", len(peers))
             

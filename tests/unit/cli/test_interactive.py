@@ -1580,6 +1580,74 @@ async def test_cmd_network(interactive_cli):
             assert True
 
 
+@pytest.mark.asyncio
+async def test_cmd_network_warns_strict_ssl_posture(interactive_cli):
+    """Test network command surfaces strict SSL posture warning."""
+    mock_config = MagicMock()
+    mock_config.network = MagicMock()
+    mock_config.network.listen_port = 6881
+    mock_config.network.listen_port_tcp = None
+    mock_config.network.listen_port_udp = None
+    mock_config.network.max_global_peers = 200
+    mock_config.network.max_peers_per_torrent = 50
+    mock_config.network.max_connections_per_peer = 1
+    mock_config.network.pipeline_depth = 5
+    mock_config.network.pipeline_adaptive_depth = True
+    mock_config.network.block_size_kib = 16
+    mock_config.network.min_block_size_kib = 4
+    mock_config.network.max_block_size_kib = 64
+    mock_config.network.connection_timeout = 30
+    mock_config.network.handshake_timeout = 10
+    mock_config.network.peer_timeout = 60
+    mock_config.network.timeout_adaptive = True
+    mock_config.network.keepalive_interval = 60
+    mock_config.network.max_idle_time = 120
+    mock_config.network.enable_utp = True
+    mock_config.network.enable_tcp = True
+    mock_config.network.enable_ipv6 = False
+    mock_config.network.enable_encryption = True
+    mock_config.network.prefer_encryption = True
+    mock_config.network.global_down_kib = 0
+    mock_config.network.global_up_kib = 0
+    mock_config.network.connection_pool_max_connections = 100
+    mock_config.network.connection_pool_warmup_enabled = False
+    mock_config.network.socket_rcvbuf_kib = 256
+    mock_config.network.socket_sndbuf_kib = 256
+    mock_config.network.socket_adaptive_buffers = True
+    mock_config.network.tcp_nodelay = True
+    mock_config.security = MagicMock()
+    mock_config.security.enable_encryption = True
+    mock_config.security.ssl = MagicMock(
+        enable_ssl_trackers=True,
+        enable_ssl_peers=False,
+        ssl_allow_insecure_peers=False,
+        ssl_verify_certificates=False,
+    )
+
+    mock_optimizer = MagicMock()
+    mock_optimizer.get_stats.return_value = {
+        "connection_pool": {
+            "total_connections": 0,
+            "active_connections": 0,
+            "failed_connections": 0,
+            "bytes_sent": 0,
+            "bytes_received": 0,
+        },
+        "socket_configs": {},
+    }
+
+    with patch("ccbt.cli.interactive.get_config", return_value=mock_config), patch(
+        "ccbt.utils.network_optimizer.get_network_optimizer",
+        return_value=mock_optimizer,
+    ):
+        await interactive_cli.cmd_network(["show"])
+
+    assert any(
+        "Warning: certificate verification is disabled while SSL is" in str(call.args[0])
+        for call in interactive_cli.console.print.call_args_list
+    )
+
+
 
 @pytest.mark.asyncio
 async def test_cmd_pause_with_torrent(interactive_cli):

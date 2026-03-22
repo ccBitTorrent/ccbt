@@ -349,6 +349,9 @@ class TestMSEEncryptionHandshake:
         mock_config = MagicMock()
         mock_config.security.enable_encryption = True
         mock_config.security.encryption_mode = "preferred"
+        mock_config.security.encryption_dh_key_size = 1024
+        mock_config.security.encryption_prefer_rc4 = False
+        mock_config.security.encryption_allowed_ciphers = ["aes", "chacha20", "rc4"]
         mock_config.network.enable_utp = False  # Disable UTP to force TCP path
         mock_config.network.pipeline_depth = 16
         mock_config.network.connection_timeout = 10.0
@@ -654,12 +657,12 @@ class TestMSEEncryptionHandshake:
                             with patch(
                                 "ccbt.security.mse_handshake.MSEHandshake",
                                 return_value=mock_mse,
-                            ):
+                            ) as mock_mse_cls:
                                 # Note: Patch the encryption condition check directly
                                 # Instead of patching isinstance (which causes recursion), we'll patch the encryption
                                 # condition check itself by modifying the condition in the encryption code path.
                                 # We'll use a context manager to temporarily modify the encryption condition.
-                                
+
                                 # Mock asyncio.wait_for to return the mocked connection directly
                                 # This avoids timeout issues
                                 async def mock_wait_for(coro, timeout=None):
@@ -668,26 +671,28 @@ class TestMSEEncryptionHandshake:
                                         return await coro
                                     else:
                                         return coro
-                                
+
                                 # Note: Patch the encryption condition by patching the isinstance check
                                 # at the module level. We'll create a wrapper function that checks for our mocks.
                                 # Since isinstance is a builtin, we need to be careful. We'll patch it only in
                                 # the encryption code path by patching the condition check itself.
-                                
+
                                 # Actually, the simplest approach: Make the mock_writer pass isinstance by
                                 # using a real StreamWriter instance or by patching the condition check.
                                 # Let's patch the encryption condition check directly by modifying the condition.
-                                
+
                                 # We'll patch the encryption code to bypass the isinstance check for our mocks
                                 # by patching the condition check itself.
                                 original_encryption_condition = None
-                                
+
                                 def should_encrypt_patch(self, reader, writer, connection):
                                     """Patch to bypass isinstance checks in encryption condition."""
                                     from ccbt.security.encryption import EncryptionMode
                                     if not self.config.security.enable_encryption:
                                         return False
-                                    encryption_mode = EncryptionMode(self.config.security.encryption_mode)
+                                    encryption_mode = EncryptionMode(
+                                        self.config.security.encryption_mode
+                                    )
                                     if encryption_mode == EncryptionMode.DISABLED:
                                         return False
                                     if connection is None:
@@ -696,8 +701,10 @@ class TestMSEEncryptionHandshake:
                                     if reader is mock_reader and writer is mock_writer:
                                         return True
                                     # For real readers/writers, use original check
-                                    return isinstance(reader, asyncio.StreamReader) and isinstance(writer, asyncio.StreamWriter)
-                                
+                                    return isinstance(
+                                        reader, asyncio.StreamReader
+                                    ) and isinstance(writer, asyncio.StreamWriter)
+
                                 with patch(
                                     "asyncio.open_connection",
                                     return_value=(mock_reader, mock_writer),
@@ -710,23 +717,45 @@ class TestMSEEncryptionHandshake:
                                 ):
                                     # Use actual EncryptionMode enum
                                     from ccbt.security.encryption import EncryptionMode
-                                    
+
                                     # Verify EncryptionMode construction works
-                                    test_mode = EncryptionMode(mock_config.security.encryption_mode)
-                                    assert test_mode != EncryptionMode.DISABLED, "Encryption mode should not be DISABLED"
-                                    
+                                    test_mode = EncryptionMode(
+                                        mock_config.security.encryption_mode
+                                    )
+                                    assert test_mode != EncryptionMode.DISABLED, (
+                                        "Encryption mode should not be DISABLED"
+                                    )
+
                                     # Ensure manager has the correct config
                                     manager.config = mock_config
-                                    
+
                                     # Verify config is set correctly before connecting
-                                    assert manager.config.security.enable_encryption is True, "Config should have encryption enabled"
-                                    assert manager.config.security.encryption_mode == "preferred", "Config should have preferred encryption mode"
+                                    assert (
+                                        manager.config.security.enable_encryption is True
+                                    ), "Config should have encryption enabled"
+                                    assert (
+                                        manager.config.security.encryption_mode == "preferred"
+                                    ), "Config should have preferred encryption mode"
+                                    assert (
+                                        manager.config.security.encryption_dh_key_size == 1024
+                                    )
+                                    assert (
+                                        manager.config.security.encryption_prefer_rc4 is False
+                                    )
+                                    assert (
+                                        manager.config.security.encryption_allowed_ciphers
+                                        == [
+                                            "aes",
+                                            "chacha20",
+                                            "rc4",
+                                        ]
+                                    )
 
                                     # Try to connect - this should reach the encryption handshake code
                                     # Note: Don't catch all exceptions - let them propagate to see what's failing
                                     # We'll catch specific expected exceptions after encryption is attempted
                                     await manager._connect_to_peer(peer_info)
-                                    
+
                                     # Note: Wait briefly for connection to be established and task to be created
                                     await asyncio.sleep(0.1)
 
@@ -737,38 +766,49 @@ class TestMSEEncryptionHandshake:
                                         if peer_key in manager.connections:
                                             connection = manager.connections[peer_key]
                                             # Cancel the connection task first to stop the message loop
-                                            if hasattr(connection, 'connection_task') and connection.connection_task:
+                                            if (
+                                                hasattr(connection, "connection_task")
+                                                and connection.connection_task
+                                            ):
                                                 if not connection.connection_task.done():
                                                     connection.connection_task.cancel()
                                                     try:
-                                                        await asyncio.wait_for(connection.connection_task, timeout=0.5)
-                                                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                                                        await asyncio.wait_for(
+                                                            connection.connection_task, timeout=0.5
+                                                        )
+                                                    except (
+                                                        asyncio.CancelledError,
+                                                        asyncio.TimeoutError,
+                                                    ):
                                                         pass
                                             await manager._disconnect_peer(connection)
 
                                     # Verify that the encryption code path was attempted
                                     # The connection should reach the encryption handshake section
                                     # Check if MSE handshake was called (indicates encryption path was taken)
-                                    
+
                                     # Debug: Check what actually happened
                                     mse_called = mock_mse.initiate_as_initiator.called
-                                    
+
                                     # If encryption is enabled and mode is not DISABLED, encryption should be attempted
-                                    if mock_config.security.enable_encryption and test_mode != EncryptionMode.DISABLED:
+                                    if (
+                                        mock_config.security.enable_encryption
+                                        and test_mode != EncryptionMode.DISABLED
+                                    ):
                                         # Verify MSE handshake was called (this covers lines 541-544)
                                         assert mse_called, (
-                                            f"MSE handshake should be called when enable_encryption=True and "
+                                            "MSE handshake should be called when enable_encryption=True and "
                                             f"mode={test_mode}. Manager config: enable_encryption={manager.config.security.enable_encryption}"
                                         )
-                                        
-                                        # If MSE succeeded, encrypted streams should be created
-                                        if mse_called and mock_mse_result.success:
-                                            assert len(encrypted_streams_created) >= 2, (
-                                                f"Encrypted streams should be created when MSE handshake succeeds, "
-                                                f"but only {len(encrypted_streams_created)} were created."
-                                            )
-                                            assert mock_reader_class.called, "EncryptedStreamReader should be instantiated"
-                                            assert mock_writer_class.called, "EncryptedStreamWriter should be instantiated"
+                                        assert mock_mse_cls.call_count == 1
+                                        call_kwargs = mock_mse_cls.call_args.kwargs
+                                        assert call_kwargs["dh_key_size"] == 1024
+                                        assert call_kwargs["prefer_rc4"] is False
+                                        assert [
+                                            allowed.name
+                                            for allowed in call_kwargs["allowed_ciphers"]
+                                        ] == ["AES", "CHACHA20", "RC4"]
+
                 finally:
                     # Note: Stop the manager after the test
                     await manager.stop()

@@ -126,6 +126,7 @@ def _make_cfg() -> Any:
 
     class Security:
         ssl = SSL()
+        enable_encryption = False
 
     class Cfg:
         network = Net()
@@ -869,7 +870,7 @@ def test_apply_network_overrides_exercises_paths():
     assert cfg.network.enable_ipv6 is False
     assert cfg.network.enable_tcp is False
     assert cfg.network.enable_utp is True
-    assert cfg.network.enable_encryption is True
+    assert cfg.security.enable_encryption is True
     assert cfg.network.tcp_nodelay is True
     assert cfg.network.socket_rcvbuf_kib == 256
     assert cfg.network.socket_sndbuf_kib == 256
@@ -4034,6 +4035,22 @@ def test_ssl_verify_certificates_disable_flag():
     opts = {"no_ssl_verify": True}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_verify_certificates is False
+
+
+def test_ssl_verify_flag_warns_on_strict_posture(caplog):
+    """Test no_ssl_verify emits strict-posture warning when SSL verification is disabled."""
+    from ccbt.cli.main import _apply_ssl_overrides
+
+    cfg = _make_cfg()
+    cfg.security.ssl.enable_ssl_trackers = True
+    cfg.security.ssl.ssl_verify_certificates = True
+    cfg.security.ssl.ssl_allow_insecure_peers = False
+    opts = {"no_ssl_verify": True}
+
+    with caplog.at_level("WARNING"):
+        _apply_ssl_overrides(cfg, opts)
+
+    assert "Strict SSL posture requested while verification is disabled." in caplog.text
 
 
 

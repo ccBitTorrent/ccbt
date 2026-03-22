@@ -12,7 +12,7 @@ import logging
 import socket
 import struct
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +228,10 @@ class XetMulticastBroadcaster:
                     break
 
                 # Wait for data
-                data, addr = await loop.sock_recvfrom(self._socket, 4096)
+                sock_recvfrom = getattr(loop, "sock_recvfrom", None)
+                if sock_recvfrom is None:
+                    raise RuntimeError("Event loop does not support sock_recvfrom")
+                data, addr = await cast(Any, sock_recvfrom)(self._socket, 4096)
 
                 # Parse message
                 try:

@@ -82,6 +82,7 @@ def get_torrent_info(
             return TorrentInfoModel(
                 name=torrent_data.get("name", "Unknown"),
                 info_hash=info_hash,
+                swarm_id=torrent_data.get("swarm_id"),
                 announce=torrent_data.get("announce", ""),
                 announce_list=torrent_data.get("announce_list"),
                 is_private=torrent_data.get("is_private", False),

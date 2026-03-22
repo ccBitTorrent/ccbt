@@ -289,7 +289,10 @@ def run_key_derivation_benchmark(iterations: int) -> DHResult:
     latencies = []
     for _ in range(iterations):
         t0 = time.perf_counter()
-        _ = dh.derive_encryption_key(shared_secret, info_hash)
+        _ = dh.derive_encryption_key(
+            shared_secret, info_hash, direction="outbound"
+        )
+ 
         latencies.append((time.perf_counter() - t0) * 1000)  # Convert to ms
     elapsed = time.perf_counter() - start
 

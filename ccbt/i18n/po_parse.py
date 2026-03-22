@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final, Optional, Union
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,7 @@ def _decode_po_literal(raw: str) -> str:
         return ""
 
 
-def _parse_msgstr_index(line: str) -> int | None:
+def _parse_msgstr_index(line: str) -> Optional[int]:
     """Parse the index from `msgstr[<index>]`."""
     if not line.startswith(_PREFIX_MSGSTR_INDEX):
         return None
@@ -85,8 +87,25 @@ def quote_po_lines(value: str) -> list[str]:
 
 def render_po_entry(msgid: str, msgstr: str) -> list[str]:
     """Render one entry as `.po` text lines."""
-    lines: list[str] = [f"msgid {quoted}" for quoted in quote_po_lines(msgid)]
-    lines.extend(f"msgstr {quoted}" for quoted in quote_po_lines(msgstr))
+    msgid_lines = quote_po_lines(msgid)
+    msgstr_lines = quote_po_lines(msgstr)
+    if not msgid_lines:
+        msgid_lines = ['""']
+    if not msgstr_lines:
+        msgstr_lines = ['""']
+
+    lines: list[str] = []
+    if msgid_lines:
+        lines.append(f"msgid {msgid_lines[0]}")
+        lines.extend(msgid_lines[1:])
+    else:
+        lines.append('msgid ""')
+
+    if msgstr_lines:
+        lines.append(f"msgstr {msgstr_lines[0]}")
+        lines.extend(msgstr_lines[1:])
+    else:
+        lines.append('msgstr ""')
     return lines
 
 
@@ -99,7 +118,7 @@ def iter_po_entries(path: Path) -> list[PoEntry]:
 
     current_msgid: list[str] = []
     current_msgstr: dict[int, list[str]] = {}
-    current_msgstr_index: int | None = None
+    current_msgstr_index: Optional[int]= None
     active = ""
     has_msgid = False
     is_fuzzy = False
@@ -182,7 +201,7 @@ def iter_po_entries(path: Path) -> list[PoEntry]:
             value = _decode_po_literal(line)
             if active == "msgid":
                 current_msgid.append(value)
-            elif active == "msgid_plural" or active == "msgctxt":
+            elif active in {"msgid_plural", "msgctxt"}:
                 # msgid_plural and msgctxt are intentionally ignored for string-level completeness.
                 continue
             elif current_msgstr_index is not None:
@@ -197,6 +216,11 @@ def iter_po_entries(path: Path) -> list[PoEntry]:
 def pot_msgids(path: Path) -> set[str]:
     """Return non-empty canonical msgids from a POT template."""
     return {entry.msgid for entry in iter_po_entries(path) if entry.msgid}
+
+
+def parse_pot_msgids(path: Path) -> set[str]:
+    """Backward-compatible API-compatible alias for parsing POT msgids."""
+    return pot_msgids(path)
 
 
 def po_msgid_msgstr(path: Path) -> dict[str, str]:
@@ -242,3 +266,4 @@ SUPPORTED_LOCALES: Final[tuple[str, ...]] = (
     "ha",
     "yo",
 )
+

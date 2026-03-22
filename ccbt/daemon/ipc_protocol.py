@@ -1046,6 +1046,37 @@ class DetailedGlobalMetricsResponse(BaseModel):
     total_bytes_uploaded: int = Field(
         0, description="Total bytes uploaded to all peers"
     )
+    swarm_auth_gate_total: int = Field(0, description="Total swarm-auth gate evaluations")
+    swarm_auth_gate_by_mode_strict_total: int = Field(
+        0, description="Swarm-auth gate decisions in strict mode"
+    )
+    swarm_auth_gate_by_mode_opportunistic_total: int = Field(
+        0, description="Swarm-auth gate decisions in opportunistic mode"
+    )
+    swarm_auth_gate_by_mode_off_total: int = Field(
+        0, description="Swarm-auth gate decisions when mode is off"
+    )
+    swarm_auth_gate_allow_total: int = Field(0, description="Swarm-auth allows")
+    swarm_auth_gate_deny_total: int = Field(0, description="Swarm-auth denies")
+    swarm_auth_gate_reason_invalid_signature_total: int = Field(
+        0, description="Swarm-auth invalid signature denies"
+    )
+    swarm_auth_opportunistic_verify_failed_total: int = Field(
+        0,
+        description="Swarm-auth opportunistic verification failures in non-blocking mode",
+    )
+    swarm_auth_strict_ltep_timeout_total: int = Field(
+        0, description="Swarm-auth strict LTEP timeout rejections"
+    )
+    swarm_auth_truststore_reload_total: int = Field(
+        0, description="Swarm-auth truststore reload events"
+    )
+    swarm_auth_revocation_hits_total: int = Field(
+        0, description="Swarm-auth revocation hits"
+    )
+    swarm_auth_discovery_suppressed_total: int = Field(
+        0, description="Swarm-auth discovery suppression events"
+    )
     peer_efficiency_distribution: dict[str, int] = Field(
         default_factory=dict,
         description="Distribution of peer efficiency (tier -> count)",

@@ -19,6 +19,7 @@ class MagnetInfo:
 
     info_hash: bytes
     display_name: Optional[str]
+    swarm_id: Optional[str]
     trackers: list[str]
     web_seeds: list[str]
     selected_indices: Optional[list[int]] = None  # BEP 53: so parameter
@@ -234,6 +235,7 @@ def parse_magnet(uri: str) -> MagnetInfo:
     return MagnetInfo(
         info_hash=info_hash,
         display_name=display_name,
+        swarm_id=qs.get("swarm_id", [None])[0],
         trackers=trackers,
         web_seeds=web_seeds,
         selected_indices=selected_indices,
@@ -246,6 +248,7 @@ def build_minimal_torrent_data(
     name: Optional[str],
     trackers: list[str],
     web_seeds: Optional[list[str]] = None,
+    swarm_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Create a minimal `torrent_data` placeholder using known info.
 
@@ -355,6 +358,8 @@ def build_minimal_torrent_data(
         "name": name or "",
         "is_magnet": True,  # CRITICAL: Mark as magnet link for DHT setup to prioritize DHT queries
     }
+    if swarm_id:
+        result["swarm_id"] = swarm_id
 
     # Note: Store web seeds from magnet link (ws= parameters)
     # These will be used by WebSeedExtension to download pieces via HTTP range requests
@@ -405,6 +410,7 @@ def magnet_info_from_minimal_torrent_data(
     return MagnetInfo(
         info_hash=info_hash,
         display_name=name,
+        swarm_id=torrent_data.get("swarm_id"),
         trackers=trackers,
         web_seeds=web_seeds,
         selected_indices=None,

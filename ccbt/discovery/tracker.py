@@ -13,6 +13,7 @@ import inspect
 import ipaddress
 import logging
 import re
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -25,6 +26,12 @@ import aiohttp
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder
 from ccbt.models import PeerInfo
+from ccbt.security.ssl_context import CertificatePinner
+from ccbt.utils.tracker_utils import (
+    tracker_url_implies_tls,
+    tracker_url_is_udp,
+    tracker_url_transport_tier,
+)
 from ccbt.utils.version import get_user_agent
 
 
@@ -39,12 +46,12 @@ class _UDPTrackerAnnounceProtocol(Protocol):
         url: str,
         torrent_data: dict[str, Any],
         *,
-        port: Optional[int] = None,
+        port: Optional[int]= None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
         event: Any = None,
-    ) -> Optional[Any]: ...
+    ) -> Union[Any, None]: ...
 
 
 class TrackerError(Exception):
@@ -117,6 +124,27 @@ class DNSCache:
 
 
 @dataclass
+class UDPTrackerAnnounceRequest:
+    """Normalized argument set for UDP tracker announces."""
+
+    port: Optional[int]
+    uploaded: int = 0
+    downloaded: int = 0
+    left: int = 0
+    event: Optional[Any]= None
+
+    def as_kwargs(self) -> dict[str, Any]:
+        """Convert to kwargs for UDP announce calls."""
+        return {
+            "port": self.port,
+            "uploaded": self.uploaded,
+            "downloaded": self.downloaded,
+            "left": self.left,
+            "event": self.event,
+        }
+
+
+@dataclass
 class TrackerResponse:
     """Tracker response data."""
 
@@ -124,11 +152,11 @@ class TrackerResponse:
     peers: (
         list[PeerInfo] | list[dict[str, Any]]
     )  # Support both formats for backward compatibility
-    complete: Optional[int] = None
-    incomplete: Optional[int] = None
-    download_url: Optional[str] = None
-    tracker_id: Optional[str] = None
-    warning_message: Optional[str] = None
+    complete: Optional[int]= None
+    incomplete: Optional[int]= None
+    download_url: Optional[str]= None
+    tracker_id: Optional[str]= None
+    warning_message: Optional[str]= None
 
 
 @dataclass
@@ -163,19 +191,19 @@ class TrackerSession:
     url: str
     last_announce: float = 0.0
     interval: int = 1800
-    min_interval: Optional[int] = None
-    tracker_id: Optional[str] = None
+    min_interval: Optional[int]= None
+    tracker_id: Optional[str]= None
     failure_count: int = 0
     failure_streak: int = 0
     last_failure: float = 0.0
     backoff_delay: float = 1.0
     quarantine_until: float = 0.0
-    quarantine_reason: Optional[str] = None
+    quarantine_reason: Optional[str]= None
     performance: TrackerPerformance = None  # type: ignore[assignment]
     # Statistics from last tracker response (announce or scrape)
-    last_complete: Optional[int] = None  # Number of seeders (complete peers)
-    last_incomplete: Optional[int] = None  # Number of leechers (incomplete peers)
-    last_downloaded: Optional[int] = None  # Total number of completed downloads
+    last_complete: Optional[int]= None  # Number of seeders (complete peers)
+    last_incomplete: Optional[int]= None  # Number of leechers (incomplete peers)
+    last_downloaded: Optional[int]= None  # Total number of completed downloads
     last_scrape_time: float = 0.0  # Timestamp of last scrape/announce with statistics
 
     def __post_init__(self):
@@ -187,7 +215,7 @@ class TrackerSession:
 class AsyncTrackerClient:
     """High-performance async client for communicating with BitTorrent trackers."""
 
-    def __init__(self, peer_id_prefix: Optional[bytes] = None):
+    def __init__(self, peer_id_prefix: Optional[bytes]= None):
         """Initialize the async tracker client.
 
         Args:
@@ -208,7 +236,7 @@ class AsyncTrackerClient:
         self.user_agent = get_user_agent()
 
         # HTTP session
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: Optional[aiohttp.ClientSession]= None
 
         # Tracker sessions
         self.sessions: dict[str, TrackerSession] = {}
@@ -217,11 +245,12 @@ class AsyncTrackerClient:
         self.health_manager = TrackerHealthManager()
 
         # Background tasks
-        self._announce_task: Optional[asyncio.Task] = None
+        self._announce_task: Optional[asyncio.Task]= None
 
         # Session metrics
         self._session_metrics: dict[str, dict[str, Any]] = {}
-        self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
+        self._xet_chunk_registry: dict[tuple[bytes, str | None], list[PeerInfo]] = {}
+        self._tracker_certificate_pinner: Optional[CertificatePinner]= None
 
         self.logger = logging.getLogger(__name__)
         self._immediate_connection_window = 0.25
@@ -232,15 +261,15 @@ class AsyncTrackerClient:
         # Note: Immediate peer connection callback
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
-        self.on_peers_received: Optional[
-            Callable[[list[dict[str, Any]], str], Union[Awaitable[None], None]]
-        ] = None
+        self.on_peers_received: None | (
+            Callable[[list[dict[str, Any]], str], Awaitable[None] | None]
+        ) = None
 
     async def announce_chunk(
         self,
         chunk_hash: bytes,
-        peer_info: Optional[PeerInfo] = None,
-        workspace_id_hex: Optional[str] = None,
+        peer_info: Optional[PeerInfo]= None,
+        workspace_id_hex: Optional[str]= None,
     ) -> None:
         """Record XET chunk availability for tracker-backed lookup."""
         key = (chunk_hash, workspace_id_hex)
@@ -255,7 +284,7 @@ class AsyncTrackerClient:
             peers.append(peer_info)
 
     async def get_chunk_peers(
-        self, chunk_hash: bytes, workspace_id_hex: Optional[str] = None
+        self, chunk_hash: bytes, workspace_id_hex: Optional[str]= None
     ) -> list[PeerInfo]:
         """Return peers recorded for an XET chunk."""
         if workspace_id_hex is None:
@@ -393,14 +422,25 @@ class AsyncTrackerClient:
                 ssl_context = builder.create_tracker_context()
                 self.logger.debug("Created SSL context for tracker connections")
             except Exception as e:  # pragma: no cover - SSL context creation error, tested via successful creation
-                self.logger.warning(
-                    "Failed to create SSL context for trackers: %s. "
-                    "HTTPS connections may fail or use system default SSL context.",
-                    e,
-                    exc_info=True,
-                )
                 # Continue without SSL context (fallback to system default)
                 # Note: aiohttp will use system default SSL context if ssl=None
+                # Keep explicit log category for CA/certificate material failures.
+                ssl_context_msg = str(e).lower()
+                if (
+                    "ca" in ssl_context_msg
+                    or "certificate" in ssl_context_msg
+                    or "cert" in ssl_context_msg
+                ):
+                    self.logger.exception(
+                        "Tracker CA/certificate configuration issue for HTTPS trackers"
+                    )
+                else:
+                    self.logger.warning(
+                        "Failed to create SSL context for trackers: %s. "
+                        "HTTPS connections may fail or use system default SSL context.",
+                        e,
+                        exc_info=True,
+                    )
                 ssl_context = None
 
         # Check if proxy is enabled and should be used for trackers
@@ -579,7 +619,7 @@ class AsyncTrackerClient:
         self.logger.info("Async tracker client stopped")
 
     def get_healthy_trackers(
-        self, exclude_urls: Optional[set[str]] = None
+        self, exclude_urls: Optional[set[str]]= None
     ) -> list[str]:
         """Get list of healthy trackers for use in announces.
 
@@ -593,7 +633,7 @@ class AsyncTrackerClient:
         return self.health_manager.get_healthy_trackers(exclude_urls)
 
     def get_fallback_trackers(
-        self, exclude_urls: Optional[set[str]] = None
+        self, exclude_urls: Optional[set[str]]= None
     ) -> list[str]:
         """Get fallback trackers when no healthy trackers are available.
 
@@ -727,6 +767,86 @@ class AsyncTrackerClient:
             resolved_host,
         )
 
+    def _get_tracker_certificate_pinner(self) -> Union[CertificatePinner, None]:
+        """Return configured certificate pinner for HTTPS trackers."""
+        if self._tracker_certificate_pinner is None:
+            ssl_config = self.config.security.ssl if self.config.security else None
+            if not ssl_config:
+                return None
+
+            tracker_pins = getattr(ssl_config, "ssl_tracker_pins", {})
+            if not tracker_pins:
+                return None
+
+            pinner = CertificatePinner()
+            for hostname, fingerprint in tracker_pins.items():
+                if not hostname or not fingerprint:
+                    continue
+                pinner.pin_certificate(str(hostname).lower(), str(fingerprint))
+
+            self._tracker_certificate_pinner = pinner
+
+        return self._tracker_certificate_pinner
+
+    def _extract_tracker_ssl_object(self, response: aiohttp.ClientResponse) -> Any:
+        """Extract SSL object from an aiohttp response."""
+        connection = getattr(response, "connection", None)
+        if connection is None:
+            return None
+
+        transport = getattr(connection, "_transport", None)
+        if transport is None:
+            transport = getattr(connection, "transport", None)
+        if transport is None:
+            protocol = getattr(connection, "_protocol", None)
+            if protocol is not None:
+                transport = getattr(protocol, "_transport", None)
+        if transport is None:
+            return None
+
+        get_extra_info = getattr(transport, "get_extra_info", None)
+        if not callable(get_extra_info):
+            return None
+        return get_extra_info("ssl_object")
+
+    def _verify_tracker_certificate_pin(
+        self, tracker_host: str, response: aiohttp.ClientResponse
+    ) -> None:
+        """Verify the TLS certificate against configured tracker pinning."""
+        pinner = self._get_tracker_certificate_pinner()
+        if pinner is None:
+            return
+
+        ssl_object = self._extract_tracker_ssl_object(response)
+        if ssl_object is None:
+            msg = (
+                f"Tracker certificate pinning is configured but HTTPS peer certificate "
+                f"was not available for {tracker_host}"
+            )
+            raise ssl.SSLError(msg)
+
+        cert: Union[bytes, dict[str, Any]]
+        cert = ssl_object.getpeercert()
+        if not cert:
+            cert = ssl_object.getpeercert(binary_form=True)
+
+        if not pinner.verify_pin(tracker_host.lower(), cert):
+            msg = f"Tracker certificate pin mismatch for {tracker_host}"
+            raise ssl.SSLError(msg)
+
+    def _classify_tracker_ssl_error(self, error: Exception) -> str:
+        """Map HTTPS SSL errors to stable error categories."""
+        message = str(error).lower()
+        if "certificate verify failed" in message:
+            if "hostname" in message:
+                return "TLS certificate hostname mismatch"
+            return "TLS certificate verification failed"
+        if "certificate" in message and "pin" in message:
+            return "TLS certificate pin mismatch"
+        if "handshake" in message:
+            return "TLS handshake failure"
+        return "TLS connection failure"
+
     def rank_trackers(self, tracker_urls: list[str]) -> list[str]:
         """Rank trackers by performance metrics.
 
@@ -799,7 +919,7 @@ class AsyncTrackerClient:
         return [url for _, url in tracker_scores]
 
     @staticmethod
-    def _is_invalid_payload_failure(failure_reason: Optional[str]) -> bool:
+    def _is_invalid_payload_failure(failure_reason: Union[str, None]) -> bool:
         if not failure_reason:
             return False
         normalized_reason = failure_reason.lower()
@@ -808,15 +928,43 @@ class AsyncTrackerClient:
             for marker in (
                 "invalid tracker payload",
                 "non-bencode",
-                "parse tracker response",
                 "invalid tracker",
                 "not bencode",
                 "html/xml payload",
+                "json-like payload",
+                "plain/integer payload",
             )
         )
 
     @staticmethod
-    def _is_retryable_tracker_failure(failure_reason: Optional[str]) -> bool:
+    def _classify_tracker_failure_tier(
+        failure_reason: Union[str, None]
+    ) -> str:
+        """Classify tracker failure into quarantine severity tiers."""
+        if not failure_reason:
+            return "ignore"
+        normalized_reason = failure_reason.lower()
+        if "html/xml payload" in normalized_reason:
+            return "critical"
+        if (
+            "json-like payload" in normalized_reason
+            or "plain/integer payload" in normalized_reason
+        ):
+            return "high"
+        if (
+            "timeout" in normalized_reason
+            or "timed out" in normalized_reason
+            or "connection refused" in normalized_reason
+            or "connection reset" in normalized_reason
+            or "name resolution" in normalized_reason
+            or "unreachable" in normalized_reason
+            or "temporarily unavailable" in normalized_reason
+        ):
+            return "medium"
+        return "low"
+
+    @staticmethod
+    def _is_retryable_tracker_failure(failure_reason: Union[str, None]) -> bool:
         if not failure_reason:
             return False
         normalized_reason = failure_reason.lower()
@@ -826,9 +974,8 @@ class AsyncTrackerClient:
             "tracker failure:",
             "failure reason",
             "invalid tracker payload",
-            "non-bencode",
-            "parse tracker response",
             "invalid bencode",
+            "invalid tracker",
         )
         if any(marker in normalized_reason for marker in non_retryable_markers):
             return False
@@ -844,6 +991,8 @@ class AsyncTrackerClient:
             "temporary",
             "reset",
             "closed",
+            "failed to parse tracker response",
+            "parse tracker response",
         )
         return any(marker in normalized_reason for marker in retryable_markers)
 
@@ -861,42 +1010,66 @@ class AsyncTrackerClient:
     def _apply_tracker_quarantine(
         self,
         session: TrackerSession,
-        failure_reason: Optional[str] = None,
-        failure_count: Optional[int] = None,
+        failure_reason: Optional[str]= None,
+        failure_count: Optional[int]= None,
     ) -> None:
         failure_reason = failure_reason or "unclassified tracker failure"
         failure_streak = (
             failure_count if failure_count is not None else session.failure_streak
         )
-        normalized_reason = failure_reason.lower()
-        if self._is_invalid_payload_failure(failure_reason):
-            # HTML tracker pages indicate the endpoint is not a tracker API and should be
-            # quarantined quickly to avoid repeated wasteful polling.
-            minimum_failures_for_quarantine = (
-                1 if "html/xml payload" in normalized_reason else 2
+        failure_tier = self._classify_tracker_failure_tier(failure_reason)
+        tracker_host = urllib.parse.urlparse(session.url).hostname or ""
+        if tracker_host:
+            self._increment_session_metric(tracker_host, f"failure_tier_{failure_tier}")
+
+        if failure_tier == "critical":
+            # Malformed HTML responses are almost certainly wrong endpoint usage.
+            cooldown_seconds = float(
+                getattr(
+                    self.config.network,
+                    "tracker_payload_failure_quarantine_seconds",
+                    120.0,
+                )
             )
-            should_quarantine = failure_streak >= minimum_failures_for_quarantine
+            should_quarantine = failure_streak >= 1
+        elif failure_tier == "high":
+            # Parse/encoding glitches on otherwise reachable trackers are transient.
+            cooldown_seconds = float(
+                getattr(
+                    self.config.network,
+                    "tracker_payload_failure_quarantine_seconds",
+                    120.0,
+                )
+            )
+            cooldown_seconds = max(min(cooldown_seconds, 45.0), 10.0)
+            should_quarantine = failure_streak >= 3
+        elif failure_tier == "medium":
+            # Repeated network failures should throttle requests temporarily.
+            cooldown_seconds = float(
+                getattr(
+                    self.config.network,
+                    "tracker_network_failure_quarantine_seconds",
+                    90.0,
+                )
+            )
+            cooldown_seconds = max(min(cooldown_seconds, 240.0), 15.0)
+            should_quarantine = failure_streak >= 2
         else:
+            cooldown_seconds = 0.0
             should_quarantine = False
+
         if not should_quarantine:
             return
-
-        cooldown_seconds = float(
-            getattr(
-                self.config.network,
-                "tracker_payload_failure_quarantine_seconds",
-                120.0,
-            )
-        )
 
         if cooldown_seconds < 0.0:
             cooldown_seconds = 120.0
         session.quarantine_until = time.time() + cooldown_seconds
         session.quarantine_reason = failure_reason[:240]
         self.logger.warning(
-            "Tracker %s quarantined for %.1fs after %d invalid payload failures: %s",
+            "Tracker %s quarantined for %.1fs after %d %s-tier failures: %s",
             session.url,
             cooldown_seconds,
+            failure_tier,
             failure_streak,
             failure_reason,
         )
@@ -1060,9 +1233,9 @@ class AsyncTrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: Optional[int] = None,
+        left: Optional[int]= None,
         event: str = "started",
-    ) -> Optional[TrackerResponse]:
+    ) -> Union[TrackerResponse, None]:
         """Announce to the tracker and get peer list asynchronously.
 
         Args:
@@ -1267,7 +1440,7 @@ class AsyncTrackerClient:
 
             # Track performance: start time
             start_time = time.time()
-            response_time: Optional[float] = None
+            response_time: Optional[float]= None
 
             # Emit tracker announce started event
             try:
@@ -1325,8 +1498,8 @@ class AsyncTrackerClient:
                 event,
             )
 
-            is_udp = normalized_url.startswith("udp://")
-            fallback_url: Optional[str] = None
+            is_udp = tracker_url_is_udp(normalized_url)
+            fallback_url: Optional[str]= None
             tracker_host = urllib.parse.urlparse(normalized_url).hostname or ""
 
             # BEP 15 (UDP) uses 20-byte info_hash; BEP 41 extends UDP with URLData only. Skip UDP for 32-byte (XET).
@@ -1432,16 +1605,36 @@ class AsyncTrackerClient:
                     else:
                         single_tracker_data = torrent_data
 
-                    # Use the full response method to get interval, seeders, leechers
-                    # Note: Pass port parameter to UDP tracker client to use external port
-                    udp_result = await udp_client_typed.announce_to_tracker_full(
-                        tracker_url,
-                        single_tracker_data,
+                    # Use a UDP-only announce payload map with no HTTP transport kwargs.
+                    udp_request = UDPTrackerAnnounceRequest(
                         port=port,  # Use external port from NAT manager if available
                         uploaded=uploaded,
                         downloaded=downloaded,
                         left=left_value,
                         event=udp_event,
+                    )
+                    # Guardrail: UDP announces must not receive HTTP-only TLS/crypto kwargs.
+                    # Keep payload explicit to avoid accidental bleed-through from HTTP tracker path.
+                    disallowed_udp_kwargs = {
+                        "ssl",
+                        "supportcrypto",
+                        "requirecrypto",
+                        "cryptoport",
+                    }
+                    invalid_kwargs = (
+                        set(udp_request.as_kwargs()) & disallowed_udp_kwargs
+                    )
+                    if invalid_kwargs:
+                        msg = f"UDP announce path received HTTP-only kwargs: {sorted(invalid_kwargs)}"
+                        raise TrackerError(
+                            msg
+                        )
+
+                    # Use the full response method to get interval, seeders, leechers.
+                    udp_result = await udp_client_typed.announce_to_tracker_full(
+                        tracker_url,
+                        single_tracker_data,
+                        **udp_request.as_kwargs(),
                     )
 
                     if udp_result is None:
@@ -1515,7 +1708,7 @@ class AsyncTrackerClient:
             if not is_udp:
                 # HTTP tracker announce (including fallback from UDP)
                 # Note: Handle HTTP tracker announce (including fallback from UDP)
-                if normalized_url.startswith(("http://", "https://")):
+                if tracker_url_transport_tier(normalized_url) in {"HTTP", "HTTPS"}:
                     self.logger.debug(
                         "Using HTTP tracker for %s",
                         normalized_url,
@@ -1531,6 +1724,7 @@ class AsyncTrackerClient:
                         downloaded,
                         left_value,
                         event,
+                        crypto_flags=self._parse_tracker_crypto_flags(normalized_url),
                     )
 
                     # Make async HTTP request
@@ -1841,7 +2035,7 @@ class AsyncTrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: Optional[int] = None,
+        left: Optional[int]= None,
         event: str = "started",
         allow_all_failure_retry: bool = True,
     ) -> list[TrackerResponse]:
@@ -2181,8 +2375,8 @@ class AsyncTrackerClient:
         downloaded: int,
         left: Optional[int],
         event: str,
-        _tracker_failure_marks: Optional[dict[int, bool]] = None,
-    ) -> Optional[TrackerResponse]:
+        _tracker_failure_marks: Optional[dict[int, bool]]= None,
+    ) -> Union[TrackerResponse, None]:
         """Announce to a single tracker.
 
         Returns:
@@ -2223,6 +2417,28 @@ class AsyncTrackerClient:
             tracker_type = "UDP" if is_udp else "HTTP/HTTPS"
             tracker_host = urllib.parse.urlparse(normalized_url).hostname or ""
             error_text = str(e)
+            if self._is_invalid_payload_failure(error_text):
+                # Track malformed tracker payloads as a soft failure:
+                # return an empty peer list instead of hard-failing the entire announce path.
+                self._increment_session_metric(tracker_host, "invalid_payload_count")
+                self._handle_tracker_failure(normalized_url, failure_reason=error_text)
+                self.logger.warning(
+                    "Ignoring malformed tracker payload from %s (%s): %s",
+                    normalized_url[:100]
+                    if len(normalized_url) > 100
+                    else normalized_url,
+                    tracker_type,
+                    error_text,
+                )
+                return TrackerResponse(
+                    interval=1800,
+                    peers=[],
+                    complete=None,
+                    incomplete=None,
+                    download_url=None,
+                    tracker_id=None,
+                    warning_message=error_text,
+                )
             if is_udp and (
                 "HTTP tracker" in error_text or "HTTP fallback" in error_text
             ):
@@ -2296,7 +2512,7 @@ class AsyncTrackerClient:
 
     def _find_http_fallback_url(
         self, torrent_data: dict[str, Any], udp_tracker_url: str
-    ) -> Optional[str]:
+    ) -> Union[str, None]:
         """Find an explicit HTTP(S) fallback tracker from torrent metadata."""
         announce_list = torrent_data.get("announce_list", [])
         for tier in announce_list:
@@ -2539,6 +2755,37 @@ class AsyncTrackerClient:
 
         return url
 
+    def _parse_tracker_crypto_flags(self, tracker_url: str) -> dict[str, str]:
+        """Parse tracker crypto flags from HTTP(S)-only announce URLs."""
+        parsed = urllib.parse.urlparse(tracker_url)
+        if tracker_url_transport_tier(tracker_url) not in {"HTTP", "HTTPS"}:
+            return {}
+
+        parsed_query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        crypto_flags: dict[str, str] = {}
+        known_flags = {"supportcrypto", "requirecrypto", "cryptoport"}
+
+        for name in known_flags:
+            value_list = parsed_query.get(name)
+            if value_list:
+                crypto_flags[name] = str(value_list[0])
+
+        for raw_combo in parsed_query.get("crypto_flags", []):
+            for raw_pair in raw_combo.split(","):
+                pair = raw_pair.strip()
+                if not pair:
+                    continue
+                if "=" in pair:
+                    key, value = pair.split("=", maxsplit=1)
+                else:
+                    key, value = pair, "1"
+                key = key.strip().lower()
+                value = value.strip()
+                if key in known_flags:
+                    crypto_flags[key] = value
+
+        return crypto_flags
+
     def _build_tracker_url(
         self,
         base_url: str,
@@ -2549,6 +2796,7 @@ class AsyncTrackerClient:
         downloaded: int,
         left: int,
         event: str,
+        crypto_flags: Optional[dict[str, str]]= None,
     ) -> str:
         """Build the complete tracker URL with all required parameters.
 
@@ -2561,6 +2809,7 @@ class AsyncTrackerClient:
             downloaded: Bytes downloaded
             left: Bytes left to download
             event: Event type
+            crypto_flags: Optional tracker crypto preference flags
 
         Returns:
             Complete tracker URL with query parameters
@@ -2597,6 +2846,11 @@ class AsyncTrackerClient:
         if event:
             query_parts.append(f"event={urllib.parse.quote(event, safe='')}")
 
+        if crypto_flags:
+            for key, value in sorted(crypto_flags.items()):
+                if key in {"supportcrypto", "requirecrypto", "cryptoport"}:
+                    query_parts.append(f"{key}={value}")
+
         # Build full URL
         separator = "&" if "?" in base_url else "?"
         query_string = "&".join(query_parts)
@@ -2622,11 +2876,9 @@ class AsyncTrackerClient:
             raise RuntimeError(msg)
 
         # Auto-detect HTTPS and log SSL status
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        tracker_host = parsed.hostname or ""
-        if parsed.scheme == "https":
+        parsed_url = urllib.parse.urlparse(url)
+        tracker_host = parsed_url.hostname or ""
+        if tracker_url_implies_tls(url):
             if (
                 not self.config.security
                 or not self.config.security.ssl
@@ -2677,8 +2929,17 @@ class AsyncTrackerClient:
                     msg = f"HTTP {response.status}: {response.reason}"
                     raise TrackerError(msg)
 
+                if tracker_host and tracker_url_implies_tls(url):
+                    self._verify_tracker_certificate_pin(tracker_host, response)
+
                 return await response.read()
 
+        except ssl.SSLError as e:
+            self._increment_session_metric(tracker_host, "error_count")
+            error_category = self._classify_tracker_ssl_error(e)
+            self.logger.exception("Tracker TLS error for %s", url)
+            msg = f"{error_category}: {url}: {e}"
+            raise TrackerError(msg) from e
         except asyncio.TimeoutError as e:
             self._increment_session_metric(tracker_host, "error_count")
             msg = f"HTTP tracker request timed out ({url}): {e}"
@@ -2686,7 +2947,8 @@ class AsyncTrackerClient:
         except aiohttp.ClientSSLError as e:  # pragma: no cover - SSL error path tested via exception injection in test_make_request_ssl_error_updates_metrics, but coverage tool may not track exception handler execution perfectly
             self._increment_session_metric(tracker_host, "error_count")
             self.logger.exception("SSL error connecting to tracker %s", url)
-            msg = f"SSL handshake failed: {e}"
+            error_category = self._classify_tracker_ssl_error(e)
+            msg = f"{error_category}: {url}: {e}"
             raise TrackerError(msg) from e
         except aiohttp.ClientError as e:  # pragma: no cover - ClientError path tested via exception injection, but coverage tool may not track exception handler execution perfectly
             self._increment_session_metric(tracker_host, "error_count")
@@ -2743,7 +3005,7 @@ class AsyncTrackerClient:
             session.last_scrape_time = time.time()
 
     def _handle_tracker_failure(
-        self, url: str, failure_reason: Optional[str] = None
+        self, url: str, failure_reason: Optional[str]= None
     ) -> None:
         """Handle tracker failure with exponential backoff and jitter."""
         if url not in self.sessions:
@@ -2785,7 +3047,7 @@ class AsyncTrackerClient:
         )
 
     @staticmethod
-    def _classify_non_bencode_payload(response_data: bytes) -> Optional[str]:
+    def _classify_non_bencode_payload(response_data: bytes) -> Union[str, None]:
         """Classify tracker payloads that are not valid bencode candidates."""
         if not response_data:
             return "empty payload"
@@ -2811,7 +3073,7 @@ class AsyncTrackerClient:
         field_name: str,
         tracker_url: str = "",
         allow_missing: bool = False,
-    ) -> Optional[int]:
+    ) -> Union[int, None]:
         """Coerce tracker numeric fields to int with strict validation."""
         if value is None:
             if allow_missing:
@@ -2948,12 +3210,44 @@ class AsyncTrackerClient:
                 tracker_url=tracker_url,
             )
             peers_data = decoded[b"peers"]
+            tracker_encryption_preference: Optional[str]= None
+            if tracker_url:
+                crypto_flags = self._parse_tracker_crypto_flags(tracker_url)
+
+                def _normalize_crypto_flag_value(value: Any) -> str:
+                    if value is None:
+                        return ""
+                    if isinstance(value, bytes):
+                        return value.decode("utf-8", errors="replace").strip().lower()
+                    return str(value).strip().lower()
+
+                normalized_requirecrypto = _normalize_crypto_flag_value(
+                    crypto_flags.get("requirecrypto")
+                )
+                normalized_supportcrypto = _normalize_crypto_flag_value(
+                    crypto_flags.get("supportcrypto")
+                )
+                if normalized_requirecrypto in {"1", "true", "yes", "on", "required"}:
+                    tracker_encryption_preference = "required"
+                elif normalized_supportcrypto in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                    "preferred",
+                }:
+                    tracker_encryption_preference = "preferred"
 
             # Parse peers - handle both compact (bytes) and dictionary (list) formats
             peers_dict_list: list[dict[str, Any]] = []
             if isinstance(peers_data, bytes):
                 # Compact peer format: 6 bytes per peer (4 bytes IP + 2 bytes port)
                 peers_dict_list = self._parse_compact_peers(peers_data)
+                if tracker_encryption_preference is not None:
+                    for peer_dict in peers_dict_list:
+                        peer_dict["_tracker_encryption_preference"] = (
+                            tracker_encryption_preference
+                        )
             elif isinstance(peers_data, list):
                 # Dictionary format: list of dictionaries with "ip" and "port" keys
                 for peer_info in peers_data:
@@ -2983,6 +3277,7 @@ class AsyncTrackerClient:
                                     "port": peer_port,
                                     "peer_source": "tracker",  # Mark peers from tracker responses (BEP 27)
                                     "ssl_capable": None,  # Unknown until extension handshake
+                                    "_tracker_encryption_preference": tracker_encryption_preference,
                                 }
                             )
                         else:
@@ -3021,6 +3316,11 @@ class AsyncTrackerClient:
                             "ssl_capable"
                         ),  # None until extension handshake
                     )
+                    if "_tracker_encryption_preference" in peer_dict:
+                        with contextlib.suppress(Exception):
+                            peer_info.__dict__["_tracker_encryption_preference"] = (
+                                peer_dict["_tracker_encryption_preference"]
+                            )
                     # Validate peer info (PeerInfo validator will check IP/port)
                     if peer_info.port >= 1 and peer_info.port <= 65535 and peer_info.ip:
                         peer_info_list.append(peer_info)
@@ -3130,6 +3430,11 @@ class AsyncTrackerClient:
                                 "ip": p.ip,
                                 "port": p.port,
                                 "peer_source": getattr(p, "peer_source", "tracker"),
+                                "_tracker_encryption_preference": getattr(
+                                    p,
+                                    "_tracker_encryption_preference",
+                                    None,
+                                ),
                             }
                             for p in peer_info_list
                         ]
@@ -3162,7 +3467,7 @@ class AsyncTrackerClient:
             raise TrackerError(msg) from e
 
     @staticmethod
-    def _coerce_interval(interval: Optional[int]) -> int:
+    def _coerce_interval(interval: Union[int, None]) -> int:
         """Validate required tracker interval."""
         if interval is None:
             msg = "Missing required tracker interval"
@@ -3280,7 +3585,7 @@ class AsyncTrackerClient:
             self.logger.exception("HTTP scrape failed")
             return {}
 
-    def _build_scrape_url(self, info_hash: bytes, announce_url: str) -> Optional[str]:
+    def _build_scrape_url(self, info_hash: bytes, announce_url: str) -> Union[str, None]:
         """Build scrape URL from tracker URL.
 
         Args:
@@ -3527,7 +3832,7 @@ class TrackerHealthManager:
         }
 
         # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task]= None
         self._running = False
 
     async def start(self):
@@ -3613,7 +3918,7 @@ class TrackerHealthManager:
             metrics.record_failure()
 
     def get_healthy_trackers(
-        self, exclude_urls: Optional[set[str]] = None
+        self, exclude_urls: Optional[set[str]]= None
     ) -> list[str]:
         """Get list of healthy trackers, optionally excluding some URLs."""
         if exclude_urls is None:
@@ -3630,7 +3935,7 @@ class TrackerHealthManager:
         return [url for url, _ in healthy]
 
     def get_fallback_trackers(
-        self, exclude_urls: Optional[set[str]] = None
+        self, exclude_urls: Optional[set[str]]= None
     ) -> list[str]:
         """Get fallback trackers that aren't already in use."""
         if exclude_urls is None:
@@ -3666,7 +3971,7 @@ class TrackerHealthManager:
 class TrackerClient:
     """Synchronous tracker client for backward compatibility."""
 
-    def __init__(self, peer_id_prefix: Optional[bytes] = None):
+    def __init__(self, peer_id_prefix: Optional[bytes]= None):
         """Initialize the tracker client.
 
         Args:
@@ -3709,6 +4014,7 @@ class TrackerClient:
         left: int = 0,
         event: str = "",
         compact: int = 1,
+        crypto_flags: Optional[dict[str, str]]= None,
     ) -> str:
         """Build tracker URL with parameters."""
         params = {
@@ -3729,6 +4035,11 @@ class TrackerClient:
         for key, param_val in params.items():
             value_str = param_val.hex() if isinstance(param_val, bytes) else param_val
             query_parts.append(f"{key}={value_str}")
+
+        if crypto_flags:
+            for key, value in sorted(crypto_flags.items()):
+                if key in {"supportcrypto", "requirecrypto", "cryptoport"}:
+                    query_parts.append(f"{key}={value}")
 
         query_string = "&".join(query_parts)
         separator = "&" if "?" in announce_url else "?"
@@ -3783,7 +4094,7 @@ class TrackerClient:
             raise TrackerError(msg) from e
 
     @staticmethod
-    def _classify_non_bencode_payload(response_data: bytes) -> Optional[str]:
+    def _classify_non_bencode_payload(response_data: bytes) -> Union[str, None]:
         """Classify tracker payloads that are not valid bencode candidates."""
         if not response_data:
             return "empty payload"
@@ -3809,7 +4120,7 @@ class TrackerClient:
         field_name: str,
         tracker_url: str = "",
         allow_missing: bool = False,
-    ) -> Optional[int]:
+    ) -> Union[int, None]:
         """Coerce tracker numeric fields to int with strict validation."""
         if value is None:
             if allow_missing:
@@ -3895,7 +4206,40 @@ class TrackerClient:
             raise ValueError(msg)
         return peer_ip
 
-    def _parse_response(self, response_data: bytes) -> dict[str, Any]:
+    def _parse_tracker_crypto_flags(self, tracker_url: str) -> dict[str, str]:
+        """Parse tracker crypto flags from HTTP(S)-only announce URLs."""
+        parsed = urllib.parse.urlparse(tracker_url)
+        if tracker_url_transport_tier(tracker_url) not in {"HTTP", "HTTPS"}:
+            return {}
+
+        parsed_query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        crypto_flags: dict[str, str] = {}
+        known_flags = {"supportcrypto", "requirecrypto", "cryptoport"}
+
+        for name in known_flags:
+            value_list = parsed_query.get(name)
+            if value_list:
+                crypto_flags[name] = str(value_list[0])
+
+        for raw_combo in parsed_query.get("crypto_flags", []):
+            for raw_pair in raw_combo.split(","):
+                pair = raw_pair.strip()
+                if not pair:
+                    continue
+                if "=" in pair:
+                    key, value = pair.split("=", maxsplit=1)
+                else:
+                    key, value = pair, "1"
+                key = key.strip().lower()
+                value = value.strip()
+                if key in known_flags:
+                    crypto_flags[key] = value
+
+        return crypto_flags
+
+    def _parse_response(
+        self, response_data: bytes, tracker_url: str = ""
+    ) -> dict[str, Any]:
         """Parse tracker response."""
         try:
             payload_issue = self._classify_non_bencode_payload(response_data)
@@ -3929,12 +4273,45 @@ class TrackerClient:
             interval = self._coerce_tracker_int(decoded[b"interval"], "interval")
 
             # Parse peers
+            tracker_encryption_preference: Optional[str]= None
+            if tracker_url:
+                crypto_flags = self._parse_tracker_crypto_flags(tracker_url)
+
+                def _normalize_crypto_flag_value(value: Any) -> str:
+                    if value is None:
+                        return ""
+                    if isinstance(value, bytes):
+                        return value.decode("utf-8", errors="replace").strip().lower()
+                    return str(value).strip().lower()
+
+                normalized_requirecrypto = _normalize_crypto_flag_value(
+                    crypto_flags.get("requirecrypto")
+                )
+                normalized_supportcrypto = _normalize_crypto_flag_value(
+                    crypto_flags.get("supportcrypto")
+                )
+                if normalized_requirecrypto in {"1", "true", "yes", "on", "required"}:
+                    tracker_encryption_preference = "required"
+                elif normalized_supportcrypto in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                    "preferred",
+                }:
+                    tracker_encryption_preference = "preferred"
+
             peers = []
             if b"peers" in decoded:
                 peers_data = decoded[b"peers"]
                 if isinstance(peers_data, bytes):
                     # Compact peer format
                     peers = self._parse_compact_peers(peers_data)
+                    if tracker_encryption_preference is not None:
+                        for peer_dict in peers:
+                            peer_dict["_tracker_encryption_preference"] = (
+                                tracker_encryption_preference
+                            )
                 elif isinstance(peers_data, list):
                     # Dictionary format
                     for peer_info in peers_data:
@@ -3964,6 +4341,7 @@ class TrackerClient:
                                         "ip": peer_ip,
                                         "port": peer_port,
                                         "peer_source": "tracker",  # Mark peers from tracker responses (BEP 27)
+                                        "_tracker_encryption_preference": tracker_encryption_preference,
                                     }
                                 )
 
@@ -4077,7 +4455,7 @@ class TrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: Optional[int] = None,
+        left: Optional[int]= None,
         event: str = "started",
     ) -> dict[str, Any]:
         """Announce to the tracker and get peer list.
@@ -4122,7 +4500,7 @@ class TrackerClient:
             response_data = self._make_request(tracker_url)
 
             # Parse response
-            response = self._parse_response(response_data)
+            response = self._parse_response(response_data, tracker_url=tracker_url)
 
             # Update tracker session
             self._update_tracker_session(torrent_data["announce"], response)

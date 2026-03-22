@@ -71,7 +71,7 @@ class TestMSEHandshakeMessageEncoding:
     def test_encode_message_skeye(self, handshake):
         """Test encoding SKEYE message."""
         payload = b"test_public_key_data"
-        encoded = handshake._encode_message(MSEHandshakeType.SKEYE, payload)
+        encoded = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, payload)
 
         # Should have 4-byte length + 1-byte type + payload
         assert len(encoded) == 4 + 1 + len(payload)
@@ -80,7 +80,7 @@ class TestMSEHandshakeMessageEncoding:
     def test_encode_message_rkeye(self, handshake):
         """Test encoding RKEYE message."""
         payload = b"peer_public_key_data"
-        encoded = handshake._encode_message(MSEHandshakeType.RKEYE, payload)
+        encoded = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, payload)
 
         assert len(encoded) == 4 + 1 + len(payload)
         assert encoded[4] == int(MSEHandshakeType.RKEYE)
@@ -88,7 +88,7 @@ class TestMSEHandshakeMessageEncoding:
     def test_encode_message_crypto(self, handshake):
         """Test encoding CRYPTO message."""
         payload = b"\x01"  # RC4
-        encoded = handshake._encode_message(MSEHandshakeType.CRYPTO, payload)
+        encoded = handshake._encode_transcript_message(MSEHandshakeType.CRYPTO, payload)
 
         assert len(encoded) == 4 + 1 + len(payload)
         assert encoded[4] == int(MSEHandshakeType.CRYPTO)
@@ -96,9 +96,9 @@ class TestMSEHandshakeMessageEncoding:
     def test_decode_message_valid(self, handshake):
         """Test decoding valid message."""
         payload = b"test_payload"
-        encoded = handshake._encode_message(MSEHandshakeType.SKEYE, payload)
+        encoded = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, payload)
 
-        decoded = handshake._decode_message(encoded)
+        decoded = handshake._parse_transcript_message(encoded)
 
         assert decoded is not None
         msg_type, decoded_payload = decoded
@@ -108,7 +108,7 @@ class TestMSEHandshakeMessageEncoding:
     def test_decode_message_too_short(self, handshake):
         """Test decoding message that's too short."""
         short_data = b"\x00\x00\x00"
-        decoded = handshake._decode_message(short_data)
+        decoded = handshake._parse_transcript_message(short_data)
 
         assert decoded is None
 
@@ -118,16 +118,16 @@ class TestMSEHandshakeMessageEncoding:
         length_header = b"\x00\x00\x00d"  # Length = 100
         incomplete_data = length_header + b"\x02" + b"x" * 9
 
-        decoded = handshake._decode_message(incomplete_data)
+        decoded = handshake._parse_transcript_message(incomplete_data)
 
         assert decoded is None
 
     def test_encode_decode_round_trip(self, handshake):
         """Test encode/decode round-trip."""
         payload = b"round_trip_test_data_12345"
-        encoded = handshake._encode_message(MSEHandshakeType.RKEYE, payload)
+        encoded = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, payload)
 
-        decoded = handshake._decode_message(encoded)
+        decoded = handshake._parse_transcript_message(encoded)
 
         assert decoded is not None
         msg_type, decoded_payload = decoded
@@ -138,7 +138,7 @@ class TestMSEHandshakeMessageEncoding:
         """Test encoding CRYPTO message."""
         crypto_msg = handshake._encode_crypto_message(CipherType.RC4)
 
-        decoded = handshake._decode_message(crypto_msg)
+        decoded = handshake._parse_transcript_message(crypto_msg)
         assert decoded is not None
         msg_type, crypto_data = decoded
         assert msg_type == MSEHandshakeType.CRYPTO
@@ -308,7 +308,7 @@ class TestMSEHandshakeInitiator:
         )
 
         # But send wrong message type (SKEYE instead of RKEYE)
-        wrong_message = handshake._encode_message(
+        wrong_message = handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, receiver_pubkey
         )
 
@@ -353,7 +353,7 @@ class TestMSEHandshakeInitiator:
         initiator_keypair = handshake.dh_exchange.generate_keypair()
 
         # Setup message sequence
-        rke_message = receiver_handshake._encode_message(
+        rke_message = receiver_handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, receiver_pubkey
         )
         crypto_message = receiver_handshake._encode_crypto_message(
@@ -388,6 +388,18 @@ class TestMSEHandshakeInitiator:
         assert result.success is True
         assert result.cipher is not None
         assert result.error is None
+        assert result.selected_method == "RC4"
+        assert result.resolved_info_hash == info_hash
+        assert result.inbound_stream_state == {
+            "direction": "inbound",
+            "method": "RC4",
+            "initialized": True,
+        }
+        assert result.outbound_stream_state == {
+            "direction": "outbound",
+            "method": "RC4",
+            "initialized": True,
+        }
 
         # Verify messages were sent
         assert mock_writer.write.call_count >= 2  # SKEYE + CRYPTO
@@ -464,7 +476,7 @@ class TestMSEHandshakeReceiver:
             )
         )
 
-        wrong_message = handshake._encode_message(
+        wrong_message = handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, initiator_pubkey
         )
 
@@ -502,7 +514,7 @@ class TestMSEHandshakeReceiver:
         )
 
         # Setup message sequence
-        ske_message = initiator_handshake._encode_message(
+        ske_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, initiator_pubkey
         )
         crypto_message = initiator_handshake._encode_crypto_message(
@@ -533,6 +545,18 @@ class TestMSEHandshakeReceiver:
         assert result.success is True
         assert result.cipher is not None
         assert result.error is None
+        assert result.selected_method == "RC4"
+        assert result.resolved_info_hash == info_hash
+        assert result.inbound_stream_state == {
+            "direction": "inbound",
+            "method": "RC4",
+            "initialized": True,
+        }
+        assert result.outbound_stream_state == {
+            "direction": "outbound",
+            "method": "RC4",
+            "initialized": True,
+        }
 
         # Verify messages were sent
         assert mock_writer.write.call_count >= 2  # RKEYE + CRYPTO
@@ -641,7 +665,7 @@ class TestMSEHandshakeFullFlow:
         """Test _read_message with valid data."""
         handshake = MSEHandshake()
         payload = b"test_message_payload"
-        encoded = handshake._encode_message(MSEHandshakeType.SKEYE, payload)
+        encoded = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, payload)
 
         mock_reader = AsyncMock()
         call_count = 0
@@ -657,7 +681,7 @@ class TestMSEHandshakeFullFlow:
 
         mock_reader.readexactly = AsyncMock(side_effect=mock_readexactly)
 
-        result = await handshake._read_message(mock_reader)
+        result = await handshake._read_transcript_message(mock_reader)
 
         assert result == encoded
         assert mock_reader.readexactly.call_count == 2
@@ -671,7 +695,7 @@ class TestMSEHandshakeFullFlow:
             side_effect=asyncio.IncompleteReadError(b"partial", 10)
         )
 
-        result = await handshake._read_message(mock_reader)
+        result = await handshake._read_transcript_message(mock_reader)
 
         assert result is None
 
@@ -692,7 +716,7 @@ class TestMSEHandshakeFullFlow:
             receiver_keypair
         )
 
-        rke_message = receiver_handshake._encode_message(
+        rke_message = receiver_handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, receiver_pubkey
         )
         # Send AES in CRYPTO message (disallowed)
@@ -795,7 +819,7 @@ class TestMSEHandshakeFullFlow:
             receiver_keypair
         )
 
-        rke_message = receiver_handshake._encode_message(
+        rke_message = receiver_handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, receiver_pubkey
         )
 
@@ -838,7 +862,7 @@ class TestMSEHandshakeFullFlow:
             receiver_keypair
         )
 
-        rke_message = receiver_handshake._encode_message(
+        rke_message = receiver_handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, receiver_pubkey
         )
         # Invalid CRYPTO message
@@ -883,11 +907,11 @@ class TestMSEHandshakeFullFlow:
             receiver_keypair
         )
 
-        rke_message = receiver_handshake._encode_message(
+        rke_message = receiver_handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, receiver_pubkey
         )
         # Send wrong message type (SKEYE instead of CRYPTO)
-        wrong_message = receiver_handshake._encode_message(
+        wrong_message = receiver_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, receiver_pubkey
         )
 
@@ -988,7 +1012,7 @@ class TestMSEHandshakeFullFlow:
             )
         )
 
-        ske_message = initiator_handshake._encode_message(
+        ske_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, initiator_pubkey
         )
 
@@ -1032,7 +1056,7 @@ class TestMSEHandshakeFullFlow:
             )
         )
 
-        ske_message = initiator_handshake._encode_message(
+        ske_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, initiator_pubkey
         )
         # Invalid CRYPTO
@@ -1079,11 +1103,11 @@ class TestMSEHandshakeFullFlow:
             )
         )
 
-        ske_message = initiator_handshake._encode_message(
+        ske_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, initiator_pubkey
         )
         # Send wrong message type
-        wrong_message = initiator_handshake._encode_message(
+        wrong_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.RKEYE, initiator_pubkey
         )
 
@@ -1129,7 +1153,7 @@ class TestMSEHandshakeFullFlow:
             )
         )
 
-        ske_message = initiator_handshake._encode_message(
+        ske_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, initiator_pubkey
         )
         # Peer prefers AES
@@ -1182,7 +1206,7 @@ class TestMSEHandshakeFullFlow:
             )
         )
 
-        ske_message = initiator_handshake._encode_message(
+        ske_message = initiator_handshake._encode_transcript_message(
             MSEHandshakeType.SKEYE, initiator_pubkey
         )
         # Peer prefers AES (disallowed)
@@ -1267,4 +1291,118 @@ class TestMSEHandshakeFullFlow:
 
         assert result.success is False
         assert result.error is not None
+
+
+@pytest.mark.asyncio
+async def test_initiate_and_responder_roundtrip_with_initial_payload() -> None:
+    """End-to-end handshake succeeds and carries IA payload as decrypted initial data."""
+
+    info_hash = b"\x01" * 20
+    initial_payload = (
+        b"\x13BitTorrent protocol" + b"\x00" * 43 + b"\x02" * 20
+    )
+    responder_results: asyncio.Queue[MSEHandshakeResult] = asyncio.Queue()
+
+    async def responder(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        handshake = MSEHandshake()
+        result = await handshake.respond_as_receiver_with_initial_data(
+            reader=reader,
+            writer=writer,
+            info_hash=info_hash,
+            timeout=1.0,
+            initial_payload_size=0,
+            info_hash_candidates=[info_hash],
+        )
+        await responder_results.put(result)
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(responder, "127.0.0.1", 0)
+    try:
+        server_port = server.sockets[0].getsockname()[1]
+        initiator_reader, initiator_writer = await asyncio.open_connection(
+            "127.0.0.1", server_port
+        )
+        try:
+            initiator_handshake = MSEHandshake()
+            initiator_result = await initiator_handshake.initiate_as_initiator(
+                initiator_reader,
+                initiator_writer,
+                info_hash,
+                timeout=1.0,
+                initial_payload=initial_payload,
+            )
+            responder_result = await asyncio.wait_for(
+                responder_results.get(), timeout=1.0
+            )
+
+            assert initiator_result.success is True
+            assert initiator_result.resolved_info_hash == info_hash
+            assert responder_result.success is True
+            assert responder_result.decrypted_initial_data == initial_payload
+            assert responder_result.resolved_info_hash == info_hash
+        finally:
+            initiator_writer.close()
+            await initiator_writer.wait_closed()
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
+    """Receiver can resolve candidate info hash from PE message.
+
+    This validates multi-hash probing when multiple torrents are managed.
+    """
+
+    ignored_info_hash = b"\x11" * 20
+    chosen_info_hash = b"\x22" * 20
+    initial_payload = b"peer-handshake-placeholder"
+    responder_results: asyncio.Queue[MSEHandshakeResult] = asyncio.Queue()
+
+    async def responder(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        handshake = MSEHandshake()
+        result = await handshake.respond_as_receiver_with_initial_data(
+            reader=reader,
+            writer=writer,
+            info_hash=ignored_info_hash,
+            timeout=1.0,
+            initial_payload_size=0,
+            info_hash_candidates=[ignored_info_hash, chosen_info_hash],
+        )
+        await responder_results.put(result)
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(responder, "127.0.0.1", 0)
+    try:
+        server_port = server.sockets[0].getsockname()[1]
+        initiator_reader, initiator_writer = await asyncio.open_connection(
+            "127.0.0.1", server_port
+        )
+        try:
+            initiator_handshake = MSEHandshake()
+            initiator_result = await initiator_handshake.initiate_as_initiator(
+                initiator_reader,
+                initiator_writer,
+                chosen_info_hash,
+                timeout=1.0,
+                initial_payload=initial_payload,
+            )
+            responder_result = await asyncio.wait_for(
+                responder_results.get(), timeout=1.0
+            )
+
+            assert initiator_result.success is True
+            assert responder_result.success is True
+            assert responder_result.resolved_info_hash == chosen_info_hash
+            assert responder_result.decrypted_initial_data == initial_payload
+        finally:
+            initiator_writer.close()
+            await initiator_writer.wait_closed()
+    finally:
+        server.close()
+        await server.wait_closed()
+
 

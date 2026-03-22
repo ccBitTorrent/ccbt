@@ -412,6 +412,47 @@ class TestAsyncTrackerClient:
         await client.stop()
 
     @pytest.mark.asyncio
+    async def test_announce_to_multiple_retries_for_transient_parse_failures(
+        self, client, torrent_data
+    ) -> None:
+        """Transient parser failures should retry via fallback before giving up."""
+        await client.start()
+        torrent_data["peer_id"] = b"-CC0101-" + b"x" * 12
+
+        fallback_response = TrackerResponse(interval=1800, peers=[])
+        call_state = {"count": 0}
+
+        async def flaky_announce(
+            torrent_copy,
+            port,
+            uploaded,
+            downloaded,
+            left,
+            event,
+            _tracker_failure_marks=None,
+        ) -> TrackerResponse:
+            _ = torrent_copy, port, uploaded, downloaded, left, event
+            call_state["count"] += 1
+            if call_state["count"] <= 2:
+                raise TrackerError("Failed to parse tracker response: malformed payload")
+            return fallback_response
+
+        with patch.object(client, "get_fallback_trackers") as mock_fallback:
+            mock_fallback.return_value = ["http://fallback.example.com/announce"]
+            with patch.object(client, "_announce_to_tracker", side_effect=flaky_announce):
+                responses = await client.announce_to_multiple(
+                    torrent_data,
+                    ["http://tracker1.com/announce", "http://tracker2.com/announce"],
+                )
+
+                assert len(responses) == 1
+                assert responses[0] == fallback_response
+                assert mock_fallback.called
+                assert call_state["count"] == 3
+
+        await client.stop()
+
+    @pytest.mark.asyncio
     async def test_announce_to_multiple_reuses_generated_peer_id(self, client, torrent_data):
         """A generated peer_id should be reused across all trackers in the same batch."""
         await client.start()
@@ -419,7 +460,13 @@ class TestAsyncTrackerClient:
         seen_peer_ids: list[bytes] = []
 
         async def fake_announce(
-            torrent_copy, port, uploaded, downloaded, left, event
+            torrent_copy,
+            port,
+            uploaded,
+            downloaded,
+            left,
+            event,
+            _tracker_failure_marks=None,
         ) -> TrackerResponse:
             _ = port, uploaded, downloaded, left, event
             seen_peer_ids.append(torrent_copy["peer_id"])
@@ -487,6 +534,40 @@ class TestAsyncTrackerClient:
 
         await client.stop()
 
+    @pytest.mark.asyncio
+    async def test_announce_to_tracker_tolerates_invalid_payload(
+        self, client, torrent_data
+    ) -> None:
+        """Malformed tracker responses should be treated as soft failures."""
+        await client.start()
+
+        torrent_data["peer_id"] = b"-CC0101-" + b"x" * 12
+        tracker_url = "http://tracker.example.com/announce"
+        torrent_data["announce"] = tracker_url
+
+        payload_error = TrackerError(
+            "Invalid tracker payload (html/xml payload) for tracker response"
+        )
+        with patch.object(client, "announce", side_effect=payload_error):
+            response = await client._announce_to_tracker(
+                torrent_data,
+                port=6881,
+                uploaded=0,
+                downloaded=0,
+                left=0,
+                event="started",
+            )
+
+            assert isinstance(response, TrackerResponse)
+            assert response.interval == 1800
+            assert response.peers == []
+            session = client.sessions.get(tracker_url)
+            assert session is not None
+            assert session.failure_count >= 1
+            assert session.quarantine_reason == str(payload_error)
+
+        await client.stop()
+
     def test_generate_peer_id(self, client):
         """Test peer ID generation."""
         peer_id = client._generate_peer_id()
@@ -547,6 +628,67 @@ class TestAsyncTrackerClient:
         )
 
         assert "existing=param&" in url or "&existing=param" in url
+
+    def test_parse_tracker_crypto_flags_from_http_url(self, client):
+        """Parse tracker crypto flags only on HTTP/HTTPS URLs."""
+        tracker_url = (
+            "http://tracker.example.com/announce?"
+            "supportcrypto=1&requirecrypto=0&crypto_flags=supportcrypto=0,cryptoport=7777"
+        )
+        flags = client._parse_tracker_crypto_flags(tracker_url)
+
+        assert flags["supportcrypto"] == "0"
+        assert flags["requirecrypto"] == "0"
+        assert flags["cryptoport"] == "7777"
+        assert "supportcrypto" in flags
+
+    def test_parse_tracker_crypto_flags_ignores_non_crypto_parameters(self, client):
+        """Non crypto flags are ignored when parsing tracker announce query."""
+        tracker_url = (
+            "http://tracker.example.com/announce?peer_id=test&downloaded=100"
+        )
+
+        flags = client._parse_tracker_crypto_flags(tracker_url)
+
+        assert flags == {}
+
+    def test_parse_tracker_crypto_flags_ignores_udp_url(self, client):
+        """Tracker crypto flags are not parsed for UDP announce URLs."""
+        tracker_url = (
+            "udp://tracker.example.com/announce?"
+            "supportcrypto=1&crypto_flags=requirecrypto=1"
+        )
+
+        flags = client._parse_tracker_crypto_flags(tracker_url)
+
+        assert flags == {}
+
+    def test_build_tracker_url_includes_crypto_flags(self, client):
+        """HTTP tracker URL includes parsed crypto flags."""
+        url = client._build_tracker_url(
+            "https://tracker.example.com/announce",
+            b"info_hash_20_bytes__",
+            b"peer_id_20_bytes____",
+            6881,
+            1000,
+            500,
+            12345,
+            "started",
+            crypto_flags={
+                "supportcrypto": "1",
+                "requirecrypto": "0",
+                "cryptoport": "7777",
+                "ignore_me": "nope",
+            },
+        )
+
+        assert "supportcrypto=1" in url
+        assert "requirecrypto=0" in url
+        assert "cryptoport=7777" in url
+        assert "ignore_me=nope" not in url
+        assert url.count("supportcrypto=1") == 1
+        assert url.count("requirecrypto=0") == 1
+        assert url.count("cryptoport=7777") == 1
 
     @pytest.mark.asyncio
     async def test_make_request_async_not_started(self, client):
@@ -696,6 +838,70 @@ class TestAsyncTrackerClient:
 
         assert session.backoff_delay == 300.0  # Capped at max
 
+    def test_handle_tracker_failure_transient_parser_error_no_quarantine(self, client):
+        """Parser-format failures should keep backoff only and avoid immediate quarantine."""
+        url = "http://tracker.example.com"
+        session = TrackerSession(url=url)
+        client.sessions[url] = session
+        client.config.network.retry_base_delay = 1.0
+
+        with patch("random.uniform", return_value=0.0):
+            client._handle_tracker_failure(
+                url,
+                failure_reason="Failed to parse tracker response: malformed packet",
+            )
+
+        assert session.failure_count == 1
+        assert session.quarantine_until == 0.0
+        assert session.failure_streak == 1
+        assert session.backoff_delay == 2.0
+
+    def test_handle_tracker_failure_medium_transport_failure_tier(self, client):
+        """Repeated transport failures should be quarantined after a short streak."""
+        url = "http://tracker.example.com"
+        session = TrackerSession(url=url)
+        client.sessions[url] = session
+        client.config.network.retry_base_delay = 1.0
+
+        with patch("random.uniform", return_value=0.0):
+            client._handle_tracker_failure(
+                url,
+                failure_reason="Connection refused while contacting tracker",
+            )
+        assert session.failure_streak == 1
+        assert session.quarantine_until == 0.0
+
+        with patch("random.uniform", return_value=0.0):
+            client._handle_tracker_failure(
+                url,
+                failure_reason="Connection refused while contacting tracker",
+            )
+
+        assert session.failure_streak == 2
+        assert session.quarantine_until > 0.0
+        assert (
+            "transport" in session.quarantine_reason.lower()
+            or "refused" in session.quarantine_reason.lower()
+        )
+
+    def test_handle_tracker_failure_critical_payload_tier(self, client):
+        """Critical payload failures should quarantine immediately."""
+        url = "http://tracker.example.com"
+        session = TrackerSession(url=url)
+        client.sessions[url] = session
+        client.config.network.retry_base_delay = 1.0
+
+        with patch("random.uniform", return_value=0.0):
+            client._handle_tracker_failure(
+                url,
+                failure_reason="Invalid tracker payload (html/xml payload)",
+            )
+
+        assert session.failure_streak == 1
+        assert session.quarantine_until > 0.0
+        assert session.quarantine_reason is not None
+        assert "html/xml payload" in session.quarantine_reason
+
     def test_parse_response_async_success(self, client):
         """Test parsing successful tracker response."""
         response_data = encode(
@@ -810,6 +1016,36 @@ class TestAsyncTrackerClient:
         assert response.peers[0].port == 6881
         assert response.peers[1].ip == "10.0.0.5"
         assert response.peers[1].port == 12345
+
+    def test_parse_response_async_attaches_tracker_encryption_preference(self, client):
+        """HTTP tracker crypto flags are attached to parsed peers."""
+        tracker_url = "http://tracker.example.com/announce?requirecrypto=1"
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": [{b"ip": b"198.51.100.10", b"port": 6881}],
+            },
+        )
+
+        response = client._parse_response_async(response_data, tracker_url=tracker_url)
+
+        assert len(response.peers) == 1
+        assert response.peers[0]._tracker_encryption_preference == "required"
+
+    def test_parse_response_async_ignores_udp_crypto_flags(self, client):
+        """UDP tracker URLs do not apply crypto preference hints."""
+        tracker_url = "udp://tracker.example.com/announce?requirecrypto=1"
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": [{b"ip": b"198.51.100.10", b"port": 6881}],
+            },
+        )
+
+        response = client._parse_response_async(response_data, tracker_url=tracker_url)
+
+        assert len(response.peers) == 1
+        assert response.peers[0]._tracker_encryption_preference is None
 
     def test_parse_response_async_parse_error(self, client):
         """Test parsing response with parse error."""
@@ -1166,6 +1402,72 @@ class TestTrackerClientExpanded:
         assert response["peers"][0]["ip"] == "192.168.1.100"
         assert response["peers"][0]["port"] == 6881
 
+    def test_parse_response_http_tracks_crypto_flags(self):
+        """Sync tracker parser attaches HTTP/S crypto hints to peers."""
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": [
+                    {
+                        b"ip": b"198.51.100.10",
+                        b"port": 6881,
+                    },
+                ],
+            },
+        )
+
+        response = self.client._parse_response(
+            response_data,
+            tracker_url="http://tracker.example.com/announce?requirecrypto=1",
+        )
+
+        assert len(response["peers"]) == 1
+        assert response["peers"][0]["_tracker_encryption_preference"] == "required"
+
+    def test_parse_response_https_tracks_crypto_flags(self):
+        """HTTPS tracker parser also attaches crypto hints to peers."""
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": [
+                    {
+                        b"ip": b"198.51.100.11",
+                        b"port": 6883,
+                    },
+                ],
+            },
+        )
+
+        response = self.client._parse_response(
+            response_data,
+            tracker_url="https://tracker.example.com/announce?supportcrypto=1",
+        )
+
+        assert len(response["peers"]) == 1
+        assert response["peers"][0]["_tracker_encryption_preference"] == "preferred"
+
+    def test_parse_response_udp_ignores_crypto_flags(self):
+        """Sync parser ignores HTTP-only crypto hints for non-HTTP tracker URLs."""
+        response_data = encode(
+            {
+                b"interval": 1800,
+                b"peers": [
+                    {
+                        b"ip": b"198.51.100.20",
+                        b"port": 6882,
+                    },
+                ],
+            },
+        )
+
+        response = self.client._parse_response(
+            response_data,
+            tracker_url="udp://tracker.example.com/announce?requirecrypto=1",
+        )
+
+        assert len(response["peers"]) == 1
+        assert response["peers"][0].get("_tracker_encryption_preference") is None
+
     def test_parse_response_optional_fields_decode(self):
         """Test parsing response with optional fields that need decoding."""
         response_data = encode(
@@ -1215,6 +1517,28 @@ class TestTrackerClientExpanded:
         # Should hex-encode bytes
         assert "info_hash=" in url
         assert "peer_id=" in url
+
+    def test_build_tracker_url_deduplicates_crypto_flags(self):
+        """Ensure crypto flags are appended once in sync tracker URLs."""
+        url = self.client._build_tracker_url(
+            "http://tracker.example.com/announce",
+            b"info_hash_20_bytes__",
+            b"peer_id_20_bytes____",
+            6881,
+            0,
+            0,
+            12345,
+            "started",
+            crypto_flags={
+                "supportcrypto": "1",
+                "requirecrypto": "0",
+                "cryptoport": "7777",
+            },
+        )
+
+        assert url.count("supportcrypto=1") == 1
+        assert url.count("requirecrypto=0") == 1
+        assert url.count("cryptoport=7777") == 1
 
     def test_make_request_unsupported_scheme(self):
         """Test _make_request with unsupported URL scheme."""

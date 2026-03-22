@@ -11,7 +11,7 @@ MagicMock
 scripts
 compatibility_tests/
 lint_outputs/
-
+locales
 # Pre-commit, pre-push, and benchmark outputs (CI force-adds when committing reports)
 .pre-commit-cache/
 .pre-commit-home/

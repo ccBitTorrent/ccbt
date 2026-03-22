@@ -420,6 +420,18 @@ class TestAsyncDHTClientGetPeers:
             assert client.routing_table.nodes[node.node_id].failed_queries > 0
 
     @pytest.mark.asyncio
+    async def test_get_peers_respects_swarm_discovery_disabled_callback(self):
+        """Discovery suppression callback short-circuits DHT peer lookup."""
+        client = AsyncDHTClient()
+        client.is_swarm_discovery_disabled = lambda _info_hash: True
+        info_hash = b"\x00" * 20
+
+        with patch.object(client, "_send_query", new_callable=AsyncMock) as mock_send:
+            peers = await client.get_peers(info_hash, max_peers=50)
+            assert peers == []
+            mock_send.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_get_peers_peer_callback_execution(self):
         """Test get_peers peer callback execution (lines 426-430)."""
         client = AsyncDHTClient()
@@ -512,6 +524,19 @@ class TestAsyncDHTClientAnnouncePeer:
             result = await client.announce_peer(info_hash, port)
             # Should mark node as bad and return 0 (function returns int, 0 indicates failure)
             assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_announce_peer_respects_swarm_discovery_disabled_callback(self):
+        """Discovery suppression callback short-circuits DHT announces."""
+        client = AsyncDHTClient()
+        client.is_swarm_discovery_disabled = lambda _info_hash: True
+        info_hash = b"\x00" * 20
+        client.tokens[info_hash] = DHTToken(b"token", info_hash)
+
+        with patch.object(client, "_send_query", new_callable=AsyncMock) as mock_send:
+            result = await client.announce_peer(info_hash, 6881)
+            assert result == 0
+            mock_send.assert_not_called()
 
 
 class TestAsyncDHTClientResponseHandling:
@@ -960,6 +985,50 @@ class TestAsyncDHTClientGetPeersPaths:
             # Token should be stored
             assert info_hash in client.tokens
             assert client.tokens[info_hash].token == token
+
+    @pytest.mark.asyncio
+    async def test_get_peers_empty_result_logs_lookup_diagnostics(self):
+        """Test empty get_peers result logs structured zero-peer diagnostics."""
+        client = AsyncDHTClient()
+        client.logger = MagicMock()
+
+        info_hash = b"\x00" * 20
+        client.routing_table.add_node(DHTNode(b"\x01" * 20, "127.0.0.1", 6881))
+
+        response = {
+            b"y": b"r",
+            b"r": {},
+        }
+
+        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+            peers = await client.get_peers(info_hash, max_peers=50)
+
+        assert peers == []
+        assert client.last_lookup_state == "empty_peer_set"
+        assert client._last_query_metrics["empty_result_reason"] == "empty_peer_set"
+        assert any(
+            "returned 0 peers after querying" in str(call.args[0])
+            for call in client.logger.info.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_peers_empty_routing_table_tracks_diagnostics(self):
+        """Test empty routing-table lookups emit structured zero-node diagnostics."""
+        client = AsyncDHTClient()
+        client.logger = MagicMock()
+
+        info_hash = b"\x11" * 20
+
+        peers = await client.get_peers(info_hash, max_peers=50)
+
+        assert peers == []
+        assert client.last_lookup_state == "empty_routing_table"
+        assert client._last_query_metrics["empty_result_reason"] == "empty_routing_table"
+        assert client.last_zero_node_lookup_at > 0
+        assert any(
+            "cannot start because the routing table is empty" in str(call.args[0])
+            for call in client.logger.warning.call_args_list
+        )
 
 
 class TestAsyncDHTClientSendQuery:

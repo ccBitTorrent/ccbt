@@ -72,7 +72,12 @@ from ccbt.models import (
     StrategyConfig,
 )
 from ccbt.utils.exceptions import ConfigurationError
-from ccbt.utils.logging_config import get_logger, setup_logging
+from ccbt.utils.logging_config import (
+    get_cli_session_log_level_override,
+    get_logger,
+    set_cli_session_log_level_override,
+    setup_logging,
+)
 
 # Platform detection
 IS_WINDOWS = sys.platform == "win32"
@@ -128,15 +133,100 @@ class ConfigManager:
 
     def _normalize_loaded_config_data(self, config_data: dict[str, Any]) -> None:
         """Normalize file-derived config in place (comma-lists, proxy password)."""
+        security = config_data.get("security")
+        if isinstance(security, dict):
+
+            def _normalize_encryption_mode_alias(value: Any) -> str:
+                if value is None:
+                    return "preferred"
+                normalized = str(value).strip().lower().replace("-", "_")
+                normalized = normalized.replace(" ", "_")
+                if normalized in {
+                    "disabled",
+                    "off",
+                    "false",
+                    "0",
+                    "none",
+                    "plaintext_only",
+                }:
+                    return "disabled"
+                if normalized in {
+                    "preferred",
+                    "prefer",
+                    "optional",
+                    "enable",
+                    "enabled",
+                    "true",
+                    "yes",
+                    "on",
+                    "1",
+                    "allow_plaintext",
+                    "prefer_encrypted",
+                    "prefer_plaintext",
+                }:
+                    # Legacy and human-friendly aliases are normalized to preferred.
+                    return "preferred"
+                if normalized in {
+                    "required",
+                    "mandatory",
+                    "force",
+                    "require_encrypted",
+                }:
+                    return "required"
+                return normalized
+
+            legacy_pref = security.pop("encryption_preference", None)
+            if legacy_pref is not None and security.get("encryption_mode") is None:
+                pref_key = (
+                    str(legacy_pref).lower().strip().replace(" ", "_").replace("-", "_")
+                )
+                pref_to_mode = {
+                    "allow_plaintext": "preferred",
+                    "prefer_encrypted": "preferred",
+                    "require_encrypted": "required",
+                    "disabled": "disabled",
+                }
+                security["encryption_mode"] = pref_to_mode.get(pref_key, "preferred")
+            elif isinstance(security.get("encryption_mode"), str):
+                security["encryption_mode"] = _normalize_encryption_mode_alias(
+                    security["encryption_mode"]
+                )
+
+            if "encryption_mode" not in security and "enable_encryption" in security:
+                # No explicit mode means keep preferred by default.
+                security["encryption_mode"] = "preferred"
+            network = config_data.get("network")
+            if (
+                isinstance(network, dict)
+                and "enable_encryption" in network
+                and "enable_encryption" not in security
+            ):
+                security["enable_encryption"] = bool(network["enable_encryption"])
+
         if (
             "security" in config_data
             and "encryption_allowed_ciphers" in config_data.get("security", {})
         ):
             value = config_data["security"]["encryption_allowed_ciphers"]
-            if isinstance(value, str) and "," in value:
-                config_data["security"]["encryption_allowed_ciphers"] = [
-                    item.strip() for item in value.split(",") if item.strip()
-                ]
+            normalized: list[str] = []
+            if isinstance(value, str):
+                raw_items = value.split(",")
+            elif isinstance(value, list):
+                raw_items = []
+                for item in value:
+                    if isinstance(item, str):
+                        raw_items.extend(item.split(","))
+                    else:
+                        raw_items.append(str(item))
+            else:
+                raw_items = [str(value)]
+
+            for item in raw_items:
+                token = str(item).strip()
+                if token:
+                    normalized.append(token)
+
+            config_data["security"]["encryption_allowed_ciphers"] = normalized
 
         if "proxy" in config_data and "proxy_bypass_list" in config_data.get(
             "proxy", {}
@@ -422,6 +512,16 @@ class ConfigManager:
             "CCBT_DHT_AGGRESSIVE_ALPHA": "discovery.dht_aggressive_alpha",
             "CCBT_DHT_AGGRESSIVE_K": "discovery.dht_aggressive_k",
             "CCBT_DHT_AGGRESSIVE_MAX_DEPTH": "discovery.dht_aggressive_max_depth",
+            "CCBT_BOOTSTRAP_SEED_REPLAY_LIMIT": "discovery.bootstrap_seed_replay_limit",
+            "CCBT_DHT_BOOTSTRAP_RETRIES_MAX": "discovery.dht_bootstrap_retries_max",
+            "CCBT_BOOTSTRAP_RETRY_MEMO_TTL_S": "discovery.bootstrap_retry_memo_ttl_s",
+            "CCBT_DHT_BOOTSTRAP_MEMO_TTL_S": "discovery.dht_bootstrap_memo_ttl_s",
+            "CCBT_DHT_ZERO_STATE_REPROBE_WAIT_S": "discovery.dht_zero_state_reprobe_wait_s",
+            "CCBT_DHT_EMPTY_STATE_BACKOFF_FACTOR": "discovery.dht_empty_state_backoff_factor",
+            "CCBT_DHT_REBOOTSTRAP_TIMEOUT_S": "discovery.dht_rebootstrap_timeout_s",
+            "CCBT_DHT_BOOTSTRAP_TIMEOUT_S": "discovery.dht_bootstrap_timeout_s",
+            "CCBT_LOW_PEER_THRESHOLD": "discovery.low_peer_threshold",
+            "CCBT_LOW_PEER_SUPPRESSION_WINDOW_S": "discovery.low_peer_suppression_window_s",
             # XET chunk discovery
             "CCBT_XET_CHUNK_QUERY_BATCH_SIZE": "discovery.xet_chunk_query_batch_size",
             "CCBT_XET_CHUNK_QUERY_MAX_CONCURRENT": "discovery.xet_chunk_query_max_concurrent",
@@ -449,6 +549,34 @@ class ConfigManager:
             "CCBT_RATE_LIMIT_ENABLED": "security.rate_limit_enabled",
             "CCBT_MAX_CONNECTIONS_PER_PEER": "security.max_connections_per_peer",
             "CCBT_PEER_QUALITY_THRESHOLD": "security.peer_quality_threshold",
+            "CCBT_AUTHENTICATED_SWARMS_MODE": "security.authenticated_swarms.mode",
+            "CCBT_AUTHENTICATED_SWARMS_DISCOVERY_MODE": (
+                "security.authenticated_swarms.discovery_mode"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_DISCOVERY_STRICT_FOR_STRICT_MODE": (
+                "security.authenticated_swarms.discovery_strict_for_strict_mode"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_STRICT_LTEP_TIMEOUT_S": (
+                "security.authenticated_swarms.strict_ltep_handshake_timeout_s"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_TRUSTED_IDS": (
+                "security.authenticated_swarms.trusted_swarm_ids"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_FAIL_CLOSED_ON_PARSE_ERRORS": (
+                "security.authenticated_swarms.fail_closed_on_parse_errors"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_TRUST_STORE_PATH": (
+                "security.authenticated_swarms.trust_store_path"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_TRUST_STORE_REFRESH_INTERVAL_S": (
+                "security.authenticated_swarms.trust_store_refresh_interval_s"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_REVOCATION_PROFILE_PATH": (
+                "security.authenticated_swarms.revocation_profile_path"
+            ),
+            "CCBT_AUTHENTICATED_SWARMS_REVOCATION_REFRESH_INTERVAL_S": (
+                "security.authenticated_swarms.revocation_refresh_interval_s"
+            ),
             # IP Filter
             "CCBT_ENABLE_IP_FILTER": "security.ip_filter.enable_ip_filter",
             "CCBT_FILTER_MODE": "security.ip_filter.filter_mode",
@@ -855,7 +983,11 @@ class ConfigManager:
 
     def _setup_logging(self) -> None:
         """Set up logging configuration."""
-        setup_logging(self.config.observability)
+        override = get_cli_session_log_level_override()
+        setup_logging(
+            self.config.observability,
+            effective_log_level=override,
+        )
 
     async def start_hot_reload(self) -> None:
         """Start hot-reload monitoring."""
@@ -1200,6 +1332,7 @@ def reset_config() -> None:
     """
     global _config_manager
     _config_manager = None
+    set_cli_session_log_level_override(None)
 
 
 # Backward compatibility functions

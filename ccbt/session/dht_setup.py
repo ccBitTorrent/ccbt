@@ -60,7 +60,14 @@ class DHTDiscoverySetup:
             "rebootstrap_failure_count": 0,
             "rebootstrap_last_outcome": "not_attempted",
             "rebootstrap_last_reason": "",
+            "rebootstrap_last_attempted_nodes": 0,
+            "rebootstrap_last_before_nodes": 0,
+            "rebootstrap_last_after_nodes": 0,
+            "rebootstrap_last_seed_rotation": 0,
             "rebootstrap_last_source": "",
+            "rebootstrap_reason_counts": {},
+            "rebootstrap_source_counts": {},
+            "routing_table_size": 0,
             "rebootstrap_last_timestamp": 0.0,
             "rebootstrap_health_state": "unknown",
             "rebootstrap_consecutive_failures": 0,
@@ -120,12 +127,21 @@ class DHTDiscoverySetup:
         )
         self._bootstrap_seed_replay_limit = _safe_int(
             "bootstrap_seed_replay_limit",
-            6,
+            discovery_defaults["bootstrap_seed_replay_limit"],
+        )
+        self._dht_rebootstrap_timeout_s = _safe_float(
+            "dht_rebootstrap_timeout_s",
+            discovery_defaults["dht_rebootstrap_timeout_s"],
+        )
+        self._dht_bootstrap_timeout_s = _safe_float(
+            "dht_bootstrap_timeout_s",
+            discovery_defaults["dht_bootstrap_timeout_s"],
         )
         self._dht_bootstrap_retries_max = _safe_int(
             "dht_bootstrap_retries_max",
             discovery_defaults["dht_bootstrap_retries_max"],
         )
+        self._bootstrap_seed_replay_offset = 0
         self._dht_empty_state_backoff_factor = _safe_float(
             "dht_empty_state_backoff_factor",
             discovery_defaults["dht_empty_state_backoff_factor"],
@@ -200,6 +216,9 @@ class DHTDiscoverySetup:
             "rebootstrap_last_outcome": str(
                 self._dht_query_metrics.get("rebootstrap_last_outcome", "not_attempted")
             ),
+            "rebootstrap_last_reason": str(
+                self._dht_query_metrics.get("rebootstrap_last_reason", "")
+            ),
             "bootstrap_zero_state_recovery_capped": bool(
                 self._dht_query_metrics.get(
                     "bootstrap_zero_state_recovery_capped", False
@@ -221,6 +240,27 @@ class DHTDiscoverySetup:
             ),
             "rebootstrap_consecutive_failures": int(
                 self._dht_query_metrics.get("rebootstrap_consecutive_failures", 0)
+            ),
+            "rebootstrap_last_before_nodes": int(
+                self._dht_query_metrics.get("rebootstrap_last_before_nodes", 0)
+            ),
+            "rebootstrap_last_after_nodes": int(
+                self._dht_query_metrics.get("rebootstrap_last_after_nodes", 0)
+            ),
+            "rebootstrap_last_attempted_nodes": int(
+                self._dht_query_metrics.get("rebootstrap_last_attempted_nodes", 0)
+            ),
+            "rebootstrap_last_seed_rotation": int(
+                self._dht_query_metrics.get("rebootstrap_last_seed_rotation", 0)
+            ),
+            "routing_table_size": int(
+                self._dht_query_metrics.get("routing_table_size", 0)
+            ),
+            "rebootstrap_reason_counts": dict(
+                self._dht_query_metrics.get("rebootstrap_reason_counts", {})
+            ),
+            "rebootstrap_source_counts": dict(
+                self._dht_query_metrics.get("rebootstrap_source_counts", {})
             ),
         }
 
@@ -381,6 +421,16 @@ class DHTDiscoverySetup:
                 seen.add(pair)
                 candidates.append(pair)
 
+        candidates = candidates[: self._bootstrap_seed_replay_limit]
+        if not candidates:
+            return candidates
+
+        rotation = (
+            self._bootstrap_seed_replay_offset % len(candidates) if candidates else 0
+        )
+        if rotation:
+            candidates = candidates[rotation:] + candidates[:rotation]
+
         peer_manager = getattr(
             getattr(self.session, "download_manager", None),
             "peer_manager",
@@ -417,7 +467,15 @@ class DHTDiscoverySetup:
                 seen.add(pair)
                 candidates.append(pair)
 
-        return candidates[: self._bootstrap_seed_replay_limit]
+        return candidates
+
+    def _advance_seed_replay_offset(self, candidate_count: int) -> None:
+        """Advance bootstrap seed ordering for next attempt after repeated failures."""
+        if candidate_count <= 1:
+            return
+        self._bootstrap_seed_replay_offset = (
+            self._bootstrap_seed_replay_offset + 1
+        ) % candidate_count
 
     def _record_bootstrap_recovery_attempt(
         self,
@@ -442,6 +500,7 @@ class DHTDiscoverySetup:
             "timeout": timeout,
             "min_nodes": min_nodes,
             "success": success,
+            "seed_rotation": self._bootstrap_seed_replay_offset,
         }
         self._bootstrap_recovery_attempts.append(entry)
         if len(self._bootstrap_recovery_attempts) > 20:
@@ -453,6 +512,36 @@ class DHTDiscoverySetup:
         self._dht_query_metrics["bootstrap_recovery_attempts"] = len(
             self._bootstrap_recovery_attempts
         )
+        self._dht_query_metrics["rebootstrap_last_reason"] = reason
+        self._dht_query_metrics["rebootstrap_last_source"] = source
+        self._dht_query_metrics["rebootstrap_last_attempted_nodes"] = attempts
+        self._dht_query_metrics["rebootstrap_last_before_nodes"] = before_nodes
+        self._dht_query_metrics["rebootstrap_last_after_nodes"] = after_nodes
+        self._dht_query_metrics["rebootstrap_last_seed_rotation"] = (
+            self._bootstrap_seed_replay_offset
+        )
+        self._dht_query_metrics["routing_table_size"] = after_nodes
+        reason_counts = self._dht_query_metrics.setdefault(
+            "rebootstrap_reason_counts", {}
+        )
+        source_counts = self._dht_query_metrics.setdefault(
+            "rebootstrap_source_counts", {}
+        )
+        reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
+        source_counts[source] = int(source_counts.get(source, 0)) + 1
+
+        debug_logger = getattr(self.logger, "debug", None)
+        if callable(debug_logger):
+            debug_logger(
+                "DHT bootstrap recovery attempt logged: source=%s reason=%s "
+                "before=%d after=%d attempted=%d success=%s rotation=%s",
+                source,
+                reason,
+                before_nodes,
+                after_nodes,
+                success,
+                self._bootstrap_seed_replay_offset,
+            )
         if after_nodes < min_nodes:
             with contextlib.suppress(Exception):
                 self._dht_query_metrics["bootstrap_zero_nodes_last_reason"] = reason
@@ -477,6 +566,7 @@ class DHTDiscoverySetup:
         force_bootstrap: bool = False,
     ) -> bool:
         """Try bootstrap replay paths and alternate seed fallback sources."""
+        used_bootstrap_probe = False
         before_nodes = len(
             getattr(getattr(dht_client, "routing_table", None), "nodes", [])
         )
@@ -489,6 +579,7 @@ class DHTDiscoverySetup:
         bootstrap_attempts = 0
 
         if hasattr(dht_client, "rebootstrap"):
+            used_bootstrap_probe = True
             try:
                 fallback_result = dht_client.rebootstrap()
                 if asyncio.iscoroutine(fallback_result):
@@ -551,6 +642,7 @@ class DHTDiscoverySetup:
                 min_nodes=min_nodes,
             )
         elif hasattr(dht_client, "wait_for_bootstrap"):
+            used_bootstrap_probe = True
             try:
                 bootstrap_result = dht_client.wait_for_bootstrap(timeout=timeout)
                 if asyncio.iscoroutine(bootstrap_result):
@@ -678,13 +770,17 @@ class DHTDiscoverySetup:
                 success=True,
                 min_nodes=min_nodes,
             )
+            self._bootstrap_seed_replay_offset = 0
             return True
 
         after_nodes = len(
             getattr(getattr(dht_client, "routing_table", None), "nodes", [])
         )
+        seed_result_reason = (
+            ":seed_fallback" if used_bootstrap_probe else ":seed_replay"
+        )
         self._record_bootstrap_recovery_attempt(
-            reason=f"{reason}:seed_fallback",
+            reason=f"{reason}{seed_result_reason}",
             source="seed_replay",
             before_nodes=start_nodes,
             after_nodes=after_nodes,
@@ -695,9 +791,10 @@ class DHTDiscoverySetup:
         )
         self._record_rebootstrap_outcome(
             success=False,
-            reason=f"{reason}:seed_fallback",
+            reason=f"{reason}{seed_result_reason}",
             source="seed_replay",
         )
+        self._advance_seed_replay_offset(len(seeds))
         return False
 
     async def _maybe_rebootstrap(self, dht_client: Any, reason: str) -> bool:
@@ -725,7 +822,7 @@ class DHTDiscoverySetup:
             success = await self._run_bootstrap_with_fallback(
                 dht_client,
                 reason=f"{reason}:periodic",
-                timeout=45.0,
+                timeout=self._dht_rebootstrap_timeout_s,
                 min_nodes=1,
                 force_bootstrap=True,
             )
@@ -764,7 +861,7 @@ class DHTDiscoverySetup:
             bootstrap_succeeded = await self._run_bootstrap_with_fallback(
                 dht_client,
                 reason=reason,
-                timeout=timeout,
+                timeout=timeout or self._dht_bootstrap_timeout_s,
                 min_nodes=min_nodes,
             )
         except Exception as bootstrap_error:
@@ -2248,6 +2345,13 @@ class DHTDiscoverySetup:
                 ):
                     wait_time = tracker_peers_connecting_until - time_module.time()
                     swarm_state = await self._get_swarm_recovery_state()
+                    tracker_window_low_state = (
+                        int(swarm_state.get("active_peers", 0) or 0)
+                        <= max(1, self._low_peer_threshold)
+                        and int(swarm_state.get("requestable_peers", 0) or 0) == 0
+                        and int(swarm_state.get("productive_peers", 0) or 0) == 0
+                        and int(swarm_state.get("peers_with_piece_info", 0) or 0) == 0
+                    )
                     fast_recovery_fn = getattr(
                         self.session,
                         "swarm_requires_fast_recovery",
@@ -2261,11 +2365,35 @@ class DHTDiscoverySetup:
                         if fast_recovery_fn(swarm_state)
                         else min(wait_time, 5.0)
                     )
+                    if tracker_window_low_state:
+                        capped_wait = min(capped_wait, 0.5)
                     self.logger.debug(
                         "⏸️ DHT DISCOVERY: Tracker peers are currently being connected. Waiting %.1fs before starting DHT query to allow tracker connections to complete...",
                         capped_wait,
                     )
                     await asyncio.sleep(capped_wait)
+                    if tracker_window_low_state:
+                        with contextlib.suppress(Exception):
+                            latest_state = await self._get_swarm_recovery_state()
+                            if (
+                                int(latest_state.get("active_peers", 0) or 0)
+                                <= max(1, self._low_peer_threshold)
+                                and int(latest_state.get("requestable_peers", 0) or 0)
+                                == 0
+                                and int(latest_state.get("productive_peers", 0) or 0)
+                                == 0
+                                and int(
+                                    latest_state.get("peers_with_piece_info", 0) or 0
+                                )
+                                == 0
+                            ):
+                                self.logger.debug(
+                                    "⏸️ DHT DISCOVERY: Tracker progress remains low after window (%.1fs); clearing tracker delay so DHT can continue.",
+                                    min(wait_time, 1.0),
+                                )
+                                self.session.__dict__["_tracker_peers_connecting_until"] = (
+                                    time_module.time()
+                                )
 
                 # Note: Wait until we have minimum peers before starting DHT
                 # This prevents aggressive DHT queries that can cause blacklisting
@@ -2936,6 +3064,40 @@ class DHTDiscoverySetup:
                             self.session.info.name,
                             query_duration,
                         )
+                        peer_manager = getattr(
+                            self.session.download_manager, "peer_manager", None
+                        )
+                        active_connections = 0
+                        if peer_manager and hasattr(peer_manager, "connections"):
+                            with contextlib.suppress(Exception):
+                                active_connections = len(
+                                    [
+                                        c
+                                        for c in peer_manager.connections.values()
+                                        if c.is_active()
+                                    ]
+                                )
+                        if active_connections == 0:
+                            self.logger.warning(
+                                "DHT returned %d peers but no active connections were established yet for %s (query took %.2fs, attempting fallback).",
+                                peer_count,
+                                self.session.info.name,
+                                query_duration,
+                            )
+                            with contextlib.suppress(Exception):
+                                from ccbt.session.peers import PeerConnectionHelper
+
+                                helper = PeerConnectionHelper(self.session)
+                                peer_list = [
+                                    {"ip": ip, "port": port, "peer_source": "dht"}
+                                    for ip, port in peers
+                                ]
+                                await helper.connect_peers_to_download(peer_list)
+                                self.logger.debug(
+                                    "Fallback connection attempted for %d peers from DHT for %s",
+                                    len(peer_list),
+                                    self.session.info.name,
+                                )
                     else:
                         # Empty result is normal - callbacks handle peer discovery
                         self.logger.debug(
@@ -2960,34 +3122,17 @@ class DHTDiscoverySetup:
                                 if hasattr(peer_manager, "connections")
                                 else 0
                             )
-                            if active_connections == 0 and peer_count > 0:
-                                self.logger.warning(
-                                    "DHT found %d peers but none connected via callback, attempting fallback connection for %s",
-                                    peer_count,
+                            if active_connections == 0:
+                                self.logger.debug(
+                                    "DHT returned no peers for %s but no active callback connections were established.",
                                     self.session.info.name,
                                 )
-                                # Fallback: try to connect peers directly
-                                try:
-                                    from ccbt.session.peers import PeerConnectionHelper
-
-                                    helper = PeerConnectionHelper(self.session)
-                                    peer_list = [
-                                        {"ip": ip, "port": port, "peer_source": "dht"}
-                                        for ip, port in peers
-                                    ]
-                                    await helper.connect_peers_to_download(peer_list)
-                                    self.logger.debug(
-                                        "Fallback connection attempted for %d peers from DHT for %s",
-                                        len(peer_list),
-                                        self.session.info.name,
-                                    )
-                                except Exception as fallback_error:
-                                    self.logger.warning(
-                                        "Fallback connection failed for %s: %s",
-                                        self.session.info.name,
-                                        fallback_error,
-                                        exc_info=True,
-                                    )
+                            else:
+                                self.logger.debug(
+                                    "DHT returned no peers for %s but active callback connections already exist (%d).",
+                                    self.session.info.name,
+                                    active_connections,
+                                )
 
                     # For magnet links with no peers, try to get nodes from routing table
                     # and attempt metadata exchange with them (they might be peers too)
@@ -3134,8 +3279,12 @@ class DHTDiscoverySetup:
                             try:
                                 active_peers = peer_manager.get_active_peers()
                                 has_active_peers = len(active_peers) > 0
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                self.logger.debug(
+                                    "DHT setup: failed to query active peers for %s: %s",
+                                    self.session.info.name,
+                                    exc,
+                                )
 
                     if not has_active_peers:
                         consecutive_failures += 1

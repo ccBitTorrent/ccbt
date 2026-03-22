@@ -6,7 +6,9 @@
 
 ## Executive Summary
 
-This report documents comprehensive performance benchmarks for the BEP 3 (MSE/PE) encryption implementation in ccBitTorrent. All acceptance criteria have been met:
+This report documents performance benchmarks for **MSE/PE (BEP 3) helper code paths** (handshake timing, stream ciphers). MSE/PE provides **peer traffic obfuscation** for ecosystem compatibility; these numbers do **not** imply MITM resistance or peer authentication. Tracker TLS (`https://`), UDP trackers (no TLS), and experimental peer TLS (BEP 10 extension) are separate surfaces.
+
+All acceptance criteria below have been met for the measured scenarios:
 
 - ✅ **Handshake Latency**: < 500ms (actual: 34-90ms for 768-1024 bit DH)
 - ✅ **Throughput Reduction**: < 10% for AES, acceptable for RC4 compatibility

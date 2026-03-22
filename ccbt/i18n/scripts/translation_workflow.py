@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ccbt.i18n.scripts import update_translations as update_translations_module
+
 
 def run_script(script_name: str, *args: str) -> bool:
     """Run a Python script and return success status."""
@@ -80,7 +82,22 @@ def workflow_update() -> bool:
     print("STEP 2: Update translation files")
     print("=" * 70)
 
-    return run_script("update_translations.py")
+    locales_root = Path(__file__).resolve().parent.parent / "locales"
+    pot_path = locales_root / "en" / "LC_MESSAGES" / "ccbt.pot"
+    try:
+        updated = update_translations_module.update_translations(
+            pot_path=pot_path,
+            locales_root=locales_root,
+        )
+    except Exception as exc:
+        print(f"✗ Update translations failed: {exc}")
+        return False
+
+    if not updated:
+        print("No translation files were updated.")
+    else:
+        print(f"Updated locales: {', '.join(sorted(updated))}")
+    return True
 
 
 def workflow_check() -> bool:

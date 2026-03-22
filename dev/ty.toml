@@ -8,6 +8,7 @@ exclude = [
     ".benchmarks/",
     ".ccbt/",
     ".cursor/",
+    "**/_tmp_*.py",
     "tests/",
     "benchmarks/",
     "ccbt/interface/",

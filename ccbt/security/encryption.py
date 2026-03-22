@@ -1,13 +1,11 @@
-"""Encryption Manager for ccBitTorrent.
+"""Encryption helpers and policy types for ccBitTorrent.
 
-from __future__ import annotations
+MSE/PE (BEP 3) support is for **traffic obfuscation and client interop** on
+peer connections, not for cryptographic authentication of peers. Prefer
+`MSEHandshake` at the connection layer for wire handshakes; placeholder
+handshake helpers here must not ship bytes on the wire in production paths.
 
-Provides encryption support including:
-- MSE/PE encryption (BEP 3)
-- Protocol encryption
-- Key exchange
-- Encrypted handshake
-- Cipher suites: RC4, AES, ChaCha20
+Includes cipher-suite utilities (RC4, AES, ChaCha20) where applicable.
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ Covers previously untested code paths and edge cases.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,6 +16,9 @@ from ccbt.security.mse_handshake import (
     MSEHandshakeResult,
     MSEHandshakeType,
 )
+from ccbt.security.ciphers.aes import AESCipher
+from ccbt.security.ciphers.chacha20 import ChaCha20Cipher
+from ccbt.security.ciphers.rc4 import RC4Cipher
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 
@@ -87,7 +90,7 @@ class TestMSEHandshakeInitiationCoverage:
 
         # Create valid SKEYE message instead of RKEYE
         payload = b"peer_key_data"
-        wrong_message = handshake._encode_message(MSEHandshakeType.SKEYE, payload)
+        wrong_message = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, payload)
 
         async def mock_readexactly(n):
             if n == 4:
@@ -146,7 +149,7 @@ class TestMSEHandshakeInitiationCoverage:
 
         # Mock successful RKEYE, but invalid CRYPTO
         rkeye_payload = b"peer_key" * 10  # 80 bytes
-        rkeye_msg = handshake._encode_message(MSEHandshakeType.RKEYE, rkeye_payload)
+        rkeye_msg = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, rkeye_payload)
 
         call_count = 0
 
@@ -178,8 +181,8 @@ class TestMSEHandshakeInitiationCoverage:
 
         # Mock RKEYE success, but wrong message type for CRYPTO
         rkeye_payload = b"peer_key" * 10
-        rkeye_msg = handshake._encode_message(MSEHandshakeType.RKEYE, rkeye_payload)
-        wrong_crypto = handshake._encode_message(MSEHandshakeType.SKEYE, b"\x01")
+        rkeye_msg = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, rkeye_payload)
+        wrong_crypto = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, b"\x01")
 
         call_count = 0
 
@@ -212,7 +215,7 @@ class TestMSEHandshakeInitiationCoverage:
 
         # Mock full handshake but peer selects AES (not allowed)
         rkeye_payload = b"peer_key" * 10
-        rkeye_msg = handshake._encode_message(MSEHandshakeType.RKEYE, rkeye_payload)
+        rkeye_msg = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, rkeye_payload)
         crypto_msg = handshake._encode_crypto_message(CipherType.AES)  # Not allowed
 
         call_count = 0
@@ -297,7 +300,7 @@ class TestMSEHandshakeReceiverCoverage:
 
         # Create RKEYE message instead of SKEYE
         payload = b"peer_key_data"
-        wrong_message = handshake._encode_message(MSEHandshakeType.RKEYE, payload)
+        wrong_message = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, payload)
 
         async def mock_readexactly(n):
             if n == 4:
@@ -322,7 +325,7 @@ class TestMSEHandshakeReceiverCoverage:
 
         # Mock successful SKEYE, but CRYPTO fails
         skeye_payload = b"peer_key" * 10
-        skeye_msg = handshake._encode_message(MSEHandshakeType.SKEYE, skeye_payload)
+        skeye_msg = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, skeye_payload)
 
         call_count = 0
 
@@ -353,7 +356,7 @@ class TestMSEHandshakeReceiverCoverage:
         handshake = MSEHandshake()
 
         skeye_payload = b"peer_key" * 10
-        skeye_msg = handshake._encode_message(MSEHandshakeType.SKEYE, skeye_payload)
+        skeye_msg = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, skeye_payload)
 
         call_count = 0
 
@@ -384,8 +387,8 @@ class TestMSEHandshakeReceiverCoverage:
         handshake = MSEHandshake()
 
         skeye_payload = b"peer_key" * 10
-        skeye_msg = handshake._encode_message(MSEHandshakeType.SKEYE, skeye_payload)
-        wrong_crypto = handshake._encode_message(MSEHandshakeType.RKEYE, b"\x01")
+        skeye_msg = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, skeye_payload)
+        wrong_crypto = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, b"\x01")
 
         call_count = 0
 
@@ -417,7 +420,7 @@ class TestMSEHandshakeReceiverCoverage:
         handshake = MSEHandshake(allowed_ciphers=[CipherType.RC4])
 
         skeye_payload = b"peer_key" * 10
-        skeye_msg = handshake._encode_message(MSEHandshakeType.SKEYE, skeye_payload)
+        skeye_msg = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, skeye_payload)
         crypto_msg = handshake._encode_crypto_message(CipherType.AES)  # Not allowed
 
         call_count = 0
@@ -454,7 +457,7 @@ class TestMSEHandshakeDecodeCoverage:
         # Length = 1 (just the type byte)
         data = b"\x00\x00\x00\x01\x02"  # Length 1, type SKEYE
 
-        decoded = handshake._decode_message(data)
+        decoded = handshake._parse_transcript_message(data)
         assert decoded is not None
         msg_type, payload = decoded
         assert msg_type == MSEHandshakeType.SKEYE
@@ -471,7 +474,7 @@ class TestMSEHandshakeReadMessageCoverage:
         mock_reader = AsyncMock()
         mock_reader.readexactly = AsyncMock(side_effect=ConnectionError("Connection lost"))
 
-        result = await handshake._read_message(mock_reader)
+        result = await handshake._read_transcript_message(mock_reader)
         assert result is None
 
 
@@ -549,6 +552,41 @@ class TestMSEHandshakeCreateCipherCoverage:
         assert cipher is not None
 
 
+class TestMSEHandshakeCipherPairCoverage:
+    """Tests for MSE cipher instances and negotiated stream vectors."""
+
+    def test_create_cipher_pair_returns_separate_instances(self):
+        """_create_cipher_pair should return distinct objects for each direction."""
+        handshake = MSEHandshake()
+        key = b"stream_direction_key_!!"
+
+        inbound, outbound = handshake._create_cipher_pair(CipherType.CHACHA20, key)
+
+        assert inbound is not outbound
+        assert inbound.__class__ is outbound.__class__
+
+    def test_create_aes_cipher_uses_deterministic_iv(self):
+        """AES ciphers should use deterministic IV derived from negotiated key material."""
+        handshake = MSEHandshake()
+        key = b"16_bytes_key_!!!"
+
+        cipher = handshake._create_cipher(CipherType.AES, key)
+
+        assert isinstance(cipher, AESCipher)
+        assert cipher.iv == handshake._derive_stream_vector(key[:16], 16)
+
+    def test_create_chacha20_cipher_uses_deterministic_nonce(self):
+        """ChaCha20 ciphers should use deterministic nonce derived from negotiated key material."""
+        handshake = MSEHandshake()
+        key = bytes(range(40))
+        expected_key = key[:32]
+
+        cipher = handshake._create_cipher(CipherType.CHACHA20, key)
+
+        assert isinstance(cipher, ChaCha20Cipher)
+        assert cipher.nonce == handshake._derive_stream_vector(expected_key, 16)
+
+
 class TestMSEHandshakePEMethodsCoverage:
     """Tests for PE-specific methods."""
 
@@ -615,20 +653,10 @@ class TestMSEHandshakeDetectCoverage:
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_valid_mse_type(self):
-        """Test detect with valid MSE message type."""
+        """Test detect with valid MSE lead length."""
         mock_reader = AsyncMock()
-        call_count = 0
 
-        async def mock_read(n):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return b"\x00\x00\x00\x60"  # Length 96 (reasonable MSE size)
-            if call_count == 2:
-                return b"\x02"  # SKEYE type
-            return b""
-
-        mock_reader.read = AsyncMock(side_effect=mock_read)
+        mock_reader.read = AsyncMock(return_value=b"\x00\x00\x00\x60")
 
         is_pe, first_bytes = await MSEHandshake.detect_encrypted_handshake(
             mock_reader, timeout=0.1
@@ -638,40 +666,24 @@ class TestMSEHandshakeDetectCoverage:
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_invalid_mse_type(self):
-        """Test detect with invalid MSE message type."""
+        """Test detect remains PE for valid MSE lead lengths."""
         mock_reader = AsyncMock()
-        call_count = 0
-
-        async def mock_read(n):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return b"\x00\x00\x00\x60"  # Length 96
-            if call_count == 2:
-                return b"\x01"  # Invalid type (not 0x02, 0x03, 0x04)
-            return b""
-
-        mock_reader.read = AsyncMock(side_effect=mock_read)
+        mock_reader.read = AsyncMock(return_value=b"\x00\x00\x00\x60")
 
         is_pe, first_bytes = await MSEHandshake.detect_encrypted_handshake(
             mock_reader, timeout=0.1
         )
 
-        assert is_pe is False
+        assert is_pe is True
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_timeout_reading_type(self):
-        """Test detect with timeout while reading type byte."""
+        """Test detect does not read beyond the initial length."""
         mock_reader = AsyncMock()
-        call_count = 0
-
         async def mock_read(n):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return b"\x00\x00\x00\x60"  # Length 96
-            # Timeout on second read
-            raise asyncio.TimeoutError()
+            if n == 4:
+                return b"\x00\x00\x00\x60"
+            return b""
 
         mock_reader.read = AsyncMock(side_effect=mock_read)
 
@@ -684,14 +696,10 @@ class TestMSEHandshakeDetectCoverage:
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_connection_error_reading_type(self):
-        """Test detect with ConnectionError while reading type byte."""
+        """Test detect ignores secondary stream failures by deciding only on length."""
         mock_reader = AsyncMock()
-        call_count = 0
-
         async def mock_read(n):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
+            if n == 4:
                 return b"\x00\x00\x00\x60"
             raise ConnectionError("Connection lost")
 
@@ -708,7 +716,7 @@ class TestMSEHandshakeDetectCoverage:
     async def test_detect_encrypted_handshake_large_length(self):
         """Test detect with length too large (not MSE)."""
         mock_reader = AsyncMock()
-        # Length > 2000 (too large for MSE)
+        # Length > 700 (too large for MSE in our policy)
         mock_reader.read = AsyncMock(return_value=b"\x00\x00\x08\x00")  # 2048 bytes
 
         is_pe, first_bytes = await MSEHandshake.detect_encrypted_handshake(
@@ -719,7 +727,7 @@ class TestMSEHandshakeDetectCoverage:
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_small_length(self):
-        """Test detect with length <= 4 (not MSE)."""
+        """Test detect with length below MSE minimum."""
         mock_reader = AsyncMock()
         mock_reader.read = AsyncMock(return_value=b"\x00\x00\x00\x04")  # Length = 4
 
@@ -767,4 +775,81 @@ class TestMSEHandshakeDetectCoverage:
 
         assert is_pe is False
         assert first_bytes == b""
+
+
+class TestMSEHandshakeInitialDataAPI:
+    """Tests for initial-data receiver API and decrypted payload shim."""
+
+    @pytest.mark.asyncio
+    async def test_initiator_with_initial_data_returns_decrypted_payload(self):
+        """Test decryption shim returns decrypted initial payload."""
+        handshake = MSEHandshake()
+        clear_payload = b"payload-20-bytes!!"
+        encrypt_cipher = RC4Cipher(b"test_key_16_bytes")
+        decrypt_cipher = RC4Cipher(b"test_key_16_bytes")
+        encrypted_payload = encrypt_cipher.encrypt(clear_payload)
+
+        mock_reader = AsyncMock()
+        mock_reader.readexactly = AsyncMock(return_value=encrypted_payload)
+        mock_writer = AsyncMock()
+        mock_result = MSEHandshakeResult(
+            True,
+            cipher=decrypt_cipher,
+            inbound_cipher=decrypt_cipher,
+            outbound_cipher=decrypt_cipher,
+        )
+
+        with patch.object(
+            handshake,
+            "initiate_as_initiator",
+            new=AsyncMock(return_value=mock_result),
+        ):
+            result = await handshake.initiate_as_initiator_with_initial_data(
+                mock_reader,
+                mock_writer,
+                b"1" * 20,
+                initial_payload_size=len(clear_payload),
+                initial_payload_timeout=0.1,
+            )
+
+        assert result.success is True
+        assert result.decrypted_initial_data == clear_payload
+        assert result.cipher is decrypt_cipher
+
+    @pytest.mark.asyncio
+    async def test_receiver_with_initial_data_returns_decrypted_payload(self):
+        """Test receiver shim returns decrypted initial payload."""
+        handshake = MSEHandshake()
+        clear_payload = b"receiver-payload-bytes!"
+        encrypt_cipher = RC4Cipher(b"test_key_16_bytes")
+        decrypt_cipher = RC4Cipher(b"test_key_16_bytes")
+        encrypted_payload = encrypt_cipher.encrypt(clear_payload)
+
+        mock_reader = AsyncMock()
+        mock_reader.readexactly = AsyncMock(return_value=encrypted_payload)
+        mock_writer = AsyncMock()
+        mock_result = MSEHandshakeResult(
+            True,
+            cipher=decrypt_cipher,
+            inbound_cipher=decrypt_cipher,
+            outbound_cipher=decrypt_cipher,
+        )
+
+        with patch.object(
+            handshake,
+            "respond_as_receiver",
+            new=AsyncMock(return_value=mock_result),
+        ):
+            result = await handshake.respond_as_receiver_with_initial_data(
+                mock_reader,
+                mock_writer,
+                b"2" * 20,
+                initial_payload_size=len(clear_payload),
+                initial_payload_timeout=0.1,
+            )
+
+        assert result.success is True
+        assert result.decrypted_initial_data == clear_payload
+        assert result.cipher is decrypt_cipher
+
 

@@ -351,7 +351,7 @@ class TestStorageIntegrationWorkflow:
         }
 
         # Mock successful response for get_data
-        data_value = encode_storage_value(DHTImmutableData(data=b"stored data"))
+        data_value = encode_storage_value(DHTImmutableData(data=b"test data"))
         get_response = {
             b"y": b"r",
             b"r": {
@@ -391,8 +391,11 @@ class TestStorageIntegrationWorkflow:
         # Current implementation returns raw bytes for immutable storage payloads.
         if retrieved:
             assert isinstance(retrieved, bytes)
-            decoded = json.loads(retrieved.decode("utf-8"))
-            assert decoded.get("v") == "test data"
+            from ccbt.core.bencode import BencodeDecoder
+
+            decoded = BencodeDecoder(retrieved).decode()
+            assert isinstance(decoded, dict)
+            assert decoded.get(b"v") == b"test data"
 
 
 class TestMultiAddressIntegrationWorkflow:

@@ -84,6 +84,7 @@ def daemon():
 
 
 @daemon.command("start")
+@click.pass_context
 @click.option(
     "--foreground",
     "-f",
@@ -138,6 +139,7 @@ def daemon():
     help=_("Disable splash screen (useful for debugging)"),
 )
 def start(
+    ctx: click.Context,
     foreground: bool,
     config: Optional[str],
     port: Optional[int],
@@ -149,7 +151,10 @@ def start(
     no_splash: bool,
 ) -> None:
     """Start the daemon process."""
-    from ccbt.cli.verbosity import VerbosityManager
+    from ccbt.cli.verbosity import (
+        VerbosityManager,
+        apply_cli_verbosity_to_observability,
+    )
 
     # Combine -v count with --vv and --vvv flags
     if vvv:
@@ -157,14 +162,21 @@ def start(
     elif vv:
         verbose = max(verbose, 2)  # --vv is equivalent to -vv
 
+    parent_verbosity = 0
+    if ctx.obj:
+        parent_verbosity = int(ctx.obj.get("verbosity", 0) or 0)
+    merged_verbosity = max(parent_verbosity, verbose)
+
     start_time = time.time()
-    verbosity = VerbosityManager.from_count(verbose)
+    verbosity = VerbosityManager.from_count(merged_verbosity)
 
     # Initialize config
     if verbosity.is_verbose():
         console.print(_("[cyan]Initializing configuration...[/cyan]"))
     config_manager = init_config(config)
     cfg = config_manager.config
+    if hasattr(cfg, "observability"):
+        apply_cli_verbosity_to_observability(cfg.observability, merged_verbosity)
 
     # Ensure daemon config exists
     daemon_config_created = False
@@ -284,7 +296,7 @@ def start(
             detector = get_detector()
             if detector.should_show_splash("daemon.start"):
                 splash_manager = SplashManager.from_verbosity_count(
-                    verbose, console=console
+                    merged_verbosity, console=console
                 )
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
@@ -405,7 +417,7 @@ def start(
             detector = get_detector()
             if detector.should_show_splash("daemon.start"):
                 splash_manager = SplashManager.from_verbosity_count(
-                    verbose, console=console
+                    merged_verbosity, console=console
                 )
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
@@ -430,6 +442,8 @@ def start(
             extra_args: list[str] = []
             if config_manager.config_file and config_manager.config_file.exists():
                 extra_args.extend(["--config", str(config_manager.config_file)])
+            if merged_verbosity:
+                extra_args.append(f"-{'v' * merged_verbosity}")
             pid = daemon_manager.start(
                 foreground=False,
                 extra_args=extra_args if extra_args else None,

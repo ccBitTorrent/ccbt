@@ -140,3 +140,30 @@ class EncryptedStreamWriter:
     def __getattr__(self, name: str) -> Any:
         """Delegate other attributes to underlying writer."""
         return getattr(self.writer, name)
+
+
+def pair_streams(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    inbound_cipher: CipherSuite,
+    outbound_cipher: CipherSuite,
+    *,
+    enforce_distinct_ciphers: bool = True,
+) -> tuple[EncryptedStreamReader, EncryptedStreamWriter]:
+    """Build paired encrypted wrappers for one stream direction.
+
+    Args:
+        reader: Underlying asyncio stream reader
+        writer: Underlying asyncio stream writer
+        inbound_cipher: Cipher used for peer->us traffic
+        outbound_cipher: Cipher used for us->peer traffic
+        enforce_distinct_ciphers: When True, fail fast if wrappers would
+            receive the same cipher instance.
+    """
+    if enforce_distinct_ciphers and id(inbound_cipher) == id(outbound_cipher):
+        msg = "Encrypted stream wrappers must use distinct cipher instances"
+        raise ValueError(msg)
+    return (
+        EncryptedStreamReader(reader, inbound_cipher),
+        EncryptedStreamWriter(writer, outbound_cipher),
+    )

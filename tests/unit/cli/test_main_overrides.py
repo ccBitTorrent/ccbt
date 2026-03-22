@@ -108,6 +108,7 @@ def _make_cfg() -> Any:
 
     class Security:
         ssl = SSL()
+        enable_encryption = False
 
     class Cfg:
         network = Net()
@@ -153,11 +154,40 @@ def test_apply_network_overrides_exercises_paths():
     assert cfg.network.enable_ipv6 is False
     assert cfg.network.enable_tcp is False
     assert cfg.network.enable_utp is True
-    assert cfg.network.enable_encryption is True
+    assert cfg.security.enable_encryption is True
     assert cfg.network.tcp_nodelay is True
     assert cfg.network.socket_rcvbuf_kib == 256
     assert cfg.network.socket_sndbuf_kib == 256
     assert cfg.network.listen_interface == "lo"
+
+
+def test_apply_network_overrides_encryption_flags_target_security_model():
+    from ccbt.cli.main import _apply_network_overrides
+
+    class Security:
+        enable_encryption: bool = False
+
+    class Network:
+        def __setattr__(self, name: str, value: object) -> None:
+            if name == "enable_encryption":
+                raise AssertionError("network.enable_encryption must not be written")
+            super().__setattr__(name, value)
+
+    class Cfg:
+        network = Network()
+        security = Security()
+        webtorrent = type(
+            "WebTorrent",
+            (),
+            {"enable_webtorrent": True},
+        )()
+    
+    cfg = Cfg()
+    _apply_network_overrides(cfg, {"enable_encryption": True})
+    assert cfg.security.enable_encryption is True
+
+    _apply_network_overrides(cfg, {"disable_encryption": True})
+    assert cfg.security.enable_encryption is False
 
 
 def test_apply_discovery_strategy_disk_observability_and_limits():

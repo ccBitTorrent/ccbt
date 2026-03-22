@@ -10,7 +10,7 @@ import contextlib
 import logging
 import socket
 import struct
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,10 @@ class LocalPeerDiscovery:
                     break
 
                 # Wait for data
-                data, addr = await loop.sock_recvfrom(self._socket, 1024)
+                sock_recvfrom = getattr(loop, "sock_recvfrom", None)
+                if sock_recvfrom is None:
+                    raise RuntimeError("Event loop does not support sock_recvfrom")
+                data, addr = await cast(Any, sock_recvfrom)(self._socket, 1024)
 
                 # Parse announcement
                 try:

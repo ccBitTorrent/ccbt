@@ -188,6 +188,36 @@ class TestSecurityCommand:
         assert "Toggle encryption via" in result.output
 
     @patch("ccbt.cli.advanced_commands.get_config")
+    def test_security_warns_strict_posture_without_verification(self, mock_get_config):
+        """Test security command warns when strict posture disables certificate verification."""
+        security_cfg = MagicMock()
+        security_cfg.validate_peers = False
+        security_cfg.rate_limit_enabled = False
+        security_cfg.enable_encryption = False
+        security_cfg.ssl = MagicMock(
+            enable_ssl_trackers=True,
+            enable_ssl_peers=False,
+            ssl_allow_insecure_peers=False,
+            ssl_verify_certificates=False,
+        )
+
+        config = MagicMock()
+        config.security = security_cfg
+        config.network = MagicMock(
+            max_connections_per_peer=8,
+            global_down_kib=0,
+            global_up_kib=0,
+        )
+        mock_get_config.return_value = config
+
+        runner = CliRunner()
+        result = runner.invoke(security, ["--scan"])
+
+        assert result.exit_code == 0
+        assert "Warning: SSL certificate verification is disabled while SSL is used" in result.output
+        assert "strict" in result.output
+
+    @patch("ccbt.cli.advanced_commands.get_config")
     def test_security_rate_limit(self, mock_get_config):
         """Test security --rate-limit."""
         config = MagicMock()

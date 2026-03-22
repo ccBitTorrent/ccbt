@@ -356,7 +356,9 @@ class TestDHPerformance:
         info_hash = b"x" * 20  # 20 bytes info hash
 
         def derive_key():
-            return dh.derive_encryption_key(shared_secret, info_hash)
+            return dh.derive_encryption_key(
+                shared_secret, info_hash, direction="outbound"
+            )
 
         result = benchmark(derive_key)
         assert len(result) == 20  # SHA-1 produces 20 bytes

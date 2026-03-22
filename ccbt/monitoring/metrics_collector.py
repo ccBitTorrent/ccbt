@@ -17,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, TypedDict, Union
+from typing import Any, Callable, Mapping, Optional, TypedDict, Union
 
 import psutil
 
@@ -211,16 +211,16 @@ class MetricsCollector:
         }
 
         # Session reference for accessing DHT, queue, disk I/O, and tracker services
-        self._session: Optional[Any] = None
+        self._session: Optional[Any]= None
 
         # Collection interval
         self.collection_interval = 5.0  # seconds
-        self.collection_task: Optional[asyncio.Task] = None
+        self.collection_task: Optional[asyncio.Task]= None
         self.running = False
 
         # HTTP server for Prometheus endpoint (if enabled)
-        self._http_server: Optional[Any] = None
-        self._http_server_thread: Optional[Any] = None
+        self._http_server: Optional[Any]= None
+        self._http_server_thread: Optional[Any]= None
 
         # Statistics
         self.stats = {
@@ -283,7 +283,7 @@ class MetricsCollector:
         name: str,
         metric_type: MetricType,
         description: str,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Optional[list[MetricLabel]]= None,
         aggregation: AggregationType = AggregationType.SUM,
         retention_seconds: int = 3600,
     ) -> None:
@@ -301,9 +301,10 @@ class MetricsCollector:
         self,
         name: str,
         value: Union[float, str],
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None]= None,
     ) -> None:
         """Record a metric value."""
+        normalized_labels = self._normalize_metric_labels(labels)
         if name not in self.metrics:
             # Auto-register metric if it doesn't exist
             self.register_metric(
@@ -316,7 +317,7 @@ class MetricsCollector:
         metric_value = MetricValue(
             value=value,
             timestamp=time.time(),
-            labels=labels or [],
+            labels=normalized_labels,
         )
 
         metric.values.append(metric_value)
@@ -333,7 +334,7 @@ class MetricsCollector:
 
             am = get_alert_manager()
             # Only attempt numeric evaluation for shared rules
-            v_any: Union[float, str] = value
+            v_any: Union[float, str]= value
             if isinstance(value, str):
                 # simple numeric parse; ignore parse errors
                 with contextlib.suppress(Exception):  # pragma: no cover
@@ -362,7 +363,7 @@ class MetricsCollector:
         self,
         name: str,
         value: int = 1,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None]= None,
     ) -> None:
         """Increment a counter metric."""
         if name not in self.metrics:  # pragma: no cover
@@ -379,11 +380,23 @@ class MetricsCollector:
 
         self.record_metric(name, new_value, labels)  # pragma: no cover
 
+    def increment_gauge(
+        self,
+        name: str,
+        value: float = 1.0,
+        labels: Union[list[MetricLabel], Mapping[str, str], None]= None,
+    ) -> None:
+        """Increment/decrement a gauge metric by a delta."""
+        current_value = self.get_metric_value(name) or 0.0
+        if not isinstance(current_value, (int, float)):
+            current_value = 0.0
+        self.set_gauge(name, float(current_value) + value, labels)
+
     def set_gauge(
         self,
         name: str,
         value: float,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None]= None,
     ) -> None:
         """Set a gauge metric value."""
         if name not in self.metrics:
@@ -395,13 +408,31 @@ class MetricsCollector:
         self,
         name: str,
         value: float,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None]= None,
     ) -> None:
         """Record a histogram value."""
         if name not in self.metrics:
             self.register_metric(name, MetricType.HISTOGRAM, f"Histogram: {name}")
 
         self.record_metric(name, value, labels)
+
+    def _normalize_metric_labels(
+        self,
+        labels: Union[list[MetricLabel], Mapping[str, str], None],
+    ) -> list[MetricLabel]:
+        """Normalize metric labels from list/dict inputs."""
+        if labels is None:
+            return []
+        if isinstance(labels, Mapping):
+            normalized: list[MetricLabel] = []
+            for label_name, label_value in labels.items():
+                normalized.append(
+                    MetricLabel(name=str(label_name), value=str(label_value))
+                )
+            return normalized
+        if isinstance(labels, list):
+            return labels
+        return []
 
     def add_alert_rule(
         self,
@@ -429,7 +460,7 @@ class MetricsCollector:
     def get_metric_value(
         self,
         name: str,
-        aggregation: Optional[AggregationType] = None,
+        aggregation: Optional[AggregationType]= None,
     ) -> Optional[Union[int, float, str]]:
         """Get aggregated metric value."""
         if name not in self.metrics:  # pragma: no cover
@@ -934,7 +965,7 @@ class MetricsCollector:
             self._connection_successes.pop(oldest, None)
 
     async def get_connection_success_rate(
-        self, peer_key: Optional[str] = None
+        self, peer_key: Optional[str]= None
     ) -> float:
         """Get connection success rate for a peer or globally.
 
@@ -1680,3 +1711,5 @@ class MetricsCollector:
             logger.warning(
                 "Error stopping Prometheus HTTP server: %s", e, exc_info=True
             )
+
+

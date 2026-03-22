@@ -10,9 +10,26 @@ import asyncio
 import contextlib
 import logging
 import socket
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from ccbt.config.config import get_config
+from ccbt.peer.inbound_protocol_classifier import (
+    InboundProtocolKind,
+    classify_prefix,
+)
+from ccbt.peer.peer import (
+    Handshake,
+    ParsedInboundPlainHandshake,
+    parse_plaintext_bittorrent_handshake,
+)
+from ccbt.protocols.bittorrent_v2 import (
+    PROTOCOL_STRING_LEN,
+    RESERVED_BYTES_LEN,
+    ProtocolVersionError,
+    expected_plaintext_handshake_total_len,
+)
+from ccbt.security.mse_handshake import MSEHandshake
+from ccbt.security.swarm_auth_policy import evaluate_inbound_admission
 from ccbt.utils.exceptions import HandshakeError
 from ccbt.utils.shutdown import is_shutting_down
 
@@ -22,11 +39,174 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _ReplayableStreamReader:
+    """StreamReader wrapper that supports replaying buffered bytes.
+
+    This is intentionally lightweight and only implements the subset of
+    reader APIs used by inbound handshake/peer-acceptance paths.
+    """
+
+    def __init__(self, stream_reader: asyncio.StreamReader) -> None:
+        self._stream_reader = stream_reader
+        self._replay_buffer = bytearray()
+
+    async def readexactly(self, n: int) -> bytes:
+        """Read exactly n bytes, preferring buffered replay bytes first."""
+        if n < 0:
+            msg = "readexactly() argument must be non-negative"
+            raise ValueError(msg)
+        if n == 0:
+            return b""
+        if self._replay_buffer:
+            if len(self._replay_buffer) >= n:
+                data = self._replay_buffer[:n]
+                del self._replay_buffer[:n]
+                return bytes(data)
+
+            buffered = bytes(self._replay_buffer)
+            self._replay_buffer.clear()
+            needed = n - len(buffered)
+            extra = await self._stream_reader.readexactly(needed)
+            return buffered + extra
+
+        return await self._stream_reader.readexactly(n)
+
+    async def read(self, n: int = -1) -> bytes:
+        """Read up to n bytes, with buffered bytes drained first."""
+        if n == 0:
+            return b""
+        if n < -1:
+            msg = "read() argument must be >= -1"
+            raise ValueError(msg)
+        if n == -1:
+            if self._replay_buffer:
+                buffered = bytes(self._replay_buffer)
+                self._replay_buffer.clear()
+                return buffered + await self._stream_reader.read(-1)
+            return await self._stream_reader.read(-1)
+
+        if self._replay_buffer:
+            if len(self._replay_buffer) >= n:
+                data = self._replay_buffer[:n]
+                del self._replay_buffer[:n]
+                return bytes(data)
+
+            buffered = bytes(self._replay_buffer)
+            self._replay_buffer.clear()
+            remaining = n - len(buffered)
+            return buffered + await self._stream_reader.read(remaining)
+
+        return await self._stream_reader.read(n)
+
+    def unread(self, data: bytes) -> None:
+        """Prepend bytes back into the replay buffer."""
+        if not data:
+            return
+        self._replay_buffer = bytearray(data) + self._replay_buffer
+
+    def at_eof(self) -> bool:
+        """Return True when both buffered and underlying reader are exhausted."""
+        return not self._replay_buffer and self._stream_reader.at_eof()
+
+    async def wait(self) -> None:
+        """Wait until data is available from either replay buffer or source."""
+        if self._replay_buffer:
+            return
+        wait = getattr(self._stream_reader, "wait", None)
+        if callable(wait):
+            await cast(Any, wait)()
+
+
+class _MSEInboundSessionResolver:
+    """Resolve inbound encrypted streams to a single active torrent session."""
+
+    @staticmethod
+    def resolve_session_candidates(
+        session_manager: Optional[AsyncSessionManager],
+    ) -> list[tuple[Any, bytes]]:
+        if session_manager is None:
+            return []
+        try:
+            sessions = list(session_manager.torrents.values())
+        except Exception:
+            session_manager_logger = getattr(session_manager, "logger", None)
+            if isinstance(session_manager_logger, logging.Logger):
+                session_manager_logger.debug(
+                    "Skipping MSE inbound candidate resolution: torrents map unavailable"
+                )
+            return []
+        candidates: list[tuple[Any, bytes]] = []
+        for session in sessions:
+            try:
+                info_hash = session.info.info_hash
+            except Exception as err:
+                self_logger = getattr(session_manager, "logger", None)
+                if isinstance(self_logger, logging.Logger):
+                    self_logger.debug(
+                        "Skipping session while resolving MSE inbound candidates: %s",
+                        err,
+                    )
+                continue
+            if not isinstance(info_hash, (bytes, bytearray)) or len(info_hash) != 20:
+                continue
+            candidates.append((session, bytes(info_hash)))
+        return candidates
+
+    @staticmethod
+    def resolve_single_session(
+        session_manager: Optional[AsyncSessionManager],
+        info_hash: Optional[bytes]= None,
+    ) -> Optional[tuple[Any, bytes]]:
+        candidates = _MSEInboundSessionResolver.resolve_session_candidates(
+            session_manager
+        )
+        if info_hash is not None:
+            for session, candidate_hash in candidates:
+                if candidate_hash == bytes(info_hash):
+                    return session, candidate_hash
+            return None
+        if len(candidates) != 1:
+            return None
+        return candidates[0]
+
+    @staticmethod
+    def resolve_session_candidates_info_hashes(
+        session_manager: Optional[AsyncSessionManager],
+    ) -> list[bytes]:
+        return [
+            info_hash
+            for _, info_hash in _MSEInboundSessionResolver.resolve_session_candidates(
+                session_manager
+            )
+        ]
+
+    @staticmethod
+    def resolve_session_peer_manager(
+        session_manager: Optional[AsyncSessionManager],
+        info_hash: bytes,
+    ) -> Optional[tuple[Any, Any]]:
+        resolved = _MSEInboundSessionResolver.resolve_single_session(
+            session_manager,
+            info_hash=info_hash,
+        )
+        if resolved is None:
+            return None
+        session, resolved_info_hash = resolved
+        peer_manager = getattr(session, "download_manager", None)
+        if peer_manager:
+            peer_manager = getattr(peer_manager, "peer_manager", None)
+        if not peer_manager:
+            peer_manager = getattr(session, "peer_manager", None)
+        if not peer_manager or not hasattr(peer_manager, "accept_incoming_encrypted"):
+            return None
+        return peer_manager, resolved_info_hash
+
+
 class IncomingPeerServer:
     """TCP server for accepting incoming BitTorrent peer connections."""
 
     def __init__(
-        self, session_manager: AsyncSessionManager, config: Optional[Any] = None
+        self, session_manager: AsyncSessionManager, config: Optional[Any]= None
     ):
         """Initialize incoming peer server.
 
@@ -37,7 +217,7 @@ class IncomingPeerServer:
         """
         self.session_manager = session_manager
         self.config = config or get_config()
-        self.server: Optional[asyncio.Server] = None
+        self.server: Optional[asyncio.Server]= None
         self._running = False
         self.logger = logging.getLogger(__name__)
         self._inbound_registration_probation: dict[str, int] = {}
@@ -53,6 +233,73 @@ class IncomingPeerServer:
             self._probation_tasks.discard(done_task)
 
         task.add_done_callback(_on_task_done)
+
+    @staticmethod
+    def _transport_hint(protocol_kind: InboundProtocolKind) -> str:
+        if protocol_kind == InboundProtocolKind.MSE_P2P:
+            return "mse"
+        return "plain"
+
+    @staticmethod
+    def _supports_ltep(parsed_handshake: ParsedInboundPlainHandshake) -> bool:
+        reserved_bytes = getattr(parsed_handshake, "reserved_bytes", None)
+        return bool(
+            isinstance(reserved_bytes, (bytes, bytearray))
+            and len(reserved_bytes) >= 6
+            and bool(reserved_bytes[5] & 0x10)
+        )
+
+    @staticmethod
+    def _is_strict_mode(session: Any) -> bool:
+        security = getattr(session, "config", None)
+        if security is None:
+            return False
+        return getattr(
+            getattr(security, "authenticated_swarms", None),
+            "mode",
+            "off",
+        ) == "strict"
+
+    def _allow_inbound_admission(
+        self,
+        peer_socket: object,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        session: Any,
+        protocol_kind: InboundProtocolKind,
+    ) -> bool:
+        """Evaluate admission and return True when the connection may proceed."""
+        if self._is_strict_mode(session) and not self._supports_ltep(parsed_handshake):
+            self.logger.debug(
+                "Rejecting strict authenticated-swarm inbound peer %s until extension handshake: no LTEP reserved bit",
+                peer_socket,
+            )
+            return False
+        decision = evaluate_inbound_admission(
+            peer_socket=peer_socket,
+            parsed_handshake=parsed_handshake,
+            session=session,
+            transport_hint=self._transport_hint(protocol_kind),
+        )
+
+        if not decision.allowed:
+            # Defer strict-mode schema misses to the extension-stage validator.
+            if decision.mode == "strict" and decision.reason_code == "missing_schema":
+                self.logger.debug(
+                    "Deferring strict swarm-auth admission for %s until extension handshake (reason=%s)",
+                    peer_socket,
+                    decision.reason_code,
+                )
+                return True
+
+            self.logger.warning(
+                "Inbound swarm-auth admission denied for %s (mode=%s reason=%s)",
+                peer_socket,
+                decision.mode,
+                decision.reason_code,
+            )
+            return False
+
+        return True
 
     async def start(self) -> None:
         """Start the TCP server.
@@ -301,6 +548,25 @@ class IncomingPeerServer:
         """Build deterministic key for inbound registration probation."""
         return f"{info_hash.hex()}|{peer_ip}:{peer_port}"
 
+    @staticmethod
+    def _extract_probation_info_hash(
+        parsed_handshake: ParsedInboundPlainHandshake,
+    ) -> bytes:
+        """Return the primary v1 hash used for probation tracking."""
+        info_hash_v1 = getattr(parsed_handshake, "info_hash_v1", None)
+        if isinstance(info_hash_v1, (bytes, bytearray)):
+            return bytes(info_hash_v1)
+        return b""
+
+    def _format_handshake_info_hash(
+        self, parsed_handshake: ParsedInboundPlainHandshake
+    ) -> str:
+        """Format v1 info hash for structured logs."""
+        info_hash = self._extract_probation_info_hash(parsed_handshake)
+        if not info_hash:
+            return "unknown"
+        return info_hash.hex()[:16]
+
     def _should_probation_inbound(
         self, info_hash: bytes, peer_ip: str, peer_port: int
     ) -> bool:
@@ -324,10 +590,11 @@ class IncomingPeerServer:
         self,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        handshake: Any,
+        parsed_handshake: ParsedInboundPlainHandshake,
         peer_ip: str,
         peer_port: int,
         start_time: float,
+        protocol_classification: InboundProtocolKind,
     ) -> None:
         """Retry inbound session lookup briefly before closing stalled handshakes."""
         if is_shutting_down() or not self._running:
@@ -352,7 +619,7 @@ class IncomingPeerServer:
             ):
                 if self.session_manager is not None:
                     session = await self.session_manager.get_session_for_info_hash(
-                        handshake.info_hash
+                        parsed_handshake
                     )
                 if session is None:
                     await asyncio.sleep(
@@ -367,7 +634,7 @@ class IncomingPeerServer:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 self.logger.debug(
                     "No active torrent for info_hash %s from %s:%d after probation wait %.1fs.",
-                    handshake.info_hash.hex()[:16],
+                    self._format_handshake_info_hash(parsed_handshake),
                     peer_ip,
                     peer_port,
                     elapsed,
@@ -386,7 +653,7 @@ class IncomingPeerServer:
                     "Probation resolution found stopped session for %s:%d (info_hash=%s)",
                     peer_ip,
                     peer_port,
-                    handshake.info_hash.hex()[:16],
+                    self._format_handshake_info_hash(parsed_handshake),
                 )
                 writer.close()
                 await writer.wait_closed()
@@ -396,8 +663,33 @@ class IncomingPeerServer:
                 await writer.wait_closed()
                 return
 
+            if not self._allow_inbound_admission(
+                writer,
+                parsed_handshake,
+                session,
+                protocol_classification,
+            ):
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            handshake_info_hash = self._extract_probation_info_hash(parsed_handshake)
+            if not handshake_info_hash:
+                writer.close()
+                await writer.wait_closed()
+                return
+            handshake = Handshake(
+                handshake_info_hash,
+                parsed_handshake.peer_id,
+                reserved_bytes=parsed_handshake.reserved_bytes,
+            )
             await session.accept_incoming_peer(
-                reader, writer, handshake, peer_ip, peer_port
+                reader,
+                writer,
+                handshake,
+                peer_ip,
+                peer_port,
+                protocol_classification=protocol_classification,
             )
         except Exception:
             self.logger.exception(
@@ -412,8 +704,147 @@ class IncomingPeerServer:
                 pass
         finally:
             await self._release_inbound_probation(
-                handshake.info_hash, peer_ip, peer_port
+                self._extract_probation_info_hash(parsed_handshake), peer_ip, peer_port
             )
+
+    async def _handle_inbound_mse_connection(
+        self,
+        reader: _ReplayableStreamReader,
+        writer: asyncio.StreamWriter,
+        peer_ip: str,
+        peer_port: int,
+    ) -> None:
+        """Run inbound MSE/PE receiver handshake and hand off decrypted payload."""
+        try:
+            candidates = _MSEInboundSessionResolver.resolve_session_candidates(
+                self.session_manager
+            )
+            info_hash_candidates = [info_hash for _, info_hash in candidates]
+            if not candidates:
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d dropped because no active torrents are available",
+                    peer_ip,
+                    peer_port,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            session, fallback_info_hash = candidates[0]
+            peer_manager = getattr(session, "download_manager", None)
+            if peer_manager:
+                peer_manager = getattr(peer_manager, "peer_manager", None)
+            if not peer_manager:
+                peer_manager = getattr(session, "peer_manager", None)
+
+            if not peer_manager or not hasattr(
+                peer_manager, "accept_incoming_encrypted"
+            ):
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d dropped because peer manager cannot accept encrypted payload",
+                    peer_ip,
+                    peer_port,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            create_mse = getattr(peer_manager, "_create_mse_handshake", None)
+            mse = create_mse() if callable(create_mse) else MSEHandshake()  # type: ignore[misc]
+
+            timeout = self.config.network.handshake_timeout
+            result = await mse.respond_as_receiver_with_initial_data(
+                reader=cast(asyncio.StreamReader, reader),
+                writer=writer,
+                info_hash=fallback_info_hash,
+                initial_payload_size=0,
+                initial_payload_timeout=timeout,
+                info_hash_candidates=info_hash_candidates,
+            )
+            resolved_info_hash = getattr(result, "resolved_info_hash", None)
+            if result.success and resolved_info_hash is not None:
+                resolved_session = _MSEInboundSessionResolver.resolve_single_session(
+                    self.session_manager,
+                    info_hash=resolved_info_hash,
+                )
+                if resolved_session is not None:
+                    session, _ = resolved_session
+                    peer_manager = getattr(session, "download_manager", None)
+                    if peer_manager:
+                        peer_manager = getattr(peer_manager, "peer_manager", None)
+                    if not peer_manager:
+                        peer_manager = getattr(session, "peer_manager", None)
+                    if not peer_manager or not hasattr(
+                        peer_manager, "accept_incoming_encrypted"
+                    ):
+                        peer_manager = None
+
+            if not result.success or not result.decrypted_initial_data:
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d handshake failed: success=%s, decrypted_initial_data=%s",
+                    peer_ip,
+                    peer_port,
+                    result.success,
+                    result.decrypted_initial_data is not None,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            try:
+                parsed_initial_handshake = parse_plaintext_bittorrent_handshake(
+                    bytes(result.decrypted_initial_data)
+                )
+            except HandshakeError as exc:
+                self.logger.debug(
+                    "Invalid decrypted MSE/PE handshake from %s:%d: %s",
+                    peer_ip,
+                    peer_port,
+                    exc,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            if not peer_manager:
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d handshake failed: peer manager unavailable for resolved session",
+                    peer_ip,
+                    peer_port,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            if not self._allow_inbound_admission(
+                writer,
+                parsed_initial_handshake,
+                session,
+                InboundProtocolKind.MSE_P2P,
+            ):
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            await peer_manager.accept_incoming_encrypted(
+                reader,
+                writer,
+                result.decrypted_initial_data,
+                peer_ip,
+                peer_port,
+            )
+
+        except Exception:
+            self.logger.exception(
+                "Error while handling inbound MSE/PE connection from %s:%d",
+                peer_ip,
+                peer_port,
+            )
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -445,48 +876,104 @@ class IncomingPeerServer:
             return
 
         try:
-            # Read first byte to determine protocol length
-            # This allows us to detect non-BitTorrent connections early
-            protocol_len_byte = await asyncio.wait_for(
-                reader.readexactly(1),
+            replayable_reader = _ReplayableStreamReader(reader)
+
+            # Stage 1: consume a 28-byte plaintext prefix candidate for classification.
+            # This also covers MSE/PE's 4-byte length field + message type checks because we
+            # retain all bytes in the replayable reader for downstream fallback paths.
+            prefix = await asyncio.wait_for(
+                replayable_reader.readexactly(
+                    1 + PROTOCOL_STRING_LEN + RESERVED_BYTES_LEN
+                ),
                 timeout=self.config.network.handshake_timeout,
             )
 
-            protocol_len = protocol_len_byte[0]
-
-            # Validate protocol length early to reject non-BitTorrent connections
-            if protocol_len != 19:
+            protocol_kind = classify_prefix(prefix)
+            replayable_reader.unread(prefix)
+            if protocol_kind == InboundProtocolKind.UNKNOWN:
                 self.logger.debug(
-                    "Non-BitTorrent connection from %s:%d (protocol length: %d, expected 19). "
-                    "This may be a port scanner, bot, or different protocol.",
+                    "Non-BitTorrent connection from %s:%d (unrecognized protocol lead). "
+                    "This may be a port scanner, bot, or unsupported envelope.",
                     peer_ip,
                     peer_port,
-                    protocol_len,
                 )
                 writer.close()
                 await writer.wait_closed()
                 return
 
-            # Read remaining 67 bytes of v1 handshake
-            remaining_data = await asyncio.wait_for(
-                reader.readexactly(67),
-                timeout=self.config.network.handshake_timeout,
-            )
+            if protocol_kind == InboundProtocolKind.MSE_P2P:
+                self.logger.debug(
+                    "MSE/PE inbound connection from %s:%d entering encrypted receiver path",
+                    peer_ip,
+                    peer_port,
+                )
+                await self._handle_inbound_mse_connection(
+                    replayable_reader,
+                    writer,
+                    peer_ip,
+                    peer_port,
+                )
+                return
 
-            handshake_data = protocol_len_byte + remaining_data
-
-            # Parse and validate handshake
-            from ccbt.peer.peer import Handshake
-
+            # Stage 2: grow the replayable buffer to an allowed plaintext handshake size.
             try:
-                handshake = Handshake.decode(handshake_data)
-            except HandshakeError as e:
+                valid_total_lengths = expected_plaintext_handshake_total_len(prefix)
+            except ProtocolVersionError as exc:
                 self.logger.warning(
-                    "Invalid handshake from %s:%d: %s", peer_ip, peer_port, e
+                    "Invalid handshake prefix from %s:%d while computing plaintext lengths: %s",
+                    peer_ip,
+                    peer_port,
+                    exc,
                 )
                 writer.close()
                 await writer.wait_closed()
                 return
+
+            handshake_data = prefix
+            parsed_handshake = None
+            for expected_len in sorted(set(valid_total_lengths)):
+                if len(handshake_data) < expected_len:
+                    handshake_data += await asyncio.wait_for(
+                        replayable_reader.readexactly(
+                            expected_len - len(handshake_data)
+                        ),
+                        timeout=self.config.network.handshake_timeout,
+                    )
+
+                try:
+                    parsed_handshake = parse_plaintext_bittorrent_handshake(
+                        handshake_data
+                    )
+                    break
+                except HandshakeError:
+                    parsed_handshake = None
+                    continue
+
+            if parsed_handshake is None:
+                self.logger.warning(
+                    "Invalid plaintext handshake from %s:%d", peer_ip, peer_port
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            # Compatibility with existing inbound acceptance contract until ord-030 migration:
+            # prefer v1 info hash for session lookup.
+            if parsed_handshake.info_hash_v1 is None:
+                self.logger.warning(
+                    "Unsupported parsed handshake variant from %s:%d without v1 info hash.",
+                    peer_ip,
+                    peer_port,
+                )
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            handshake = Handshake(
+                parsed_handshake.info_hash_v1,
+                parsed_handshake.peer_id,
+                reserved_bytes=parsed_handshake.reserved_bytes,
+            )
 
             # Note: Lookup torrent session by info_hash with retry logic
             # Session may not be registered yet if it's starting in background
@@ -506,7 +993,7 @@ class IncomingPeerServer:
             ):
                 if self.session_manager is not None:
                     session = await self.session_manager.get_session_for_info_hash(
-                        handshake.info_hash
+                        parsed_handshake
                     )
                 else:
                     session = None
@@ -520,24 +1007,27 @@ class IncomingPeerServer:
                     return
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if self._should_probation_inbound(
-                    handshake.info_hash, peer_ip, peer_port
+                    self._extract_probation_info_hash(parsed_handshake),
+                    peer_ip,
+                    peer_port,
                 ):
                     self.logger.debug(
                         "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
                         "Entering bounded registration probation for this peer.",
-                        handshake.info_hash.hex()[:16],
+                        self._format_handshake_info_hash(parsed_handshake),
                         peer_ip,
                         peer_port,
                         elapsed,
                     )
                     probation_task = asyncio.create_task(
                         self._await_session_for_inbound_peer(
-                            reader,
+                    cast(asyncio.StreamReader, replayable_reader),
                             writer,
-                            handshake,
+                            parsed_handshake,
                             peer_ip,
                             peer_port,
                             start_time,
+                            protocol_kind,
                         )
                     )
                     self._register_probation_task(probation_task)
@@ -555,7 +1045,7 @@ class IncomingPeerServer:
                     self.logger.debug(
                         "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
                         "No sessions registered yet (this is normal during daemon startup).",
-                        handshake.info_hash.hex()[:16],
+                        self._format_handshake_info_hash(parsed_handshake),
                         peer_ip,
                         peer_port,
                         elapsed,
@@ -567,7 +1057,7 @@ class IncomingPeerServer:
                         "Session may not be registered yet or torrent not active. "
                         "This may indicate slow session initialization (especially for magnet links) or session registration failure. "
                         "If this is a magnet link, metadata fetching may still be in progress.",
-                        handshake.info_hash.hex()[:16],
+                        self._format_handshake_info_hash(parsed_handshake),
                         peer_ip,
                         peer_port,
                         elapsed,
@@ -595,7 +1085,7 @@ class IncomingPeerServer:
                     "Session status: %s (waited %.1fs for registration)",
                     peer_ip,
                     peer_port,
-                    handshake.info_hash.hex()[:16],
+                    self._format_handshake_info_hash(parsed_handshake),
                     session.info.status,
                     elapsed,
                 )
@@ -604,8 +1094,23 @@ class IncomingPeerServer:
                 return
 
             # Route to torrent session's peer connection manager
+            if not self._allow_inbound_admission(
+                writer,
+                parsed_handshake,
+                session,
+                protocol_kind,
+            ):
+                writer.close()
+                await writer.wait_closed()
+                return
+
             await session.accept_incoming_peer(
-                reader, writer, handshake, peer_ip, peer_port
+                cast(asyncio.StreamReader, replayable_reader),
+                writer,
+                handshake,
+                peer_ip,
+                peer_port,
+                protocol_classification=protocol_kind,
             )
 
         except asyncio.TimeoutError:
@@ -679,3 +1184,5 @@ class IncomingPeerServer:
                 pass
             except Exception:
                 pass  # Ignore other errors during cleanup
+
+

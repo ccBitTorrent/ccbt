@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
+from ccbt.config.config import get_config
 from ccbt.extensions.compact import CompactPeerLists
 from ccbt.extensions.dht import DHTExtension
 from ccbt.extensions.fast import FastExtension
@@ -389,12 +390,61 @@ class ExtensionManager:
         pex_ext = self.extensions["pex"]
 
         try:
-            if message_type == 0:  # Added
+            added_peers = []
+            added_v6: list = []
+            dropped_peers = []
+            dropped_v6: list = []
+
+            if data and data[:1] == b"d":
+                try:
+                    (
+                        added_peers,
+                        added_v6,
+                        dropped_peers,
+                        dropped_v6,
+                    ) = pex_ext.decode_bep11_payload(data)
+                except Exception:
+                    if message_type in (0, 1):
+                        peers = pex_ext.decode_peers_list(data, is_ipv6=False)
+                        if message_type == 0:
+                            added_peers = peers
+                        else:
+                            dropped_peers = peers
+                    else:
+                        raise
+            elif (
+                data
+                and len(data) >= 2
+                and data[0] == message_type
+                and data[1] in (0, 1)
+            ):
+                # Legacy interoperability: old payloads sometimes prepend the ut_pex
+                # message-id byte before the compact peer list.
+                legacy_type = data[1]
+                peers = pex_ext.decode_peers_list(data[2:], is_ipv6=False)
+                if legacy_type == 0:
+                    added_peers = peers
+                else:
+                    dropped_peers = peers
+            elif data and data[:1] in {b"\x00", b"\x01"}:
+                legacy_type = data[0]
+                peers = pex_ext.decode_peers_list(data[1:], is_ipv6=False)
+                if legacy_type == 0:
+                    added_peers = peers
+                else:
+                    dropped_peers = peers
+            elif message_type in (0, 1):
+                # Backward compatibility: old compact lists had no flags and no BEP11 keys.
                 peers = pex_ext.decode_peers_list(data, is_ipv6=False)
-                await pex_ext.handle_added_peers(peer_id, peers)
-            elif message_type == 1:  # Dropped
-                peers = pex_ext.decode_peers_list(data, is_ipv6=False)
-                await pex_ext.handle_dropped_peers(peer_id, peers)
+                if message_type == 0:
+                    added_peers = peers
+                else:
+                    dropped_peers = peers
+
+            if added_peers or added_v6:
+                await pex_ext.handle_added_peers(peer_id, added_peers + added_v6)
+            if dropped_peers or dropped_v6:
+                await pex_ext.handle_dropped_peers(peer_id, dropped_peers + dropped_v6)
 
             self.extension_states["pex"].last_activity = time.time()
 
@@ -499,6 +549,11 @@ class ExtensionManager:
             msg_type = data[0]
 
             if msg_type == 0x01:  # SSL_REQUEST
+                ssl_config = get_config().security.ssl
+                ssl_ext.set_request_policy(
+                    bool(ssl_config.enable_ssl_peers)
+                    and bool(ssl_config.ssl_extension_enabled)
+                )
                 request_id = ssl_ext.decode_request(data)
                 response = await ssl_ext.handle_request(peer_id, request_id)
                 self.extension_states["ssl"].last_activity = time.time()

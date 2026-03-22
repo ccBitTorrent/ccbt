@@ -568,6 +568,7 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         torrent_options = (
             getattr(torrent_session, "options", {}) if torrent_session else {}
         )
+        canonical_encryption = bool(self.session.config.security.enable_encryption)
 
         # Piece selection strategy
         piece_selection = torrent_options.get("piece_selection", "rarest_first")
@@ -603,7 +604,11 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         # Protocol options
         enable_tcp = torrent_options.get("enable_tcp", True)
         enable_utp = torrent_options.get("enable_utp", True)
-        enable_encryption = torrent_options.get("enable_encryption", False)
+        enable_encryption = torrent_options.get("enable_encryption", canonical_encryption)
+        if enable_encryption is None:
+            enable_encryption = canonical_encryption
+        elif not isinstance(enable_encryption, bool):
+            enable_encryption = bool(enable_encryption)
 
         advanced_table.add_row(
             "TCP Transport",

@@ -136,6 +136,7 @@ class ConfigMigrator:
 
         """
         migrated = config_data.copy()
+        migrated = ConfigMigrator._migrate_legacy_security_fields(migrated)
 
         # Add missing sections with defaults
         if "limits" not in migrated:
@@ -150,7 +151,7 @@ class ConfigMigrator:
         if "security" not in migrated:
             migrated["security"] = {
                 "enable_encryption": False,
-                "encryption_preference": "allow_plaintext",
+                "encryption_mode": "preferred",
                 "validate_peers": True,
                 "peer_validation_timeout": 30,
                 "rate_limit_enabled": True,
@@ -182,6 +183,7 @@ class ConfigMigrator:
 
         """
         migrated = config_data.copy()
+        migrated = ConfigMigrator._migrate_legacy_security_fields(migrated)
 
         # Move global limits from network to limits section
         if "network" in migrated and "limits" not in migrated:
@@ -198,7 +200,7 @@ class ConfigMigrator:
         if "security" not in migrated:
             migrated["security"] = {
                 "enable_encryption": False,
-                "encryption_preference": "allow_plaintext",
+                "encryption_mode": "preferred",
                 "validate_peers": True,
                 "peer_validation_timeout": 30,
                 "rate_limit_enabled": True,
@@ -217,6 +219,41 @@ class ConfigMigrator:
             }
 
         return migrated
+
+    @staticmethod
+    def _migrate_legacy_security_fields(config_data: dict[str, Any]) -> dict[str, Any]:
+        """Map legacy security-related fields to canonical SecurityConfig keys."""
+        security = config_data.get("security")
+        if not isinstance(security, dict):
+            security = {}
+            config_data["security"] = security
+
+        legacy_pref = security.pop("encryption_preference", None)
+        if legacy_pref is not None and "encryption_mode" not in security:
+            pref_key = str(legacy_pref).lower().strip().replace(" ", "_")
+            pref_to_mode = {
+                "allow_plaintext": "preferred",
+                "prefer_encrypted": "preferred",
+                "require_encrypted": "required",
+                "disabled": "disabled",
+            }
+            security["encryption_mode"] = pref_to_mode.get(pref_key, "preferred")
+
+        network = config_data.get("network")
+        if (
+            isinstance(network, dict)
+            and "enable_encryption" in network
+            and "enable_encryption" not in security
+        ):
+            security["enable_encryption"] = bool(network["enable_encryption"])
+
+        if "encryption_mode" not in security:
+            security["encryption_mode"] = "preferred"
+
+        if "enable_encryption" not in security:
+            security["enable_encryption"] = False
+
+        return config_data
 
     @staticmethod
     def migrate_file(

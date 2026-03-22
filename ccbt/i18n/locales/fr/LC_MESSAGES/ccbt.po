@@ -3,7 +3,7 @@ msgstr ""
 "Project-Id-Version: ccBitTorrent 0.1.0\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-01-01 00:00+0000\n"
-"PO-Revision-Date: 2026-03-17 20:28\n"
+"PO-Revision-Date: 2026-03-21 00:03\n"
 "Last-Translator: ccBitTorrent Team\n"
 "Language-Team: French\n"
 "Language: fr\n"
@@ -466,10 +466,37 @@ msgstr ""
 msgid "... and {count} more"
 msgstr ""
 
+msgid "0.1 ms (adaptive)"
+msgstr ""
+
+msgid "1 MB (adaptive)"
+msgstr ""
+
+msgid "1-2"
+msgstr ""
+
+msgid "2-4"
+msgstr ""
+
 msgid "25–49% available"
 msgstr ""
 
+msgid "4-8"
+msgstr ""
+
+msgid "5 ms (adaptive)"
+msgstr ""
+
+msgid "50 ms (adaptive)"
+msgstr ""
+
 msgid "50–79% available"
+msgstr ""
+
+msgid "512 KB (adaptive)"
+msgstr ""
+
+msgid "64 KB (adaptive)"
 msgstr ""
 
 msgid "ACK Interval"
@@ -655,16 +682,16 @@ msgstr ""
 msgid "Bootstrap Nodes"
 msgstr ""
 
+msgid "Bootstrap health"
+msgstr ""
+
+msgid "Bootstrap recovery attempts"
+msgstr ""
+
 msgid "Browse"
 msgstr ""
 
 msgid "Browse and add torrent"
-msgstr ""
-
-msgid "Bytes Downloaded"
-msgstr ""
-
-msgid "Bytes Uploaded"
 msgstr ""
 
 msgid "CPU"
@@ -808,6 +835,9 @@ msgstr ""
 msgid "Configuration imported to {path}"
 msgstr ""
 
+msgid "Configuration options"
+msgstr ""
+
 msgid "Configuration restored from {path}"
 msgstr ""
 
@@ -835,19 +865,16 @@ msgstr ""
 msgid "Connected Peers"
 msgstr ""
 
-msgid "Connected Torrents"
-msgstr ""
-
 msgid "Connected to {peers} peer(s), fetching metadata..."
 msgstr ""
 
-msgid "Connecting to daemon at %s (PID file exists)"
+msgid "Connecting to daemon at %s (PID file exists, config_path=%s)"
+msgstr ""
+
+msgid "Connecting to daemon at %s (config_path=%s)"
 msgstr ""
 
 msgid "Connecting to peers..."
-msgstr ""
-
-msgid "Connection Duration"
 msgstr ""
 
 msgid "Connection Efficiency"
@@ -889,9 +916,6 @@ msgstr ""
 msgid "Could not load torrent: {path}"
 msgstr ""
 
-msgid "Could not read daemon config file: %s"
-msgstr ""
-
 msgid "Could not read daemon config from ConfigManager: %s"
 msgstr ""
 
@@ -919,6 +943,12 @@ msgstr ""
 msgid "Cross-Torrent Sharing"
 msgstr ""
 
+msgid "Current"
+msgstr ""
+
+msgid "Current Value"
+msgstr ""
+
 msgid "Current chunks: {count}"
 msgstr ""
 
@@ -932,6 +962,9 @@ msgid "DHT Aggressive Mode:"
 msgstr ""
 
 msgid "DHT Health"
+msgstr ""
+
+msgid "DHT Health (daemon)"
 msgstr ""
 
 msgid "DHT Health Hotspots"
@@ -970,7 +1003,7 @@ msgstr ""
 msgid "DHT timeout (s)"
 msgstr ""
 
-msgid "Daemon PID file exists but API key not found in config. Cannot route to daemon. Please check daemon configuration."
+msgid "Daemon PID file exists but API key not found (config or daemon config file). Cannot route to daemon. Please check daemon configuration."
 msgstr ""
 
 msgid "Daemon PID file exists but cannot connect to daemon (error: {error}).\nThe daemon may be starting up or may have crashed.\n\nTo resolve:\n  1. Run 'btbt daemon status' to check daemon state\n  2. Check if IPC server is running on the configured port\n  3. Verify API key in config matches daemon's API key\n  4. If daemon crashed, restart it: 'btbt daemon start'\n  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
@@ -991,13 +1024,16 @@ msgstr ""
 msgid "Daemon PID file exists but error occurred while connecting: {error}.\nThe daemon may be starting up or may have crashed.\n\nTo resolve:\n  1. Run 'btbt daemon status' to check daemon state\n  2. Check daemon logs for connection errors\n  3. Verify IPC server is accessible on the configured port\n  4. If daemon crashed, restart it: 'btbt daemon start'\n  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
 msgstr ""
 
-msgid "Daemon config file exists but ipc_port not found, trying main config"
+msgid "Daemon appears to be running but API key is missing from config. Run 'btbt daemon status' to check daemon state, or restart the daemon."
 msgstr ""
 
 msgid "Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs..."
 msgstr ""
 
 msgid "Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs..."
+msgstr ""
+
+msgid "Daemon connection: config_path=%s, file_exists=%s"
 msgstr ""
 
 msgid "Daemon is accessible and ready (attempt %d/%d, took %.1fs)"
@@ -1048,7 +1084,13 @@ msgstr ""
 msgid "Dashboard Error"
 msgstr ""
 
+msgid "Data"
+msgstr ""
+
 msgid "Data provider or command executor not available"
+msgstr ""
+
+msgid "Default"
 msgstr ""
 
 msgid "Default (Light)"
@@ -1153,6 +1195,9 @@ msgstr ""
 msgid "Disk IO"
 msgstr ""
 
+msgid "Disk Workers"
+msgstr ""
+
 msgid "Do Not Download"
 msgstr ""
 
@@ -1169,9 +1214,6 @@ msgid "Download Limit"
 msgstr ""
 
 msgid "Download Limit (KiB/s):"
-msgstr ""
-
-msgid "Download Rate"
 msgstr ""
 
 msgid "Download Rate Limit (bytes/sec, 0 = unlimited):"
@@ -1223,9 +1265,6 @@ msgid "Dracula"
 msgstr ""
 
 msgid "Duplicate Requests Prevented"
-msgstr ""
-
-msgid "Duration"
 msgstr ""
 
 msgid "ETA"
@@ -1438,13 +1477,13 @@ msgstr ""
 msgid "Error loading DHT data: {error}"
 msgstr ""
 
+msgid "Error loading DHT summary: {error}"
+msgstr ""
+
 msgid "Error loading configuration: {error}"
 msgstr ""
 
 msgid "Error loading info: {error}"
-msgstr ""
-
-msgid "Error loading peer data: {error}"
 msgstr ""
 
 msgid "Error loading section: {error}"
@@ -1547,6 +1586,12 @@ msgid "Error: {error}"
 msgstr ""
 
 msgid "Errors"
+msgstr ""
+
+msgid "Estimated Read Speed"
+msgstr ""
+
+msgid "Estimated Write Speed"
 msgstr ""
 
 msgid "Events"
@@ -1981,9 +2026,6 @@ msgstr ""
 msgid "Global Configuration"
 msgstr ""
 
-msgid "Global Connected Peers"
-msgstr ""
-
 msgid "Global KPIs"
 msgstr ""
 
@@ -2018,6 +2060,9 @@ msgid "Gruvbox"
 msgstr ""
 
 msgid "HTTP error checking daemon status at %s: %s (status %d)"
+msgstr ""
+
+msgid "Hash Chunk Size"
 msgstr ""
 
 msgid "Hash verification workers"
@@ -2059,9 +2104,6 @@ msgstr ""
 msgid "IP filter not available"
 msgstr ""
 
-msgid "IP:Port"
-msgstr ""
-
 msgid "IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)"
 msgstr ""
 
@@ -2080,6 +2122,9 @@ msgstr ""
 msgid "Inactive"
 msgstr ""
 
+msgid "Include effective runtime value from loaded config (file + env)"
+msgstr ""
+
 msgid "Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"
 msgstr ""
 
@@ -2090,9 +2135,6 @@ msgid "Info"
 msgstr ""
 
 msgid "Info Hash"
-msgstr ""
-
-msgid "Info Hashes"
 msgstr ""
 
 msgid "Info hash copied to clipboard"
@@ -2114,6 +2156,12 @@ msgid "Invalid IP address: {error}"
 msgstr ""
 
 msgid "Invalid IP range: {ip_range}"
+msgstr ""
+
+msgid "Invalid configuration after merge: {e}"
+msgstr ""
+
+msgid "Invalid configuration: top-level must be an object"
 msgstr ""
 
 msgid "Invalid configuration: {e}"
@@ -2156,6 +2204,9 @@ msgid "Invalid torrent file format"
 msgstr ""
 
 msgid "Invalid tracker URL format. Must start with http://, https://, or udp://"
+msgstr ""
+
+msgid "Invalid tracker selection"
 msgstr ""
 
 msgid "Key"
@@ -2210,9 +2261,6 @@ msgid "Loading configuration..."
 msgstr ""
 
 msgid "Loading file list…"
-msgstr ""
-
-msgid "Loading peer metrics..."
 msgstr ""
 
 msgid "Loading piece selection metrics..."
@@ -2416,6 +2464,9 @@ msgstr ""
 msgid "No"
 msgstr "Non"
 
+msgid "No DHT metrics per torrent yet."
+msgstr ""
+
 msgid "No PID file found, checking for daemon via _get_executor()"
 msgstr ""
 
@@ -2459,9 +2510,6 @@ msgid "No configuration file to backup"
 msgstr ""
 
 msgid "No daemon PID file found - daemon is not running"
-msgstr ""
-
-msgid "No daemon config or API key found - will create local session"
 msgstr ""
 
 msgid "No daemon detected (PID file doesn't exist), creating local session. PID file path: %s"
@@ -2608,7 +2656,19 @@ msgstr ""
 msgid "OK"
 msgstr ""
 
+msgid "OK (dry-run — configuration is valid)"
+msgstr ""
+
+msgid "OK (dry-run — merged configuration is valid)"
+msgstr ""
+
 msgid "One Dark"
+msgstr ""
+
+msgid "Only options in this top-level section (e.g. network)"
+msgstr ""
+
+msgid "Only paths starting with this prefix"
 msgstr ""
 
 msgid "Open File"
@@ -2653,6 +2713,9 @@ msgstr ""
 msgid "Output file path"
 msgstr ""
 
+msgid "Output format for the option catalog"
+msgstr ""
+
 msgid "Overall Efficiency"
 msgstr ""
 
@@ -2692,6 +2755,12 @@ msgstr ""
 msgid "Parsing files and building hybrid metadata..."
 msgstr ""
 
+msgid "Patch file format (auto: infer from extension or try JSON then TOML)"
+msgstr ""
+
+msgid "Patch must be a JSON/TOML object at the top level"
+msgstr ""
+
 msgid "Path"
 msgstr ""
 
@@ -2725,9 +2794,6 @@ msgstr ""
 msgid "Peer"
 msgstr ""
 
-msgid "Peer Details"
-msgstr ""
-
 msgid "Peer Distribution"
 msgstr ""
 
@@ -2747,9 +2813,6 @@ msgid "Peer banning not yet implemented. Selected peer: {ip}:{port}"
 msgstr ""
 
 msgid "Peer distribution - Error: {error}"
-msgstr ""
-
-msgid "Peer not found"
 msgstr ""
 
 msgid "Peer quality - Error: {error}"
@@ -2797,6 +2860,9 @@ msgstr ""
 msgid "Per-Torrent tab - Data provider or executor not available"
 msgstr ""
 
+msgid "Per-torrent DHT"
+msgstr ""
+
 msgid "Per-torrent configuration - Data provider/Executor or torrent not available"
 msgstr ""
 
@@ -2828,12 +2894,6 @@ msgid "Piece selection metrics are unavailable in the current mode."
 msgstr ""
 
 msgid "Pieces"
-msgstr ""
-
-msgid "Pieces Received"
-msgstr ""
-
-msgid "Pieces Served"
 msgstr ""
 
 msgid "Pin Content in IPFS:"
@@ -2944,6 +3004,9 @@ msgstr ""
 msgid "Protocols (Ctrl+)"
 msgstr ""
 
+msgid "Provide a VALUE argument or use --value=... for values with spaces or JSON"
+msgstr ""
+
 msgid "Proxy Config"
 msgstr ""
 
@@ -2960,6 +3023,9 @@ msgid "PyYAML is required for YAML import"
 msgstr ""
 
 msgid "PyYAML is required for YAML output"
+msgstr ""
+
+msgid "PyYAML is required for YAML patches"
 msgstr ""
 
 msgid "Quality"
@@ -3019,6 +3085,12 @@ msgstr ""
 msgid "Recent Security Events ({count})"
 msgstr ""
 
+msgid "Recommended Settings"
+msgstr ""
+
+msgid "Recommended Value"
+msgstr ""
+
 msgid "Reconnect to peers from checkpoint"
 msgstr ""
 
@@ -3064,13 +3136,13 @@ msgstr ""
 msgid "Request Efficiency"
 msgstr ""
 
-msgid "Request Latency"
-msgstr ""
-
 msgid "Request Success"
 msgstr ""
 
 msgid "Request pipeline depth"
+msgstr ""
+
+msgid "Required"
 msgstr ""
 
 msgid "Reset specific key only (otherwise resets all options)"
@@ -3146,6 +3218,9 @@ msgid "Rule not found: {name}"
 msgstr ""
 
 msgid "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
+msgstr ""
+
+msgid "Run additional system compatibility checks after model validation"
 msgstr ""
 
 msgid "Run in foreground (for debugging)"
@@ -3248,6 +3323,9 @@ msgid "Security scan completed. No issues detected."
 msgstr ""
 
 msgid "Security scan completed. {blocked} blocked connections, {events} security events detected."
+msgstr ""
+
+msgid "Security scan is not available when connected to daemon."
 msgstr ""
 
 msgid "Security settings (encryption, IP filtering, SSL)"
@@ -3364,6 +3442,9 @@ msgstr ""
 msgid "Set value in project local ccbt.toml"
 msgstr ""
 
+msgid "Setting"
+msgstr ""
+
 msgid "Severity"
 msgstr ""
 
@@ -3442,6 +3523,9 @@ msgstr ""
 msgid "Source path does not exist: %s"
 msgstr ""
 
+msgid "Speed Category"
+msgstr ""
+
 msgid "Speeds"
 msgstr ""
 
@@ -3497,6 +3581,12 @@ msgid "Stopping daemon... ({elapsed:.1f}s)"
 msgstr ""
 
 msgid "Storage"
+msgstr ""
+
+msgid "Storage Device Detection"
+msgstr ""
+
+msgid "Storage Type"
 msgstr ""
 
 msgid "Storage configuration - Data provider/Executor not available"
@@ -3616,6 +3706,9 @@ msgstr ""
 msgid "Timestamp"
 msgstr ""
 
+msgid "Tip: full option catalog and file merge → "
+msgstr ""
+
 msgid "Toggle Dark/Light"
 msgstr ""
 
@@ -3691,6 +3784,9 @@ msgstr ""
 msgid "Torrents tab - Data provider or executor not available"
 msgstr ""
 
+msgid "Torrents with DHT"
+msgstr ""
+
 msgid "Torrents: {count}"
 msgstr ""
 
@@ -3709,9 +3805,6 @@ msgstr ""
 msgid "Total Peers"
 msgstr ""
 
-msgid "Total Peers: {total} | Active Peers: {active}"
-msgstr ""
-
 msgid "Total Queries"
 msgstr ""
 
@@ -3725,6 +3818,9 @@ msgid "Total Uploaded"
 msgstr ""
 
 msgid "Total chunks: {count}"
+msgstr ""
+
+msgid "Total queries"
 msgstr ""
 
 msgid "Tracker"
@@ -3814,9 +3910,6 @@ msgstr ""
 msgid "Upload Limit (KiB/s):"
 msgstr ""
 
-msgid "Upload Rate"
-msgstr ""
-
 msgid "Upload Rate Limit (bytes/sec, 0 = unlimited):"
 msgstr ""
 
@@ -3853,7 +3946,7 @@ msgstr ""
 msgid "Usage: checkpoint list"
 msgstr ""
 
-msgid "Usage: config [show|get|set|reload] ..."
+msgid "Usage: config [show|get|set|reload] ...\nShell: btbt config describe | apply | import | schema"
 msgstr ""
 
 msgid "Usage: config get <key.path>"
@@ -3925,10 +4018,13 @@ msgstr ""
 msgid "Using IPC port %d from main config"
 msgstr ""
 
+msgid "Using daemon config file: port=%d, api_key_present=%s"
+msgstr ""
+
 msgid "Using daemon executor for magnet command"
 msgstr ""
 
-msgid "Using default IPC port 8080 (daemon config file may not exist)"
+msgid "Using default IPC port %d (daemon config file may not exist)"
 msgstr ""
 
 msgid "Utilization Median"
@@ -3949,10 +4045,19 @@ msgstr ""
 msgid "VS Code Dark"
 msgstr ""
 
+msgid "Validate merged file overlay only; do not write"
+msgstr ""
+
+msgid "Validate only; do not write the config file"
+msgstr ""
+
 msgid "Validation error: %s"
 msgstr ""
 
 msgid "Value"
+msgstr ""
+
+msgid "Value to set (use for strings with spaces or JSON); overrides positional VALUE"
 msgstr ""
 
 msgid "Verification complete: {verified} verified, {failed} failed out of {total}"
@@ -4000,13 +4105,28 @@ msgstr ""
 msgid "Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session"
 msgstr ""
 
+msgid "Write Batch Timeout"
+msgstr ""
+
 msgid "Write batch size (KiB)"
 msgstr ""
 
 msgid "Write buffer size (KiB)"
 msgstr ""
 
+msgid "Write merged config to global config file"
+msgstr ""
+
+msgid "Write merged config to project local ccbt.toml"
+msgstr ""
+
+msgid "Write-Back Cache"
+msgstr ""
+
 msgid "Writing export file..."
+msgstr ""
+
+msgid "Wrote catalog to {path}"
 msgstr ""
 
 msgid "XET Folders"
@@ -4028,6 +4148,9 @@ msgid "Yes (BEP 27)"
 msgstr ""
 
 msgid "You can skip waiting and continue with all files selected."
+msgstr ""
+
+msgid "Zero-state count"
 msgstr ""
 
 msgid "[blue]Progress: {verified}/{total} pieces verified[/blue]"
@@ -4156,9 +4279,6 @@ msgstr ""
 msgid "[dim]No active port mappings[/dim]"
 msgstr ""
 
-msgid "[dim]No data (press 's' to scrape)[/dim]"
-msgstr ""
-
 msgid "[dim]Output: {path}[/dim]"
 msgstr ""
 
@@ -4169,6 +4289,9 @@ msgid "[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]"
 msgstr ""
 
 msgid "[dim]Protocol: {method}[/dim]"
+msgstr ""
+
+msgid "[dim]See daemon log: {path}[/dim]"
 msgstr ""
 
 msgid "[dim]Source: {path}[/dim]"
@@ -4693,9 +4816,6 @@ msgstr ""
 msgid "[red]Dashboard error: {e}[/red]"
 msgstr ""
 
-msgid "[red]Dashboard requires daemon mode. The --no-daemon option is deprecated and not supported.[/red]"
-msgstr ""
-
 msgid "[red]Directories not yet supported[/red]"
 msgstr ""
 
@@ -4927,7 +5047,7 @@ msgstr ""
 msgid "[red]Failed to set proxy configuration: {e}[/red]"
 msgstr ""
 
-msgid "[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n[yellow]Please check:[/yellow]\n  1. Daemon logs for startup errors\n  2. Port conflicts (check if port is already in use)\n  3. Permissions (ensure you have permission to start daemon)\n\n[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]"
+msgid "[red]Failed to start daemon. Cannot proceed without daemon.[/red]\n[yellow]Please check:[/yellow]\n  1. Daemon logs for startup errors\n  2. Port conflicts (check if port is already in use)\n  3. Permissions (ensure you have permission to start daemon)\n\n[cyan]To start daemon manually: 'btbt daemon start'[/cyan]"
 msgstr ""
 
 msgid "[red]Failed to stop: {error}[/red]"
@@ -5383,6 +5503,9 @@ msgstr ""
 msgid "[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]"
 msgstr ""
 
+msgid "[yellow]To see errors in the terminal, run:[/yellow] [dim]uv run btbt daemon start --foreground[/dim]"
+msgstr ""
+
 msgid "[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]"
 msgstr ""
 
@@ -5470,9 +5593,6 @@ msgstr ""
 msgid "[yellow]✓[/yellow] uTP transport disabled"
 msgstr ""
 
-msgid "_get_daemon_ipc_port: Checking config_file=%s (home_dir=%s)"
-msgstr ""
-
 msgid "_get_executor() returned: executor=%s, is_daemon=%s"
 msgstr ""
 
@@ -5509,6 +5629,9 @@ msgstr ""
 msgid "http://tracker.example.com:8080/announce"
 msgstr ""
 
+msgid "no"
+msgstr ""
+
 msgid "none"
 msgstr ""
 
@@ -5519,6 +5642,9 @@ msgid "peers"
 msgstr ""
 
 msgid "pieces"
+msgstr ""
+
+msgid "replace: file must be a full valid document; merge: deep-merge into existing target TOML then validate"
 msgstr ""
 
 msgid "rose"
@@ -5564,6 +5690,9 @@ msgid "unknown"
 msgstr ""
 
 msgid "unlimited"
+msgstr ""
+
+msgid "yes"
 msgstr ""
 
 msgid "{connection}  Torrents: {torrents}  Active: {active}  Paused: {paused}  Seeding: {seeding}  D: {download}B/s  U: {upload}B/s"

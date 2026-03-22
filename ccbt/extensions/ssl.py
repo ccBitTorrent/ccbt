@@ -1,18 +1,25 @@
-"""SSL/TLS Extension Protocol (BEP 47) implementation.
+"""Experimental peer TLS extension (BEP 10 extension protocol framing).
+
+This is **not** BEP 47 (BEP 47 defines padding files and extended file attributes).
+The client uses the LTEP/BEP-10 extension namespace to negotiate opportunistic
+TLS **after** the BitTorrent handshake. This provides transport confidentiality
+only when both peers cooperate; it does **not** authenticate peers or replace
+MSE/PE (BEP 3) traffic obfuscation.
 
 Provides support for:
-- SSL/TLS negotiation after BitTorrent handshake
-- Extension protocol-based SSL upgrade
-- Opportunistic encryption
+- TLS negotiation after BitTorrent handshake
+- Extension-protocol-framed upgrade messages
+- Opportunistic encryption (config-gated)
 """
 
 from __future__ import annotations
 
+import asyncio
 import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -34,15 +41,30 @@ class SSLNegotiationState:
     state: str  # "idle", "requested", "accepted", "rejected"
     timestamp: float
     request_id: Optional[int] = None
+    completion_event: Optional[asyncio.Event] = None
 
 
 class SSLExtension:
-    """SSL/TLS Extension implementation (BEP 47)."""
+    """Experimental peer TLS extension (BEP 10), not BEP 47 file attributes."""
 
     def __init__(self):
         """Initialize SSL Extension."""
         self.negotiation_states: dict[str, SSLNegotiationState] = {}
         self.request_counter = 0
+        self._request_policy: Callable[[str], bool] | bool = True
+
+    def set_request_policy(self, policy: Callable[[str], bool] | bool | None) -> None:
+        """Configure how inbound SSL requests should be handled."""
+        self._request_policy = True if policy is None else policy
+
+    def _is_request_allowed(self, peer_id: str) -> bool:
+        policy = self._request_policy
+        if isinstance(policy, bool):
+            return policy
+        try:
+            return bool(policy(peer_id))
+        except Exception:
+            return False
 
     def encode_handshake(self) -> dict[str, Any]:
         """Encode SSL extension handshake data.
@@ -234,24 +256,24 @@ class SSLExtension:
             Response message (accept or reject)
 
         """
-        # Update negotiation state
-        self.negotiation_states[peer_id] = SSLNegotiationState(
+        # Update negotiation state and make it observable for outbound waiters.
+        state = SSLNegotiationState(
             peer_id=peer_id,
             state="requested",
+            completion_event=asyncio.Event(),
             timestamp=time.time(),
             request_id=request_id,
         )
+        self.negotiation_states[peer_id] = state
 
-        # For now, always accept (can be configured later)
-        # TODO: Add configuration option to accept/reject based on settings
-        accepted = True
-
-        if accepted:
-            self.negotiation_states[peer_id].state = "accepted"
-            response = self.encode_accept(request_id)
-        else:  # pragma: no cover - Unreachable: accepted is hardcoded to True (TODO: make configurable)
-            self.negotiation_states[peer_id].state = "rejected"
-            response = self.encode_reject(request_id)
+        accepted = self._is_request_allowed(peer_id)
+        state.state = "accepted" if accepted else "rejected"
+        state.completion_event.set()
+        response = (
+            self.encode_accept(request_id)
+            if accepted
+            else self.encode_reject(request_id)
+        )
 
         # Emit event
         await emit_event(
@@ -279,10 +301,21 @@ class SSLExtension:
             accepted: Whether SSL upgrade was accepted
 
         """
-        if peer_id in self.negotiation_states:
-            state = self.negotiation_states[peer_id]
-            if state.request_id == request_id:
-                state.state = "accepted" if accepted else "rejected"
+        state = self.negotiation_states.get(peer_id)
+        if state is None:
+            state = SSLNegotiationState(
+                peer_id=peer_id,
+                state="accepted" if accepted else "rejected",
+                timestamp=time.time(),
+                request_id=request_id,
+                completion_event=asyncio.Event(),
+            )
+            self.negotiation_states[peer_id] = state
+
+        if state.request_id == request_id:
+            state.state = "accepted" if accepted else "rejected"
+            state.completion_event = state.completion_event or asyncio.Event()
+            state.completion_event.set()
 
         # Emit event
         await emit_event(

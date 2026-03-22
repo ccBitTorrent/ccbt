@@ -1915,7 +1915,7 @@ class PeerConnectionPool:
                     "in_flight_requests",
                 ):
                     value = getattr(conn_obj, request_attr, None)
-                    if isinstance(value, dict | list | set | tuple):
+                    if isinstance(value, (dict, list, set, tuple)):
                         has_inflight_requests = bool(value)
                         if has_inflight_requests:
                             break

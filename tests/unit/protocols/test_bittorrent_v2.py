@@ -15,6 +15,7 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 
 from ccbt.protocols.bittorrent_v2 import (
+    HANDSHAKE_HYBRID_SIZE,
     HANDSHAKE_V1_SIZE,
     HANDSHAKE_V2_SIZE,
     INFO_HASH_V1_LEN,
@@ -33,6 +34,7 @@ from ccbt.protocols.bittorrent_v2 import (
     PieceLayerResponse,
     ProtocolVersion,
     ProtocolVersionError,
+    expected_plaintext_handshake_total_len,
     create_hybrid_handshake,
     create_v2_handshake,
     detect_protocol_version,
@@ -206,6 +208,28 @@ class TestDetectProtocolVersion:
         # This will fail with "Handshake too short" at initial check, not at protocol string check
         with pytest.raises(ProtocolVersionError):
             detect_protocol_version(handshake)
+
+    def test_expected_plaintext_handshake_total_len(self):
+        """Test expected handshake lengths from a protocol prefix."""
+        prefix_v1 = (
+            bytes([PROTOCOL_STRING_LEN])
+            + PROTOCOL_STRING
+            + b"\x00" * RESERVED_BYTES_LEN
+        )
+        assert expected_plaintext_handshake_total_len(prefix_v1) == (
+            HANDSHAKE_V1_SIZE,
+        )
+
+        prefix_v2 = (
+            bytes([PROTOCOL_STRING_LEN])
+            + PROTOCOL_STRING
+            + bytes([0x01] + [0x00] * (RESERVED_BYTES_LEN - 1))
+        )
+        assert expected_plaintext_handshake_total_len(prefix_v2) == (
+            HANDSHAKE_V1_SIZE,
+            HANDSHAKE_V2_SIZE,
+            HANDSHAKE_HYBRID_SIZE,
+        )
 
 
 class TestParseV2Handshake:

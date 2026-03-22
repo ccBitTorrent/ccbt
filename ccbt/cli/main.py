@@ -27,6 +27,7 @@ from ccbt.cli.advanced_commands import performance as performance_cmd
 from ccbt.cli.advanced_commands import recover as recover_cmd
 from ccbt.cli.advanced_commands import security as security_cmd
 from ccbt.cli.advanced_commands import test as test_cmd
+from ccbt.cli.auth_commands import auth as auth_group
 from ccbt.cli.config_commands import config as config_group
 from ccbt.cli.create_torrent import create_torrent
 from ccbt.cli.daemon_commands import daemon as daemon_group
@@ -55,6 +56,7 @@ from ccbt.cli.proxy_commands import proxy as proxy_group
 from ccbt.cli.queue_commands import queue as queue_group
 from ccbt.cli.scrape_commands import scrape as scrape_group
 from ccbt.cli.ssl_commands import ssl as ssl_group
+from ccbt.cli.ssl_posture import is_strict_ssl_posture
 from ccbt.cli.torrent_commands import dht as dht_group
 from ccbt.cli.torrent_commands import global_controls as global_controls_group
 from ccbt.cli.torrent_commands import peer as peer_group
@@ -946,6 +948,7 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: dict[str, Any]) -> Non
     cfg = cfg_mgr.config
 
     _apply_network_overrides(cfg, options)
+    _apply_ssl_overrides(cfg, options)
     _apply_discovery_overrides(cfg, options)
     _apply_strategy_overrides(cfg, options)
     _apply_disk_overrides(cfg, options)
@@ -988,9 +991,9 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
     if options.get("disable_utp"):
         cfg.network.enable_utp = False
     if options.get("enable_encryption"):
-        cfg.network.enable_encryption = True
+        cfg.security.enable_encryption = True
     if options.get("disable_encryption"):
-        cfg.network.enable_encryption = False
+        cfg.security.enable_encryption = False
     if options.get("tcp_nodelay"):
         cfg.network.tcp_nodelay = True
     if options.get("no_tcp_nodelay"):
@@ -1212,6 +1215,14 @@ def _apply_ssl_overrides(cfg: Config, options: dict[str, Any]) -> None:
             logger.warning("SSL client key path does not exist: %s", key_path)
     if options.get("no_ssl_verify"):
         cfg.security.ssl.ssl_verify_certificates = False
+        logger.warning(
+            "SSL certificate verification disabled (--no-ssl-verify). "
+            "HTTPS tracker connections will not validate server certificates.",
+        )
+        if is_strict_ssl_posture(cfg.security.ssl):
+            logger.warning(
+                "Strict SSL posture requested while verification is disabled."
+            )
     if options.get("ssl_protocol_version"):
         cfg.security.ssl.ssl_protocol_version = options["ssl_protocol_version"]
 
@@ -1327,29 +1338,12 @@ def cli(ctx, config, verbose, debug):
                         "en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu"
                     ).format(current_locale=current_locale)
                 )
-            # Update logging level based on verbosity
+            # Update logging level based on verbosity (survives later init_config)
             cfg = config_manager.config
             if hasattr(cfg, "observability"):
-                from ccbt.models import LogLevel
-                from ccbt.utils.logging_config import setup_logging
+                from ccbt.cli.verbosity import apply_cli_verbosity_to_observability
 
-                effective_log_level = cfg.observability.log_level
-                if verbosity_manager.is_trace():
-                    # Preserve dedicated trace behavior for -vvv
-                    effective_log_level = (
-                        verbosity_manager.logging_level_for_verbosity()
-                    )
-                elif verbosity_manager.is_debug():
-                    # Preserve previous behavior: -vv behaves as DEBUG
-                    effective_log_level = LogLevel.DEBUG
-                elif verbosity_manager.is_verbose():
-                    # Preserve previous behavior: -v behaves as INFO
-                    effective_log_level = LogLevel.INFO
-                # else: keep original configured level
-
-                setup_logging(
-                    cfg.observability, effective_log_level=effective_log_level
-                )
+                apply_cli_verbosity_to_observability(cfg.observability, verbose)
 
     # docs command removed; docs are maintained in repository
 
@@ -3580,6 +3574,7 @@ cli.add_command(queue_group)
 cli.add_command(files_group)
 cli.add_command(nat_group)
 cli.add_command(ssl_group)
+cli.add_command(auth_group)
 cli.add_command(proxy_group)
 cli.add_command(scrape_group)
 cli.add_command(resume_cmd)

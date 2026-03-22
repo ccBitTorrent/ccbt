@@ -194,6 +194,26 @@ The dashboard uses a **tabbed interface** with a split layout:
 
 Media playback in Bitonic is intentionally split into terminal-native controls plus an external player. The TUI can manage stream startup, buffering state, and diagnostics, but true native video embedding inside the Textual terminal surface is out of scope.
 
+#### Streaming diagnostics and observability
+
+Use the stream status payload plus Prometheus metrics to detect playback pressure and underrun:
+- Stream status returned by media controls includes `state`, `buffer_progress`, `bytes_served`, `client_count`, and `available_bytes`.
+- Prometheus metrics for stream health are exported when observability is enabled:
+  - `ccbt_media_stream_active_streams` (gauge)
+  - `ccbt_media_stream_active_clients` (gauge)
+  - `ccbt_media_stream_bytes_served_total` (counter)
+  - `ccbt_media_stream_requests_total` (counter, label: `result`)
+  - `ccbt_media_stream_buffer_progress` (gauge)
+  - `ccbt_media_stream_available_bytes` (gauge)
+  - `ccbt_media_stream_wait_seconds` (histogram-like samples, label: `result`)
+  - `ccbt_media_stream_errors_total` (counter, label: `reason`)
+- Alerting guidance (recommended):
+  - Add a rule on `ccbt_media_stream_errors_total{reason="timeout"}` to detect repeated stalls.
+  - Alert when `ccbt_media_stream_wait_seconds` records frequent timeout waits.
+  - Alert when `ccbt_media_stream_active_clients` exceeds expected concurrency (for per-stream correlation, combine with dashboard media status).
+
+The global collector keeps cardinality low by avoiding `stream_id` labels on hot-path counters/gauges.
+
 3. **Preferences Tab** - Configuration with nested sub-tabs:
    - **General**: Language selection and basic settings
    - **Network**: Network configuration

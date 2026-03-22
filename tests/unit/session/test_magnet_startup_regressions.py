@@ -449,6 +449,59 @@ async def test_immediate_tracker_connection_enforces_batch_caps(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_immediate_tracker_connection_from_single_udp_announce_can_exceed_default_source_cap(
+    monkeypatch,
+) -> None:
+    """Single-URL announce responses should pass a larger batch to the connection helper."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "udp-announce-batch",
+        "info_hash": b"4" * 20,
+        "announce": "udp://tracker.example.com/announce",
+        "_metadata_incomplete": False,
+        "pieces_info": {"pieces": b""},
+        "file_info": {"total_length": 2048},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.config.network.max_peers_per_torrent = 100
+    session.piece_manager = SimpleNamespace(
+        _metadata_incomplete=False,
+        num_pieces=1,
+        is_downloading=False,
+        start_download=AsyncMock(return_value=None),
+    )
+    session.download_manager.peer_manager = SimpleNamespace(
+        connections={},
+        _connection_batches_in_progress=False,
+    )
+    connect_to_download = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        "ccbt.session.peers.PeerConnectionHelper.connect_peers_to_download",
+        connect_to_download,
+    )
+
+    session._register_immediate_connection_callback()
+    callback = session.tracker.on_peers_received
+    assert callback is not None
+
+    peers = [
+        {"ip": f"203.0.113.{i}", "port": 5000 + i, "peer_source": "tracker"}
+        for i in range(30)
+    ]
+    await callback(peers, "udp://tracker.example.com:6969")
+    for _ in range(30):
+        await asyncio.sleep(0.01)
+        if connect_to_download.await_count:
+            break
+
+    connect_to_download.assert_awaited_once()
+    assert len(connect_to_download.await_args.args[0]) >= 20
+    assert len(connect_to_download.await_args.args[0]) <= 24
+
+
+@pytest.mark.asyncio
 async def test_immediate_tracker_connection_enforces_fallback_cooldown(
     monkeypatch,
 ) -> None:

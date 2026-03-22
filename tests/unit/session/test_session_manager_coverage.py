@@ -154,6 +154,67 @@ def test_parse_magnet_exception_returns_none(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout_fast
+async def test_start_logs_transport_security_posture(tmp_path, mock_network_components):
+    """Startup should emit a single transport security posture line."""
+    import io
+    import logging
+    from unittest.mock import AsyncMock, MagicMock
+
+    from ccbt.session.session import AsyncSessionManager
+    from tests.fixtures.network_mocks import apply_network_mocks_to_session
+
+    manager = AsyncSessionManager(str(tmp_path))
+    apply_network_mocks_to_session(manager, mock_network_components)
+
+    # Keep startup lightweight and deterministic for this unit test.
+    manager.config.queue.auto_manage_queue = False
+    manager.config.discovery.tracker_auto_scrape = False
+    manager.config.observability.enable_metrics = False
+
+    manager.protocol_manager = MagicMock()
+    manager.protocol_manager.get_protocol.return_value = object()
+
+    manager.background_tasks.cleanup_loop = AsyncMock()
+    manager.background_tasks.metrics_loop = AsyncMock()
+
+    manager.config.security.enable_encryption = True
+    manager.config.security.encryption_mode = "required"
+    manager.config.security.encryption_dh_key_size = 1024
+    manager.config.security.ssl.enable_ssl_trackers = False
+    manager.config.security.ssl.ssl_verify_certificates = False
+    manager.config.security.ssl.enable_ssl_peers = True
+    manager.config.security.ssl.ssl_extension_enabled = False
+    manager.config.security.ssl.ssl_allow_insecure_peers = True
+
+    log_stream = io.StringIO()
+    stream_handler = logging.StreamHandler(log_stream)
+    stream_handler.setFormatter(logging.Formatter("%(message)s"))
+    manager.logger.addHandler(stream_handler)
+
+    await manager.start()
+    try:
+        posture_lines = [
+            line for line in log_stream.getvalue().splitlines() if "Transport security posture" in line
+        ]
+        assert len(posture_lines) == 1
+        assert any(
+            "peer_mse_pe enabled=True" in line
+            and "mode=required" in line
+            and "dh_bits=1024" in line
+            and "https_tracker_tls enabled=False" in line
+            and "verify_certs=False" in line
+            and "experimental_peer_tls enabled=True" in line
+            and "extension=False" in line
+            and "allow_insecure_peers=True" in line
+            for line in posture_lines
+        )
+    finally:
+        manager.logger.removeHandler(stream_handler)
+        await manager.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_start_web_interface_raises_not_implemented():
     """Test start_web_interface behavior.
     

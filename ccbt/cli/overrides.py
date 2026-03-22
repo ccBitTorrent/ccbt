@@ -7,11 +7,16 @@ to the configuration system.
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ccbt.cli.ssl_posture import is_strict_ssl_posture
+
 if TYPE_CHECKING:
     from ccbt.config.config import Config, ConfigManager
+
+_logger = logging.getLogger(__name__)
 
 
 def apply_cli_overrides(cfg_mgr: ConfigManager, options: dict[str, Any]) -> None:
@@ -115,7 +120,7 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
     if options.get("disable_utp"):
         cfg.network.enable_utp = False
     if options.get("enable_encryption"):
-        cfg.network.enable_encryption = True
+        cfg.security.enable_encryption = True
     if options.get("enable_webtorrent"):
         cfg.network.webtorrent.enable_webtorrent = True
     if options.get("disable_webtorrent"):
@@ -130,7 +135,7 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
         servers = [s.strip() for s in options["webtorrent_stun_servers"].split(",")]
         cfg.network.webtorrent.webtorrent_stun_servers = servers
     if options.get("disable_encryption"):
-        cfg.network.enable_encryption = False
+        cfg.security.enable_encryption = False
     if options.get("tcp_nodelay"):
         cfg.network.tcp_nodelay = True
     if options.get("no_tcp_nodelay"):
@@ -458,6 +463,14 @@ def _apply_ssl_overrides(cfg: Config, options: dict[str, Any]) -> None:
             cfg.security.ssl.ssl_client_key = str(key_path)
     if options.get("no_ssl_verify"):
         cfg.security.ssl.ssl_verify_certificates = False
+        _logger.warning(
+            "SSL certificate verification disabled (--no-ssl-verify). "
+            "HTTPS tracker connections will not validate server certificates.",
+        )
+        if is_strict_ssl_posture(cfg.security.ssl):
+            _logger.warning(
+                "Strict SSL posture requested while verification is disabled."
+            )
     if options.get("ssl_protocol_version"):
         cfg.security.ssl.ssl_protocol_version = options["ssl_protocol_version"]
 

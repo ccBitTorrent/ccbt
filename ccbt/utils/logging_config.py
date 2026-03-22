@@ -34,6 +34,24 @@ correlation_id: ContextVar[Optional[str]] = cast(
     ContextVar("correlation_id", default=None),
 )
 
+# When set by the CLI (or tests), ConfigManager re-applies this level on every
+# init_config()/reload so a later ConfigManager() does not drop -v/-vv/-vvv.
+_cli_session_log_level_override: ContextVar[Optional[Any]] = cast(
+    "ContextVar[Optional[Any]]",
+    ContextVar("ccbt_cli_session_log_level", default=None),
+)
+
+
+def get_cli_session_log_level_override() -> Optional[Any]:
+    """Return the active CLI session log level override, if any."""
+    return _cli_session_log_level_override.get()
+
+
+def set_cli_session_log_level_override(level: Optional[Any]) -> None:
+    """Store override used when ConfigManager configures logging (None = use config file)."""
+    _cli_session_log_level_override.set(level)
+
+
 TRACE_LOG_LEVEL = 5
 TRACE_LOG_LEVEL_NAME = "TRACE"
 

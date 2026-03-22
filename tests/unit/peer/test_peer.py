@@ -13,6 +13,8 @@ from ccbt.peer.peer import (
     ChokeMessage,
     Handshake,
     HandshakeError,
+    ParsedInboundPlainHandshake,
+    parse_plaintext_bittorrent_handshake,
     HaveMessage,
     InterestedMessage,
     KeepAliveMessage,
@@ -108,6 +110,53 @@ class TestHandshake:
 
         with pytest.raises(HandshakeError, match="Handshake must be 68 bytes"):
             Handshake.decode(b"x" * 69)  # Too long
+
+    def test_parse_plaintext_bittorrent_handshake_v1(self):
+        """Parse a 68-byte v1 plaintext handshake."""
+        info_hash = b"info_hash_20_bytes__"
+        peer_id = b"peer_id_20_bytes____"
+
+        handshake = Handshake(info_hash, peer_id)
+        parsed = parse_plaintext_bittorrent_handshake(handshake.encode())
+
+        assert isinstance(parsed, ParsedInboundPlainHandshake)
+        assert parsed.protocol == b"BitTorrent protocol"
+        assert parsed.info_hash_v1 == info_hash
+        assert parsed.info_hash_v2 is None
+        assert parsed.peer_id == peer_id
+
+    def test_parse_plaintext_bittorrent_handshake_v2(self):
+        """Parse an 80-byte v2-only plaintext handshake."""
+        protocol = b"\x13" + b"BitTorrent protocol" + b"\x00" * 8
+        # v2 info hash uses 32 bytes and peer_id uses 20 bytes
+        v2_info_hash = b"v2_info_hash_32_bytes__________!!"[:32]
+        peer_id = b"peer_id_20_bytes____"
+        handshake = protocol + v2_info_hash + peer_id
+
+        parsed = parse_plaintext_bittorrent_handshake(handshake)
+
+        assert parsed.info_hash_v1 is None
+        assert parsed.info_hash_v2 == v2_info_hash
+        assert parsed.peer_id == peer_id
+
+    def test_parse_plaintext_bittorrent_handshake_hybrid(self):
+        """Parse a 100-byte hybrid plaintext handshake."""
+        protocol = b"\x13" + b"BitTorrent protocol" + b"\x01" + b"\x00" * 7
+        info_hash_v1 = b"info_hash_20_bytes__"
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        peer_id = b"peer_id_20_bytes____"
+        handshake = protocol + info_hash_v1 + info_hash_v2 + peer_id
+
+        parsed = parse_plaintext_bittorrent_handshake(handshake)
+
+        assert parsed.info_hash_v1 == info_hash_v1
+        assert parsed.info_hash_v2 == info_hash_v2
+        assert parsed.peer_id == peer_id
+
+    def test_parse_plaintext_bittorrent_handshake_invalid_length(self):
+        """Reject unsupported plaintext handshake lengths."""
+        with pytest.raises(HandshakeError, match="Invalid plaintext handshake size"):
+            parse_plaintext_bittorrent_handshake(b"short")
 
     def test_handshake_decode_invalid_protocol_length(self):
         """Test decoding handshake with invalid protocol length."""

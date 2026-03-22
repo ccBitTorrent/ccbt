@@ -7,6 +7,7 @@ connection helpers, PEX integration, and peer lifecycle management.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
@@ -147,10 +148,33 @@ class PexBinder:
             session: The torrent session instance
 
         """
-        # Do not enable on private torrents
-        if session.is_private:
+        # Do not enable on private torrents or authenticated swarm strict policy
+        discovery_component_disabled = getattr(
+            session, "_is_discovery_component_disabled", None
+        )
+        if session.is_private or (
+            callable(discovery_component_disabled)
+            and discovery_component_disabled("pex")
+        ):
+            emit_discovery_suppressed = getattr(
+                session,
+                "_emit_discovery_suppressed_metric",
+                None,
+            )
+            if (
+                not session.is_private
+                and emit_discovery_suppressed is not None
+                and callable(emit_discovery_suppressed)
+                and callable(discovery_component_disabled)
+                and discovery_component_disabled("pex")
+            ):
+                with contextlib.suppress(Exception):
+                    emit_discovery_suppressed("pex")
+            reason = "private" if session.is_private else "authenticated policy"
             session.logger.debug(
-                "PEX disabled for private torrent: %s", session.info.name
+                "PEX disabled for %s torrent: %s",
+                reason,
+                session.info.name,
             )
             return
         import asyncio
@@ -162,12 +186,9 @@ class PexBinder:
 
         # Send callback: forward PEX messages via extension protocol
         async def send_pex_message(
-            peer_key: str, peer_data: bytes, is_added: bool = True
+            peer_key: str, peer_data: bytes, _is_added: bool = True
         ) -> bool:
             try:
-                import struct
-
-                from ccbt.extensions.pex import PEXMessageType
                 from ccbt.extensions.protocol import ExtensionMessageType
 
                 if not session.download_manager:
@@ -219,15 +240,10 @@ class PexBinder:
                 if not peer_data:
                     return True
 
-                pex_message_type = (
-                    PEXMessageType.ADDED if is_added else PEXMessageType.DROPPED
-                )
-                payload = (
-                    struct.pack("BB", pex_session.ut_pex_id, pex_message_type)
-                    + peer_data
-                )
+                extension_payload = bytes([pex_session.ut_pex_id]) + peer_data
                 extension_message = extension_protocol.encode_extension_message(
-                    ExtensionMessageType.EXTENDED, payload
+                    ExtensionMessageType.EXTENDED,
+                    extension_payload,
                 )
                 connection.writer.write(extension_message)
                 await connection.writer.drain()
@@ -270,7 +286,12 @@ class PexBinder:
                     session.info.name,
                 )
                 peer_list = [
-                    {"ip": p.ip, "port": p.port, "peer_source": "pex"}
+                    {
+                        "ip": p.ip,
+                        "port": p.port,
+                        "peer_source": "pex",
+                        "_peer_pex_flags": getattr(p, "flags", 0),
+                    }
                     for p in pex_peers
                     if hasattr(p, "ip") and hasattr(p, "port")
                 ]

@@ -121,13 +121,15 @@ async def test_encryption_handshake_success_creates_encrypted_streams(
     def mock_reader_init(reader, cipher):
         nonlocal encrypted_reader_created
         encrypted_reader_created = True
-        assert cipher is mock_cipher
+        assert cipher is not None
+        assert cipher is not mock_cipher
         return mock_encrypted_reader
     
     def mock_writer_init(writer, cipher):
         nonlocal encrypted_writer_created
         encrypted_writer_created = True
-        assert cipher is mock_cipher
+        assert cipher is not None
+        assert cipher is not mock_cipher
         return mock_encrypted_writer
     
     with patch(

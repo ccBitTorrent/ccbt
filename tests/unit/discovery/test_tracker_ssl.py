@@ -259,11 +259,108 @@ class TestTrackerHTTPSDetection:
             url = "https://tracker.example.com/announce"
 
             with patch.object(client.logger, "error") as mock_error:
-                with pytest.raises(TrackerError, match="SSL handshake failed"):
+                with pytest.raises(TrackerError, match="TLS connection failure"):
                     await client._make_request_async(url)
 
                 mock_error.assert_called_once()
                 assert "SSL error connecting to tracker" in str(mock_error.call_args)
+
+    @pytest.mark.asyncio
+    async def test_make_request_https_with_tracker_pin_mismatch(self):
+        """Test HTTPS request failure when tracker certificate pin does not match."""
+        config_data = {
+            "security": {
+                "ssl": {
+                    "enable_ssl_trackers": True,
+                    "ssl_tracker_pins": {"tracker.example.com": "wrong-fingerprint"},
+                }
+            }
+        }
+        config = Config(**config_data)
+
+        with patch("ccbt.discovery.tracker.get_config", return_value=config):
+            client = AsyncTrackerClient()
+            client.config = config
+
+            mock_ssl_object = MagicMock()
+            mock_ssl_object.getpeercert.return_value = {
+                "subject": (("CN", "tracker.example.com"),)
+            }
+            mock_transport = MagicMock()
+            mock_transport.get_extra_info.return_value = mock_ssl_object
+            mock_connection = MagicMock()
+            mock_connection._transport = mock_transport
+
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.read = AsyncMock(return_value=b"response data")
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+            mock_response.connection = mock_connection
+
+            with patch("ccbt.discovery.tracker.CertificatePinner") as mock_pinner_class:
+                mock_pinner = MagicMock()
+                mock_pinner.verify_pin.return_value = False
+                mock_pinner_class.return_value = mock_pinner
+
+                mock_session = AsyncMock()
+                mock_session.get = Mock(return_value=mock_response)
+                client.session = mock_session
+
+                url = "https://tracker.example.com/announce"
+
+                with pytest.raises(TrackerError, match="TLS certificate pin mismatch"):
+                    await client._make_request_async(url)
+
+                mock_pinner.verify_pin.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_make_request_https_with_tracker_pin_match(self):
+        """Test HTTPS request success when tracker certificate pin matches."""
+        config_data = {
+            "security": {
+                "ssl": {
+                    "enable_ssl_trackers": True,
+                    "ssl_tracker_pins": {"tracker.example.com": "expected-fingerprint"},
+                }
+            }
+        }
+        config = Config(**config_data)
+
+        with patch("ccbt.discovery.tracker.get_config", return_value=config):
+            client = AsyncTrackerClient()
+            client.config = config
+
+            mock_ssl_object = MagicMock()
+            mock_ssl_object.getpeercert.return_value = {
+                "subject": (("CN", "tracker.example.com"),)
+            }
+            mock_transport = MagicMock()
+            mock_transport.get_extra_info.return_value = mock_ssl_object
+            mock_connection = MagicMock()
+            mock_connection._transport = mock_transport
+
+            mock_response = AsyncMock()
+            mock_response.status = 200
+            mock_response.read = AsyncMock(return_value=b"response data")
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+            mock_response.connection = mock_connection
+
+            with patch("ccbt.discovery.tracker.CertificatePinner") as mock_pinner_class:
+                mock_pinner = MagicMock()
+                mock_pinner.verify_pin.return_value = True
+                mock_pinner_class.return_value = mock_pinner
+
+                mock_session = AsyncMock()
+                mock_session.get = Mock(return_value=mock_response)
+                client.session = mock_session
+
+                url = "https://tracker.example.com/announce"
+                response_data = await client._make_request_async(url)
+
+                assert response_data == b"response data"
+                mock_pinner.verify_pin.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_make_request_https_with_debug_logging(self):
@@ -429,7 +526,7 @@ class TestTrackerSSLIntegration:
             with patch.object(client, "_build_tracker_url") as mock_build_url:
                 mock_build_url.return_value = "https://tracker.example.com/announce?info_hash=..."
                 with patch.object(client, "_handle_tracker_failure"):
-                    with pytest.raises(TrackerError, match="SSL handshake failed"):
+                    with pytest.raises(TrackerError, match="TLS connection failure"):
                         await client.announce(torrent_data, port=6881)
 
 

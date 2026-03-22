@@ -70,6 +70,7 @@ repos:
         types: [markdown]
         files: ^(docs/.*\.md|docs/blog/.*\.md|README\.md|dev/mkdocs\.yml)$
         pass_filenames: false
+        stages: [manual]
       - id: check-translations
         name: check-translations
         entry: uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt

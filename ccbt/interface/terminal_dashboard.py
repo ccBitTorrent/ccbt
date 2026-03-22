@@ -1864,8 +1864,6 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         hasattr(scrape_result, "last_scrape_time")
                         and scrape_result.last_scrape_time > 0
                     ):
-                        import time
-
                         elapsed = time.time() - scrape_result.last_scrape_time
                         det.add_row(_("Last Scrape"), _("{elapsed:.0f}s ago").format(elapsed=elapsed))
                 else:
@@ -4699,9 +4697,7 @@ def run_dashboard(  # pragma: no cover
         app.run()
 
 
-def main() -> (
-    int
-):  # pragma: no cover - CLI entry point, requires full application context to test properly
+def main() -> int:  # pragma: no cover - CLI entry point, requires full application context to test properly
     """Console entry for launching the TUI dashboard.
 
     Creates a session, optionally accepts --refresh, and starts the dashboard.

@@ -1,7 +1,9 @@
-"""SSL/TLS support for peer connections.
+"""Experimental peer TLS support (BEP 10 extension), not BEP 47.
 
-This module provides SSL/TLS encryption for peer-to-peer connections,
-supporting both direct SSL connections and wrapping existing TCP connections.
+BEP 47 in this codebase refers to padding files and file attributes on disk.
+This module handles **optional TLS** negotiated via the BitTorrent extension
+protocol after the standard handshake. It is separate from HTTPS tracker TLS and
+from MSE/PE (BEP 3) peer traffic obfuscation.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from ccbt.config.config import get_config
+from ccbt.extensions.ssl import SSLNegotiationState
 from ccbt.security.ssl_context import SSLContextBuilder
 
 logger = logging.getLogger(__name__)
@@ -57,10 +60,10 @@ class SSLPeerStats:
 
 
 class SSLPeerConnection:
-    """Manage SSL/TLS for peer connections.
+    """Manage experimental peer TLS (BEP 10 extension path).
 
-    Supports both direct SSL connections and wrapping existing TCP connections
-    with SSL/TLS for opportunistic encryption.
+    Supports direct TLS connections and wrapping existing TCP streams after
+    extension negotiation. Does not provide swarm authentication by itself.
     """
 
     def __init__(
@@ -106,9 +109,12 @@ class SSLPeerConnection:
 
         try:
             # Create SSL context for peer
-            ssl_context = self.ssl_builder.create_peer_context(
-                verify_hostname=verify_hostname
-            )
+            if verify_hostname:
+                ssl_context = self.ssl_builder.create_peer_context(peer_strict=True)
+            else:
+                ssl_context = self.ssl_builder.create_peer_context(
+                    peer_opportunistic=True
+                )
 
             # Create connection with SSL
             # Note: server_hostname is only used if verify_hostname=True
@@ -169,9 +175,12 @@ class SSLPeerConnection:
 
         try:
             # Create SSL context for peer (less strict than tracker)
-            ssl_context = self.ssl_builder.create_peer_context(
-                verify_hostname=False  # Don't verify hostname for peers by default
-            )
+            if opportunistic:
+                ssl_context = self.ssl_builder.create_peer_context(
+                    peer_opportunistic=True
+                )
+            else:
+                ssl_context = self.ssl_builder.create_peer_context(peer_strict=True)
 
             # Get the underlying socket from writer
             sock = writer.get_extra_info("socket")
@@ -303,24 +312,52 @@ class SSLPeerConnection:
                 self.logger.debug("SSL extension not available")
                 return None
 
-            # Get SSL extension message ID
+            # Resolve peer-specific extension ID for SSL requests.
+            # Peers may advertise different extension IDs via extended handshake.
+            ssl_extension_message_id = extension_protocol.get_peer_message_id(
+                peer_id, "ssl"
+            )
             ssl_ext_info = extension_protocol.get_extension_info("ssl")
             if not ssl_ext_info:
                 self.logger.debug(
                     "SSL extension not registered in protocol"
                 )  # pragma: no cover - Edge case: SSL extension not registered (should not happen in normal operation)
                 return None
+            if ssl_extension_message_id is None:
+                self.logger.debug(
+                    "SSL extension ID for peer %s was not advertised in peer m-map",
+                    peer_id,
+                )
+                return None
+
+            if not isinstance(ssl_extension_message_id, int):
+                self.logger.debug(
+                    "SSL extension message ID is invalid: %s", ssl_extension_message_id
+                )
+                return None
 
             # Encode SSL request
             request_data = ssl_extension.encode_request()
             request_id = ssl_extension.decode_request(request_data)
+            get_state = getattr(ssl_extension, "get_negotiation_state", None)
+            existing_state = get_state(peer_id) if callable(get_state) else None
+            completion_event = getattr(existing_state, "completion_event", None)
+            if not isinstance(existing_state, SSLNegotiationState):
+                completion_event = asyncio.Event()
+            ssl_extension.negotiation_states[peer_id] = SSLNegotiationState(
+                peer_id=peer_id,
+                state="requested",
+                timestamp=time.time(),
+                request_id=request_id,
+                completion_event=completion_event,
+            )
 
             from ccbt.protocols.bittorrent_v2 import _send_extension_message
 
             # Send the request as a BEP 10 frame.
             connection = type("_WriterAdapter", (), {"writer": writer})()
             sent = await _send_extension_message(
-                connection, ssl_ext_info.message_id, request_data
+                connection, ssl_extension_message_id, request_data
             )
             if not sent:
                 return None
@@ -424,20 +461,39 @@ class SSLPeerConnection:
                 return None
 
             negotiation_state = ssl_extension.get_negotiation_state(peer_id)
-            if not negotiation_state:
+            if negotiation_state is None:
                 self.logger.debug("No SSL negotiation state for peer %s", peer_id)
                 return None
 
-            # Wait for response with timeout
-            start_time = time.time()
-            while (
-                negotiation_state.state in ("idle", "requested")
-                and (time.time() - start_time) < timeout
-            ):
-                await asyncio.sleep(0.1)
-                negotiation_state = ssl_extension.get_negotiation_state(peer_id)
-                if not negotiation_state:  # pragma: no cover - Edge case: negotiation state cleared during wait (rare race condition)
-                    break
+            if negotiation_state.state not in {"accepted", "rejected"}:
+                if negotiation_state.completion_event is None:
+                    negotiation_state.completion_event = asyncio.Event()
+
+                # Wait for response with timeout
+                try:
+                    await asyncio.wait_for(
+                        negotiation_state.completion_event.wait(), timeout
+                    )
+                except TimeoutError as err:
+                    self.logger.debug(
+                        "SSL extension negotiation timeout for peer %s", peer_id
+                    )
+                    if ssl_config.ssl_extension_opportunistic:
+                        return None
+                    _ssl_timeout_msg = "SSL negotiation timeout"
+                    raise TimeoutError(_ssl_timeout_msg) from err
+
+            negotiation_state = ssl_extension.get_negotiation_state(peer_id)
+
+            if negotiation_state is None:
+                self.logger.debug(
+                    "SSL negotiation state removed before response handling for peer %s",
+                    peer_id,
+                )
+                if ssl_config.ssl_extension_opportunistic:
+                    return None
+                _ssl_state_removed_msg = "SSL negotiation state unavailable"
+                raise RuntimeError(_ssl_state_removed_msg)
 
             if negotiation_state and negotiation_state.state == "accepted":
                 # SSL upgrade accepted, wrap connection

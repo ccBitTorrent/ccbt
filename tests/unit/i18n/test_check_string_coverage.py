@@ -87,3 +87,48 @@ def test_check_string_coverage_uncovered_fail_on_gap(
     )
     assert result.returncode == 1
     assert "hello world" in result.stdout or "Uncovered" in result.stdout
+
+
+def test_check_string_coverage_collects_n_and_context_strings(
+    tmp_path: Path,
+) -> None:
+    """_n() and _p() calls should be interpreted as covered user strings."""
+    src = tmp_path / "src"
+    src.mkdir()
+    src_file = src / "gettext_calls.py"
+    src_file.write_text(
+        "from ccbt.i18n import _n, _p\n"
+        'singular = _n("file", "files", 2)\n'
+        '_p("ui_status", "Download complete")\n',
+        encoding="utf-8",
+    )
+
+    pot_dir = tmp_path / "locales" / "en" / "LC_MESSAGES"
+    pot_dir.mkdir(parents=True)
+    pot_file = pot_dir / "ccbt.pot"
+    pot_file.write_text(
+        'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\n'
+        'msgid "file"\nmsgstr ""\n\n'
+        'msgid "Download complete"\nmsgstr ""\n\n'
+        'msgid "files"\nmsgstr ""\n\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ccbt.i18n.scripts.check_string_coverage",
+            "--source-dir",
+            str(src),
+            "--pot",
+            str(pot_file),
+            "--fail-on-gap",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    assert "Uncovered" in result.stdout

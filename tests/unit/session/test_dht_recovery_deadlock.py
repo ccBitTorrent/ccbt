@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-from ccbt.utils.events import PeerCountLowEvent
+from ccbt.utils.events import EventBus, PeerCountLowEvent
 
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
@@ -22,6 +23,65 @@ async def test_peer_count_low_event_exposes_legacy_and_canonical_keys() -> None:
     assert event.data["active_peers"] == 3
     assert event.data["active_peer_count"] == 3
     assert event.data["total_peers"] == 9
+
+
+@pytest.mark.asyncio
+async def test_peer_count_low_dispatch_invokes_handler_without_can_handle_errors(
+    tmp_path,
+) -> None:
+    """Event bus dispatch should run peer_count_low handler without can_handle failures."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "peer-count-dispatch",
+        "info_hash": b"\x12" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    assert session._peer_count_low_handler is not None
+
+    bus = EventBus()
+    bus.register_handler("peer_count_low", session._peer_count_low_handler)
+
+    dispatched_payloads: list[dict[str, object]] = []
+
+    async def _schedule(event_data: dict[str, object]) -> None:
+        dispatched_payloads.append(event_data)
+
+    session._schedule_peer_count_low_recovery = _schedule  # type: ignore[method-assign]
+
+    await bus._handle_event(PeerCountLowEvent(active_peers=0, info_hash=session.info.info_hash))
+
+    assert dispatched_payloads == [
+        {"active_peers": 0, "active_peer_count": 0, "total_peers": 0, "info_hash": session.info.info_hash.hex()}
+    ]
+
+
+def test_peer_count_low_handler_implements_event_handler_contract(tmp_path) -> None:
+    """Peer count low handlers should expose both can_handle and handle."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "peer-count-handler-contract",
+        "info_hash": b"\x13" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    handler = session._create_peer_count_low_handler()
+    assert callable(getattr(handler, "can_handle", None))
+    assert callable(getattr(handler, "handle", None))
 
 
 @pytest.mark.asyncio
@@ -764,6 +824,84 @@ async def test_dht_discovery_forces_progress_after_repeated_batch_wait(monkeypat
     await setup._run_discovery_loop(dht_client)
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tracker_wait_is_shortened_when_no_tracker_progress(monkeypatch) -> None:
+    """DHT should shorten tracker-gated wait when tracker peers have not produced usable connections."""
+    from ccbt.session.dht_setup import DHTDiscoverySetup
+
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("ccbt.session.dht_setup.asyncio.sleep", fake_sleep)
+
+    session = SimpleNamespace(
+        stopped=False,
+        info=SimpleNamespace(name="dht-tracker-gating", info_hash=b"\x0C" * 20),
+        logger=SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda *args, **kwargs: None,
+            debug=lambda *args, **kwargs: None,
+        ),
+        download_manager=SimpleNamespace(
+            peer_manager=SimpleNamespace(
+                _connection_batches_in_progress=False,
+                get_active_peers=lambda: [],
+                connections={},
+            )
+        ),
+        piece_manager=SimpleNamespace(_metadata_incomplete=False),
+        torrent_data={"file_info": {"total_length": 16384}},
+        config=SimpleNamespace(
+            discovery=SimpleNamespace(
+                min_peers_before_dht=10,
+                enable_dht=True,
+                dht_normal_alpha=3,
+                dht_normal_k=8,
+                dht_normal_max_depth=8,
+                dht_aggressive_alpha=6,
+                dht_aggressive_k=16,
+                dht_aggressive_max_depth=12,
+                dht_batch_wait_defer_cycles=2,
+            ),
+            network=SimpleNamespace(
+                enable_fail_fast_dht=True,
+                fail_fast_dht_timeout=30.0,
+                max_peers_per_torrent=50,
+            ),
+        ),
+        session_manager=None,
+        _low_peers_since=None,
+        _tracker_peers_connecting_until=time.time() + 2.0,
+    )
+
+    calls = 0
+
+    async def fake_get_peers(*_args: object, **_kwargs: object) -> list[tuple[str, int]]:
+        nonlocal calls
+        calls += 1
+        session.stopped = True
+        return []
+
+    dht_client = SimpleNamespace(
+        wait_for_bootstrap=AsyncMock(return_value=True),
+        routing_table=SimpleNamespace(nodes=[object()]),
+        get_peers=AsyncMock(side_effect=fake_get_peers),
+        rebootstrap=AsyncMock(return_value=False),
+        peer_callbacks=[],
+        bootstrap_success_count=0,
+        bootstrap_failure_count=0,
+    )
+    session.session_manager = SimpleNamespace(dht_client=dht_client)
+
+    setup = DHTDiscoverySetup(session)
+    await setup._run_discovery_loop(dht_client)
+
+    assert calls == 1
+    assert sleep_calls[0] <= 0.5
 
 
 @pytest.mark.asyncio

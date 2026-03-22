@@ -46,8 +46,26 @@ def test_rc4_cipher_encrypt_decrypt():
     assert len(encrypted) == len(plaintext)
 
     # Decrypt should recover original
-    decrypted = cipher.decrypt(encrypted)
+    decrypt_cipher = RC4Cipher(key)
+    decrypted = decrypt_cipher.decrypt(encrypted)
     assert decrypted == plaintext
+
+
+def test_rc4_cipher_decrypt_continues_state():
+    """Test RC4 decrypt continues PRGA state across calls."""
+    key = b"secret_key_12345"
+    encryptor = RC4Cipher(key)
+    chunk_one = b"Hello, "
+    chunk_two = b"World!"
+    encrypted_one = encryptor.encrypt(chunk_one)
+    encrypted_two = encryptor.encrypt(chunk_two)
+
+    decryptor = RC4Cipher(key)
+    decrypted_one = decryptor.decrypt(encrypted_one)
+    decrypted_two = decryptor.decrypt(encrypted_two)
+
+    assert decrypted_one == chunk_one
+    assert decrypted_two == chunk_two
 
 
 def test_rc4_cipher_symmetric():
@@ -149,6 +167,25 @@ def test_aes_cipher_init_invalid_iv_size():
         AESCipher(key, iv=invalid_iv)
 
 
+def test_aes_cipher_init_with_default_iv_is_zero_iv():
+    """Test AESCipher default IV uses the zero IV."""
+    key = b"16_bytes_key_!!!"
+    cipher = AESCipher(key)
+
+    assert cipher.iv == b"\x00" * 16
+
+
+def test_aes_cipher_random_iv_for_testing():
+    """Test AESCipher test helper creates random IV."""
+    key = b"16_bytes_key_!!!"
+    cipher1 = AESCipher.with_random_iv_for_testing(key)
+    cipher2 = AESCipher.with_random_iv_for_testing(key)
+
+    assert len(cipher1.iv) == 16
+    assert len(cipher2.iv) == 16
+    assert cipher1.iv != cipher2.iv
+
+
 def test_aes_cipher_encrypt_decrypt():
     """Test AES encryption and decryption round-trip."""
     key = b"16_bytes_key_!!!"
@@ -247,7 +284,7 @@ def test_rc4_large_data():
     # Test with 1KB data
     large_data = b"x" * 1024
     encrypted = cipher.encrypt(large_data)
-    decrypted = cipher.decrypt(encrypted)
+    decrypted = RC4Cipher(key).decrypt(encrypted)
 
     assert len(encrypted) == len(large_data)
     assert decrypted == large_data

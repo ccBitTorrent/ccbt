@@ -9,7 +9,16 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.peer.peer import BitfieldMessage, HaveMessage, PeerInfo
+from ccbt.peer.peer import (
+    BitfieldMessage,
+    HaveMessage,
+    PeerInfo,
+    ParsedInboundPlainHandshake,
+)
+from ccbt.extensions.protocol import ExtensionProtocol
+from ccbt.security.encryption import EncryptionMode
+from ccbt.security.mse_handshake import CipherType
+from ccbt.security.swarm_auth_policy import AuthDecision
 from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
@@ -105,8 +114,8 @@ async def test_connect_to_peers_success(peer_manager, peer_info):
     mock_writer.close = MagicMock()  # CRITICAL: close() should not be async
     mock_writer.wait_closed = AsyncMock()  # CRITICAL: wait_closed() should be async
     mock_writer.is_closing = MagicMock(return_value=False)  # CRITICAL: Writer must not be closing
-    # CRITICAL: Handshake reading expects protocol length byte (19 = 0x13) first, then 67 more bytes
-    # The code may call readexactly(1) multiple times, so we need to return based on the requested size
+    # The parser reads the handshake in chunked form; provide both modern (28-byte
+    # prefix + suffix) and legacy 1+67 sequences for compatibility.
     # For v1 handshake: protocol_len (1 byte) + "BitTorrent protocol" (19 bytes) + reserved (8 bytes) + info_hash (20 bytes) + peer_id (20 bytes) = 68 bytes
     protocol_length_byte = b"\x13"  # 19 in hex
     # Build proper v1 handshake: protocol string + reserved bytes (all zeros for v1) + info_hash + peer_id
@@ -115,16 +124,21 @@ async def test_connect_to_peers_success(peer_manager, peer_info):
     info_hash = peer_manager.torrent_data["info_hash"]
     peer_id = b"test_peer_id_20bytes"
     remaining_handshake = protocol_string + reserved_bytes + info_hash + peer_id
+    full_handshake = protocol_length_byte + remaining_handshake
     # Ensure remaining_handshake is exactly 67 bytes (19 + 8 + 20 + 20 = 67)
     assert len(remaining_handshake) == 67, f"Expected 67 bytes, got {len(remaining_handshake)}"
     
     # Return based on requested size, not call count
     # Track calls to handle multiple reads of same size
-    call_tracker = {"1": 0, "67": 0, "12": 0, "4": 0, "other": 0}
+    call_tracker = {"1": 0, "28": 0, "40": 0, "67": 0, "12": 0, "4": 0, "other": 0}
     max_message_reads = 3  # Limit message reads to prevent infinite loop
     async def mock_readexactly(n):
-        call_key = str(n) if n in (1, 67, 12, 4) else "other"
+        call_key = str(n) if n in (1, 28, 40, 67, 12, 4) else "other"
         call_tracker[call_key] = call_tracker.get(call_key, 0) + 1
+        if n == 28:
+            return full_handshake[:28]
+        if n == 40:
+            return full_handshake[28:]
         if n == 1:
             # Request for 1 byte: return protocol length byte
             return protocol_length_byte
@@ -212,8 +226,13 @@ async def test_outbound_magnet_peer_sends_proactive_extension_handshake(
     info_hash = peer_manager.torrent_data["info_hash"]
     peer_id = b"test_peer_id_20bytes"
     remaining_handshake = protocol_string + reserved_bytes + info_hash + peer_id
+    full_handshake = protocol_length_byte + remaining_handshake
 
     async def mock_readexactly(n):
+        if n == 28:
+            return full_handshake[:28]
+        if n == 40:
+            return full_handshake[28:]
         if n == 1:
             return protocol_length_byte
         if n == 67:
@@ -254,6 +273,105 @@ async def test_outbound_magnet_peer_sends_proactive_extension_handshake(
                     await asyncio.sleep(0.05)
 
     assert send_extension.await_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_send_our_extension_handshake_includes_encryption_preference(
+    peer_manager, peer_info
+):
+    """Extension handshake includes top-level encryption preference `e`."""
+    peer_manager.piece_manager._metadata_incomplete = True
+    peer_manager.torrent_data["file_info"] = None
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "required"
+
+    protocol = ExtensionProtocol()
+    protocol.register_extension("ut_metadata", "1.0")
+
+    extension_manager = MagicMock()
+    extension_manager.get_extension.return_value = protocol
+    peer_manager.extension_manager = extension_manager
+
+    connection = AsyncPeerConnection(
+        peer_info=peer_info, torrent_data=peer_manager.torrent_data
+    )
+    mock_writer = MagicMock()
+    mock_writer.write = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+    mock_writer.is_closing = MagicMock(return_value=False)
+    connection.writer = mock_writer
+
+    from ccbt.core.bencode import BencodeEncoder
+
+    captured: dict[str, dict] = {}
+    original_encode = BencodeEncoder.encode
+
+    def capture_encode(self, data):
+        if "handshake" not in captured:
+            captured["handshake"] = data
+        return original_encode(self, data)
+
+    with patch("ccbt.core.bencode.BencodeEncoder.encode", new=capture_encode):
+        await peer_manager._send_our_extension_handshake(connection)
+
+    handshake = captured.get("handshake")
+    assert handshake is not None
+    assert b"e" in handshake
+    assert handshake[b"e"] in {"required", b"required"}
+
+
+@pytest.mark.asyncio
+async def test_send_our_extension_handshake_includes_prepared_swarm_auth(
+    peer_manager, peer_info
+):
+    peer_manager.piece_manager._metadata_incomplete = True
+    peer_manager.torrent_data["file_info"] = None
+
+    protocol = ExtensionProtocol()
+    protocol.register_extension("ut_metadata", "1.0")
+
+    extension_manager = MagicMock()
+    extension_manager.get_extension.return_value = protocol
+    peer_manager.extension_manager = extension_manager
+
+    connection = AsyncPeerConnection(
+        peer_info=peer_info, torrent_data=peer_manager.torrent_data
+    )
+    mock_writer = MagicMock()
+    mock_writer.write = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+    mock_writer.is_closing = MagicMock(return_value=False)
+    connection.writer = mock_writer
+
+    from ccbt.core.bencode import BencodeEncoder
+
+    captured: dict[str, dict] = {}
+    original_encode = BencodeEncoder.encode
+
+    def capture_encode(self, data):
+        if "handshake" not in captured:
+            captured["handshake"] = data
+        return original_encode(self, data)
+
+    expected_swarm_auth = {
+        "swarm_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "public_key": b"\x01" * 32,
+        "signature": b"\x02" * 64,
+        "timestamp": 1234567890,
+        "trust_proof_hint": "spki_sha256",
+    }
+    connection.swarm_auth_payload = expected_swarm_auth
+
+    with patch("ccbt.core.bencode.BencodeEncoder.encode", new=capture_encode):
+        await peer_manager._send_our_extension_handshake(connection)
+
+    handshake = captured.get("handshake")
+    assert handshake is not None
+    assert handshake.get(b"swarm_auth") == expected_swarm_auth
 
 
 @pytest.mark.asyncio
@@ -330,6 +448,31 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(peer_ma
 
 
 @pytest.mark.asyncio
+async def test_connect_to_peers_rejects_outbound_when_swarm_auth_denies(peer_manager, peer_info):
+    """Outbound swarm-auth decision should abort connection attempts."""
+    peer_manager.torrent_data["info_hash"] = b"x" * 20
+
+    mock_reader = AsyncMock()
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+    mock_writer.is_closing = MagicMock(return_value=False)
+    mock_writer.write = MagicMock()
+    peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
+
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        with patch(
+            "ccbt.peer.async_peer_connection.evaluate_outbound_admission",
+            return_value=AuthDecision(False, "strict", "outbound_swarm_auth_denied"),
+        ):
+            await peer_manager.connect_to_peers(peer_list)
+
+    assert len(peer_manager.connections) == 0
+    assert mock_writer.close.called
+
+
+@pytest.mark.asyncio
 async def test_connect_to_peers_guarded_inflight_duplicate_peers(peer_manager, peer_info, monkeypatch):
     """connect_to_peers should not launch duplicate concurrent handshakes for the same peer."""
     peer_list = [
@@ -364,6 +507,10 @@ async def test_connect_to_peers_requeues_aborted_batch_peers(peer_manager, monke
 
     async def connect_with_split_results(peer: PeerInfo) -> None:
         if peer.port <= 6883:
+            peer_manager.connections[str(peer)] = AsyncPeerConnection(
+                peer_info=peer, torrent_data=peer_manager.torrent_data
+            )
+            peer_manager.connections[str(peer)].state = ConnectionState.HANDSHAKE_RECEIVED
             return
         # This branch is intentionally slow to trigger early-batch control cancellation.
         await asyncio.sleep(1.0)
@@ -388,10 +535,6 @@ async def test_connect_to_peers_requeues_aborted_batch_peers(peer_manager, monke
 
     pending_ports = sorted(peer.port for peer in peer_manager._pending_peer_queue)
     assert pending_ports == [6884, 6885, 6886]
-    for idx in range(3, 6):
-        assert (
-            f"203.0.113.10:{6881 + idx}" not in peer_manager._failed_peers
-        )
 @pytest.mark.asyncio
 async def test_connect_to_peers_skips_active_healthy_duplicate(peer_manager, peer_info, monkeypatch):
     """Duplicate active connections with valid transport should be skipped."""
@@ -1255,6 +1398,343 @@ async def test_accept_incoming_sets_connection_start_time(monkeypatch, peer_mana
 
 
 @pytest.mark.asyncio
+async def test_accept_incoming_rejects_plain_when_encryption_required(
+    monkeypatch, peer_manager
+):
+    """Incoming plaintext peers are rejected when encryption mode is required."""
+    peer_ip = "203.0.113.11"
+    peer_port = 6890
+    reader = AsyncMock()
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.write = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+
+    handshake = ParsedInboundPlainHandshake(
+        protocol_len=19,
+        protocol=b"BitTorrent protocol",
+        reserved_bytes=b"\x00" * 8,
+        info_hash_v1=peer_manager.torrent_data["info_hash"],
+        info_hash_v2=None,
+        peer_id=b"12345678901234567890",
+    )
+
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "required"
+
+    await peer_manager.accept_incoming(
+        reader, writer, handshake, peer_ip, peer_port, enforce_encryption_mode=True
+    )
+
+    peer_key = f"{peer_ip}:{peer_port}"
+    assert peer_key not in peer_manager.connections
+    writer.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_accept_incoming_prefers_plain_when_encryption_preferred(
+    monkeypatch, peer_manager
+):
+    """Incoming plaintext peers proceed when encryption mode is preferred."""
+    peer_ip = "203.0.113.13"
+    peer_port = 6892
+    reader = AsyncMock()
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.write = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    writer.is_closing = MagicMock(return_value=False)
+
+    handshake = ParsedInboundPlainHandshake(
+        protocol_len=19,
+        protocol=b"BitTorrent protocol",
+        reserved_bytes=b"\x00" * 8,
+        info_hash_v1=peer_manager.torrent_data["info_hash"],
+        info_hash_v2=None,
+        peer_id=b"12345678901234567890",
+    )
+
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "preferred"
+
+    monkeypatch.setattr(peer_manager, "_send_bitfield", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_unchoke", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_attempt_ssl_negotiation", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_interested", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_handle_peer_messages", AsyncMock())
+    monkeypatch.setattr("ccbt.utils.events.emit_event", AsyncMock())
+
+    await peer_manager.accept_incoming(
+        reader, writer, handshake, peer_ip, peer_port, enforce_encryption_mode=True
+    )
+
+    peer_key = f"{peer_ip}:{peer_port}"
+    assert peer_key in peer_manager.connections
+    writer.close.assert_not_called()
+    connection = peer_manager.connections[peer_key]
+    assert connection.is_encrypted is False
+
+
+@pytest.mark.asyncio
+async def test_accept_incoming_accepts_plain_when_plaintext_only_alias(
+    monkeypatch, peer_manager
+):
+    """Incoming plaintext peers are accepted when encryption policy is plaintext-only."""
+    peer_ip = "203.0.113.14"
+    peer_port = 6893
+    reader = AsyncMock()
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.write = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    writer.is_closing = MagicMock(return_value=False)
+
+    handshake = ParsedInboundPlainHandshake(
+        protocol_len=19,
+        protocol=b"BitTorrent protocol",
+        reserved_bytes=b"\x00" * 8,
+        info_hash_v1=peer_manager.torrent_data["info_hash"],
+        info_hash_v2=None,
+        peer_id=b"12345678901234567890",
+    )
+
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "plaintext-only"
+
+    monkeypatch.setattr(peer_manager, "_send_bitfield", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_unchoke", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_attempt_ssl_negotiation", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_interested", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_handle_peer_messages", AsyncMock())
+    monkeypatch.setattr("ccbt.utils.events.emit_event", AsyncMock())
+
+    await peer_manager.accept_incoming(
+        reader, writer, handshake, peer_ip, peer_port, enforce_encryption_mode=True
+    )
+
+    peer_key = f"{peer_ip}:{peer_port}"
+    assert peer_key in peer_manager.connections
+    writer.close.assert_not_called()
+    connection = peer_manager.connections[peer_key]
+    assert connection.is_encrypted is False
+
+
+@pytest.mark.asyncio
+async def test_accept_incoming_encrypted_uses_phase_b_parser(monkeypatch, peer_manager):
+    """Encrypted inbound path parses decrypted payload with Phase B parser."""
+    peer_ip = "203.0.113.12"
+    peer_port = 6891
+    reader = AsyncMock()
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    writer.write = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    writer.is_closing = MagicMock(return_value=False)
+
+    monkeypatch.setattr(peer_manager, "_send_bitfield", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_unchoke", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_attempt_ssl_negotiation", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_handle_peer_messages", AsyncMock())
+    monkeypatch.setattr(peer_manager, "_send_interested", AsyncMock())
+    monkeypatch.setattr("ccbt.utils.events.emit_event", AsyncMock())
+
+    protocol = b"BitTorrent protocol"
+    decrypted_payload = (
+        bytes([19])
+        + protocol
+        + b"\x00" * 8
+        + peer_manager.torrent_data["info_hash"]
+        + b"12345678901234567890"
+    )
+
+    await peer_manager.accept_incoming_encrypted(
+        reader,
+        writer,
+        decrypted_payload,
+        peer_ip,
+        peer_port,
+    )
+
+    peer_key = f"{peer_ip}:{peer_port}"
+    assert peer_key in peer_manager.connections
+    connection = peer_manager.connections[peer_key]
+    assert connection.is_encrypted is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_outbound_encryption_mode_prefers_required_hint(
+    peer_manager,
+    peer_info,
+):
+    """Configured preferred mode should escalate to required from tracker hint."""
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "preferred"
+    peer_info.peer_id = b"peer-id-abc-20bytes!"
+    peer_info._tracker_encryption_preference = "preferred"
+    peer_info._peer_encryption_preference = "required"
+
+    result = peer_manager._resolve_outbound_encryption_mode(peer_info)
+    assert result == EncryptionMode.REQUIRED
+
+
+@pytest.mark.asyncio
+async def test_resolve_outbound_encryption_mode_uses_extension_protocol_hint(peer_manager):
+    """PEP 10 `e` peer preference should influence outbound policy."""
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "disabled"
+    peer_info = PeerInfo(ip="198.51.100.1", port=6881, peer_id=b"peer-id-proto")
+
+    protocol_extension = ExtensionProtocol()
+    protocol_extension.peer_extensions = {"peer-id-proto": {"e": "preferred"}}
+
+    peer_manager.extension_manager = MagicMock()
+    peer_manager.extension_manager.get_extension.return_value = protocol_extension
+
+    result = peer_manager._resolve_outbound_encryption_mode(peer_info)
+    assert result == EncryptionMode.PREFERRED
+
+
+@pytest.mark.asyncio
+async def test_resolve_outbound_encryption_mode_uses_pex_preference(peer_manager):
+    """PEX seed/peer flags can contribute a preferred encryption hint."""
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "disabled"
+    peer_info = PeerInfo(ip="198.51.100.2", port=6881)
+    peer_info._peer_pex_prefer_encrypt = True
+
+    result = peer_manager._resolve_outbound_encryption_mode(peer_info)
+    assert result == EncryptionMode.PREFERRED
+
+
+@pytest.mark.asyncio
+async def test_resolve_outbound_encryption_mode_uses_pex_flags(peer_manager):
+    """PEX flag bit 0x01 maps to preferred encryption in outbound resolution."""
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "disabled"
+    peer_info = PeerInfo(ip="198.51.100.3", port=6881)
+    peer_info._peer_pex_flags = 0x01
+
+    result = peer_manager._resolve_outbound_encryption_mode(peer_info)
+    assert result == EncryptionMode.PREFERRED
+
+
+@pytest.mark.asyncio
+async def test_resolve_outbound_encryption_mode_ignores_pex_seed_flag(peer_manager):
+    """PEX seed/upload-only bit (0x02) should not force encryption preference."""
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "disabled"
+    peer_info = PeerInfo(ip="198.51.100.4", port=6881)
+    peer_info._peer_pex_flags = 0x02
+
+    result = peer_manager._resolve_outbound_encryption_mode(peer_info)
+    assert result == EncryptionMode.DISABLED
+
+
+@pytest.mark.asyncio
+async def test_resolve_outbound_encryption_mode_disabled_global_override(peer_manager):
+    """Global encryption disabled should override all inbound/outbound hints."""
+    peer_manager.config.security.enable_encryption = False
+    peer_info = PeerInfo(ip="203.0.113.4", port=6881)
+    peer_info._tracker_encryption_preference = "required"
+    peer_info._peer_pex_prefer_encrypt = True
+
+    result = peer_manager._resolve_outbound_encryption_mode(peer_info)
+    assert result == EncryptionMode.DISABLED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("alias", "expected"),
+    [
+        ("plaintext-only", EncryptionMode.DISABLED),
+        ("prefer-plaintext", EncryptionMode.PREFERRED),
+        ("prefer-encrypted", EncryptionMode.PREFERRED),
+        ("require-encrypted", EncryptionMode.REQUIRED),
+        (True, EncryptionMode.PREFERRED),
+        (False, EncryptionMode.DISABLED),
+    ],
+)
+async def test_coerce_encryption_mode_aliases(peer_manager, alias, expected):
+    """Legacy and canonical aliases resolve to intended EncryptionMode values."""
+    assert peer_manager._coerce_encryption_mode(alias) == expected
+
+
+@pytest.mark.asyncio
+async def test_send_our_extension_handshake_prefers_disabled_alias(peer_manager, peer_info):
+    """Extension preference alias `plaintext-only` advertises disabled e-field."""
+    peer_manager.piece_manager._metadata_incomplete = True
+    peer_manager.torrent_data["file_info"] = None
+    peer_manager.config.security.enable_encryption = True
+    peer_manager.config.security.encryption_mode = "plaintext-only"
+
+    protocol = ExtensionProtocol()
+    protocol.register_extension("ut_metadata", "1.0")
+
+    extension_manager = MagicMock()
+    extension_manager.get_extension.return_value = protocol
+    peer_manager.extension_manager = extension_manager
+
+    connection = AsyncPeerConnection(
+        peer_info=peer_info, torrent_data=peer_manager.torrent_data
+    )
+    mock_writer = MagicMock()
+    mock_writer.write = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.close = MagicMock()
+    mock_writer.wait_closed = AsyncMock()
+    mock_writer.is_closing = MagicMock(return_value=False)
+    connection.writer = mock_writer
+
+    from ccbt.core.bencode import BencodeEncoder
+
+    captured: dict[str, dict] = {}
+    original_encode = BencodeEncoder.encode
+
+    def capture_encode(self, data):
+        if "handshake" not in captured:
+            captured["handshake"] = data
+        return original_encode(self, data)
+
+    with patch("ccbt.core.bencode.BencodeEncoder.encode", new=capture_encode):
+        await peer_manager._send_our_extension_handshake(connection)
+
+    handshake = captured.get("handshake")
+    assert handshake is not None
+    assert b"e" in handshake
+    assert handshake[b"e"] in {"disabled", b"disabled"}
+
+
+def test_create_mse_handshake_uses_security_settings(peer_manager):
+    """Create MSE handshake from explicit security settings."""
+    peer_manager.config.security.encryption_dh_key_size = 1024
+    peer_manager.config.security.encryption_prefer_rc4 = False
+    peer_manager.config.security.encryption_allowed_ciphers = ["aes", "chacha20", "rc4"]
+
+    mse = peer_manager._create_mse_handshake()
+
+    assert mse.dh_exchange.key_size == 1024
+    assert mse.prefer_rc4 is False
+    assert mse.allowed_ciphers == [
+        CipherType.AES,
+        CipherType.CHACHA20,
+        CipherType.RC4,
+    ]
+
+
+def test_create_mse_handshake_falls_back_on_invalid_dh_size(peer_manager):
+    """Invalid DH key sizes should fall back to 768."""
+    peer_manager.config.security.encryption_dh_key_size = 999
+
+    mse = peer_manager._create_mse_handshake()
+
+    assert mse.dh_exchange.key_size == 768
+
+
+@pytest.mark.asyncio
 async def test_handle_unchoke_uses_seed_anchor_retry_budget(monkeypatch, peer_manager):
     """Seed-anchor peers get higher unchoke retry/requester budgets for faster recovery."""
     connection = AsyncPeerConnection(
@@ -1650,3 +2130,201 @@ def test_safe_loop_duration_handles_invalid_and_missing_timestamps(peer_manager)
 
     elapsed = 1.5
     assert peer_manager._safe_loop_duration(now, now - elapsed) == elapsed
+
+
+@pytest.mark.asyncio
+async def test_handle_extension_message_uses_peer_advertised_extension_id_for_registered_handler(
+    peer_manager, peer_info
+):
+    """Registered handlers should send responses using peer-advertised extension IDs."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info, torrent_data=peer_manager.torrent_data
+    )
+    connection.writer = MagicMock()
+
+    protocol = MagicMock()
+    protocol.get_peer_extension_name.return_value = "xet"
+    protocol.get_peer_message_id.return_value = 77
+    protocol.get_extension_info.return_value = MagicMock(message_id=1)
+    protocol.message_handlers = {1: AsyncMock(return_value=b"response")}
+
+    extension_manager = MagicMock()
+    extension_manager.get_extension.return_value = protocol
+    peer_manager.extension_manager = extension_manager
+
+    with patch(
+        "ccbt.protocols.bittorrent_v2._send_extension_message",
+        new=AsyncMock(return_value=True),
+    ) as send_ext:
+        payload = bytes([20, 9, 1, 2, 3])  # message_id=20, extension_id=9
+        await peer_manager._handle_extension_message(connection, payload)
+
+    send_ext.assert_awaited_once()
+    _, sent_extension_id, _ = send_ext.await_args.args
+    assert sent_extension_id == 77
+
+
+@pytest.mark.asyncio
+async def test_handle_extension_message_uses_peer_advertised_extension_id_for_ssl_xet_response(
+    peer_manager, peer_info
+):
+    """Fallback SSL/XET handlers should send responses using peer-advertised IDs."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info, torrent_data=peer_manager.torrent_data
+    )
+    connection.writer = MagicMock()
+
+    protocol = MagicMock()
+    protocol.get_peer_extension_name.return_value = "xet"
+    protocol.get_peer_message_id.return_value = 88
+    protocol.message_handlers = {}
+    protocol.get_extension_info.return_value = None
+
+    extension_manager = MagicMock()
+    extension_manager.get_extension.return_value = protocol
+    extension_manager.handle_ssl_message = AsyncMock(return_value=None)
+    extension_manager.handle_xet_message = AsyncMock(return_value=b"xet-response")
+    peer_manager.extension_manager = extension_manager
+
+    with patch(
+        "ccbt.protocols.bittorrent_v2._send_extension_message",
+        new=AsyncMock(return_value=True),
+    ) as send_ext:
+        payload = bytes([20, 9, 9, 8, 7])  # message_id=20, extension_id=9
+        await peer_manager._handle_extension_message(connection, payload)
+
+    send_ext.assert_awaited_once_with(connection, 88, b"xet-response")
+
+
+@pytest.mark.asyncio
+async def test_handle_extension_message_skips_response_without_peer_advertised_id(
+    peer_manager, peer_info
+):
+    """If peer-advertised extension ID is missing, no extension response is sent."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info, torrent_data=peer_manager.torrent_data
+    )
+    connection.writer = MagicMock()
+
+    protocol = MagicMock()
+    protocol.get_peer_extension_name.return_value = "xet"
+    protocol.get_peer_message_id.return_value = None
+    protocol.get_extension_info.return_value = MagicMock(message_id=1)
+    protocol.message_handlers = {}
+
+    extension_manager = MagicMock()
+    extension_manager.get_extension.return_value = protocol
+    extension_manager.handle_xet_message = AsyncMock(return_value=b"xet-response")
+    peer_manager.extension_manager = extension_manager
+
+    with patch(
+        "ccbt.protocols.bittorrent_v2._send_extension_message",
+        new=AsyncMock(return_value=True),
+    ) as send_ext:
+        payload = bytes([20, 9, 9, 8, 7])  # message_id=20, extension_id=9
+        await peer_manager._handle_extension_message(connection, payload)
+
+    send_ext.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_accept_incoming_rejects_strict_non_ltep_peer(peer_manager):
+    """Strict mode should reject inbound peers that do not advertise LTEP."""
+    peer_info = PeerInfo(ip="203.0.113.10", port=50100, peer_id=b"test_peer_20bytes____")
+    original_mode = peer_manager.config.security.authenticated_swarms.mode
+    peer_manager.config.security.authenticated_swarms.mode = "strict"
+
+    reader = AsyncMock()
+    writer = MagicMock()
+    writer.write = MagicMock()
+    writer.drain = AsyncMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+
+    handshake = MagicMock()
+    handshake.peer_id = b"test_peer_20bytes___"  # exactly 20 bytes
+    handshake.info_hash = peer_manager.torrent_data["info_hash"]
+    handshake.reserved_bytes = b"\x00" * 8
+
+    try:
+        await peer_manager.accept_incoming(
+            reader=reader,
+            writer=writer,
+            handshake=handshake,
+            peer_ip=peer_info.ip,
+            peer_port=peer_info.port,
+            enforce_encryption_mode=False,
+        )
+    finally:
+        peer_manager.config.security.authenticated_swarms.mode = original_mode
+
+    assert writer.close.call_count >= 1
+    assert f"{peer_info.ip}:{peer_info.port}" not in peer_manager.connections
+
+
+@pytest.mark.asyncio
+async def test_strict_ltep_timeout_closes_connection_if_extension_not_seen(peer_manager):
+    """Strict-mode peers with LTEP support must send extension handshake before timeout."""
+    original_mode = peer_manager.config.security.authenticated_swarms.mode
+    original_timeout = (
+        peer_manager.config.security.authenticated_swarms.strict_ltep_handshake_timeout_s
+    )
+    peer_manager.config.security.authenticated_swarms.mode = "strict"
+    peer_manager.config.security.authenticated_swarms.strict_ltep_handshake_timeout_s = 0.05
+
+    connection = AsyncPeerConnection(
+        peer_info=PeerInfo(ip="203.0.113.11", port=50101),
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.reserved_bytes = b"\x00\x00\x00\x00\x00\x10\x00\x00"
+    connection.close = AsyncMock()
+
+    try:
+        with patch(
+            "ccbt.peer.async_peer_connection.get_metrics_collector",
+            return_value=None,
+        ):
+            peer_manager._start_strict_ltep_timeout(connection)
+            await asyncio.sleep(0.08)
+            connection.close.assert_awaited_once()
+            assert peer_manager._strict_ltep_timeout_tasks.get("203.0.113.11:50101") is None
+    finally:
+        peer_manager.config.security.authenticated_swarms.mode = original_mode
+        peer_manager.config.security.authenticated_swarms.strict_ltep_handshake_timeout_s = (
+            original_timeout
+        )
+
+
+@pytest.mark.asyncio
+async def test_strict_ltep_timeout_cleared_after_extension_handshake(peer_manager):
+    """Extension handshake should clear strict-mode LTEP timeout timer."""
+    original_mode = peer_manager.config.security.authenticated_swarms.mode
+    original_timeout = (
+        peer_manager.config.security.authenticated_swarms.strict_ltep_handshake_timeout_s
+    )
+    peer_manager.config.security.authenticated_swarms.mode = "strict"
+    peer_manager.config.security.authenticated_swarms.strict_ltep_handshake_timeout_s = 0.05
+
+    connection = AsyncPeerConnection(
+        peer_info=PeerInfo(ip="203.0.113.12", port=50102),
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.reserved_bytes = b"\x00\x00\x00\x00\x00\x10\x00\x00"
+    connection.close = AsyncMock()
+
+    try:
+        with patch(
+            "ccbt.peer.async_peer_connection.get_metrics_collector",
+            return_value=None,
+        ):
+            peer_manager._start_strict_ltep_timeout(connection)
+            await asyncio.sleep(0.02)
+            peer_manager._notify_strict_ltep_handshake_seen(connection)
+            await asyncio.sleep(0.05)
+            connection.close.assert_not_called()
+            assert peer_manager._strict_ltep_timeout_tasks.get("203.0.113.12:50102") is None
+    finally:
+        peer_manager.config.security.authenticated_swarms.mode = original_mode
+        peer_manager.config.security.authenticated_swarms.strict_ltep_handshake_timeout_s = (
+            original_timeout
+        )

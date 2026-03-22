@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import logging
 import math
 import random
@@ -16,13 +17,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from heapq import heappop, heappush
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterable, Optional, Union
-
-if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
-    from ccbt.security.encrypted_stream import (
-        EncryptedStreamReader,
-        EncryptedStreamWriter,
-    )
+from types import SimpleNamespace
+from typing import Any, Awaitable, Callable, Iterable, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.models import MessageType
@@ -38,12 +34,14 @@ from ccbt.peer.peer import (
     KeepAliveMessage,
     MessageError,
     NotInterestedMessage,
+    ParsedInboundPlainHandshake,
     PeerInfo,
     PeerMessage,
     PeerState,
     PieceMessage,
     RequestMessage,
     UnchokeMessage,
+    parse_plaintext_bittorrent_handshake,
 )
 from ccbt.protocols.bittorrent_v2 import (
     MESSAGE_ID_FILE_TREE_REQUEST,
@@ -54,6 +52,23 @@ from ccbt.protocols.bittorrent_v2 import (
     FileTreeResponse,
     PieceLayerRequest,
     PieceLayerResponse,
+    expected_plaintext_handshake_total_len,
+)
+from ccbt.security.ciphers.aes import AESCipher
+from ccbt.security.ciphers.chacha20 import ChaCha20Cipher
+from ccbt.security.ciphers.rc4 import RC4Cipher
+from ccbt.security.encrypted_stream import (
+    EncryptedStreamReader,
+    EncryptedStreamWriter,
+    pair_streams,
+)
+from ccbt.security.encryption import EncryptionMode
+from ccbt.security.swarm_auth_policy import (
+    SWARM_AUTH_STRICT_LTEP_TIMEOUT_TOTAL,
+    _extract_session_mode,
+    build_outbound_swarm_auth_payload,
+    evaluate_inbound_admission,
+    evaluate_outbound_admission,
 )
 from ccbt.utils.shutdown import is_shutting_down
 
@@ -124,7 +139,7 @@ class PeerStats:
     choke_state_ratio: float = 0.0  # Exponential ratio of recent choke state
     choke_streak: int = 0  # Recent consecutive choke transitions
     last_choke_ratio_update: float = 0.0  # Last timestamp for choke ratio decay
-    last_peer_choked_state: Optional[bool] = None
+    last_peer_choked_state: Optional[bool]= None
     choke_only_penalty: float = 0.0  # Decayed penalty for repeated choke-only behavior
     last_choke_only_penalty_update: float = (
         0.0  # Timestamp for choke-only penalty decay
@@ -140,8 +155,8 @@ class AsyncPeerConnection:
 
     peer_info: PeerInfo
     torrent_data: dict[str, Any]
-    reader: Optional[Union[asyncio.StreamReader, EncryptedStreamReader]] = None
-    writer: Optional[Union[asyncio.StreamWriter, EncryptedStreamWriter]] = None
+    reader: Union[asyncio.StreamReader, EncryptedStreamReader, None]= None
+    writer: Union[asyncio.StreamWriter, EncryptedStreamWriter, None]= None
     state: ConnectionState = ConnectionState.DISCONNECTED
     peer_state: PeerState = field(default_factory=PeerState)
     message_decoder: AsyncMessageDecoder = field(default_factory=AsyncMessageDecoder)
@@ -153,7 +168,7 @@ class AsyncPeerConnection:
     )
     request_queue: deque = field(default_factory=deque)
     max_pipeline_depth: int = 16
-    _priority_queue: Optional[list[tuple[float, float, RequestInfo]]] = (
+    _priority_queue: list[tuple[float, float, RequestInfo]] | None = (
         None  # (priority, timestamp, request)
     )
 
@@ -164,18 +179,22 @@ class AsyncPeerConnection:
     peer_interested: bool = False
 
     # Connection management
-    connection_task: Optional[asyncio.Task] = None
-    error_message: Optional[str] = None
+    connection_task: Optional[asyncio.Task]= None
+    error_message: Optional[str]= None
 
     # Encryption support
     is_encrypted: bool = False
     encryption_cipher: Any = None  # CipherSuite instance from MSE handshake
+    inbound_handshake: Optional[Any] = None
+    swarm_auth_payload: Optional[dict[str, Any]] = None
+    peer_tls_certificate_der: Optional[bytes]= None
+    peer_tls_public_key_from_cert: Optional[bytes]= None
 
     # Reserved bytes from handshake (for extension support detection)
-    reserved_bytes: Optional[bytes] = None
+    reserved_bytes: Optional[bytes]= None
     supports_extension_protocol: bool = False
-    ut_metadata_id: Optional[int] = None
-    metadata_size: Optional[int] = None
+    ut_metadata_id: Optional[int]= None
+    metadata_size: Optional[int]= None
     our_extension_handshake_sent_at: float = 0.0
     peer_extension_handshake_received_at: float = 0.0
     metadata_exchange_started_at: float = 0.0
@@ -190,15 +209,15 @@ class AsyncPeerConnection:
     )  # Last token bucket update time
     quality_verified: bool = False
     _quality_probation_started: float = 0.0
-    extension_manager: Optional[Any] = None
-    utp_socket_manager: Optional[Any] = None
+    extension_manager: Optional[Any]= None
+    utp_socket_manager: Optional[Any]= None
 
     # Connection pool support
-    _pooled_connection: Optional[Any] = None  # Pooled connection from connection pool
-    _pooled_connection_key: Optional[str] = None  # Key for connection pool lookup
+    _pooled_connection: Optional[Any]= None  # Pooled connection from connection pool
+    _pooled_connection_key: Optional[str]= None  # Key for connection pool lookup
 
     # Connection timing and status
-    connection_start_time: Optional[float] = (
+    connection_start_time: Optional[float]= (
         None  # Timestamp when connection was established
     )
     is_seeder: bool = False  # Whether peer is a seeder (has all pieces)
@@ -206,12 +225,12 @@ class AsyncPeerConnection:
     metadata_only_since: float = 0.0  # Time when peer became metadata-only
 
     # Callback functions (set by connection manager)
-    on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
-    on_peer_disconnected: Optional[Callable[[AsyncPeerConnection], None]] = None
-    on_bitfield_received: Optional[
+    on_peer_connected: Callable[[AsyncPeerConnection], None] | None = None
+    on_peer_disconnected: Callable[[AsyncPeerConnection], None] | None = None
+    on_bitfield_received: None | (
         Callable[[AsyncPeerConnection, BitfieldMessage], None]
-    ] = None
-    on_piece_received: Optional[Callable[[AsyncPeerConnection, PieceMessage], None]] = (
+    ) = None
+    on_piece_received: Callable[[AsyncPeerConnection, PieceMessage], None] | None = (
         None
     )
 
@@ -424,7 +443,7 @@ class AsyncPeerConnection:
         self._quality_probation_started = value
 
     @property
-    def pooled_connection(self) -> Optional[Any]:
+    def pooled_connection(self) -> Union[Any, None]:
         """Get pooled connection if available.
 
         Returns:
@@ -434,7 +453,7 @@ class AsyncPeerConnection:
         return self._pooled_connection
 
     @pooled_connection.setter
-    def pooled_connection(self, value: Optional[Any]) -> None:
+    def pooled_connection(self, value: Union[Any, None]) -> None:
         """Set pooled connection.
 
         Args:
@@ -444,7 +463,7 @@ class AsyncPeerConnection:
         self._pooled_connection = value
 
     @property
-    def pooled_connection_key(self) -> Optional[str]:
+    def pooled_connection_key(self) -> Union[str, None]:
         """Get pooled connection key if available.
 
         Returns:
@@ -454,7 +473,7 @@ class AsyncPeerConnection:
         return self._pooled_connection_key
 
     @pooled_connection_key.setter
-    def pooled_connection_key(self, value: Optional[str]) -> None:
+    def pooled_connection_key(self, value: Union[str, None]) -> None:
         """Set pooled connection key.
 
         Args:
@@ -618,9 +637,9 @@ class AsyncPeerConnectionManager:
         self,
         torrent_data: dict[str, Any],
         piece_manager: Any,
-        peer_id: Optional[bytes] = None,
+        peer_id: Optional[bytes]= None,
         key_manager: Any = None,  # Ed25519KeyManager
-        max_peers_per_torrent: Optional[int] = None,
+        max_peers_per_torrent: Optional[int]= None,
     ):
         """Initialize async peer connection manager.
 
@@ -701,8 +720,8 @@ class AsyncPeerConnectionManager:
         self._pending_peer_queue_lock: asyncio.Lock = asyncio.Lock()
         self._pending_resume_in_progress: bool = False
         self._inflight_peer_connects: set[str] = set()
-        self.extension_manager: Optional[Any] = None
-        self.utp_socket_manager: Optional[Any] = None
+        self.extension_manager: Optional[Any]= None
+        self.utp_socket_manager: Optional[Any]= None
 
         # Connection quality tracking (probation vs verified peers)
         self._quality_verified_peers: set[str] = set()
@@ -717,9 +736,11 @@ class AsyncPeerConnectionManager:
             "peer_quality_sample_size",
             5,
         )
+        self._strict_ltep_timeout_tasks: dict[str, asyncio.Task[None]] = {}
+        self._strict_ltep_timeout_events: dict[str, asyncio.Event] = {}
 
         # Adaptive timeout calculator (lazy initialization)
-        self._timeout_calculator: Optional[Any] = None
+        self._timeout_calculator: Optional[Any]= None
 
         # Failed peer tracking with exponential backoff
         # BitTorrent: track failure count for exponential backoff instead of just timestamp
@@ -731,6 +752,10 @@ class AsyncPeerConnectionManager:
             str, dict[str, Any]
         ] = {}  # peer_key -> {"timestamp": float, "count": int, "reason": str, "is_terminal": bool, "peer_source": str, "is_seeder": bool, "timeout_class": str, "is_transient": bool, "family": str}
         self._failed_peer_lock = asyncio.Lock()
+        # Bounded LRU/TTL memo for peers that repeatedly fail handshake validation.
+        self._malformed_handshake_memo: dict[str, float] = {}
+        self._malformed_handshake_memo_ttl_s = 300.0
+        self._malformed_handshake_memo_max_size = 512
         self._failed_family_backoff_scores: dict[str, float] = {}
         self._failed_family_backoff_last_seen: dict[str, float] = {}
         self._failed_family_decay_window = 300.0  # 5 minutes
@@ -782,7 +807,7 @@ class AsyncPeerConnectionManager:
             str, dict[str, Any]
         ] = {}  # peer_key -> peer_data
         self._tracker_retry_lock = asyncio.Lock()
-        self._tracker_retry_task: Optional[asyncio.Task] = None
+        self._tracker_retry_task: Optional[asyncio.Task]= None
 
         # Windows: global connection limiter to prevent WinError 121 and 10055
         # Windows has strict limits on socket buffers and OS-level TCP connection semaphores
@@ -828,6 +853,8 @@ class AsyncPeerConnectionManager:
             "handshake_sent": 0,
             "handshake_received": 0,
             "handshake_timeout": 0,
+            "handshake_invalid_protocol_length": 0,
+            "handshake_incomplete_read": 0,
             "info_hash_mismatch": 0,
             "bitfield_received": 0,
             "bitfield_wait_timeout": 0,
@@ -838,14 +865,14 @@ class AsyncPeerConnectionManager:
 
         # Choking management
         self.upload_slots: list[AsyncPeerConnection] = []
-        self.optimistic_unchoke: Optional[AsyncPeerConnection] = None
+        self.optimistic_unchoke: Optional[AsyncPeerConnection]= None
         self.optimistic_unchoke_time: float = 0.0
 
         # Background tasks
-        self._choking_task: Optional[asyncio.Task] = None
-        self._stats_task: Optional[asyncio.Task] = None
-        self._reconnection_task: Optional[asyncio.Task] = None
-        self._peer_evaluation_task: Optional[asyncio.Task] = None
+        self._choking_task: Optional[asyncio.Task]= None
+        self._stats_task: Optional[asyncio.Task]= None
+        self._reconnection_task: Optional[asyncio.Task]= None
+        self._peer_evaluation_task: Optional[asyncio.Task]= None
         self._message_loop_tasks: set[asyncio.Task[None]] = set()
 
         # Running state flag for idempotency
@@ -866,19 +893,19 @@ class AsyncPeerConnectionManager:
         self._unchoke_monitor_tasks: set[asyncio.Task[None]] = set()
 
         # Callbacks
-        self._on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
-        self._external_peer_disconnected: Optional[
+        self._on_peer_connected: Callable[[AsyncPeerConnection], None] | None = None
+        self._external_peer_disconnected: None | (
             Callable[[AsyncPeerConnection], None]
-        ] = None
-        self._on_peer_disconnected: Optional[Callable[[AsyncPeerConnection], None]] = (
+        ) = None
+        self._on_peer_disconnected: Callable[[AsyncPeerConnection], None] | None = (
             self._peer_disconnected_wrapper
         )
-        self._on_bitfield_received: Optional[
+        self._on_bitfield_received: None | (
             Callable[[AsyncPeerConnection, BitfieldMessage], None]
-        ] = None
-        self._on_piece_received: Optional[
+        ) = None
+        self._on_piece_received: None | (
             Callable[[AsyncPeerConnection, PieceMessage], None]
-        ] = None
+        ) = None
 
         # Message handlers
         self.message_handlers: dict[
@@ -912,14 +939,14 @@ class AsyncPeerConnectionManager:
                 )
 
         # Security manager and privacy flags (set via public setters)
-        self._security_manager: Optional[Any] = None
+        self._security_manager: Optional[Any]= None
         self._is_private: bool = False
 
         # Event bus (optional, set externally if needed)
-        self._event_bus: Optional[Any] = None  # Optional[EventBus]
-        self.event_bus: Optional[Any] = None  # Optional[EventBus]
+        self._event_bus: Optional[Any]= None  # Optional[EventBus]
+        self.event_bus: Optional[Any]= None  # Optional[EventBus]
 
-    def set_security_manager(self, security_manager: Optional[Any]) -> None:
+    def set_security_manager(self, security_manager: Union[Any, None]) -> None:
         """Set the security manager for peer validation.
 
         Args:
@@ -957,13 +984,13 @@ class AsyncPeerConnectionManager:
     @property
     def on_piece_received(
         self,
-    ) -> Optional[Callable[[AsyncPeerConnection, PieceMessage], None]]:
+    ) -> Callable[[AsyncPeerConnection, PieceMessage], None] | None:
         """Get the on_piece_received callback."""
         return self._on_piece_received
 
     @on_piece_received.setter
     def on_piece_received(
-        self, value: Optional[Callable[[AsyncPeerConnection, PieceMessage], None]]
+        self, value: Callable[[AsyncPeerConnection, PieceMessage], None] | None
     ) -> None:
         """Set the on_piece_received callback and propagate to existing connections."""
         self.logger.debug(
@@ -991,13 +1018,13 @@ class AsyncPeerConnectionManager:
     @property
     def on_bitfield_received(
         self,
-    ) -> Optional[Callable[[AsyncPeerConnection, BitfieldMessage], None]]:
+    ) -> Callable[[AsyncPeerConnection, BitfieldMessage], None] | None:
         """Get the on_bitfield_received callback."""
         return self._on_bitfield_received
 
     @on_bitfield_received.setter
     def on_bitfield_received(
-        self, value: Optional[Callable[[AsyncPeerConnection, BitfieldMessage], None]]
+        self, value: Callable[[AsyncPeerConnection, BitfieldMessage], None] | None
     ) -> None:
         """Set the on_bitfield_received callback and propagate to existing connections."""
         self._on_bitfield_received = value
@@ -1010,13 +1037,13 @@ class AsyncPeerConnectionManager:
             pass
 
     @property
-    def on_peer_connected(self) -> Optional[Callable[[AsyncPeerConnection], None]]:
+    def on_peer_connected(self) -> Callable[[AsyncPeerConnection], None] | None:
         """Get the on_peer_connected callback."""
         return self._on_peer_connected
 
     @on_peer_connected.setter
     def on_peer_connected(
-        self, value: Optional[Callable[[AsyncPeerConnection], None]]
+        self, value: Callable[[AsyncPeerConnection], None] | None
     ) -> None:
         """Set the on_peer_connected callback and propagate to existing connections."""
         self._on_peer_connected = value
@@ -1029,13 +1056,13 @@ class AsyncPeerConnectionManager:
             pass
 
     @property
-    def on_peer_disconnected(self) -> Optional[Callable[[AsyncPeerConnection], None]]:
+    def on_peer_disconnected(self) -> Callable[[AsyncPeerConnection], None] | None:
         """Get the on_peer_disconnected callback."""
         return self._external_peer_disconnected
 
     @on_peer_disconnected.setter
     def on_peer_disconnected(
-        self, value: Optional[Callable[[AsyncPeerConnection], None]]
+        self, value: Callable[[AsyncPeerConnection], None] | None
     ) -> None:
         """Set the on_peer_disconnected callback and propagate to existing connections."""
         self._external_peer_disconnected = value
@@ -1137,6 +1164,30 @@ class AsyncPeerConnectionManager:
             peer_dict["completion_percent"] = peer_info.completion_percent
         if hasattr(peer_info, "complete"):
             peer_dict["complete"] = peer_info.complete
+        if hasattr(peer_info, "_tracker_encryption_preference"):
+            peer_dict["_tracker_encryption_preference"] = getattr(
+                peer_info,
+                "_tracker_encryption_preference",
+                None,
+            )
+        if hasattr(peer_info, "_peer_encryption_preference"):
+            peer_dict["_peer_encryption_preference"] = getattr(
+                peer_info,
+                "_peer_encryption_preference",
+                None,
+            )
+        if hasattr(peer_info, "_peer_pex_prefer_encrypt"):
+            peer_dict["_peer_pex_prefer_encrypt"] = getattr(
+                peer_info,
+                "_peer_pex_prefer_encrypt",
+                None,
+            )
+        if hasattr(peer_info, "_peer_pex_flags"):
+            peer_dict["_peer_pex_flags"] = getattr(
+                peer_info,
+                "_peer_pex_flags",
+                None,
+            )
         return peer_dict
 
     @staticmethod
@@ -1391,7 +1442,7 @@ class AsyncPeerConnectionManager:
 
     @staticmethod
     def _get_connection_start_time(
-        connection: Any, current_time: Optional[float] = None
+        connection: Any, current_time: Optional[float]= None
     ) -> float:
         """Return a safe, non-null connection start timestamp."""
         if current_time is None:
@@ -1505,6 +1556,10 @@ class AsyncPeerConnectionManager:
             errno_value = getattr(failure, "errno", None)
             if errno_value == 121 or "winerror 121" in error_text:
                 return ("semaphore_timeout", True, "semaphore", True)
+            if errno_value == 64 or "winerror 64" in error_text:
+                return ("winerror_64", True, "transport", True)
+            if errno_value == 10022 or "winerror 10022" in error_text:
+                return ("winerror_10022", True, "transport", True)
             if errno_value == 10061 or "winerror 10061" in error_text:
                 return ("connection_refused", True, "transport", True)
             if errno_value in {10054, 104}:
@@ -1518,6 +1573,7 @@ class AsyncPeerConnectionManager:
         if (
             "info hash" in error_text
             or "mismatch" in error_text
+            or "invalid protocol length" in error_text
             or "invalid handshake" in error_text
             or "protocol error" in error_text
             or "protocol_error" in error_text
@@ -1609,7 +1665,7 @@ class AsyncPeerConnectionManager:
     def _record_probation_peer(
         self,
         peer_key: str,
-        connection: Optional[AsyncPeerConnection] = None,
+        connection: Optional[AsyncPeerConnection]= None,
     ) -> None:
         """Mark peer as probationary until it proves useful."""
         self._ensure_quality_tracking_initialized()
@@ -1624,7 +1680,7 @@ class AsyncPeerConnectionManager:
         self,
         peer_key: str,
         reason: str,
-        connection: Optional[AsyncPeerConnection] = None,
+        connection: Optional[AsyncPeerConnection]= None,
     ) -> None:
         """Mark peer as quality-verified and remove from probation."""
         self._ensure_quality_tracking_initialized()
@@ -1815,6 +1871,61 @@ class AsyncPeerConnectionManager:
         current = self._connection_stage_counters.get(stage, 0)
         self._connection_stage_counters[stage] = current + 1
 
+    def _mark_malformed_handshake_peer(self, peer_info: PeerInfo, reason: str) -> None:
+        """Record malformed handshake peer with bounded LRU/TTL memoization."""
+        peer_key = self._get_peer_key(peer_info)
+        now = time.time()
+        expiry = now + self._malformed_handshake_memo_ttl_s
+        if not peer_key:
+            return
+        if reason == "invalid_protocol_length":
+            self._record_connection_stage("handshake_invalid_protocol_length")
+
+        # Keep the most recent entries and evict stale/oldest values when over limit.
+        self._malformed_handshake_memo.pop(peer_key, None)
+        self._malformed_handshake_memo[peer_key] = expiry
+        self.logger.debug(
+            "Recorded malformed handshake for %s (%s), expires in %.1fs",
+            peer_key,
+            reason,
+            self._malformed_handshake_memo_ttl_s,
+        )
+
+        if (
+            len(self._malformed_handshake_memo)
+            > self._malformed_handshake_memo_max_size
+        ):
+            while (
+                len(self._malformed_handshake_memo)
+                > self._malformed_handshake_memo_max_size
+            ):
+                oldest_key = next(iter(self._malformed_handshake_memo))
+                self._malformed_handshake_memo.pop(oldest_key, None)
+
+        # Opportunistic prune of stale TTL entries
+        stale = [
+            key
+            for key, expires_at in self._malformed_handshake_memo.items()
+            if expires_at <= now
+        ]
+        for key in stale:
+            self._malformed_handshake_memo.pop(key, None)
+
+        self._record_observability_counter("malformed_handshake_memo_add")
+
+    def _is_malformed_handshake_peer(self, peer_info: PeerInfo) -> bool:
+        """Return True when a peer is temporarily suppressed due to repeated bad handshakes."""
+        peer_key = self._get_peer_key(peer_info)
+        expiry = self._malformed_handshake_memo.get(peer_key)
+        if expiry is None:
+            return False
+
+        now = time.time()
+        if expiry <= now:
+            self._malformed_handshake_memo.pop(peer_key, None)
+            return False
+        return True
+
     async def get_connection_summary(self) -> dict[str, int]:
         """Return a summary of connection states useful for recovery logic."""
         metadata_incomplete = bool(
@@ -1860,6 +1971,14 @@ class AsyncPeerConnectionManager:
             ),
             "handshake_timeout": int(
                 self._connection_stage_counters.get("handshake_timeout", 0)
+            ),
+            "handshake_invalid_protocol_length": int(
+                self._connection_stage_counters.get(
+                    "handshake_invalid_protocol_length", 0
+                )
+            ),
+            "handshake_incomplete_read": int(
+                self._connection_stage_counters.get("handshake_incomplete_read", 0)
             ),
             "info_hash_mismatch": int(
                 self._connection_stage_counters.get("info_hash_mismatch", 0)
@@ -2198,7 +2317,7 @@ class AsyncPeerConnectionManager:
         return self._timeout_calculator.calculate_handshake_timeout()
 
     def _calculate_timeout(
-        self, connection: Optional[AsyncPeerConnection] = None
+        self, connection: Optional[AsyncPeerConnection]= None
     ) -> float:
         """Calculate adaptive timeout based on measured RTT.
 
@@ -2269,7 +2388,7 @@ class AsyncPeerConnectionManager:
         self,
         piece_index: int,
         piece_manager: Any,
-        peer_connection: Optional[AsyncPeerConnection] = None,
+        peer_connection: Optional[AsyncPeerConnection]= None,
     ) -> tuple[float, float]:
         """Calculate priority score for a request with bandwidth consideration.
 
@@ -2550,7 +2669,7 @@ class AsyncPeerConnectionManager:
         sorted_requests = sorted(requests, key=lambda r: (r.piece_index, r.begin))
 
         coalesced: list[RequestInfo] = []
-        current: Optional[RequestInfo] = None
+        current: Optional[RequestInfo]= None
 
         for req in sorted_requests:
             if current is None:
@@ -2619,7 +2738,7 @@ class AsyncPeerConnectionManager:
         self._register_managed_task(task, self._message_loop_tasks, "peer message loop")
 
     def _spawn_piece_selection_task(
-        self, coro: Awaitable[None], *, task_name: Optional[str] = None
+        self, coro: Awaitable[None], *, task_name: Optional[str]= None
     ) -> None:
         """Start a tracked piece-selection coroutine if manager is running."""
         if not self._running or is_shutting_down():
@@ -2706,13 +2825,203 @@ class AsyncPeerConnectionManager:
             error_msg = f"Failed to start peer connection manager: {e}"
             raise RuntimeError(error_msg) from e
 
+    @staticmethod
+    def _connection_transport_hint(connection: AsyncPeerConnection) -> str:
+        return "mse" if getattr(connection, "is_encrypted", False) else "plain"
+
+    @staticmethod
+    def _connection_key(peer_ip: str, peer_port: int) -> str:
+        return f"{peer_ip}:{peer_port}"
+
+    @staticmethod
+    def _extract_strict_mode(config: Any) -> str:
+        authenticated_swarms = getattr(
+            getattr(config, "security", None), "authenticated_swarms", None
+        )
+        return getattr(authenticated_swarms, "mode", "off")
+
+    def _get_strict_ltep_timeout_seconds(self) -> float:
+        authenticated_swarms = getattr(
+            getattr(self.config, "security", None), "authenticated_swarms", None
+        )
+        timeout_s = getattr(
+            authenticated_swarms, "strict_ltep_handshake_timeout_s", 30.0
+        )
+        try:
+            timeout_value = float(timeout_s)
+        except (TypeError, ValueError):
+            return 30.0
+        if timeout_value < 1.0 or math.isnan(timeout_value) or math.isinf(timeout_value):
+            return 30.0
+        return timeout_value
+
+    def _require_strict_ltep(self) -> bool:
+        return self._extract_strict_mode(self.config) == "strict"
+
+    def _start_strict_ltep_timeout(self, connection: AsyncPeerConnection) -> None:
+        peer_info = connection.peer_info
+        if peer_info is None or not self._require_strict_ltep():
+            return
+        if not self._connection_supports_extensions(connection):
+            return
+        peer_key = self._connection_key(peer_info.ip, peer_info.port)
+        if peer_key in self._strict_ltep_timeout_tasks:
+            return
+
+        timeout_s = self._get_strict_ltep_timeout_seconds()
+        if timeout_s <= 0.0:
+            return
+
+        event = asyncio.Event()
+        self._strict_ltep_timeout_events[peer_key] = event
+        task = asyncio.create_task(
+            self._await_strict_ltep_handshake(
+                connection=connection,
+                peer_key=peer_key,
+                event=event,
+                timeout_s=timeout_s,
+            )
+        )
+        self._strict_ltep_timeout_tasks[peer_key] = task
+
+    async def _await_strict_ltep_handshake(
+        self,
+        connection: AsyncPeerConnection,
+        peer_key: str,
+        event: asyncio.Event,
+        timeout_s: float,
+    ) -> None:
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            metrics_collector = get_metrics_collector()
+            if metrics_collector is not None:
+                with contextlib.suppress(Exception):
+                    metrics_collector.record_metric(
+                        SWARM_AUTH_STRICT_LTEP_TIMEOUT_TOTAL,
+                        labels={"mode": "strict"},
+                        value=1,
+                    )
+            self.logger.debug(
+                "Strict-mode LTEP timeout for inbound peer %s; closing connection",
+                peer_key,
+            )
+            with contextlib.suppress(Exception):
+                await connection.close()
+        except asyncio.CancelledError:
+            return
+        finally:
+            self._strict_ltep_timeout_tasks.pop(peer_key, None)
+            self._strict_ltep_timeout_events.pop(peer_key, None)
+
+    def _notify_strict_ltep_handshake_seen(self, connection: AsyncPeerConnection) -> None:
+        if connection.peer_info is None or not self._require_strict_ltep():
+            return
+        peer_key = self._connection_key(
+            connection.peer_info.ip, connection.peer_info.port
+        )
+        timeout_event = self._strict_ltep_timeout_events.get(peer_key)
+        if timeout_event is not None:
+            timeout_event.set()
+
+    def _cancel_strict_ltep_timeout(self, connection: AsyncPeerConnection) -> None:
+        if connection.peer_info is None:
+            return
+        peer_key = self._connection_key(
+            connection.peer_info.ip, connection.peer_info.port
+        )
+        task = self._strict_ltep_timeout_tasks.pop(peer_key, None)
+        if task is not None and not task.done():
+            task.cancel()
+        self._strict_ltep_timeout_events.pop(peer_key, None)
+
+    def _allow_inbound_extension_swarm_auth(
+        self,
+        connection: AsyncPeerConnection,
+        handshake: Any,
+        handshake_data: Any,
+    ) -> bool:
+        """Evaluate final inbound admission once extension handshake is received."""
+        swarm_auth = None
+        if isinstance(handshake_data, dict):
+            maybe = handshake_data.get("swarm_auth")
+            if isinstance(maybe, dict):
+                swarm_auth = maybe
+
+        parsed_handshake = SimpleNamespace(
+            peer_id=getattr(handshake, "peer_id", b""),
+            info_hash=getattr(handshake, "info_hash", None),
+            info_hash_v1=getattr(handshake, "info_hash", None),
+            info_hash_v2=None,
+            swarm_auth=swarm_auth,
+        )
+        tls_hint = (
+            "tls"
+            if connection.peer_info and connection.peer_info.ssl_enabled
+            else None
+        )
+        peer_tls_public_key_from_cert = None
+        if (
+            tls_hint == "tls"
+            and isinstance(swarm_auth, dict)
+            and isinstance(swarm_auth.get("tp"), str)
+        ):
+            trust_proof_hint = swarm_auth.get("tp")
+            if trust_proof_hint == "spki_sha256":
+                peer_tls_public_key_from_cert = getattr(
+                    connection, "peer_tls_public_key_from_cert", None
+                )
+            elif trust_proof_hint == "cert_sha256":
+                peer_tls_public_key_from_cert = getattr(
+                    connection, "peer_tls_certificate_der", None
+                )
+
+        decision = evaluate_inbound_admission(
+            peer_socket=connection,
+            parsed_handshake=parsed_handshake,
+            session=self,
+            transport_hint=self._connection_transport_hint(connection),
+            tls_hint=tls_hint,
+            peer_tls_public_key_from_cert=peer_tls_public_key_from_cert,
+        )
+        if not decision.allowed:
+            self.logger.debug(
+                "Rejecting incoming peer %s due to swarm-auth policy decision: mode=%s reason=%s",
+                connection.peer_info,
+                decision.mode,
+                decision.reason_code,
+            )
+            return False
+        return True
+
+    def _apply_inbound_reserved_bytes(
+        self, connection: AsyncPeerConnection, handshake: Any
+    ) -> None:
+        reserved_bytes = getattr(handshake, "reserved_bytes", None)
+        if isinstance(reserved_bytes, (bytes, bytearray)):
+            connection.reserved_bytes = bytes(reserved_bytes)
+
+    def _reject_inbound_non_ltep_if_strict(self, connection: AsyncPeerConnection) -> bool:
+        if not self._require_strict_ltep():
+            return False
+        if self._connection_supports_extensions(connection):
+            return False
+        self.logger.warning(
+            "Rejecting strict authenticated-swarm inbound peer %s: inbound handshake lacks extension protocol",
+            connection.peer_info,
+        )
+        return True
+
     async def accept_incoming(
         self,
-        reader: asyncio.StreamReader,
+        reader: Union[asyncio.StreamReader, EncryptedStreamReader],
         writer: asyncio.StreamWriter,
-        handshake: Handshake,
+        handshake: Union[Handshake, ParsedInboundPlainHandshake, Any],
         peer_ip: str,
         peer_port: int,
+        *,
+        enforce_encryption_mode: bool = True,
+        is_encrypted: bool = False,
     ) -> None:
         """Accept an incoming peer connection.
 
@@ -2725,6 +3034,8 @@ class AsyncPeerConnectionManager:
             handshake: Parsed handshake object from peer
             peer_ip: Peer IP address
             peer_port: Peer port
+            enforce_encryption_mode: Enforce inbound encryption preference
+            is_encrypted: Whether this peer already uses encrypted transport
 
         """
         # Shutdown: reject new connections during shutdown
@@ -2740,6 +3051,40 @@ class AsyncPeerConnectionManager:
             except Exception:
                 pass
             return
+
+        if isinstance(handshake, ParsedInboundPlainHandshake):
+            try:
+                handshake = self._handshake_from_plaintext_parse(handshake)
+            except PeerConnectionError:
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+                return
+
+        if enforce_encryption_mode and not is_encrypted:
+            encryption_mode = self._get_configured_encryption_mode()
+            if encryption_mode == EncryptionMode.REQUIRED:
+                self.logger.warning(
+                    "Rejecting incoming plain peer %s:%d because encryption is required",
+                    peer_ip,
+                    peer_port,
+                )
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+                return
+            self.logger.debug(
+                "Incoming plain peer %s:%d accepted as fallback (configured mode=%s)",
+                peer_ip,
+                peer_port,
+                encryption_mode.value
+                if hasattr(encryption_mode, "value")
+                else encryption_mode,
+            )
 
         # Check connection limits
         async with self.connection_lock:
@@ -2796,9 +3141,12 @@ class AsyncPeerConnectionManager:
 
         # Create peer connection
         connection = AsyncPeerConnection(peer_info, self.torrent_data)
+        connection.inbound_handshake = handshake
+        connection.is_encrypted = is_encrypted
         self._seeded_connection_from_info(connection)
         connection.reader = reader
         connection.writer = writer
+        self._apply_inbound_reserved_bytes(connection, handshake)
         connection.state = ConnectionState.HANDSHAKE_RECEIVED
 
         # BitTorrent: clear failure tracking on successful connection (spec compliant)
@@ -2938,6 +3286,19 @@ class AsyncPeerConnectionManager:
                 pass  # Ignore other errors during cleanup
             return
 
+        if self._reject_inbound_non_ltep_if_strict(connection):
+            self.logger.debug(
+                "Strict-mode inbound peer rejected before extension stage: %s:%d",
+                peer_ip,
+                peer_port,
+            )
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionResetError, OSError):
+                pass
+            return
+
         # Connection batch: set callbacks before adding to connections
         # This ensures callbacks are available when messages arrive
         # Use the private attributes to avoid triggering property setters
@@ -2961,6 +3322,8 @@ class AsyncPeerConnectionManager:
                 peer_ip,
                 peer_port,
             )
+
+        self._start_strict_ltep_timeout(connection)
 
         # Add to connections
         async with self.connection_lock:
@@ -3140,6 +3503,51 @@ class AsyncPeerConnectionManager:
             except Exception:
                 pass
 
+    async def accept_incoming_encrypted(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        decrypted_initial_data: Union[bytes, bytearray],
+        peer_ip: str,
+        peer_port: int,
+    ) -> None:
+        """Accept an incoming peer after MSE/PE receiver handshake."""
+        if not decrypted_initial_data:
+            self.logger.debug(
+                "No decrypted initial payload from %s:%d after MSE receive",
+                peer_ip,
+                peer_port,
+            )
+            writer.close()
+            await writer.wait_closed()
+            return
+
+        raw_data = bytes(decrypted_initial_data)
+        try:
+            parsed_handshake = parse_plaintext_bittorrent_handshake(raw_data)
+            inbound_handshake = self._handshake_from_plaintext_parse(parsed_handshake)
+            await self.accept_incoming(
+                reader=reader,
+                writer=writer,
+                handshake=inbound_handshake,
+                peer_ip=peer_ip,
+                peer_port=peer_port,
+                enforce_encryption_mode=False,
+                is_encrypted=True,
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to parse inbound plaintext handshake after MSE from %s:%d: %s",
+                peer_ip,
+                peer_port,
+                e,
+            )
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
     async def stop(self) -> None:
         """Stop background tasks and disconnect all peers.
 
@@ -3288,6 +3696,13 @@ class AsyncPeerConnectionManager:
                         )
                     except (asyncio.CancelledError, Exception):
                         pass  # Expected when task is cancelled
+        for peer_key, timeout_task in list(
+            self._strict_ltep_timeout_tasks.items()
+        ):
+            if not timeout_task.done():
+                timeout_task.cancel()
+            self._strict_ltep_timeout_tasks.pop(peer_key, None)
+        self._strict_ltep_timeout_events.clear()
         self._message_loop_tasks.clear()
 
         # Disconnect all peers (with timeout protection and Windows-friendly batching)
@@ -3447,6 +3862,10 @@ class AsyncPeerConnectionManager:
         batch_start_time = time.time()
 
         try:
+            # Contract note: peer_list is the upstream candidate list from source-specific
+            # discovery callbacks. Keep it intact for tracing and apply truncation only
+            # through explicit runtime capacity checks (active peers, max_connections, etc.).
+            upstream_peer_count = len(peer_list)
             # Connection batch: enhanced logging for connection attempts
             peer_sources = {}
             for peer in peer_list:
@@ -3468,10 +3887,12 @@ class AsyncPeerConnectionManager:
                         info_hash_display = str(info_hash)[:16] + "..."
 
             self.logger.debug(
-                "Starting connection attempts to %d peer(s) (sources: %s, info_hash: %s)",
-                len(peer_list),
+                "Starting connection attempts to %d upstream peer(s) (sources: %s, info_hash: %s, "
+                "runtime max_connections=%d)",
+                upstream_peer_count,
                 source_summary,
                 info_hash_display,
+                self.max_peers_per_torrent,
             )
             config = self.config.network
             # Connection batch: don't limit max_connections to len(peer_list) when peer count is low
@@ -3676,6 +4097,26 @@ class AsyncPeerConnectionManager:
                             completion_percent=peer_data.get(
                                 "_completion_percent_hint", 0.0
                             ),
+                        )
+                        self._set_runtime_attr(
+                            peer_info,
+                            "_tracker_encryption_preference",
+                            peer_data.get("_tracker_encryption_preference"),
+                        )
+                        self._set_runtime_attr(
+                            peer_info,
+                            "_peer_encryption_preference",
+                            peer_data.get("_peer_encryption_preference"),
+                        )
+                        self._set_runtime_attr(
+                            peer_info,
+                            "_peer_pex_prefer_encrypt",
+                            peer_data.get("_peer_pex_prefer_encrypt"),
+                        )
+                        self._set_runtime_attr(
+                            peer_info,
+                            "_peer_pex_flags",
+                            peer_data.get("_peer_pex_flags"),
                         )
                     except (KeyError, TypeError) as e:
                         error_msg = (
@@ -3975,8 +4416,10 @@ class AsyncPeerConnectionManager:
                 batch_size = min(base_batch_size, max_concurrent, max_connections)
 
                 # Connection batch: ensure minimum batch size for efficiency
-                # Very small batches (<10) create too many iterations and slow processing
-                batch_size = max(10, batch_size)
+                # Very small batches can create too many iterations and slow processing.
+                # On Windows, we allow a slightly smaller floor to reduce burst pressure.
+                minimum_batch_size = 8 if is_windows else 10
+                batch_size = max(minimum_batch_size, batch_size)
                 if active_peer_count == 0 and recent_failure_count >= max(
                     10, len(peer_list) // 4
                 ):
@@ -3984,6 +4427,16 @@ class AsyncPeerConnectionManager:
                     if batch_size > reduced_batch_size:
                         self.logger.debug(
                             "🛑 FAILURE PRESSURE: Reducing batch size from %d to %d because %d peers recently failed while active peers remain at zero.",
+                            batch_size,
+                            reduced_batch_size,
+                            recent_failure_count,
+                        )
+                        batch_size = reduced_batch_size
+                elif is_windows and recent_failure_count >= max(5, len(peer_list) // 6):
+                    reduced_batch_size = 18
+                    if batch_size > reduced_batch_size:
+                        self.logger.debug(
+                            "🛑 WINDOWS FAILURE PRESSURE: Reducing batch size from %d to %d because %d peers recently failed.",
                             batch_size,
                             reduced_batch_size,
                             recent_failure_count,
@@ -4037,6 +4490,8 @@ class AsyncPeerConnectionManager:
                     "cancelled": 0,
                     "connection_refused": 0,
                     "winerror_121": 0,
+                    "winerror_64": 0,
+                    "winerror_10022": 0,
                     "other_errors": 0,
                     "total_attempts": 0,
                     "batches_processed": 0,
@@ -4056,7 +4511,7 @@ class AsyncPeerConnectionManager:
                     )
 
                 try:
-                    pending_enqueue_reason: Optional[str] = None
+                    pending_enqueue_reason: Optional[str]= None
                     for batch_start in range(0, len(all_peers_to_process), batch_size):
                         # Shutdown: check if manager is shutting down before processing batch
                         if not self._running:
@@ -4391,14 +4846,29 @@ class AsyncPeerConnectionManager:
                                                         remaining_task.get_name(),
                                                     )
                                                     remaining_task.cancel()
-                                            for (
-                                                batch_idx,
-                                                remaining_task,
-                                            ) in enumerate(task_list):
-                                                if not remaining_task.done():
-                                                    register_aborted_batch_peer(
+                                        for (
+                                            batch_idx,
+                                            remaining_task,
+                                        ) in enumerate(task_list):
+                                            if results_list[batch_idx] is not None:
+                                                continue
+                                            register_aborted_batch_peer(
+                                                batch_peer_list[batch_idx]
+                                            )
+                                            if not remaining_task.done():
+                                                self.logger.debug(
+                                                    "Cancelling task %s (reason=early_batch_success_exit)",
+                                                    remaining_task.get_name(),
+                                                )
+                                                remaining_task.cancel()
+                                            with contextlib.suppress(Exception):
+                                                await remaining_task
+                                            async with self.connection_lock:
+                                                self._inflight_peer_connects.discard(
+                                                    self._get_peer_key(
                                                         batch_peer_list[batch_idx]
                                                     )
+                                                )
                                             batch_counts["completed"] = completed
                                             batch_counts["successful"] = successful
                                             batch_counts["batch_successful"] = (
@@ -4444,6 +4914,10 @@ class AsyncPeerConnectionManager:
                                         ):
                                             continue
                                         if task_index is not None:
+                                            if isinstance(exc, asyncio.TimeoutError):
+                                                _register_aborted_batch_peer(
+                                                    batch_peer_list[task_index]
+                                                )
                                             results_list[task_index] = exc
                                             completed += 1
                                         else:
@@ -4453,6 +4927,9 @@ class AsyncPeerConnectionManager:
                                                 result_value,
                                             ) in enumerate(results_list):
                                                 if result_value is None:
+                                                    _register_aborted_batch_peer(
+                                                        batch_peer_list[fallback_index]
+                                                    )
                                                     results_list[fallback_index] = exc
                                                     completed += 1
                                                     break
@@ -4461,6 +4938,11 @@ class AsyncPeerConnectionManager:
                                 batch_counts["batch_successful"] = batch_counts[
                                     "batch_successful"
                                 ]
+                                with contextlib.suppress(Exception):
+                                    await asyncio.gather(
+                                        *(task for task in task_list if task.done()),
+                                        return_exceptions=True,
+                                    )
                                 return
 
                             try:
@@ -4522,6 +5004,11 @@ class AsyncPeerConnectionManager:
                                                     f"Connection to {batch[i]} cancelled due to batch timeout"
                                                 )
                                                 _register_aborted_batch_peer(batch[i])
+                                            except Exception:
+                                                results[i] = TimeoutError(
+                                                    f"Connection to {batch[i]} did not complete before batch cleanup"
+                                                )
+                                                _register_aborted_batch_peer(batch[i])
                                             else:
                                                 # Task not cancelled yet; treat as aborted/retry candidate
                                                 results[i] = TimeoutError(
@@ -4534,6 +5021,18 @@ class AsyncPeerConnectionManager:
                                             )
                                             _register_aborted_batch_peer(batch[i])
                                         completed_count += 1
+                                for i, task in enumerate(tasks):
+                                    if not task.done():
+                                        self.logger.debug(
+                                            "Awaiting cancelled task cleanup for %s before next batch",
+                                            batch[i],
+                                        )
+                                        with contextlib.suppress(Exception):
+                                            await task
+                                        async with self.connection_lock:
+                                            self._inflight_peer_connects.discard(
+                                                self._get_peer_key(batch[i])
+                                            )
 
                         # Process results in order
                         for i, conn_result in enumerate(results):
@@ -4586,6 +5085,8 @@ class AsyncPeerConnectionManager:
                                     conn_result
                                 )
                                 peer_family = self._get_ip_family(peer_info)
+                                if failure_reason == "timeout":
+                                    _register_aborted_batch_peer(peer_info)
 
                                 if failure_reason == "timeout":
                                     connection_stats["timeout"] += 1
@@ -4593,6 +5094,10 @@ class AsyncPeerConnectionManager:
                                     connection_stats["connection_refused"] += 1
                                 elif failure_reason == "semaphore_timeout":
                                     connection_stats["winerror_121"] += 1
+                                elif failure_reason == "winerror_64":
+                                    connection_stats["winerror_64"] += 1
+                                elif failure_reason == "winerror_10022":
+                                    connection_stats["winerror_10022"] += 1
                                 else:
                                     connection_stats["other_errors"] += 1
 
@@ -5004,6 +5509,14 @@ class AsyncPeerConnectionManager:
                     failure_details.append(
                         f"{connection_stats['winerror_121']} WinError 121"
                     )
+                if connection_stats["winerror_64"] > 0:
+                    failure_details.append(
+                        f"{connection_stats['winerror_64']} WinError 64"
+                    )
+                if connection_stats["winerror_10022"] > 0:
+                    failure_details.append(
+                        f"{connection_stats['winerror_10022']} WinError 10022"
+                    )
                 if connection_stats["other_errors"] > 0:
                     failure_details.append(
                         f"{connection_stats['other_errors']} other error(s)"
@@ -5043,6 +5556,14 @@ class AsyncPeerConnectionManager:
                     failure_details.append(
                         f"{connection_stats['winerror_121']} WinError 121"
                     )
+                if connection_stats["winerror_64"] > 0:
+                    failure_details.append(
+                        f"{connection_stats['winerror_64']} WinError 64"
+                    )
+                if connection_stats["winerror_10022"] > 0:
+                    failure_details.append(
+                        f"{connection_stats['winerror_10022']} WinError 10022"
+                    )
                 if connection_stats["other_errors"] > 0:
                     failure_details.append(
                         f"{connection_stats['other_errors']} other error(s)"
@@ -5076,6 +5597,8 @@ class AsyncPeerConnectionManager:
                 "cancelled": int(connection_stats["cancelled"]),
                 "connection_refused": int(connection_stats["connection_refused"]),
                 "winerror_121": int(connection_stats["winerror_121"]),
+                "winerror_64": int(connection_stats["winerror_64"]),
+                "winerror_10022": int(connection_stats["winerror_10022"]),
                 "other_errors": int(connection_stats["other_errors"]),
                 "batches_processed": int(connection_stats["batches_processed"]),
                 "zero_success_batches": int(connection_stats["zero_success_batches"]),
@@ -5162,6 +5685,410 @@ class AsyncPeerConnectionManager:
             else True
         )
 
+    def _security_enable_encryption_effective(self) -> bool:
+        """Return effective MSE/PE encryption enabled state for this torrent."""
+        torrent_override = (
+            self.torrent_data.get("enable_encryption")
+            if isinstance(self.torrent_data, dict)
+            else None
+        )
+        if torrent_override is not None:
+            return self._coerce_bool_flag(torrent_override)
+
+        return bool(self.config.security.enable_encryption)
+
+    def _coerce_encryption_mode(
+        self,
+        value: Any,
+        *,
+        default_mode: Optional[EncryptionMode]= EncryptionMode.PREFERRED,
+    ) -> Union[EncryptionMode, None]:
+        """Coerce various config-like values to EncryptionMode."""
+        normalized_value = self._coerce_optional_str(value)
+        if normalized_value is None:
+            return default_mode
+
+        normalized_value = normalized_value.replace("-", "_").replace(" ", "_")
+
+        if normalized_value in {
+            "disabled",
+            "off",
+            "false",
+            "0",
+            "none",
+            "plaintext_only",
+        }:
+            return EncryptionMode.DISABLED
+        if normalized_value in {
+            "required",
+            "mandatory",
+            "force",
+            "require_encrypted",
+        }:
+            return EncryptionMode.REQUIRED
+        if normalized_value in {
+            "preferred",
+            "prefer",
+            "optional",
+            "prefer_plaintext",
+            "prefer_encrypted",
+            "enable",
+            "enabled",
+            "true",
+            "yes",
+            "on",
+            "1",
+        }:
+            return EncryptionMode.PREFERRED
+        return default_mode
+
+    def _coerce_optional_str(self, value: Any) -> Union[str, None]:
+        """Normalize optional scalar values to lower-case string."""
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            try:
+                value = value.decode("utf-8")
+            except UnicodeDecodeError:
+                value = value.decode("utf-8", errors="replace")
+        normalized = str(value).strip().lower()
+        if not normalized:
+            return None
+        return normalized
+
+    def _get_configured_encryption_mode(self) -> EncryptionMode:
+        """Return configured outbound encryption mode."""
+        if not self._security_enable_encryption_effective():
+            return EncryptionMode.DISABLED
+
+        security_config = getattr(self.config, "security", self.config)
+        return (
+            self._coerce_encryption_mode(
+                getattr(security_config, "encryption_mode", EncryptionMode.PREFERRED),
+                default_mode=EncryptionMode.PREFERRED,
+            )
+            or EncryptionMode.PREFERRED
+        )
+
+    @staticmethod
+    def _merge_encryption_mode(
+        current: EncryptionMode,
+        candidate: Optional[EncryptionMode],
+    ) -> EncryptionMode:
+        """Return stronger of two encryption modes."""
+        precedence = {
+            EncryptionMode.DISABLED: 0,
+            EncryptionMode.PREFERRED: 1,
+            EncryptionMode.REQUIRED: 2,
+        }
+        if candidate is None:
+            return current
+        return candidate if precedence[candidate] > precedence[current] else current
+
+    def _resolve_tracker_encryption_hint(
+        self, peer_info: PeerInfo
+    ) -> Union[EncryptionMode, None]:
+        """Resolve tracker crypto hint from tracker metadata attached to peer."""
+        hint = self._coerce_optional_str(
+            getattr(peer_info, "_tracker_encryption_preference", None)
+        )
+        if hint is None:
+            return None
+        return self._coerce_encryption_mode(hint, default_mode=None)
+
+    def _resolve_peer_extension_encryption_hint(
+        self, peer_info: PeerInfo
+    ) -> Union[EncryptionMode, None]:
+        """Resolve peer BEP 10 `e` hint from extension manager or peer metadata."""
+        candidate_ids: list[Any] = []
+        peer_id = getattr(peer_info, "peer_id", None)
+        if peer_id is not None:
+            candidate_ids.append(peer_id)
+            if isinstance(peer_id, bytes):
+                try:
+                    candidate_ids.append(peer_id.decode("utf-8"))
+                except UnicodeDecodeError:
+                    candidate_ids.append(peer_id.decode("utf-8", errors="replace"))
+            else:
+                candidate_ids.append(str(peer_id))
+
+        # Include fallback identity for legacy extension index usage.
+        candidate_ids.append(str(peer_info))
+        extension_preference = None
+        extension_manager = getattr(self, "extension_manager", None)
+        if extension_manager is not None:
+            try:
+                protocol_extension = extension_manager.get_extension("protocol")
+                for candidate_id in candidate_ids:
+                    extension_preference = (
+                        protocol_extension.get_peer_encryption_preference(candidate_id)
+                    )
+                    if extension_preference is not None:
+                        break
+            except Exception:
+                extension_preference = None
+
+        if extension_preference is None:
+            extension_preference = getattr(
+                peer_info, "_peer_encryption_preference", None
+            )
+
+        if extension_preference is None:
+            return None
+
+        normalized = self._coerce_optional_str(extension_preference)
+        if normalized is None:
+            return None
+        return self._coerce_encryption_mode(normalized, default_mode=None)
+
+    def _resolve_pex_preference_hint(
+        self, peer_info: PeerInfo
+    ) -> Union[EncryptionMode, None]:
+        """Resolve PEX flag hint from peer metadata."""
+        pex_preferred = getattr(peer_info, "_peer_pex_prefer_encrypt", None)
+        if pex_preferred is None:
+            pex_flags = getattr(peer_info, "_peer_pex_flags", None)
+            if pex_flags is not None:
+                try:
+                    pex_preferred = bool(int(pex_flags) & 0x01)
+                except (TypeError, ValueError):
+                    pex_preferred = self._coerce_bool_flag(pex_flags)
+        if self._coerce_bool_flag(pex_preferred):
+            return EncryptionMode.PREFERRED
+        return None
+
+    def _resolve_outbound_encryption_mode(self, peer_info: PeerInfo) -> EncryptionMode:
+        """Resolve final outbound encryption mode from policy and peer hints."""
+        effective_mode = self._get_configured_encryption_mode()
+        effective_mode = self._merge_encryption_mode(
+            effective_mode,
+            self._resolve_tracker_encryption_hint(peer_info),
+        )
+        effective_mode = self._merge_encryption_mode(
+            effective_mode,
+            self._resolve_peer_extension_encryption_hint(peer_info),
+        )
+        return self._merge_encryption_mode(
+            effective_mode,
+            self._resolve_pex_preference_hint(peer_info),
+        )
+
+    def _get_outbound_extension_encryption_preference(self) -> str:
+        """Return this side's advertised encryption preference for BEP 10 extension `e`."""
+        if not self._security_enable_encryption_effective():
+            return "disabled"
+
+        configured_mode = self._get_configured_encryption_mode()
+        if configured_mode == EncryptionMode.REQUIRED:
+            return "required"
+        if configured_mode == EncryptionMode.DISABLED:
+            return "disabled"
+        return "preferred"
+
+    def _create_mse_handshake(self) -> Any:
+        """Create an MSEHandshake configured from security settings.
+
+        This ensures peer connections use security controls from SecurityConfig
+        (DH size, cipher preference, and allow-list) instead of defaults.
+        """
+        from ccbt.security.mse_handshake import CipherType, MSEHandshake
+
+        security_config = getattr(self.config, "security", self.config)
+        dh_key_size = 768
+        with contextlib.suppress(Exception):
+            dh_key_size_raw = getattr(
+                security_config,
+                "encryption_dh_key_size",
+                dh_key_size,
+            )
+            dh_key_size = int(dh_key_size_raw)
+        if dh_key_size not in {768, 1024}:
+            dh_key_size = 768
+
+        prefer_rc4 = bool(getattr(security_config, "encryption_prefer_rc4", True))
+
+        cipher_map = {
+            "rc4": CipherType.RC4,
+            "aes": CipherType.AES,
+            "chacha20": CipherType.CHACHA20,
+        }
+        allowed_tokens: list[Any] = list(
+            getattr(security_config, "encryption_allowed_ciphers", ["rc4", "aes"])
+        )
+        allowed_ciphers: list[Any] = []
+        for token in allowed_tokens:
+            mapped_cipher = cipher_map.get(str(token).lower().strip())
+            if mapped_cipher is not None:
+                allowed_ciphers.append(mapped_cipher)
+        if not allowed_ciphers:
+            allowed_ciphers = [CipherType.RC4]
+
+        return MSEHandshake(
+            dh_key_size=dh_key_size,
+            prefer_rc4=prefer_rc4,
+            allowed_ciphers=allowed_ciphers,
+        )
+
+    async def _read_plaintext_handshake_payload(
+        self,
+        reader: Union[asyncio.StreamReader, EncryptedStreamReader],
+        peer_info: PeerInfo,
+        *,
+        initial_data: Optional[bytes]= None,
+        handshake_timeout: Optional[float]= None,
+    ) -> bytes:
+        """Read a full plaintext handshake payload from the stream.
+
+        Supports v1/v2/hybrid handshake lengths using a 28-byte prefix parser.
+        """
+        timeout = (
+            handshake_timeout
+            if handshake_timeout is not None
+            else self._calculate_adaptive_handshake_timeout()
+        )
+
+        if initial_data is not None:
+            prefix = initial_data
+        else:
+            try:
+                prefix = await asyncio.wait_for(
+                    reader.readexactly(28),  # type: ignore[union-attr]
+                    timeout=timeout,
+                )
+            except Exception as exc:
+                if isinstance(exc, asyncio.TimeoutError):
+                    raise
+                # Compatibility fallback for legacy test mocks / environments that
+                # still provide handshake bytes as (1, then 67) rather than 28.
+                with contextlib.suppress(Exception):
+                    protocol_length = await asyncio.wait_for(
+                        reader.readexactly(1),  # type: ignore[union-attr]
+                        timeout=timeout,
+                    )
+                    if protocol_length == b"\x13":
+                        legacy_handshake = protocol_length + await asyncio.wait_for(
+                            reader.readexactly(67),  # type: ignore[union-attr]
+                            timeout=timeout,
+                        )
+                        parse_plaintext_bittorrent_handshake(legacy_handshake)
+                        return legacy_handshake
+                raise
+
+        if len(prefix) != 28:
+            msg = f"Invalid handshake prefix length from {peer_info}: {len(prefix)}"
+            raise PeerConnectionError(msg)
+
+        candidate_lengths = expected_plaintext_handshake_total_len(prefix)
+        handshake_data = bytes(prefix)
+        last_error: Optional[Exception]= None
+
+        for candidate_len in candidate_lengths:
+            if len(handshake_data) < candidate_len:
+                try:
+                    handshake_data += await asyncio.wait_for(
+                        reader.readexactly(candidate_len - len(handshake_data)),
+                        timeout=timeout,
+                    )  # type: ignore[union-attr]
+                except Exception as e:
+                    last_error = e
+                    break
+
+            candidate_data = handshake_data[:candidate_len]
+            try:
+                parse_plaintext_bittorrent_handshake(candidate_data)
+            except Exception as exc:
+                last_error = exc
+                continue
+            return candidate_data
+
+        if last_error is not None:
+            if isinstance(last_error, asyncio.TimeoutError):
+                raise last_error
+            raise last_error
+
+        msg = f"Unable to parse plaintext handshake payload from {peer_info}"
+        raise PeerConnectionError(msg)
+
+    def _handshake_from_plaintext_parse(
+        self,
+        parsed_handshake: ParsedInboundPlainHandshake,
+    ) -> Handshake:
+        """Create a protocol Handshake from parsed plaintext fields."""
+        info_hash = parsed_handshake.info_hash_v1
+        if info_hash is None:
+            fallback_info_hash = self.torrent_data.get("info_hash")
+            if (
+                not isinstance(fallback_info_hash, (bytes, bytearray))
+                or len(fallback_info_hash) != 20
+            ):
+                msg = "Inbound plaintext handshake is missing a v1 info hash"
+                raise PeerConnectionError(msg)
+            info_hash = bytes(fallback_info_hash)
+
+        return Handshake(
+            info_hash=info_hash,  # type: ignore[arg-type]
+            peer_id=parsed_handshake.peer_id,
+            reserved_bytes=parsed_handshake.reserved_bytes,
+        )
+
+    async def _read_and_parse_plaintext_handshake(
+        self,
+        reader: asyncio.StreamReader,
+        peer_info: PeerInfo,
+        *,
+        initial_data: Optional[bytes]= None,
+        handshake_timeout: Optional[float]= None,
+    ) -> tuple[Handshake, bytes]:
+        """Read and parse plaintext handshake bytes into a BitTorrent Handshake object."""
+        peer_handshake_data = await self._read_plaintext_handshake_payload(
+            reader,
+            peer_info,
+            initial_data=initial_data,
+            handshake_timeout=handshake_timeout,
+        )
+        parsed_handshake = parse_plaintext_bittorrent_handshake(peer_handshake_data)
+        peer_handshake = self._handshake_from_plaintext_parse(parsed_handshake)
+        return peer_handshake, peer_handshake_data
+
+    def _build_outgoing_handshake_payload(self, info_hash: bytes) -> bytes:
+        """Build the outbound BitTorrent handshake payload used for IA in MSE."""
+        ed25519_public_key = None
+        ed25519_signature = None
+        if self.key_manager:
+            try:
+                from ccbt.security.ed25519_handshake import Ed25519Handshake
+
+                ed25519_handshake = Ed25519Handshake(self.key_manager)
+                ed25519_public_key, ed25519_signature = (
+                    ed25519_handshake.initiate_handshake(info_hash, self.our_peer_id)
+                )
+            except Exception as e:
+                self.logger.debug("Failed to create Ed25519 handshake signature: %s", e)
+
+        handshake = Handshake(
+            info_hash,
+            self.our_peer_id,
+            ed25519_public_key=ed25519_public_key,
+            ed25519_signature=ed25519_signature,
+        )
+        handshake.configure_from_config(self.config)
+
+        reserved_bits_info = []
+        if handshake.supports_extension_protocol():
+            reserved_bits_info.append("Extension Protocol (BEP 10)")
+        if handshake.supports_v2():
+            reserved_bits_info.append("Protocol v2 (BEP 52)")
+        if handshake.supports_dht():
+            reserved_bits_info.append("DHT")
+        if handshake.supports_fast_extension():
+            reserved_bits_info.append("Fast Extension (BEP 6)")
+        self.logger.debug(
+            "Prepared outbound handshake: reserved bits=%s, reserved_bytes=%s",
+            ", ".join(reserved_bits_info) if reserved_bits_info else "none",
+            handshake.reserved_bytes.hex(),
+        )
+        return handshake.encode()
+
     async def _connect_to_peer(self, peer_info: PeerInfo) -> None:
         """Connect to a single peer.
 
@@ -5187,6 +6114,14 @@ class AsyncPeerConnectionManager:
                 raise PeerConnectionError(msg)
             # Backoff period expired, remove from backoff dict
             del self._connection_backoff_until[peer_key]
+
+        # Skip peers with recent malformed handshake failures (bounded LRU/TTL memo).
+        if self._is_malformed_handshake_peer(peer_info):
+            self.logger.debug(
+                "Skipping connection to %s due to recent malformed handshake failures",
+                peer_key,
+            )
+            return
 
         # Shutdown: check if manager is shutting down before attempting connection
         # This prevents connection attempts after shutdown starts
@@ -5269,7 +6204,7 @@ class AsyncPeerConnectionManager:
         # BitTorrent: acquire semaphore to limit concurrent connection attempts (spec compliant)
         # This prevents OS socket exhaustion on Windows and other platforms
         async with self._global_connection_semaphore:
-            connection: Optional[AsyncPeerConnection] = None
+            connection: Optional[AsyncPeerConnection]= None
             try:
                 # Check if torrent is private and validate peer source (BEP 27)
                 is_private = getattr(
@@ -5925,6 +6860,24 @@ class AsyncPeerConnectionManager:
                                     max_retries + 1,
                                     e,
                                 )
+                            if error_code == 64:
+                                self.logger.debug(
+                                    "TCP connection error 64 to %s:%s (attempt %d/%d): %s",
+                                    peer_info.ip,
+                                    peer_info.port,
+                                    retry_attempt + 1,
+                                    max_retries + 1,
+                                    e,
+                                )
+                            elif error_code == 10022:
+                                self.logger.debug(
+                                    "TCP connection invalid argument error 10022 to %s:%s (attempt %d/%d). "
+                                    "Retriable with adjusted batch pacing.",
+                                    peer_info.ip,
+                                    peer_info.port,
+                                    retry_attempt + 1,
+                                    max_retries + 1,
+                                )
 
                             # Retry if this is a retryable error and we haven't exhausted retries
                             if is_retryable and retry_attempt < max_retries:
@@ -6040,37 +6993,82 @@ class AsyncPeerConnectionManager:
 
                 # Perform MSE encryption handshake if enabled (only for TCP)
                 info_hash = self.torrent_data["info_hash"]
-                if self.config.security.enable_encryption:
-                    from ccbt.security.encrypted_stream import (
-                        EncryptedStreamReader,
-                        EncryptedStreamWriter,
+                outgoing_handshake_payload = self._build_outgoing_handshake_payload(
+                    info_hash
+                )
+                outbound_encryption_mode = self._resolve_outbound_encryption_mode(
+                    peer_info
+                )
+                if outbound_encryption_mode == EncryptionMode.DISABLED:
+                    self.logger.debug(
+                        "Outbound plaintext preferred for %s; skipping MSE handshake",
+                        peer_info,
                     )
-                    from ccbt.security.encryption import EncryptionMode
-                    from ccbt.security.mse_handshake import MSEHandshake
-
-                    encryption_mode = EncryptionMode(
-                        self.config.security.encryption_mode
-                    )
+                else:
+                    sent_initial_handshake_payload = False
                     if (
-                        encryption_mode != EncryptionMode.DISABLED
+                        outbound_encryption_mode != EncryptionMode.DISABLED
                         and isinstance(reader, asyncio.StreamReader)
                         and isinstance(writer, asyncio.StreamWriter)
                         and connection is not None
                     ):
                         # Type guard: MSE handshake requires asyncio.StreamReader/Writer
                         try:
-                            mse = MSEHandshake()
+                            mse = self._create_mse_handshake()
                             result = await mse.initiate_as_initiator(
-                                reader, writer, info_hash
+                                reader,
+                                writer,
+                                info_hash,
+                                initial_payload=outgoing_handshake_payload,
                             )
+                            if result.success and result.cipher:
+                                sent_initial_handshake_payload = True
+
+                            def _clone_mse_cipher(cipher_obj: Any) -> Any:
+                                if isinstance(cipher_obj, RC4Cipher):
+                                    cloned = RC4Cipher(cipher_obj.key)
+                                    if hasattr(cloned, "discard_keystream"):
+                                        cloned.discard_keystream(1024)
+                                    return cloned
+                                if isinstance(cipher_obj, AESCipher):
+                                    return AESCipher(
+                                        cipher_obj.key,
+                                        iv=getattr(cipher_obj, "iv", b"\x00" * 16),
+                                    )
+                                if isinstance(cipher_obj, ChaCha20Cipher):
+                                    return ChaCha20Cipher(
+                                        cipher_obj.key,
+                                        nonce=getattr(
+                                            cipher_obj, "nonce", b"\x00" * 16
+                                        ),
+                                    )
+                                try:
+                                    return copy.copy(cipher_obj)
+                                except Exception:
+                                    return cipher_obj
 
                             if result.success and result.cipher:
                                 # Wrap streams with encryption
-                                encrypted_reader = EncryptedStreamReader(
-                                    reader, result.cipher
+                                inbound_cipher = (
+                                    result.inbound_cipher
+                                    if result.inbound_cipher is not None
+                                    else _clone_mse_cipher(result.cipher)
                                 )
-                                encrypted_writer = EncryptedStreamWriter(
-                                    writer, result.cipher
+                                outbound_cipher = (
+                                    result.outbound_cipher
+                                    if result.outbound_cipher is not None
+                                    else _clone_mse_cipher(result.cipher)
+                                )
+
+                                if id(inbound_cipher) == id(outbound_cipher):
+                                    inbound_cipher = _clone_mse_cipher(inbound_cipher)
+
+                                encrypted_reader, encrypted_writer = pair_streams(
+                                    reader,
+                                    writer,
+                                    inbound_cipher=inbound_cipher,
+                                    outbound_cipher=outbound_cipher,
+                                    enforce_distinct_ciphers=True,
                                 )
                                 # Validation: encrypted reader/writer must not be None
                                 if encrypted_reader is None or encrypted_writer is None:
@@ -6093,13 +7091,13 @@ class AsyncPeerConnectionManager:
                                     reader = encrypted_reader  # type: ignore[assignment]
                                     writer = encrypted_writer  # type: ignore[assignment]
                                     connection.is_encrypted = True
-                                    connection.encryption_cipher = result.cipher
+                                    connection.encryption_cipher = outbound_cipher
                                 self.logger.debug(
                                     "Encryption handshake succeeded with peer %s",
                                     peer_info,
                                 )
                             elif (
-                                encryption_mode == EncryptionMode.REQUIRED
+                                outbound_encryption_mode == EncryptionMode.REQUIRED
                             ):  # pragma: no cover - Encryption required error path, tested via DISABLED/PREFERRED modes
                                 # Encryption required but failed
                                 error_msg = (
@@ -6122,7 +7120,7 @@ class AsyncPeerConnectionManager:
                                 writer = original_writer
                         except Exception as e:  # pragma: no cover - Encryption handshake exception, tested via success path
                             if (
-                                encryption_mode == EncryptionMode.REQUIRED
+                                outbound_encryption_mode == EncryptionMode.REQUIRED
                             ):  # pragma: no cover - Encryption required exception path, tested via DISABLED/PREFERRED
                                 err_text = f"Encryption required but failed: {e}"
                                 raise PeerConnectionError(err_text) from e
@@ -6263,61 +7261,61 @@ class AsyncPeerConnectionManager:
                                     "Using existing reader/writer from connection object for %s",
                                     peer_info,
                                 )
-                elif connection:
-                    # TCP connection - set reader/writer from local variables
-                    # Init: ensure reader/writer are set before assigning to connection
-                    if reader is None or writer is None:
-                        # Reader/writer not initialized - this should not happen in normal flow
-                        # but can occur if an exception happened during connection setup
-                        self.logger.error(
-                            "Reader or writer not initialized for TCP connection to %s (reader=%s, writer=%s)",
+                    elif connection:
+                        # TCP connection - set reader/writer from local variables
+                        # Init: ensure reader/writer are set before assigning to connection
+                        if reader is None or writer is None:
+                            # Reader/writer not initialized - this should not happen in normal flow
+                            # but can occur if an exception happened during connection setup
+                            self.logger.error(
+                                "Reader or writer not initialized for TCP connection to %s (reader=%s, writer=%s)",
+                                peer_info,
+                                reader is not None,
+                                writer is not None,
+                            )
+                            error_msg = f"Reader or writer not initialized for TCP connection to {peer_info}"
+                            raise RuntimeError(error_msg)
+                        # Init: set connection reader/writer and verify they're set
+                        connection.reader = reader  # type: ignore[assignment] # pragma: no cover - Same context
+                        connection.writer = writer  # type: ignore[assignment] # pragma: no cover - Same context
+                        # Verify they were set correctly
+                        if connection.reader is None or connection.writer is None:
+                            self.logger.error(
+                                "Failed to set reader/writer on connection object for %s (reader=%s, writer=%s)",
+                                peer_info,
+                                connection.reader is not None,
+                                connection.writer is not None,
+                            )
+                            error_msg = f"Failed to set reader/writer on connection object for {peer_info}"
+                            raise RuntimeError(error_msg)
+                        self.logger.debug(
+                            "Set reader/writer on connection object for TCP connection to %s",
                             peer_info,
-                            reader is not None,
-                            writer is not None,
                         )
-                        error_msg = f"Reader or writer not initialized for TCP connection to {peer_info}"
-                        raise RuntimeError(error_msg)
-                    # Init: set connection reader/writer and verify they're set
-                    connection.reader = reader  # type: ignore[assignment] # pragma: no cover - Same context
-                    connection.writer = writer  # type: ignore[assignment] # pragma: no cover - Same context
-                    # Verify they were set correctly
-                    if connection.reader is None or connection.writer is None:
-                        self.logger.error(
-                            "Failed to set reader/writer on connection object for %s (reader=%s, writer=%s)",
-                            peer_info,
-                            connection.reader is not None,
-                            connection.writer is not None,
-                        )
-                        error_msg = f"Failed to set reader/writer on connection object for {peer_info}"
-                        raise RuntimeError(error_msg)
-                    self.logger.debug(
-                        "Set reader/writer on connection object for TCP connection to %s",
-                        peer_info,
-                    )
 
-                    # Connection batch: call on_peer_connected callback immediately after connection is established
-                    # This ensures the callback is called even if handshake operations fail
-                    if self._on_peer_connected:
-                        try:
-                            self._on_peer_connected(connection)
-                        except Exception as e:
-                            self.logger.warning(
-                                "Error in on_peer_connected callback (early) for %s: %s",
-                                peer_info,
-                                e,
-                                exc_info=True,
-                            )
-                    # Also call connection's callback if set
-                    if connection.on_peer_connected:
-                        try:
-                            connection.on_peer_connected(connection)
-                        except Exception as e:
-                            self.logger.warning(
-                                "Error in connection.on_peer_connected callback (early) for %s: %s",
-                                peer_info,
-                                e,
-                                exc_info=True,
-                            )
+                        # Connection batch: call on_peer_connected callback immediately after connection is established
+                        # This ensures the callback is called even if handshake operations fail
+                        if self._on_peer_connected:
+                            try:
+                                self._on_peer_connected(connection)
+                            except Exception as e:
+                                self.logger.warning(
+                                    "Error in on_peer_connected callback (early) for %s: %s",
+                                    peer_info,
+                                    e,
+                                    exc_info=True,
+                                )
+                        # Also call connection's callback if set
+                        if connection.on_peer_connected:
+                            try:
+                                connection.on_peer_connected(connection)
+                            except Exception as e:
+                                self.logger.warning(
+                                    "Error in connection.on_peer_connected callback (early) for %s: %s",
+                                    peer_info,
+                                    e,
+                                    exc_info=True,
+                                )
 
                 # Perform BitTorrent handshake (all transport types need this)
                 # Validation: ensure connection is not None before proceeding
@@ -6401,54 +7399,39 @@ class AsyncPeerConnectionManager:
                     ConnectionState.HANDSHAKE_SENT
                 )  # pragma: no cover - Same context
                 self._record_connection_stage("handshake_sent")
+                sent_initial_handshake_payload = False
 
-                # Send BitTorrent handshake (now possibly through encrypted stream or uTP)
-                # Create handshake with optional Ed25519 signature
-                ed25519_public_key = None
-                ed25519_signature = None
-                if self.key_manager:
-                    try:
-                        from ccbt.security.ed25519_handshake import Ed25519Handshake
-
-                        ed25519_handshake = Ed25519Handshake(self.key_manager)
-                        ed25519_public_key, ed25519_signature = (
-                            ed25519_handshake.initiate_handshake(
-                                info_hash, self.our_peer_id
-                            )
-                        )
-                    except Exception as e:
-                        self.logger.debug(
-                            "Failed to create Ed25519 handshake signature: %s", e
-                        )
-
-                handshake = Handshake(
-                    info_hash,
-                    self.our_peer_id,
-                    ed25519_public_key=ed25519_public_key,
-                    ed25519_signature=ed25519_signature,
+                # Outbound authenticated-swarm policy decision: fail-fast in strict mode.
+                outbound_decision = evaluate_outbound_admission(
+                    peer_socket=writer,
+                    peer_id=self.our_peer_id,
+                    torrent_data=self,
+                    transport_hint=self._connection_transport_hint(connection),
+                    tls_hint=None,
                 )
-                # Configure reserved bytes based on configuration
-                handshake.configure_from_config(self.config)
+                if not outbound_decision.allowed:
+                    self.logger.debug(
+                        "Rejecting outbound connection to %s due to swarm-auth decision: mode=%s reason=%s",
+                        peer_info,
+                        outbound_decision.mode,
+                        outbound_decision.reason_code,
+                    )
+                    if writer is not None:
+                        with contextlib.suppress(Exception):
+                            writer.close()
+                            if hasattr(writer, "wait_closed"):
+                                await writer.wait_closed()
+                    msg = (
+                        f"Swarm auth denied outbound connection to {peer_info}: "
+                        f"{outbound_decision.reason_code}"
+                    )
+                    raise PeerConnectionError(
+                        msg
+                    )
 
-                # BitTorrent: log handshake reserved bits for debugging and compliance verification
-                reserved_bits_info = []
-                if handshake.supports_extension_protocol():
-                    reserved_bits_info.append("Extension Protocol (BEP 10)")
-                if handshake.supports_v2():
-                    reserved_bits_info.append("Protocol v2 (BEP 52)")
-                if handshake.supports_dht():
-                    reserved_bits_info.append("DHT")
-                if handshake.supports_fast_extension():
-                    reserved_bits_info.append("Fast Extension (BEP 6)")
-
-                self.logger.debug(
-                    "Handshake reserved bits for %s: %s (reserved_bytes=%s)",
-                    peer_info,
-                    ", ".join(reserved_bits_info) if reserved_bits_info else "none",
-                    handshake.reserved_bytes.hex(),
-                )
-
-                handshake_data = handshake.encode()
+                # Send BitTorrent handshake (now possibly through encrypted stream or uTP).
+                # If PE negotiated IA and included the handshake already, skip plaintext send.
+                handshake_data = outgoing_handshake_payload
 
                 # Note: Final comprehensive check before writing
                 # Re-assign from connection to ensure we have the latest value
@@ -6486,12 +7469,21 @@ class AsyncPeerConnectionManager:
                     writer.is_closing() if hasattr(writer, "is_closing") else "N/A",
                 )
                 try:
-                    # Note: StreamWriter.write() is synchronous and returns None
-                    # Do NOT await it - just call it and then await drain()
-                    writer.write(handshake_data)  # Synchronous write, returns None
-                    await writer.drain()  # Wait for data to be sent
-                    # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see handshake details
-                    self.logger.debug("Handshake sent successfully to %s", peer_info)
+                    # In PE mode we may already have sent this payload as IA.
+                    if sent_initial_handshake_payload:
+                        self.logger.debug(
+                            "Skipping plaintext handshake for %s because IA was sent in PE payload",
+                            peer_info,
+                        )
+                    else:
+                        # Note: StreamWriter.write() is synchronous and returns None
+                        # Do NOT await it - just call it and then await drain()
+                        writer.write(handshake_data)  # Synchronous write, returns None
+                        await writer.drain()  # Wait for data to be sent
+                        # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see handshake details
+                        self.logger.debug(
+                            "Handshake sent successfully to %s", peer_info
+                        )
                 except Exception:
                     self.logger.exception(
                         "Failed to write handshake to %s (writer type=%s)",
@@ -6530,77 +7522,16 @@ class AsyncPeerConnectionManager:
                 try:
                     # Calculate adaptive handshake timeout based on peer health
                     handshake_timeout = self._calculate_adaptive_handshake_timeout()
-
-                    # Read first byte (protocol length) to validate it's a BitTorrent handshake
-                    protocol_len_byte = await asyncio.wait_for(
-                        reader.readexactly(1),  # type: ignore[union-attr]
-                        timeout=handshake_timeout,
+                    peer_handshake_data = await self._read_plaintext_handshake_payload(
+                        reader=reader,
+                        peer_info=peer_info,
+                        handshake_timeout=handshake_timeout,
                     )
-
-                    if len(protocol_len_byte) != 1:
-                        error_msg = f"Failed to read protocol length from {peer_info}"
-                        raise PeerConnectionError(error_msg)
-
-                    protocol_len = protocol_len_byte[0]
-                    if protocol_len != 19:
-                        error_msg = f"Invalid protocol length from {peer_info}: {protocol_len} (expected 19)"
-                        self.logger.warning(error_msg)
-                        raise PeerConnectionError(error_msg)
-
-                    # Read remaining 67 bytes of v1 handshake minimum
-                    # Use adaptive timeout for better reliability based on peer health
-                    remaining_v1 = await asyncio.wait_for(
-                        reader.readexactly(67),  # type: ignore[union-attr]
-                        timeout=handshake_timeout,
+                    self.logger.debug(
+                        "Received plaintext handshake from %s (%d bytes)",
+                        peer_info,
+                        len(peer_handshake_data),
                     )
-                    peer_handshake_data = protocol_len_byte + remaining_v1
-
-                    # Check if this is a v2 or hybrid handshake by examining reserved bytes
-                    # Bit 0 of first reserved byte indicates v2 support
-                    # Note: Validate peer_handshake_data is bytes before using len()
-                    if not isinstance(peer_handshake_data, bytes):
-                        error_msg = (
-                            f"peer_handshake_data is not bytes (type: {type(peer_handshake_data).__name__}) "
-                            f"for {peer_info}. protocol_len_byte type: {type(protocol_len_byte).__name__}, "
-                            f"remaining_v1 type: {type(remaining_v1).__name__}"
-                        )
-                        self.logger.error(error_msg)
-                        raise PeerConnectionError(error_msg)
-                    if len(peer_handshake_data) >= 28:
-                        reserved_byte = peer_handshake_data[20]
-                        is_v2 = (reserved_byte & 0x01) != 0
-
-                        if is_v2:
-                            # This might be v2 (80 bytes) or hybrid (100 bytes)
-                            # Read additional bytes to determine
-                            # v2: +12 more bytes (32-byte info_hash_v2 instead of 20-byte info_hash_v1)
-                            # hybrid: +52 more bytes (20-byte info_hash_v1 + 32-byte info_hash_v2)
-                            # For now, try to read enough for v2 first
-                            try:
-                                additional_data = await asyncio.wait_for(
-                                    reader.readexactly(12),  # type: ignore[union-attr]
-                                    timeout=handshake_timeout,
-                                )
-                                peer_handshake_data += additional_data
-                                # Check if there's more (hybrid has 20 more bytes for info_hash_v1)
-                                # We'll handle this in the decode step
-                                self.logger.debug(
-                                    "Received v2 handshake from %s (%d bytes)",
-                                    peer_info,
-                                    len(peer_handshake_data),
-                                )
-                            except asyncio.TimeoutError:
-                                # Not v2, use v1 handshake
-                                self.logger.debug(
-                                    "Received v1 handshake from %s (68 bytes)",
-                                    peer_info,
-                                )
-                        else:
-                            self.logger.debug(
-                                "Received v1 handshake from %s (68 bytes)", peer_info
-                            )
-                    else:
-                        self.logger.debug("Received handshake from %s", peer_info)
 
                 except asyncio.TimeoutError:
                     # Calculate timeout for error message
@@ -6625,6 +7556,8 @@ class AsyncPeerConnectionManager:
                     ConnectionResetError,
                     OSError,
                 ) as e:
+                    if isinstance(e, asyncio.IncompleteReadError):
+                        self._record_connection_stage("handshake_incomplete_read")
                     # Note: Improve error categorization and logging
                     # Handle Windows-specific connection reset errors gracefully
                     import sys
@@ -6699,65 +7632,60 @@ class AsyncPeerConnectionManager:
                         except Exception:
                             pass
                     raise PeerConnectionError(error_msg) from e
-                # Note: Add error handling for handshake decode
-                # Handle v1, v2, and hybrid handshakes
                 try:
-                    # Try v1 handshake first (68 bytes)
-                    if len(peer_handshake_data) == 68:
-                        peer_handshake = Handshake.decode(peer_handshake_data)
-
-                        # Verify Ed25519 signature if present and key_manager available
-                        if (
-                            self.key_manager
-                            and peer_handshake.ed25519_public_key
-                            and peer_handshake.ed25519_signature
-                        ):
-                            try:
-                                from ccbt.security.ed25519_handshake import (
-                                    Ed25519Handshake,
-                                )
-
-                                ed25519_handshake = Ed25519Handshake(self.key_manager)
-                                is_valid = ed25519_handshake.verify_peer_handshake(
-                                    info_hash,
-                                    peer_handshake.peer_id,
-                                    peer_handshake.ed25519_public_key,
-                                    peer_handshake.ed25519_signature,
-                                )
-                                if not is_valid:
-                                    self.logger.warning(
-                                        "Invalid Ed25519 handshake signature from %s",
-                                        peer_info,
-                                    )
-                                    # Continue anyway for backward compatibility
-                            except Exception as e:
-                                self.logger.debug(
-                                    "Ed25519 handshake verification error: %s", e
-                                )
-                    elif len(peer_handshake_data) >= 68:
-                        # v2 or hybrid handshake - extract v1 info_hash from first 68 bytes
-                        # For v2/hybrid, we only care about the v1 info_hash for compatibility
-                        v1_handshake_data = peer_handshake_data[:68]
-                        peer_handshake = Handshake.decode(v1_handshake_data)
+                    parsed_handshake = parse_plaintext_bittorrent_handshake(
+                        peer_handshake_data
+                    )
+                    peer_handshake = self._handshake_from_plaintext_parse(
+                        parsed_handshake
+                    )
+                    if parsed_handshake.info_hash_v2 is not None:
                         self.logger.debug(
-                            "Decoded v1 portion of v2/hybrid handshake from %s (%d bytes total)",
+                            "Received v2-capable inbound plaintext handshake from %s (%d bytes)",
                             peer_info,
                             len(peer_handshake_data),
                         )
-                    else:
-                        error_msg = f"Handshake too short from {peer_info}: {len(peer_handshake_data)} bytes (expected at least 68)"
-                        self.logger.warning(error_msg)
-                        raise PeerConnectionError(error_msg)
+
+                    # Verify Ed25519 signature if present and key_manager available
+                    if (
+                        self.key_manager
+                        and peer_handshake.ed25519_public_key
+                        and peer_handshake.ed25519_signature
+                    ):
+                        try:
+                            from ccbt.security.ed25519_handshake import (
+                                Ed25519Handshake,
+                            )
+
+                            ed25519_handshake = Ed25519Handshake(self.key_manager)
+                            is_valid = ed25519_handshake.verify_peer_handshake(
+                                info_hash,
+                                peer_handshake.peer_id,
+                                peer_handshake.ed25519_public_key,
+                                peer_handshake.ed25519_signature,
+                            )
+                            if not is_valid:
+                                self.logger.warning(
+                                    "Invalid Ed25519 handshake signature from %s",
+                                    peer_info,
+                                )
+                                # Continue anyway for backward compatibility
+                        except Exception as e:
+                            self.logger.debug(
+                                "Ed25519 handshake verification error: %s", e
+                            )
                 except Exception as e:
                     # Check if it's a HandshakeError (from peer.exceptions)
                     error_type = type(e).__name__
                     if error_type == "HandshakeError":
                         error_msg = f"Failed to decode handshake from {peer_info}: {e}"
+                        self._mark_malformed_handshake_peer(peer_info, error_type)
                         self.logger.warning(error_msg)
                         raise PeerConnectionError(error_msg) from e
                     error_msg = (
                         f"Unexpected error decoding handshake from {peer_info}: {e}"
                     )
+                    self._mark_malformed_handshake_peer(peer_info, error_type)
                     self.logger.warning(error_msg, exc_info=True)
                     raise PeerConnectionError(error_msg) from e
 
@@ -7263,6 +8191,9 @@ class AsyncPeerConnectionManager:
                     )
 
                     connection_state = connection.state.value if connection else "None"
+                    await self._record_connection_failure(
+                        peer_info, "handshake_failure", type(e).__name__, failure=e
+                    )
 
                     if is_shutting_down():
                         # During shutdown, only log at debug level
@@ -7382,7 +8313,7 @@ class AsyncPeerConnectionManager:
         peer_info: PeerInfo,
         failure_type: str,
         error_type: str,
-        failure: Optional[Union[BaseException, str]] = None,
+        failure: Union[BaseException, str, None]= None,
     ) -> None:
         """Record connection failure for local blacklist source.
 
@@ -7910,6 +8841,7 @@ class AsyncPeerConnectionManager:
                 keepalive_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await keepalive_task
+            self._cancel_strict_ltep_timeout(connection)
 
             self.logger.debug(
                 "Message loop stopped for peer %s (processed %d messages, duration=%.1fs, final state=%s)",
@@ -8119,6 +9051,42 @@ class AsyncPeerConnectionManager:
                 connection, error_msg
             )  # pragma: no cover - Same context
 
+    @staticmethod
+    def _extract_tls_certificate_materials(
+        writer: asyncio.StreamWriter,
+    ) -> tuple[bytes | None, bytes | None]:
+        """Extract DER certificate and SubjectPublicKeyInfo bytes from a TLS writer."""
+        try:
+            ssl_object = writer.get_extra_info("ssl_object")
+        except Exception:
+            return None, None
+        if ssl_object is None:
+            return None, None
+
+        try:
+            cert_der = ssl_object.getpeercert(binary_form=True)
+        except Exception:
+            return None, None
+        if not isinstance(cert_der, (bytes, bytearray)) or not cert_der:
+            return None, None
+        certificate_der = bytes(cert_der)
+
+        try:
+            from cryptography import x509
+            from cryptography.hazmat.primitives.serialization import (
+                Encoding,
+                PublicFormat,
+            )
+
+            cert = x509.load_der_x509_certificate(certificate_der)
+            public_key_der = cert.public_key().public_bytes(
+                encoding=Encoding.DER,
+                format=PublicFormat.SubjectPublicKeyInfo,
+            )
+        except Exception:
+            return certificate_der, None
+        return certificate_der, public_key_der
+
     async def _attempt_ssl_negotiation(self, connection: AsyncPeerConnection) -> None:
         """Attempt SSL negotiation after BitTorrent handshake.
 
@@ -8187,6 +9155,13 @@ class AsyncPeerConnectionManager:
                     if result:
                         # SSL negotiation succeeded, update connection
                         ssl_reader, ssl_writer = result
+                        peer_tls_certificate_der, peer_tls_public_key_from_cert = (
+                            self._extract_tls_certificate_materials(ssl_writer)
+                        )
+                        connection.peer_tls_certificate_der = peer_tls_certificate_der
+                        connection.peer_tls_public_key_from_cert = (
+                            peer_tls_public_key_from_cert
+                        )
                         connection.reader = ssl_reader
                         connection.writer = ssl_writer
                         connection.is_encrypted = True
@@ -8398,6 +9373,15 @@ class AsyncPeerConnectionManager:
                         )
                         # Don't try JSON fallback - BEP 10 is always bencoded
                         # Log and return to avoid processing invalid data
+                        return
+
+                    self._notify_strict_ltep_handshake_seen(connection)
+                    if not self._allow_inbound_extension_swarm_auth(
+                        connection=connection,
+                        handshake=getattr(connection, "inbound_handshake", None),
+                        handshake_data=handshake_data,
+                    ):
+                        await connection.close()
                         return
 
                     # Store peer extensions (this also normalizes the peer BEP 10 message map)
@@ -8871,7 +9855,7 @@ class AsyncPeerConnectionManager:
                                         num_pieces = math.ceil(metadata_size / 16384)
                                         # Recreate state for late response handling
                                         piece_events: dict[int, asyncio.Event] = {}
-                                        piece_data_dict: dict[int, Optional[bytes]] = {}
+                                        piece_data_dict: dict[int, bytes | None] = {}
                                         for piece_idx in range(num_pieces):
                                             piece_events[piece_idx] = asyncio.Event()
                                             piece_data_dict[piece_idx] = None
@@ -8911,6 +9895,19 @@ class AsyncPeerConnectionManager:
                 resolved_extension_name = extension_protocol.get_peer_extension_name(
                     peer_id, extension_id
                 )
+                response_extension_id: Optional[int]= None
+                if resolved_extension_name is not None:
+                    response_extension_id = extension_protocol.get_peer_message_id(
+                        peer_id, resolved_extension_name
+                    )
+
+                if response_extension_id is None:
+                    self.logger.warning(
+                        "Cannot resolve peer-advertised extension ID for %s (peer=%s, extension_id=%s)",
+                        resolved_extension_name,
+                        peer_id,
+                        extension_id,
+                    )
 
                 # Handle other extension messages only if ut_metadata wasn't handled
                 # Use registered extension handlers for pluggable architecture
@@ -8933,12 +9930,18 @@ class AsyncPeerConnectionManager:
                                 peer_id, extension_payload
                             )
                             if response and connection.writer:
+                                if response_extension_id is None:
+                                    self.logger.debug(
+                                        "Skipping registered extension response for %s: no response extension ID",
+                                        resolved_extension_name,
+                                    )
+                                    return
                                 from ccbt.protocols.bittorrent_v2 import (
                                     _send_extension_message,
                                 )
 
                                 await _send_extension_message(
-                                    connection, extension_id, response
+                                    connection, response_extension_id, response
                                 )
                         except Exception as handler_error:
                             self.logger.debug(
@@ -8950,18 +9953,44 @@ class AsyncPeerConnectionManager:
                     else:
                         # Fallback to ExtensionManager handlers for extensions that don't use registration
                         # Handle SSL extension messages
+                        if resolved_extension_name == "pex":
+                            # Route PEX extension messages
+                            response = await extension_manager.handle_pex_message(
+                                peer_id, extension_id, extension_payload
+                            )
+                            if response and connection.writer:
+                                if response_extension_id is None:
+                                    self.logger.debug(
+                                        "Skipping PEX response for %s: no response extension ID",
+                                        peer_id,
+                                    )
+                                    return
+                                from ccbt.protocols.bittorrent_v2 import (
+                                    _send_extension_message,
+                                )
+
+                                await _send_extension_message(
+                                    connection, response_extension_id, response
+                                )
+
                         if resolved_extension_name == "ssl":
                             # Route to SSL extension handler
                             response = await extension_manager.handle_ssl_message(
                                 peer_id, extension_id, extension_payload
                             )
                             if response and connection.writer:
+                                if response_extension_id is None:
+                                    self.logger.debug(
+                                        "Skipping SSL response for %s: no response extension ID",
+                                        peer_id,
+                                    )
+                                    return
                                 from ccbt.protocols.bittorrent_v2 import (
                                     _send_extension_message,
                                 )
 
                                 await _send_extension_message(
-                                    connection, extension_id, response
+                                    connection, response_extension_id, response
                                 )
 
                         # Handle Xet extension messages
@@ -8971,12 +10000,18 @@ class AsyncPeerConnectionManager:
                                 peer_id, extension_id, extension_payload
                             )
                             if response and connection.writer:
+                                if response_extension_id is None:
+                                    self.logger.debug(
+                                        "Skipping XET response for %s: no response extension ID",
+                                        peer_id,
+                                    )
+                                    return
                                 from ccbt.protocols.bittorrent_v2 import (
                                     _send_extension_message,
                                 )
 
                                 await _send_extension_message(
-                                    connection, extension_id, response
+                                    connection, response_extension_id, response
                                 )
 
         except Exception as e:
@@ -11511,7 +12546,7 @@ class AsyncPeerConnectionManager:
         connection: AsyncPeerConnection,
         *,
         lock_held: bool = False,
-        terminal_state: Optional[ConnectionState] = None,
+        terminal_state: Optional[ConnectionState]= None,
     ) -> None:
         """Disconnect from a peer.
 
@@ -15131,8 +16166,8 @@ class AsyncPeerConnectionManager:
         *,
         workspace_id_hex: Optional[str],
         authorized: bool,
-        auth_scope: Optional[str] = None,
-        handshake_info: Optional[dict[str, Any]] = None,
+        auth_scope: Optional[str]= None,
+        handshake_info: Optional[dict[str, Any]]= None,
     ) -> None:
         """Persist XET authorization state for a connected peer."""
         if not authorized:
@@ -15148,7 +16183,7 @@ class AsyncPeerConnectionManager:
         }
 
     def is_peer_xet_authorized(
-        self, peer_id: str, workspace_id_hex: Optional[str] = None
+        self, peer_id: str, workspace_id_hex: Optional[str]= None
     ) -> bool:
         """Return whether a peer passed XET handshake authorization."""
         auth_state = self._xet_peer_auth.get(peer_id)
@@ -15276,8 +16311,40 @@ class AsyncPeerConnectionManager:
                 b"m": {
                     name.encode("utf-8"): message_id
                     for name, message_id in sorted(local_message_map.items())
-                }
+                },
+                b"e": self._get_outbound_extension_encryption_preference(),
             }
+
+            outbound_transport_hint = self._connection_transport_hint(connection)
+            swarm_auth_payload = getattr(connection, "swarm_auth_payload", None)
+            if swarm_auth_payload is None:
+                auth_mode = _extract_session_mode(self)
+                if auth_mode != "off":
+                    with contextlib.suppress(Exception):
+                        info_v1 = self.torrent_data.get("info_hash")
+                        if info_v1 is None:
+                            info_v1 = self.torrent_data.get("info_hash_v1")
+                        info_v2 = self.torrent_data.get("info_hash_v2")
+                        if isinstance(info_v1, (bytes, bytearray)):
+                            info_v1 = bytes(info_v1)
+                        else:
+                            info_v1 = None
+                        if isinstance(info_v2, (bytes, bytearray)):
+                            info_v2 = bytes(info_v2)
+                        else:
+                            info_v2 = None
+                        if info_v1 is not None or info_v2 is not None:
+                            info_hash = (info_v1, info_v2)
+                            swarm_auth_payload = build_outbound_swarm_auth_payload(
+                                session=self,
+                                peer_id=self.our_peer_id,
+                                info_hash=info_hash,
+                                transport_hint=outbound_transport_hint,
+                            )
+                            connection.swarm_auth_payload = swarm_auth_payload
+
+            if isinstance(swarm_auth_payload, dict):
+                handshake_dict[b"swarm_auth"] = swarm_auth_payload
 
             if not metadata_incomplete:
                 # Add XET folder sync handshake data if available
@@ -15554,7 +16621,7 @@ class AsyncPeerConnectionManager:
 
             piece_events: dict[int, asyncio.Event] = {}
 
-            piece_data_dict: dict[int, Optional[bytes]] = {}
+            piece_data_dict: dict[int, bytes | None] = {}
 
             for piece_idx in range(num_pieces):
                 piece_events[piece_idx] = asyncio.Event()
@@ -17468,7 +18535,7 @@ class AsyncPeerConnectionManager:
 
             return True
 
-    async def get_per_peer_rate_limit(self, peer_key: str) -> Optional[int]:
+    async def get_per_peer_rate_limit(self, peer_key: str) -> Union[int, None]:
         """Get per-peer upload rate limit for a specific peer.
 
         Args:

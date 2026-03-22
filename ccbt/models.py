@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Any, Optional, TypedDict
+from typing import Any, Optional, TypedDict, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+
+from ccbt.security.encryption import EncryptionMode
+from ccbt.security.mse_handshake import CipherType
+from ccbt.security.swarm_identity import canonicalize_swarm_id
 
 
 class LogLevel(str, Enum):
@@ -107,6 +111,15 @@ class OptimizationProfile(str, Enum):
     CUSTOM = "custom"  # Custom configuration
 
 
+class SwarmDiscoveryMode(str, Enum):
+    """Discovery modes for authenticated swarm policy."""
+
+    FULL = "full"
+    TRACKERS_ONLY = "trackers_only"
+    DHT_ONLY = "dht_only"
+    PEX_OFF = "pex_off"
+
+
 class MessageType(int, Enum):
     """BitTorrent message types."""
 
@@ -126,12 +139,12 @@ class PeerInfo(BaseModel):
 
     ip: str = Field(..., description="Peer IP address")
     port: int = Field(..., ge=1, le=65535, description="Peer port number")
-    peer_id: Optional[bytes] = Field(None, description="Peer ID")
-    peer_source: Optional[str] = Field(
+    peer_id: Optional[bytes]= Field(None, description="Peer ID")
+    peer_source: Optional[str]= Field(
         default="tracker",
         description="Source of peer discovery (tracker/dht/pex/lsd/manual)",
     )
-    ssl_capable: Optional[bool] = Field(
+    ssl_capable: Optional[bool]= Field(
         None,
         description="Whether peer supports SSL/TLS (None = unknown, discovered during extension handshake)",
     )
@@ -139,6 +152,10 @@ class PeerInfo(BaseModel):
         False,
         description="Whether connection to this peer is using SSL/TLS encryption",
     )
+    _tracker_encryption_preference: Optional[str]= PrivateAttr(default=None)
+    _peer_encryption_preference: Optional[str]= PrivateAttr(default=None)
+    _peer_pex_prefer_encrypt: Optional[bool]= PrivateAttr(default=None)
+    _peer_pex_flags: Optional[int]= PrivateAttr(default=None)
 
     @field_validator("ip")
     @classmethod
@@ -191,9 +208,9 @@ class CanonicalTorrentStatus(BaseModel):
     pieces_completed: int = Field(0, ge=0, description="Verified pieces count")
     pieces_total: int = Field(0, ge=0, description="Total pieces")
     is_private: bool = Field(False, description="BEP 27 private flag")
-    output_dir: Optional[str] = Field(None, description="Output directory")
-    tracker_status: Optional[str] = Field(None, description="Tracker status")
-    last_error: Optional[str] = Field(None, description="Last error message")
+    output_dir: Optional[str]= Field(None, description="Output directory")
+    tracker_status: Optional[str]= Field(None, description="Tracker status")
+    last_error: Optional[str]= Field(None, description="Last error message")
     uptime: float = Field(0.0, ge=0.0, description="Session uptime seconds")
     added_time: float = Field(0.0, ge=0.0, description="Added timestamp")
     download_complete: bool = Field(False, description="Download complete")
@@ -236,11 +253,11 @@ class TrackerResponse(BaseModel):
 
     interval: int = Field(..., ge=0, description="Announce interval in seconds")
     peers: list[PeerInfo] = Field(default_factory=list, description="List of peers")
-    complete: Optional[int] = Field(None, ge=0, description="Number of seeders")
-    incomplete: Optional[int] = Field(None, ge=0, description="Number of leechers")
-    download_url: Optional[str] = Field(None, description="Download URL")
-    tracker_id: Optional[str] = Field(None, description="Tracker ID")
-    warning_message: Optional[str] = Field(None, description="Warning message")
+    complete: Optional[int]= Field(None, ge=0, description="Number of seeders")
+    incomplete: Optional[int]= Field(None, ge=0, description="Number of leechers")
+    download_url: Optional[str]= Field(None, description="Download URL")
+    tracker_id: Optional[str]= Field(None, description="Tracker ID")
+    warning_message: Optional[str]= Field(None, description="Warning message")
 
 
 class PieceInfo(BaseModel):
@@ -271,19 +288,19 @@ class FileInfo(BaseModel):
 
     name: str = Field(..., description="File name")
     length: int = Field(..., ge=0, description="File length in bytes")
-    path: Optional[list[str]] = Field(None, description="File path components")
-    full_path: Optional[str] = Field(None, description="Full file path")
+    path: Optional[list[str]]= Field(None, description="File path components")
+    full_path: Optional[str]= Field(None, description="Full file path")
 
     # BEP 47: Padding Files and Attributes
-    attributes: Optional[str] = Field(
+    attributes: Optional[str]= Field(
         None,
         description="File attributes string from BEP 47 (e.g., 'p', 'x', 'h', 'l')",
     )
-    symlink_path: Optional[str] = Field(
+    symlink_path: Optional[str]= Field(
         None,
         description="Symlink target path (required when attr='l')",
     )
-    file_sha1: Optional[bytes] = Field(
+    file_sha1: Optional[bytes]= Field(
         None,
         description="SHA-1 hash of file contents (optional BEP 47 sha1 field, 20 bytes)",
     )
@@ -341,7 +358,7 @@ class XetChunkInfo(BaseModel):
         ..., min_length=32, max_length=32, description="BLAKE3-256 hash of chunk"
     )
     size: int = Field(..., ge=8192, le=131072, description="Chunk size in bytes")
-    storage_path: Optional[str] = Field(None, description="Local storage path")
+    storage_path: Optional[str]= Field(None, description="Local storage path")
     ref_count: int = Field(default=1, ge=1, description="Reference count")
     created_at: float = Field(
         default_factory=time.time, description="Creation timestamp"
@@ -409,10 +426,10 @@ class TonicFileInfo(BaseModel):
     git_refs: list[str] = Field(
         default_factory=list, description="Git commit hashes for version tracking"
     )
-    source_peers: Optional[list[str]] = Field(
+    source_peers: Optional[list[str]]= Field(
         None, description="Designated source peer IDs (for designated mode)"
     )
-    allowlist_hash: Optional[bytes] = Field(
+    allowlist_hash: Optional[bytes]= Field(
         None,
         min_length=32,
         max_length=32,
@@ -422,11 +439,11 @@ class TonicFileInfo(BaseModel):
         default_factory=time.time, description="Creation timestamp"
     )
     version: int = Field(default=1, description="Tonic file format version")
-    announce: Optional[str] = Field(None, description="Primary tracker announce URL")
-    announce_list: Optional[list[list[str]]] = Field(
+    announce: Optional[str]= Field(None, description="Primary tracker announce URL")
+    announce_list: Optional[list[list[str]]]= Field(
         None, description="List of tracker tiers"
     )
-    comment: Optional[str] = Field(None, description="Optional comment")
+    comment: Optional[str]= Field(None, description="Optional comment")
     xet_metadata: XetTorrentMetadata = Field(
         ..., description="XET metadata with chunk hashes and file info"
     )
@@ -438,19 +455,19 @@ class TonicLinkInfo(BaseModel):
     info_hash: bytes = Field(
         ..., min_length=32, max_length=32, description="32-byte SHA-256 info hash"
     )
-    display_name: Optional[str] = Field(None, description="Display name")
-    trackers: Optional[list[str]] = Field(None, description="List of tracker URLs")
-    git_refs: Optional[list[str]] = Field(
+    display_name: Optional[str]= Field(None, description="Display name")
+    trackers: Optional[list[str]]= Field(None, description="List of tracker URLs")
+    git_refs: Optional[list[str]]= Field(
         None, description="List of git commit hashes/refs"
     )
-    sync_mode: Optional[str] = Field(
+    sync_mode: Optional[str]= Field(
         None,
         description="Synchronization mode (designated/best_effort/broadcast/consensus)",
     )
-    source_peers: Optional[list[str]] = Field(
+    source_peers: Optional[list[str]]= Field(
         None, description="List of source peer IDs"
     )
-    allowlist_hash: Optional[bytes] = Field(
+    allowlist_hash: Optional[bytes]= Field(
         None,
         min_length=32,
         max_length=32,
@@ -464,10 +481,10 @@ class XetSyncStatus(BaseModel):
     folder_path: str = Field(..., description="Path to synced folder")
     sync_mode: str = Field(..., description="Current synchronization mode")
     is_syncing: bool = Field(default=False, description="Whether sync is in progress")
-    last_sync_time: Optional[float] = Field(
+    last_sync_time: Optional[float]= Field(
         None, description="Timestamp of last successful sync"
     )
-    current_git_ref: Optional[str] = Field(None, description="Current git commit hash")
+    current_git_ref: Optional[str]= Field(None, description="Current git commit hash")
     pending_changes: int = Field(
         default=0, description="Number of pending file changes"
     )
@@ -478,8 +495,8 @@ class XetSyncStatus(BaseModel):
     sync_progress: float = Field(
         default=0.0, ge=0.0, le=1.0, description="Sync progress (0.0 to 1.0)"
     )
-    error: Optional[str] = Field(None, description="Error message if sync failed")
-    last_check_time: Optional[float] = Field(
+    error: Optional[str]= Field(None, description="Error message if sync failed")
+    last_check_time: Optional[float]= Field(
         None, description="Timestamp of last folder check"
     )
 
@@ -500,15 +517,27 @@ class TorrentInfo(BaseModel):
     name: str = Field(..., description="Torrent name")
     info_hash: bytes = Field(..., min_length=20, max_length=20, description="Info hash")
     announce: str = Field(..., description="Announce URL")
-    announce_list: Optional[list[list[str]]] = Field(None, description="Announce list")
-    comment: Optional[str] = Field(None, description="Torrent comment")
-    created_by: Optional[str] = Field(None, description="Created by")
-    creation_date: Optional[int] = Field(None, description="Creation date")
-    encoding: Optional[str] = Field(None, description="String encoding")
+    announce_list: Optional[list[list[str]]]= Field(None, description="Announce list")
+    comment: Optional[str]= Field(None, description="Torrent comment")
+    created_by: Optional[str]= Field(None, description="Created by")
+    creation_date: Optional[int]= Field(None, description="Creation date")
+    encoding: Optional[str]= Field(None, description="String encoding")
     is_private: bool = Field(
         default=False,
         description="Whether torrent is marked as private (BEP 27)",
     )
+    swarm_id: Optional[str]= Field(
+        default=None,
+        description="Optional authenticated swarm identifier for authorization policies.",
+    )
+
+    @field_validator("swarm_id")
+    @classmethod
+    def validate_swarm_id(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize optional swarm ids to canonical IDs."""
+        if v is None:
+            return None
+        return canonicalize_swarm_id(v)
 
     # File information
     files: list[FileInfo] = Field(default_factory=list, description="File list")
@@ -523,29 +552,29 @@ class TorrentInfo(BaseModel):
     meta_version: int = Field(
         default=1, description="Protocol version (1=v1, 2=v2, 3=hybrid)"
     )
-    info_hash_v2: Optional[bytes] = Field(
+    info_hash_v2: Optional[bytes]= Field(
         None,
         min_length=32,
         max_length=32,
         description="v2 info hash (SHA-256, 32 bytes)",
     )
-    info_hash_v1: Optional[bytes] = Field(
+    info_hash_v1: Optional[bytes]= Field(
         None,
         min_length=20,
         max_length=20,
         description="v1 info hash (SHA-1, 20 bytes) for hybrid torrents",
     )
-    file_tree: Optional[dict[str, Any]] = Field(
+    file_tree: Optional[dict[str, Any]]= Field(
         None,
         description="v2 file tree structure (hierarchical)",
     )
-    piece_layers: Optional[dict[bytes, list[bytes]]] = Field(
+    piece_layers: Optional[dict[bytes, list[bytes]]]= Field(
         None,
         description="v2 piece layers (pieces_root -> list of piece hashes)",
     )
 
     # Xet protocol metadata
-    xet_metadata: Optional[XetTorrentMetadata] = Field(
+    xet_metadata: Optional[XetTorrentMetadata]= Field(
         None,
         description="Xet protocol metadata for content-defined chunking",
     )
@@ -560,7 +589,7 @@ class WebTorrentConfig(BaseModel):
         default=False,
         description="Enable WebTorrent protocol support",
     )
-    webtorrent_signaling_url: Optional[str] = Field(
+    webtorrent_signaling_url: Optional[str]= Field(
         default=None,
         description="WebTorrent signaling server URL (optional, uses built-in server if None)",
     )
@@ -738,25 +767,25 @@ class NetworkConfig(BaseModel):
         le=65535,
         description="Listen port (deprecated: use listen_port_tcp and listen_port_udp)",
     )
-    listen_port_tcp: Optional[int] = Field(
+    listen_port_tcp: Optional[int]= Field(
         default=None,
         ge=1024,
         le=65535,
         description="TCP listen port for incoming peer connections",
     )
-    listen_port_udp: Optional[int] = Field(
+    listen_port_udp: Optional[int]= Field(
         default=None,
         ge=1024,
         le=65535,
         description="UDP listen port for incoming peer connections",
     )
-    tracker_udp_port: Optional[int] = Field(
+    tracker_udp_port: Optional[int]= Field(
         default=None,
         ge=1024,
         le=65535,
         description="UDP port for tracker client communication",
     )
-    xet_port: Optional[int] = Field(
+    xet_port: Optional[int]= Field(
         default=None,
         ge=1024,
         le=65535,
@@ -772,7 +801,7 @@ class NetworkConfig(BaseModel):
         le=65535,
         description="XET multicast port",
     )
-    listen_interface: Optional[str] = Field(
+    listen_interface: Optional[str]= Field(
         default="0.0.0.0",  # nosec B104 - Default bind address for network services
         description="Listen interface",
     )
@@ -785,7 +814,10 @@ class NetworkConfig(BaseModel):
     )
     enable_encryption: bool = Field(
         default=False,
-        description="Enable protocol encryption",
+        description=(
+            "Deprecated mirror of security.enable_encryption (MSE/PE); "
+            "kept for file compatibility — synced at config load"
+        ),
     )
     socket_rcvbuf_kib: int = Field(
         default=256,
@@ -1578,7 +1610,7 @@ class DiskConfig(BaseModel):
         default=True,
         description="Dynamically adjust mmap cache size based on available memory",
     )
-    max_file_size_mb: Optional[int] = Field(
+    max_file_size_mb: Optional[int]= Field(
         default=None,
         ge=0,
         le=1048576,  # 1TB max
@@ -1644,7 +1676,7 @@ class DiskConfig(BaseModel):
         le=65536,
         description="NVMe queue depth for optimal performance",
     )
-    download_path: Optional[str] = Field(
+    download_path: Optional[str]= Field(
         default=None,
         description="Default download path",
     )
@@ -1680,11 +1712,11 @@ class DiskConfig(BaseModel):
         default=True,
         description="Enable chunk-level deduplication",
     )
-    xet_cache_db_path: Optional[str] = Field(
+    xet_cache_db_path: Optional[str]= Field(
         default=None,
         description="Path to Xet deduplication cache database (defaults to download_dir/.xet_cache/chunks.db)",
     )
-    xet_chunk_store_path: Optional[str] = Field(
+    xet_chunk_store_path: Optional[str]= Field(
         default=None,
         description="Path to Xet chunk storage directory (defaults to download_dir/.xet_chunks)",
     )
@@ -1730,7 +1762,7 @@ class DiskConfig(BaseModel):
         default=CheckpointFormat.BOTH,
         description="Checkpoint file format",
     )
-    checkpoint_dir: Optional[str] = Field(
+    checkpoint_dir: Optional[str]= Field(
         None,
         description="Checkpoint directory (defaults to download_dir/.ccbt/checkpoints)",
     )
@@ -1963,6 +1995,74 @@ class DiscoveryConfig(BaseModel):
             "router.bitcomet.com:6881",
         ],
         description="DHT bootstrap nodes",
+    )
+    bootstrap_seed_replay_limit: int = Field(
+        default=6,
+        ge=1,
+        le=20,
+        description=(
+            "Number of bootstrap seed nodes to try per retry cycle when rotating peers"
+        ),
+    )
+    dht_bootstrap_retries_max: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Maximum rebootstrap attempts before backoff throttling",
+    )
+    bootstrap_retry_memo_ttl_s: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=3600.0,
+        description=(
+            "Replay memo TTL between repeated bootstrap attempts for the same reason"
+        ),
+    )
+    dht_bootstrap_memo_ttl_s: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=3600.0,
+        description="Memo TTL for zero-state bootstrap recovery suppression",
+    )
+    dht_zero_state_reprobe_wait_s: float = Field(
+        default=45.0,
+        ge=1.0,
+        le=600.0,
+        description=(
+            "Base wait time before retrying bootstrap when routing table is empty"
+        ),
+    )
+    dht_empty_state_backoff_factor: float = Field(
+        default=1.5,
+        ge=1.0,
+        le=10.0,
+        description=(
+            "Backoff multiplier for repeated zero-node DHT bootstrap outcomes"
+        ),
+    )
+    dht_rebootstrap_timeout_s: float = Field(
+        default=45.0,
+        ge=1.0,
+        le=600.0,
+        description="Timeout for periodic DHT rebootstrap fallback calls",
+    )
+    dht_bootstrap_timeout_s: float = Field(
+        default=45.0,
+        ge=1.0,
+        le=600.0,
+        description="Timeout for forced bootstrap calls when ensuring node coverage",
+    )
+    low_peer_threshold: int = Field(
+        default=1,
+        ge=0,
+        le=20,
+        description="Active-peer threshold that triggers low-peer recovery handling",
+    )
+    low_peer_suppression_window_s: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=600.0,
+        description="Window to suppress repeated low-peer recovery actions",
     )
 
     # DHT adaptive interval settings
@@ -2304,7 +2404,7 @@ class ObservabilityConfig(BaseModel):
     """Observability configuration."""
 
     log_level: LogLevel = Field(default=LogLevel.INFO, description="Log level")
-    log_file: Optional[str] = Field(None, description="Log file path")
+    log_file: Optional[str]= Field(None, description="Log file path")
     enable_metrics: bool = Field(default=True, description="Enable metrics collection")
     metrics_port: int = Field(
         default=64125,
@@ -2330,8 +2430,8 @@ class ObservabilityConfig(BaseModel):
         le=3600.0,
         description="Metrics collection interval in seconds",
     )
-    trace_file: Optional[str] = Field(default=None, description="Path to write traces")
-    alerts_rules_path: Optional[str] = Field(
+    trace_file: Optional[str]= Field(default=None, description="Path to write traces")
+    alerts_rules_path: Optional[str]= Field(
         default=".ccbt/alerts.json",
         description="Path to alert rules JSON file",
     )
@@ -2620,6 +2720,91 @@ class QueueConfig(BaseModel):
     )
 
 
+_ALLOWED_MSE_CIPHER_TOKENS = frozenset(token.name.lower() for token in CipherType)
+_ALLOWED_ENCRYPTION_MODES = frozenset(mode.value for mode in EncryptionMode)
+
+
+class AuthenticatedSwarmsConfig(BaseModel):
+    """Authenticated swarm policy settings."""
+
+    mode: str = Field(
+        default="off",
+        description="Swarm auth admission mode: off, opportunistic, strict",
+    )
+    discovery_mode: SwarmDiscoveryMode = Field(
+        default=SwarmDiscoveryMode.TRACKERS_ONLY,
+        description="Discovery surface for authenticated swarm mode.",
+    )
+    discovery_strict_for_strict_mode: bool = Field(
+        default=True,
+        description="Whether strict mode forces strict discovery behavior.",
+    )
+    trusted_swarm_ids: list[str] = Field(
+        default_factory=list,
+        description="List of trusted swarm identifiers (hex, uuid, or base32).",
+    )
+    strict_ltep_handshake_timeout_s: float = Field(
+        default=30.0,
+        ge=1.0,
+        description=(
+            "Seconds to wait for an inbound peer's extension handshake when "
+            "strict authenticated-swarm mode is active and the peer advertises BEP 10 support."
+        ),
+    )
+    fail_closed_on_parse_errors: bool = Field(
+        default=False,
+        description="When true, parse/validation failures keep strict mode closed.",
+    )
+    trust_store_path: Optional[str]= Field(
+        default=None,
+        description="Optional path for JSON trust store (for future module wiring).",
+    )
+    trust_store_refresh_interval_s: float = Field(
+        default=60.0,
+        ge=1.0,
+        description="Trust store refresh interval seconds.",
+    )
+    revocation_profile_path: Optional[str]= Field(
+        default=None,
+        description="Optional path for revocation profile JSON (for future module wiring).",
+    )
+    revocation_refresh_interval_s: float = Field(
+        default=300.0,
+        ge=1.0,
+        description="Revocation profile refresh interval seconds.",
+    )
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, v: str) -> str:
+        normalized = v.strip().lower()
+        if normalized not in {"off", "opportunistic", "strict"}:
+            msg = "mode must be one of: off, opportunistic, strict"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("discovery_mode")
+    @classmethod
+    def _normalize_discovery_mode(
+        cls, value: Union[str, SwarmDiscoveryMode]
+    ) -> SwarmDiscoveryMode:
+        """Normalize discovery mode string forms to enum values."""
+        if isinstance(value, SwarmDiscoveryMode):
+            return value
+        normalized = str(value).strip().lower().replace("-", "_")
+        return SwarmDiscoveryMode(normalized)
+
+    @field_validator("trusted_swarm_ids")
+    @classmethod
+    def _validate_trusted_swarm_ids(cls, v: list[str]) -> list[str]:
+        """Normalize and deduplicate trusted swarm id filters."""
+        return [
+            canonicalize_swarm_id(value)
+            for value in v
+            if isinstance(value, str) and value.strip()
+        ]
+
+
 class SecurityConfig(BaseModel):
     """Security related configuration."""
 
@@ -2632,11 +2817,13 @@ class SecurityConfig(BaseModel):
 
     enable_encryption: bool = Field(
         default=False,
-        description="Enable protocol encryption",
+        description="Enable MSE/PE (BEP 3) peer traffic obfuscation when connecting to peers",
     )
     encryption_mode: str = Field(
         default="preferred",
-        description="Encryption mode: disabled, preferred, or required",
+        description=(
+            "MSE/PE mode: disabled, preferred, required (case-insensitive on load)"
+        ),
     )
     encryption_dh_key_size: int = Field(
         default=768,
@@ -2648,7 +2835,7 @@ class SecurityConfig(BaseModel):
     )
     encryption_allowed_ciphers: list[str] = Field(
         default_factory=lambda: ["rc4", "aes"],
-        description="List of allowed cipher types",
+        description="Allowed MSE cipher tokens: rc4, aes, chacha20 (normalized to lowercase)",
     )
     encryption_allow_plain_fallback: bool = Field(
         default=True,
@@ -2680,6 +2867,45 @@ class SecurityConfig(BaseModel):
         default_factory=lambda: SSLConfig(),  # type: ignore[name-defined]
         description="SSL/TLS configuration",
     )
+    authenticated_swarms: AuthenticatedSwarmsConfig = Field(
+        default_factory=AuthenticatedSwarmsConfig,
+        description="Authenticated swarm admission and discovery policy.",
+    )
+
+    @field_validator("encryption_mode")
+    @classmethod
+    def validate_encryption_mode(cls, v: str) -> str:
+        """Normalize and validate encryption mode."""
+        key = v.lower().strip()
+        if key not in _ALLOWED_ENCRYPTION_MODES:
+            msg = (
+                f"encryption_mode must be one of {sorted(_ALLOWED_ENCRYPTION_MODES)}, "
+                f"got {v!r}"
+            )
+            raise ValueError(msg)
+        return key
+
+    @field_validator("encryption_allowed_ciphers")
+    @classmethod
+    def validate_encryption_allowed_ciphers(cls, v: list[str]) -> list[str]:
+        """Normalize cipher names and filter invalid duplicates."""
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_cipher in v:
+            cipher_value = raw_cipher if isinstance(raw_cipher, str) else str(raw_cipher)
+            tok = cipher_value.lower().strip()
+            if not tok:
+                continue
+            if tok not in _ALLOWED_MSE_CIPHER_TOKENS:
+                msg = (
+                    f"encryption_allowed_ciphers: unknown token {raw_cipher!r}; "
+                    f"allowed {sorted(_ALLOWED_MSE_CIPHER_TOKENS)}"
+                )
+                raise ValueError(msg)
+            if tok not in seen:
+                normalized.append(tok)
+                seen.add(tok)
+        return normalized
 
 
 class MLConfig(BaseModel):
@@ -2707,21 +2933,21 @@ class ProxyConfig(BaseModel):
         default="http",
         description="Proxy type (http/socks4/socks5)",
     )
-    proxy_host: Optional[str] = Field(
+    proxy_host: Optional[str]= Field(
         default=None,
         description="Proxy server hostname or IP",
     )
-    proxy_port: Optional[int] = Field(
+    proxy_port: Optional[int]= Field(
         default=None,
         ge=0,
         le=65535,
         description="Proxy server port (0 when disabled, 1-65535 when enabled)",
     )
-    proxy_username: Optional[str] = Field(
+    proxy_username: Optional[str]= Field(
         default=None,
         description="Proxy username for authentication",
     )
-    proxy_password: Optional[str] = Field(
+    proxy_password: Optional[str]= Field(
         default=None,
         description="Proxy password (encrypted in storage)",
     )
@@ -2841,7 +3067,7 @@ class LocalBlacklistSourceConfig(BaseModel):
         },
         description="Thresholds for automatic blacklisting",
     )
-    expiration_hours: Optional[float] = Field(
+    expiration_hours: Optional[float]= Field(
         default=24.0,
         description="Expiration time for auto-blacklisted IPs (hours, None = permanent)",
     )
@@ -2877,7 +3103,7 @@ class BlacklistConfig(BaseModel):
         default_factory=list,
         description="URLs for automatic blacklist updates",
     )
-    default_expiration_hours: Optional[float] = Field(
+    default_expiration_hours: Optional[float]= Field(
         default=None,
         description="Default expiration time for auto-blacklisted IPs in hours (None = permanent)",
     )
@@ -2943,11 +3169,14 @@ class PluginsConfig(BaseModel):
 
 
 class SSLConfig(BaseModel):
-    """SSL/TLS configuration."""
+    """TLS for HTTPS trackers and optional experimental peer TLS (BEP 10 extension)."""
 
     enable_ssl_trackers: bool = Field(
         default=True,
-        description="Enable SSL/TLS for tracker connections (HTTPS)",
+        description=(
+            "Use TLS for https:// tracker announces only. "
+            "UDP trackers (BEP 15) have no TLS in the standard protocol."
+        ),
     )
     enable_ssl_peers: bool = Field(
         default=False,
@@ -2957,15 +3186,15 @@ class SSLConfig(BaseModel):
         default=True,
         description="Verify SSL certificates",
     )
-    ssl_ca_certificates: Optional[str] = Field(
+    ssl_ca_certificates: Optional[str]= Field(
         default=None,
         description="Path to CA certificates file or directory",
     )
-    ssl_client_certificate: Optional[str] = Field(
+    ssl_client_certificate: Optional[str]= Field(
         default=None,
         description="Path to client certificate file (PEM format)",
     )
-    ssl_client_key: Optional[str] = Field(
+    ssl_client_key: Optional[str]= Field(
         default=None,
         description="Path to client private key file (PEM format)",
     )
@@ -2981,9 +3210,19 @@ class SSLConfig(BaseModel):
         default=True,
         description="Allow peers with invalid certificates (for opportunistic encryption)",
     )
+    ssl_tracker_pins: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional tracker hostname -> SHA-256 certificate pin map for HTTPS trackers. "
+            "Define only when tracker pinning is explicitly enabled."
+        ),
+    )
     ssl_extension_enabled: bool = Field(
         default=True,
-        description="Enable SSL/TLS extension protocol (BEP 47) for opportunistic encryption",
+        description=(
+            "Enable experimental peer TLS via BEP 10 extension messages "
+            "(not BEP 47; BEP 47 is padding files / file attributes)"
+        ),
     )
     ssl_extension_opportunistic: bool = Field(
         default=True,
@@ -3062,15 +3301,15 @@ class FileCheckpoint(BaseModel):
     size: int = Field(..., ge=0, description="File size in bytes")
     exists: bool = Field(default=False, description="Whether file exists on disk")
     # BEP 47: File attributes
-    attributes: Optional[str] = Field(
+    attributes: Optional[str]= Field(
         None,
         description="File attributes string (BEP 47, e.g., 'p', 'x', 'h', 'l')",
     )
-    symlink_path: Optional[str] = Field(
+    symlink_path: Optional[str]= Field(
         None,
         description="Symlink target path (BEP 47, required when attr='l')",
     )
-    file_sha1: Optional[bytes] = Field(
+    file_sha1: Optional[bytes]= Field(
         None,
         description="File SHA-1 hash (BEP 47, 20 bytes if provided)",
     )
@@ -3108,7 +3347,7 @@ class TorrentCheckpoint(BaseModel):
         default_factory=dict,
         description="Piece states by index",
     )
-    download_stats: Optional[DownloadStats] = Field(
+    download_stats: Optional[DownloadStats]= Field(
         default_factory=DownloadStats,
         description="Download statistics",
     )
@@ -3137,94 +3376,94 @@ class TorrentCheckpoint(BaseModel):
     )
 
     # Optional metadata
-    peer_info: Optional[dict[str, Any]] = Field(
+    peer_info: Optional[dict[str, Any]]= Field(
         None,
         description="Peer availability info",
     )
     endgame_mode: bool = Field(default=False, description="Whether in endgame mode")
 
     # Torrent source metadata for resume functionality
-    torrent_file_path: Optional[str] = Field(
+    torrent_file_path: Optional[str]= Field(
         None,
         description="Path to original .torrent file",
     )
-    magnet_uri: Optional[str] = Field(None, description="Original magnet link")
+    magnet_uri: Optional[str]= Field(None, description="Original magnet link")
     announce_urls: list[str] = Field(
         default_factory=list,
         description="Tracker announce URLs",
     )
-    display_name: Optional[str] = Field(None, description="Torrent display name")
+    display_name: Optional[str]= Field(None, description="Torrent display name")
 
     # Fast resume data (optional)
-    resume_data: Optional[dict[str, Any]] = Field(
+    resume_data: Optional[dict[str, Any]]= Field(
         None,
         description="Fast resume data (serialized FastResumeData)",
     )
 
     # File selection state
-    file_selections: Optional[dict[int, dict[str, Any]]] = Field(
+    file_selections: Optional[dict[int, dict[str, Any]]]= Field(
         None,
         description="File selection state: {file_index: {selected: bool, priority: str, bytes_downloaded: int}}",
     )
 
     # Per-torrent configuration options
-    per_torrent_options: Optional[dict[str, Any]] = Field(
+    per_torrent_options: Optional[dict[str, Any]]= Field(
         None,
         description="Per-torrent configuration options (piece_selection, streaming_mode, max_peers_per_torrent, etc.)",
     )
 
     # Per-torrent rate limits
-    rate_limits: Optional[dict[str, int]] = Field(
+    rate_limits: Optional[dict[str, int]]= Field(
         None,
         description="Per-torrent rate limits: {down_kib: int, up_kib: int}",
     )
 
     # Peer lists and state
-    connected_peers: Optional[list[dict[str, Any]]] = Field(
+    connected_peers: Optional[list[dict[str, Any]]]= Field(
         None,
         description="List of connected peers: [{ip, port, peer_id, peer_source, stats}]",
     )
-    active_peers: Optional[list[dict[str, Any]]] = Field(
+    active_peers: Optional[list[dict[str, Any]]]= Field(
         None,
         description="List of active peers (subset of connected): [{ip, port, ...}]",
     )
-    peer_statistics: Optional[dict[str, dict[str, Any]]] = Field(
+    peer_statistics: Optional[dict[str, dict[str, Any]]]= Field(
         None,
         description="Peer statistics by peer_key: {peer_key: {bytes_downloaded, bytes_uploaded, ...}}",
     )
 
     # Tracker lists and state
-    tracker_list: Optional[list[dict[str, Any]]] = Field(
+    tracker_list: Optional[list[dict[str, Any]]]= Field(
         None,
         description="List of trackers: [{url, last_announce, last_success, is_healthy, failure_count}]",
     )
-    tracker_health: Optional[dict[str, dict[str, Any]]] = Field(
+    tracker_health: Optional[dict[str, dict[str, Any]]]= Field(
         None,
         description="Tracker health metrics: {url: {last_announce, last_success, failure_count, ...}}",
     )
 
     # Security state
-    peer_whitelist: Optional[list[str]] = Field(
+    peer_whitelist: Optional[list[str]]= Field(
         None,
         description="Per-torrent peer whitelist (IP addresses)",
     )
-    peer_blacklist: Optional[list[str]] = Field(
+    peer_blacklist: Optional[list[str]]= Field(
         None,
         description="Per-torrent peer blacklist (IP addresses)",
     )
 
     # Session state
-    session_state: Optional[str] = Field(
+    session_state: Optional[str]= Field(
         None,
         description="Session state: 'active', 'paused', 'stopped', 'queued', 'seeding'",
     )
-    session_state_timestamp: Optional[float] = Field(
+    session_state_timestamp: Optional[float]= Field(
         None,
         description="Timestamp when session state changed",
     )
 
     # Event history
-    recent_events: Optional[list[dict[str, Any]]] = Field(
+    recent_events: Optional[list[dict[str, Any]]]= Field(
         None,
         description="Recent events for debugging: [{event_type, timestamp, data}]",
     )
@@ -3273,7 +3512,7 @@ class GlobalCheckpoint(BaseModel):
     )
 
     # Global limits
-    global_rate_limits: Optional[dict[str, int]] = Field(
+    global_rate_limits: Optional[dict[str, int]]= Field(
         None,
         description="Global rate limits: {down_kib: int, up_kib: int}",
     )
@@ -3289,13 +3528,13 @@ class GlobalCheckpoint(BaseModel):
     )
 
     # DHT state
-    dht_nodes: Optional[list[dict[str, Any]]] = Field(
+    dht_nodes: Optional[list[dict[str, Any]]]= Field(
         None,
         description="Known DHT nodes: [{ip, port, node_id, last_seen}]",
     )
 
     # Global statistics
-    global_stats: Optional[dict[str, Any]] = Field(
+    global_stats: Optional[dict[str, Any]]= Field(
         None,
         description="Global statistics snapshot",
     )
@@ -3306,42 +3545,42 @@ class GlobalCheckpoint(BaseModel):
 class PerTorrentOptions(BaseModel):
     """Per-torrent configuration options for validation."""
 
-    piece_selection: Optional[str] = Field(
+    piece_selection: Optional[str]= Field(
         None,
         description="Piece selection strategy: round_robin, rarest_first, sequential",
     )
-    streaming_mode: Optional[bool] = Field(
+    streaming_mode: Optional[bool]= Field(
         None, description="Enable streaming mode for sequential download"
     )
-    sequential_window_size: Optional[int] = Field(
+    sequential_window_size: Optional[int]= Field(
         None,
         ge=1,
         description="Number of pieces ahead to download in sequential mode",
     )
-    max_peers_per_torrent: Optional[int] = Field(
+    max_peers_per_torrent: Optional[int]= Field(
         None,
         ge=0,
         description="Maximum peers for this torrent (0 = unlimited)",
     )
-    enable_tcp: Optional[bool] = Field(None, description="Enable TCP transport")
-    enable_utp: Optional[bool] = Field(None, description="Enable uTP transport")
-    enable_encryption: Optional[bool] = Field(
+    enable_tcp: Optional[bool]= Field(None, description="Enable TCP transport")
+    enable_utp: Optional[bool]= Field(None, description="Enable uTP transport")
+    enable_encryption: Optional[bool]= Field(
         None, description="Enable protocol encryption (BEP 3)"
     )
-    auto_scrape: Optional[bool] = Field(
+    auto_scrape: Optional[bool]= Field(
         None, description="Automatically scrape tracker on torrent add"
     )
-    enable_nat_mapping: Optional[bool] = Field(
+    enable_nat_mapping: Optional[bool]= Field(
         None, description="Enable NAT port mapping for this torrent"
     )
-    enable_xet: Optional[bool] = Field(
+    enable_xet: Optional[bool]= Field(
         None, description="Enable XET folder synchronization for this torrent"
     )
-    xet_sync_mode: Optional[str] = Field(
+    xet_sync_mode: Optional[str]= Field(
         None,
         description="XET sync mode for this torrent (designated/best_effort/broadcast/consensus)",
     )
-    xet_allowlist_path: Optional[str] = Field(
+    xet_allowlist_path: Optional[str]= Field(
         None, description="Path to XET allowlist file for this torrent"
     )
 
@@ -3373,36 +3612,36 @@ class PerTorrentOptions(BaseModel):
 class PerTorrentDefaultsConfig(BaseModel):
     """Default per-torrent configuration options applied to new torrents."""
 
-    piece_selection: Optional[str] = Field(
+    piece_selection: Optional[str]= Field(
         None,
         description="Default piece selection strategy: round_robin, rarest_first, sequential",
     )
-    streaming_mode: Optional[bool] = Field(
+    streaming_mode: Optional[bool]= Field(
         None, description="Default streaming mode for sequential download"
     )
-    sequential_window_size: Optional[int] = Field(
+    sequential_window_size: Optional[int]= Field(
         None,
         ge=1,
         description="Default number of pieces ahead to download in sequential mode",
     )
-    max_peers_per_torrent: Optional[int] = Field(
+    max_peers_per_torrent: Optional[int]= Field(
         None,
         ge=0,
         description="Default maximum peers for torrents (0 = unlimited)",
     )
-    enable_tcp: Optional[bool] = Field(
+    enable_tcp: Optional[bool]= Field(
         None, description="Default TCP transport enabled"
     )
-    enable_utp: Optional[bool] = Field(
+    enable_utp: Optional[bool]= Field(
         None, description="Default uTP transport enabled"
     )
-    enable_encryption: Optional[bool] = Field(
+    enable_encryption: Optional[bool]= Field(
         None, description="Default protocol encryption enabled (BEP 3)"
     )
-    auto_scrape: Optional[bool] = Field(
+    auto_scrape: Optional[bool]= Field(
         None, description="Default auto-scrape tracker on torrent add"
     )
-    enable_nat_mapping: Optional[bool] = Field(
+    enable_nat_mapping: Optional[bool]= Field(
         None, description="Default NAT port mapping enabled"
     )
 
@@ -3458,19 +3697,19 @@ class ScrapeResult(BaseModel):
 class DaemonConfig(BaseModel):
     """Daemon configuration."""
 
-    api_key: Optional[str] = Field(
+    api_key: Optional[str]= Field(
         default=None,
         description="API key for authentication (auto-generated if not set)",
     )
-    ed25519_public_key: Optional[str] = Field(
+    ed25519_public_key: Optional[str]= Field(
         None,
         description="Ed25519 public key for cryptographic authentication (hex format)",
     )
-    ed25519_key_path: Optional[str] = Field(
+    ed25519_key_path: Optional[str]= Field(
         None,
         description="Path to Ed25519 key storage directory (default: ~/.ccbt/keys)",
     )
-    tls_certificate_path: Optional[str] = Field(
+    tls_certificate_path: Optional[str]= Field(
         None, description="Path to TLS certificate file for HTTPS support"
     )
     tls_enabled: bool = Field(False, description="Enable TLS/HTTPS for IPC server")
@@ -3490,7 +3729,7 @@ class DaemonConfig(BaseModel):
         ge=1.0,
         description="Auto-save state interval in seconds",
     )
-    state_dir: Optional[str] = Field(
+    state_dir: Optional[str]= Field(
         None,
         description="State directory path (default: ~/.ccbt/daemon)",
     )
@@ -3543,7 +3782,7 @@ class MediaConfig(BaseModel):
         le=86400.0,
         description="Lifetime for generated media stream access tokens",
     )
-    vlc_executable_path: Optional[str] = Field(
+    vlc_executable_path: Optional[str]= Field(
         default=None,
         description="Optional absolute path to the VLC executable",
     )
@@ -3623,7 +3862,7 @@ class XetSyncConfig(BaseModel):
         default=True,
         description="Enable git integration for version tracking",
     )
-    allowlist_path: Optional[str] = Field(
+    allowlist_path: Optional[str]= Field(
         None,
         description="Default allowlist path for workspace authorization",
     )
@@ -3759,7 +3998,7 @@ class XetSyncConfig(BaseModel):
         le=10000,
         description="Maximum number of queued updates",
     )
-    allowlist_encryption_key: Optional[str] = Field(
+    allowlist_encryption_key: Optional[str]= Field(
         None,
         description="Path to allowlist encryption key file",
     )
@@ -3858,7 +4097,7 @@ class Config(BaseModel):
         default_factory=WebTorrentConfig,
         description="WebTorrent protocol configuration",
     )
-    daemon: Optional[DaemonConfig] = Field(
+    daemon: Optional[DaemonConfig]= Field(
         None,
         description="Daemon configuration",
     )
@@ -3969,6 +4208,11 @@ class Config(BaseModel):
                 self.network.global_down_kib = self.limits.global_down_kib
             if self.limits.global_up_kib and not self.network.global_up_kib:
                 self.network.global_up_kib = self.limits.global_up_kib
+
+        # MSE/PE toggle: canonical field is security.enable_encryption
+        if self.network.enable_encryption and not self.security.enable_encryption:
+            self.security.enable_encryption = True
+        self.network.enable_encryption = self.security.enable_encryption
 
         return self
 

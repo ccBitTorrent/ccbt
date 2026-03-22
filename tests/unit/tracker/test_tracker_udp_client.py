@@ -662,6 +662,121 @@ class TestAsyncUDPTrackerClientWaitForResponse:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_wait_for_response_timeout_aggregates_bursts(self):
+        """Timeout warnings should be aggregated and emitted as a burst summary."""
+        client = AsyncUDPTrackerClient()
+        client._timeout_warning_summary_window = 0.0
+        client.logger.warning = Mock()  # type: ignore[method-assign]
+        client.logger.debug = Mock()  # type: ignore[method-assign]
+        now = time.time()
+
+        first_tx = 111
+        second_tx = 222
+
+        client._record_timeout_warning(
+            now=now,
+            transaction_id=first_tx,
+            timeout=0.1,
+            pending_count=1,
+            elapsed=0.1,
+            oldest_age=0.0,
+            pruned_count=0,
+        )
+        assert client.logger.debug.call_count == 1
+        assert client.logger.warning.call_count == 0
+
+        client._record_timeout_warning(
+            now=now + 0.1,
+            transaction_id=second_tx,
+            timeout=0.1,
+            pending_count=2,
+            elapsed=0.1,
+            oldest_age=0.0,
+            pruned_count=0,
+        )
+        assert client.logger.warning.call_count == 1
+
+    def test_record_timeout_warning_host_isolated(self):
+        """Timeout aggregation should be tracked separately for each tracker host."""
+        client = AsyncUDPTrackerClient()
+        client._timeout_warning_summary_window = 0.0
+        client.logger.warning = Mock()  # type: ignore[method-assign]
+        client.logger.debug = Mock()  # type: ignore[method-assign]
+        now = time.time()
+
+        client._record_timeout_warning(
+            now=now,
+            transaction_id=111,
+            timeout=0.1,
+            pending_count=1,
+            elapsed=0.1,
+            oldest_age=0.0,
+            pruned_count=0,
+            tracker_host="tracker-a.example.com",
+        )
+        assert client.logger.debug.call_count == 1
+        assert client.logger.warning.call_count == 0
+
+        client._record_timeout_warning(
+            now=now,
+            transaction_id=222,
+            timeout=0.1,
+            pending_count=1,
+            elapsed=0.1,
+            oldest_age=0.0,
+            pruned_count=0,
+            tracker_host="tracker-b.example.com",
+        )
+        assert client.logger.debug.call_count == 2
+        assert client.logger.warning.call_count == 0
+
+        client._record_timeout_warning(
+            now=now + 0.2,
+            transaction_id=223,
+            timeout=0.1,
+            pending_count=2,
+            elapsed=0.2,
+            oldest_age=0.0,
+            pruned_count=0,
+            tracker_host="tracker-b.example.com",
+        )
+        assert client.logger.warning.call_count == 1
+
+        client._record_timeout_warning(
+            now=now + 0.4,
+            transaction_id=112,
+            timeout=0.1,
+            pending_count=2,
+            elapsed=0.2,
+            oldest_age=0.0,
+            pruned_count=0,
+            tracker_host="tracker-a.example.com",
+        )
+        assert client.logger.warning.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_wait_for_response_timeout_logs_debug_if_summary_window(self):
+        """Single timeout in burst window should remain at debug level."""
+        client = AsyncUDPTrackerClient()
+        client.logger.warning = Mock()  # type: ignore[method-assign]
+        client.logger.debug = Mock()  # type: ignore[method-assign]
+
+        now = time.time()
+        client._timeout_warning_summary_window = 10.0
+        client._record_timeout_warning(
+            now=now,
+            transaction_id=333,
+            timeout=0.2,
+            pending_count=3,
+            elapsed=0.2,
+            oldest_age=0.0,
+            pruned_count=0,
+        )
+
+        assert client.logger.debug.call_count == 1
+        assert client.logger.warning.call_count == 0
+
+    @pytest.mark.asyncio
     async def test_wait_for_response_success(self):
         """Test waiting for response succeeds."""
         client = AsyncUDPTrackerClient()
@@ -685,6 +800,71 @@ class TestAsyncUDPTrackerClientWaitForResponse:
         assert result is not None
         assert result.action == TrackerAction.CONNECT
 
+    @pytest.mark.asyncio
+    async def test_wait_for_response_adapts_timeout_with_queue_pressure(self, monkeypatch):
+        """Adaptive timeout should shrink when pending queue is under pressure."""
+        client = AsyncUDPTrackerClient()
+        client._get_effective_pending_request_cap = Mock(return_value=4)  # type: ignore[method-assign]
+
+        now = time.time()
+        for transaction_id in (1, 2, 3):
+            client.pending_requests[transaction_id] = asyncio.Future()
+            client._pending_request_timestamps[transaction_id] = now
+
+        captured_timeout: dict[str, float] = {}
+
+        async def wait_for_mock(_future: asyncio.Future, timeout: float):
+            captured_timeout["value"] = timeout
+            raise asyncio.TimeoutError
+
+        monkeypatch.setattr(asyncio, "wait_for", wait_for_mock)
+        await client._wait_for_response(4, timeout=20.0, tracker_host="tracker.example.com")
+
+        assert "value" in captured_timeout
+        assert captured_timeout["value"] < 20.0
+
+    @pytest.mark.asyncio
+    async def test_wait_for_response_records_tracker_response_time_ema(self):
+        """Successful waits should update per-host response EWMA."""
+        client = AsyncUDPTrackerClient()
+        transaction_id = 12345
+        host = "tracker.example.com"
+
+        async def set_response():
+            await asyncio.sleep(0.01)
+            response = TrackerResponse(
+                TrackerAction.CONNECT,
+                transaction_id,
+                connection_id=0x1234,
+            )
+            if transaction_id in client.pending_requests:
+                client.pending_requests[transaction_id].set_result(response)
+
+        task = asyncio.create_task(set_response())
+        result = await client._wait_for_response(
+            transaction_id, timeout=1.0, tracker_host=host
+        )
+        await task
+
+        assert result is not None
+        assert host in client._tracker_response_timeout_ema
+        assert client._tracker_response_timeout_ema[host] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_wait_for_response_replaces_matching_pending_transaction(self):
+        """Existing matching transaction id should be replaced safely."""
+        client = AsyncUDPTrackerClient()
+        stale_future = asyncio.Future()
+        client.pending_requests[555] = stale_future
+        client._pending_request_timestamps[555] = time.time()
+
+        async def wait_for_mock(_future: asyncio.Future, timeout: float):
+            raise asyncio.TimeoutError
+
+        with patch.object(asyncio, "wait_for", side_effect=wait_for_mock):
+            await client._wait_for_response(555, timeout=0.01, tracker_host="tracker.example.com")
+
+        assert stale_future.cancelled()
 
 class TestAsyncUDPTrackerClientCleanup:
     """Test UDP tracker client cleanup."""
@@ -753,6 +933,36 @@ class TestAsyncUDPTrackerClientCleanup:
         assert future_1.cancelled()
         assert future_2.cancelled()
         assert len(client._pending_request_stale_history) == 2
+
+    def test_prune_stale_pending_requests_enforces_effective_cap(self):
+        """Pruning should drop oldest pending requests when cap is exceeded."""
+        client = AsyncUDPTrackerClient()
+        client._max_pending_requests = 2
+        client._get_adaptive_pending_request_cap = Mock(return_value=2)  # type: ignore[method-assign]
+
+        now = time.time()
+        oldest = now - 5.0
+        middle = now - 4.0
+        newest = now - 3.0
+        future_1 = asyncio.Future()
+        future_2 = asyncio.Future()
+        future_3 = asyncio.Future()
+        client.pending_requests[111] = future_1
+        client.pending_requests[222] = future_2
+        client.pending_requests[333] = future_3
+        client._pending_request_timestamps[111] = oldest
+        client._pending_request_timestamps[222] = middle
+        client._pending_request_timestamps[333] = newest
+
+        pruned = client._prune_stale_pending_requests(now=now, timeout=0.1, additional_new=0)
+
+        assert pruned == 1
+        assert 111 not in client.pending_requests
+        assert 222 in client.pending_requests
+        assert 333 in client.pending_requests
+        assert future_1.cancelled()
+        assert not future_2.cancelled()
+        assert not future_3.cancelled()
 
 
 class TestAsyncUDPTrackerClientScrape:

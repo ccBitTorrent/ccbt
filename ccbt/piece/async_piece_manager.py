@@ -14,7 +14,7 @@ from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.models import (
@@ -88,7 +88,7 @@ class PieceBlock:
     requested_from: set[str] = field(
         default_factory=set,
     )  # Peer keys that have this block
-    received_from: Optional[str] = None  # Peer key that actually sent this block
+    received_from: Optional[str]= None  # Peer key that actually sent this block
 
     def is_complete(self) -> bool:
         """Check if block is complete."""
@@ -126,7 +126,7 @@ class PieceData:
         0  # Outbound request count from the current/last request attempt
     )
     request_timeout: float = 120.0  # Timeout for piece requests (seconds)
-    primary_peer: Optional[str] = None  # Peer key that provided most blocks
+    primary_peer: Optional[str]= None  # Peer key that provided most blocks
     peer_block_counts: dict[str, int] = field(
         default_factory=dict
     )  # peer_key -> number of blocks received
@@ -343,7 +343,7 @@ class AsyncPieceManager:
     def __init__(
         self,
         torrent_data: dict[str, Any],
-        file_selection_manager: Optional[Any] = None,
+        file_selection_manager: Optional[Any]= None,
     ):
         """Initialize async piece manager.
 
@@ -459,6 +459,8 @@ class AsyncPieceManager:
             "peer_selection_attempts": 0,  # Total peer selection attempts
             "peer_selection_successes": 0,  # Successful peer selections
         }
+        self._piece_warning_rate_limits: dict[str, float] = {}
+        self._piece_warning_rate_limit_s = 3.0
         self._piece_probe_cursors: dict[int, int] = {}
         self._verification_counters: dict[str, int] = {
             "piece_hash_verification_successes": 0,
@@ -477,7 +479,7 @@ class AsyncPieceManager:
 
         # Selector-created request claims that have not yet issued the first block request.
         self._pending_piece_requests: set[int] = set()
-        self._deferred_checkpoint: Optional[TorrentCheckpoint] = None
+        self._deferred_checkpoint: Optional[TorrentCheckpoint]= None
         self._piece_layout_provisional = False
         piece_selection_defaults = _get_piece_selection_defaults()
         self._no_progress_stall_threshold = int(
@@ -571,29 +573,29 @@ class AsyncPieceManager:
         self.download_start_time = time.time()
         self.bytes_downloaded = 0
         self._current_sequential_piece: int = 0  # Track current sequential position
-        self._peer_manager: Optional[Any] = (
+        self._peer_manager: Optional[Any]= (
             None  # Store peer manager for piece requests
         )
 
         # Callbacks
-        self.on_piece_completed: Optional[Callable[[int], None]] = None
-        self.on_piece_verified: Optional[Callable[[int], None]] = None
-        self.on_download_complete: Optional[Callable[[], None]] = None
-        self.on_file_assembled: Optional[Callable[[int], None]] = None
-        self.on_checkpoint_save: Optional[Callable[[], None]] = None
+        self.on_piece_completed: Callable[[int], None] | None = None
+        self.on_piece_verified: Callable[[int], None] | None = None
+        self.on_download_complete: Callable[[], None] | None = None
+        self.on_file_assembled: Callable[[int], None] | None = None
+        self.on_checkpoint_save: Callable[[], None] | None = None
 
         # File assembler (set by download manager)
-        self.file_assembler: Optional[Any] = None
+        self.file_assembler: Optional[Any]= None
 
         # Background tasks
-        self._hash_worker_task: Optional[asyncio.Task] = None
-        self._piece_selector_task: Optional[asyncio.Task] = None
+        self._hash_worker_task: Optional[asyncio.Task]= None
+        self._piece_selector_task: Optional[asyncio.Task]= None
         self._background_tasks: set[asyncio.Task] = set()
         self._piece_selection_trigger_tasks: set[asyncio.Task] = set()
 
         self.logger = logging.getLogger(__name__)
 
-    def _get_total_length(self, torrent_data: Optional[dict[str, Any]] = None) -> int:
+    def _get_total_length(self, torrent_data: Optional[dict[str, Any]]= None) -> int:
         """Return the torrent's total length when known."""
         data = torrent_data if torrent_data is not None else self.torrent_data
         if not isinstance(data, dict):
@@ -620,7 +622,7 @@ class AsyncPieceManager:
         return 0
 
     def _expected_piece_length(
-        self, piece_index: int, total_length: Optional[int] = None
+        self, piece_index: int, total_length: Optional[int]= None
     ) -> int:
         """Return the expected length for a piece under current geometry."""
         if self.piece_length <= 0:
@@ -634,7 +636,7 @@ class AsyncPieceManager:
         return self.piece_length
 
     def _make_piece(
-        self, piece_index: int, total_length: Optional[int] = None
+        self, piece_index: int, total_length: Optional[int]= None
     ) -> PieceData:
         """Create a piece using the current metadata-backed geometry."""
         piece = PieceData(
@@ -790,6 +792,26 @@ class AsyncPieceManager:
                 exc_info=True,
             )
 
+    def _warn_piece_manager(
+        self,
+        warning_key: str,
+        message: str,
+        *args: Any,
+        cooldown_s: Optional[float]= None,
+    ) -> None:
+        """Rate-limit warnings to avoid high-volume warning storms."""
+        cooldown = (
+            float(cooldown_s)
+            if cooldown_s is not None
+            else self._piece_warning_rate_limit_s
+        )
+        now = time.time()
+        allowed_at = self._piece_warning_rate_limits.get(warning_key, 0.0)
+        if now < allowed_at:
+            return
+        self._piece_warning_rate_limits[warning_key] = now + max(cooldown, 0.0)
+        self.logger.warning(message, *args)
+
     def _next_no_progress_gate_pause(
         self,
         reason: str,
@@ -811,6 +833,7 @@ class AsyncPieceManager:
         if active_peer_count <= 2 and reason in {
             "choked_with_piece",
             "true_zero_availability",
+            "request_timeouts",
         }:
             base_pause *= 0.6
         progressive_factor = 1.0 + min(self._no_progress_gate_streak, 4) * 0.35
@@ -1021,7 +1044,7 @@ class AsyncPieceManager:
         self.logger.debug("Async piece manager started")
 
     def _spawn_piece_selection_task(
-        self, coro: Awaitable[None], *, task_name: Optional[str] = None
+        self, coro: Awaitable[None], *, task_name: Optional[str]= None
     ) -> None:
         """Start a piece-selection task that is always tracked for shutdown cleanup."""
         if self._stopping or is_shutting_down():
@@ -2027,7 +2050,7 @@ class AsyncPieceManager:
         self,
         piece_index: int,
         peer_manager: Any,
-        max_requesters: Optional[int] = None,
+        max_requesters: Optional[int]= None,
     ) -> None:
         """Request a piece from available peers using rarest-first or endgame logic.
 
@@ -2346,7 +2369,8 @@ class AsyncPieceManager:
                                     piece_index, piece
                                 )
                             ):
-                                self.logger.warning(
+                                self._warn_piece_manager(
+                                    f"piece_requested_timeout_no_outbound:{piece_index}",
                                     "PIECE_MANAGER: Piece %d in REQUESTED state with no outstanding requests but no outbound requests were dispatched "
                                     "(timeout after %.1fs, adaptive_timeout=%.1fs, active_peers=%d) - deferring reset for immediate retry",
                                     piece_index,
@@ -2367,7 +2391,8 @@ class AsyncPieceManager:
                             ):
                                 return
 
-                            self.logger.warning(
+                            self._warn_piece_manager(
+                                f"piece_requested_timeout_reset:{piece_index}",
                                 "PIECE_MANAGER: Piece %d stuck in REQUESTED state with no outstanding requests "
                                 "(timeout after %.1fs, adaptive_timeout=%.1fs, active_peers=%d) - resetting to MISSING",
                                 piece_index,
@@ -2514,7 +2539,8 @@ class AsyncPieceManager:
                 from ccbt.utils.shutdown import is_shutting_down
 
                 if not is_shutting_down():
-                    self.logger.warning(
+                    self._warn_piece_manager(
+                        f"piece_no_available_peers:{piece_index}",
                         "No available peers for piece %d: active_peers=%d, peers_with_bitfield=%d, unchoked=%d, choked_with_piece=%d (peer_manager=%s)",
                         piece_index,
                         len(active_peers) if active_peers else 0,
@@ -2705,7 +2731,8 @@ class AsyncPieceManager:
                 piece.state = PieceState.REQUESTED
                 piece.last_request_time = 0.0
                 piece.requests_dispatched = getattr(piece, "requests_dispatched", 0)
-                self.logger.warning(
+                self._warn_piece_manager(
+                    f"piece_no_block_requests:{piece_index}",
                     "PIECE_MANAGER: Piece %d issued no block requests; keeping state at REQUESTED for retry",
                     piece_index,
                 )
@@ -2761,7 +2788,7 @@ class AsyncPieceManager:
             return False
 
         now = time.time()
-        focus_peer_key: Optional[str] = None
+        focus_peer_key: Optional[str]= None
         if focus_peer is not None and hasattr(focus_peer, "peer_info"):
             focus_peer_key = f"{focus_peer.peer_info.ip}:{focus_peer.peer_info.port}"
             focus_peer_retry_until = self._retry_request_peer_next_allowed_at.get(
@@ -2804,7 +2831,7 @@ class AsyncPieceManager:
         self,
         piece_index: int,
         peer_manager: Any,
-        max_requesters: Optional[int] = None,
+        max_requesters: Optional[int]= None,
     ) -> list[AsyncPeerConnection]:
         """Get peers that have the specified piece, prioritized by download speed.
 
@@ -3381,8 +3408,21 @@ class AsyncPieceManager:
                     return 1.0
                 return max(0.0, 1.0 - min(1.0, age_s / unchoke_window))
 
+            peer_key_by_id: dict[int, str] = {}
+            for peer in peers_to_use:
+                peer_key = self._normalize_peer_key(peer)
+                if not peer_key:
+                    peer_key = f"fallback:{id(peer)}"
+                    self.logger.debug(
+                        "Using fallback peer score key for sparse unchoke scoring: %s",
+                        peer_key,
+                    )
+                peer_key_by_id[id(peer)] = peer_key
+
             recent_peer_scores = {
-                peer: peer_recent_unchoke_score(peer) for peer in peers_to_use
+                peer_key: peer_recent_unchoke_score(peer)
+                for peer in peers_to_use
+                for peer_key in [peer_key_by_id[id(peer)]]
             }
             has_recent_unchoke_signal = any(
                 score > 0.0 for score in recent_peer_scores.values()
@@ -3402,7 +3442,7 @@ class AsyncPieceManager:
                     getattr(stats, "request_latency", 0.0)
                 )
                 return (
-                    recent_peer_scores.get(peer, 0.0),
+                    recent_peer_scores.get(peer_key_by_id.get(id(peer), ""), 0.0),
                     1.0 - min(1.0, choke_state_ratio),
                     blocks_delivered,
                     -request_latency,
@@ -3534,6 +3574,38 @@ class AsyncPieceManager:
                 and piece_index in peer.peer_state.pieces_we_have
             )
 
+        piece = self.pieces[piece_index]
+        now = time.time()
+        last_request_time = float(getattr(piece, "last_request_time", 0.0))
+        piece_stale_seconds = now - last_request_time if last_request_time > 0 else 0.0
+        piece_timeout = float(getattr(piece, "request_timeout", 120.0))
+        # Raise pipeline utilization threshold for stale pieces after a short cooldown to
+        # recover from transient all-blocked conditions.
+        stale_pipeline_relaxation_seconds = max(8.0, piece_timeout * 0.25)
+        is_stale_for_pipeline_relaxation = (
+            piece.state == PieceState.REQUESTED
+            and piece_timeout > 0.0
+            and piece_stale_seconds >= stale_pipeline_relaxation_seconds
+            and piece.request_count > 0
+        )
+        if is_stale_for_pipeline_relaxation and piece.request_count > 0:
+            # Clear timed-out block requests for this piece first so stale peers can retry.
+            self._clear_stale_active_block_requests(
+                piece_index,
+                piece,
+                timeout=max(stale_pipeline_relaxation_seconds, 1.0),
+                now=now,
+            )
+            self.logger.debug(
+                "PIECE_MANAGER: Piece %d marked stale for pipeline relaxation (state=%s, request_count=%d, stale_for=%0.1fs >= %0.1fs)",
+                piece_index,
+                piece.state.name,
+                piece.request_count,
+                piece_stale_seconds,
+                stale_pipeline_relaxation_seconds,
+            )
+        pipeline_utilization_limit = 1.0 if is_stale_for_pipeline_relaxation else 0.9
+
         capable_peers = []
         optimistic_candidate_count = sum(
             1 for peer in available_peers if not peer_has_confirmed_piece(peer)
@@ -3583,7 +3655,7 @@ class AsyncPieceManager:
                     )
                     continue
 
-                if pipeline_utilization > 0.9:
+                if pipeline_utilization > pipeline_utilization_limit:
                     # Track pipeline full rejection
                     self._piece_selection_metrics["pipeline_full_rejections"] += 1
                     self.logger.debug(
@@ -4313,7 +4385,7 @@ class AsyncPieceManager:
         piece_index: int,
         begin: int,
         data: bytes,
-        peer_key: Optional[str] = None,
+        peer_key: Optional[str]= None,
     ) -> None:
         """Handle a received piece block.
 
@@ -5603,6 +5675,71 @@ class AsyncPieceManager:
         if needs_repair:
             self._piece_selection_metrics["requested_piece_map_repairs"] += 1
 
+    def _clear_stale_active_block_requests(
+        self, piece_index: int, piece: PieceData, *, timeout: float, now: float
+    ) -> bool:
+        """Drop block requests older than timeout and clear matching peer trackers."""
+        active_by_peer = self._active_block_requests.get(piece_index)
+        if not active_by_peer:
+            return False
+        if not isinstance(active_by_peer, dict):
+            self._active_block_requests.pop(piece_index, None)
+            return False
+
+        cleaned_any = False
+        stale_peer_keys = set[str]()
+
+        for peer_key, request_list in list(active_by_peer.items()):
+            if not isinstance(request_list, list):
+                active_by_peer.pop(peer_key, None)
+                stale_peer_keys.add(str(peer_key))
+                cleaned_any = True
+                continue
+
+            retained_requests: list[tuple[int, int, float]] = []
+            for req in request_list:
+                if not isinstance(req, tuple) or len(req) < 3:
+                    continue
+                begin, length, request_time = req[:3]
+                if not isinstance(request_time, (int, float)):
+                    continue
+                if now - float(request_time) > timeout:
+                    cleaned_any = True
+                    self._requested_piece_map_discard(peer_key, piece_index)
+                    stale_peer_keys.add(str(peer_key))
+                    for block in piece.blocks:
+                        if (
+                            not block.received
+                            and block.begin == begin
+                            and block.length == length
+                            and hasattr(block, "requested_from")
+                            and hasattr(block.requested_from, "discard")
+                        ):
+                            with contextlib.suppress(Exception):
+                                block.requested_from.discard(peer_key)
+                    continue
+                retained_requests.append((begin, length, request_time))
+
+            if retained_requests:
+                active_by_peer[peer_key] = retained_requests
+            else:
+                active_by_peer.pop(peer_key, None)
+
+        if not active_by_peer:
+            self._active_block_requests.pop(piece_index, None)
+            cleaned_any = bool(stale_peer_keys) or cleaned_any
+
+        if stale_peer_keys:
+            self._warn_piece_manager(
+                "clear_stale_active_block_requests",
+                "PIECE_MANAGER: Cleared stale active block request entries for piece %d from peers=%s",
+                piece_index,
+                ",".join(sorted(stale_peer_keys)),
+                cooldown_s=5.0,
+            )
+
+        return cleaned_any
+
     async def _clear_stale_requested_pieces(self, timeout: float = 60.0) -> None:
         """Clear requested pieces tracking for pieces that haven't made progress.
 
@@ -5645,6 +5782,12 @@ class AsyncPieceManager:
             for piece_idx, piece in enumerate(self.pieces):
                 if piece.state in (PieceState.REQUESTED, PieceState.DOWNLOADING):
                     # Check if piece has no outstanding requests
+                    self._clear_stale_active_block_requests(
+                        piece_idx,
+                        piece,
+                        timeout=max(adaptive_timeout * 0.5, 1.0),
+                        now=current_time,
+                    )
                     has_outstanding = any(
                         block.requested_from
                         for block in piece.blocks
@@ -5939,10 +6082,10 @@ class AsyncPieceManager:
 
     async def _retry_requested_pieces(
         self,
-        focus_peer: Optional[Any] = None,
+        focus_peer: Optional[Any]= None,
         *,
         max_retry_count: int = 10,
-        max_requesters: Optional[int] = None,
+        max_requesters: Optional[int]= None,
     ) -> None:
         """Retry pieces in REQUESTED state when peers become available.
 
@@ -6251,7 +6394,7 @@ class AsyncPieceManager:
                 no_requestable_peers_before = self._piece_selection_metrics[
                     "no_requestable_peers"
                 ]
-                no_progress_reason: Optional[str] = None
+                no_progress_reason: Optional[str]= None
                 active_peer_count_for_cycle = 0
                 active_peers_for_cycle: list[Any] = []
                 if self._peer_manager and hasattr(
@@ -6265,9 +6408,13 @@ class AsyncPieceManager:
                         active_peer_count_for_cycle = (
                             len(active_peers_for_cycle) if active_peers_for_cycle else 0
                         )
-                    except Exception:
+                    except Exception as exc:
                         active_peers_for_cycle = []
                         active_peer_count_for_cycle = 0
+                        self.logger.debug(
+                            "Piece selector cycle: failed to read active peers: %s",
+                            exc,
+                        )
 
                 (
                     has_piece_info_for_progress,
@@ -6464,8 +6611,12 @@ class AsyncPieceManager:
                 try:
                     active_peers = self._peer_manager.get_active_peers()
                     has_active_peers = len(active_peers) > 0 if active_peers else False
-                except Exception:
-                    pass
+                except Exception as exc:
+                    active_peers = []
+                    self.logger.debug(
+                        "Piece selector: failed to check active peers before selection: %s",
+                        exc,
+                    )
 
             if not has_active_peers:
                 self.logger.debug(
@@ -8297,26 +8448,6 @@ class AsyncPieceManager:
                             desperation_selected[:5],
                         )
                         selected_pieces = desperation_selected
-
-            # IMPROVEMENT: Look-ahead - pre-select additional pieces for next round
-            # This keeps the pipeline full and reduces selection overhead
-            # Only do look-ahead if we already selected some pieces (don't look-ahead if we're stuck)
-            if selected_pieces:
-                look_ahead_count = min(
-                    adaptive_request_count, len(piece_scores) - len(selected_pieces)
-                )
-                if (
-                    look_ahead_count > 0
-                    and len(selected_pieces) < adaptive_request_count
-                ):
-                    # Select additional pieces for look-ahead (will be requested in next cycle)
-                    for _score, piece_idx in piece_scores[
-                        len(selected_pieces) : len(selected_pieces) + look_ahead_count
-                    ]:
-                        if self.pieces[piece_idx].state == PieceState.MISSING:
-                            # Pre-mark as requested to prevent duplicate selection
-                            # But don't actually request yet - let next cycle handle it
-                            pass
 
             # Note: Don't return early if no unchoked peers - allow pieces to be selected from choked peers
             # Pieces will be requested when peers unchoke. This ensures downloads start immediately when peers unchoke.
@@ -10296,3 +10427,5 @@ class AsyncPieceManager:
         """Update download statistics."""
         async with self.lock:  # pragma: no cover - Stats update path
             self.bytes_downloaded += bytes_downloaded
+
+

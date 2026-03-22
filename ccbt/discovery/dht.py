@@ -566,6 +566,8 @@ class AsyncDHTClient:
 
         # BEP 27: Callback to check if a torrent is private
         self.is_private_torrent: Optional[Callable[[bytes], bool]] = None
+        # Authenticated swarms discovery policy callback: return True when DHT should be suppressed
+        self.is_swarm_discovery_disabled: Optional[Callable[[bytes], bool]] = None
         self._xet_mutable_store: dict[bytes, bytes] = {}
         # BEP 44: storage write tokens from get responses: key -> ([(token, addr), ...], expires_at)
         self._storage_tokens: dict[
@@ -1585,6 +1587,29 @@ class AsyncDHTClient:
             )
             self.last_lookup_state = "skipped_private"
             return []
+        if self.is_swarm_discovery_disabled and self.is_swarm_discovery_disabled(
+            info_hash
+        ):
+            self.logger.debug(
+                "Skipping DHT get_peers for authenticated strict discovery mode %s",
+                info_hash.hex()[:8],
+            )
+            try:
+                from ccbt.monitoring import get_metrics_collector
+                from ccbt.monitoring.metrics_collector import MetricLabel
+                from ccbt.security import SWARM_AUTH_DISCOVERY_SUPPRESSED_TOTAL
+
+                get_metrics_collector().increment_counter(
+                    SWARM_AUTH_DISCOVERY_SUPPRESSED_TOTAL,
+                    labels=[
+                        MetricLabel(name="mode", value="strict"),
+                        MetricLabel(name="component", value="dht"),
+                    ],
+                )
+            except Exception:  # pragma: no cover - optional metrics path
+                pass
+            self.last_lookup_state = "swarm_discovery_disabled"
+            return []
 
         # Use a set to track unique peers (deduplication)
         peers_set: set[tuple[str, int]] = set()
@@ -1610,6 +1635,7 @@ class AsyncDHTClient:
                 "alpha": alpha,
                 "k": k,
                 "max_depth": max_depth if max_depth is not None else 10,
+                "empty_result_reason": "empty_routing_table",
                 "zero_node_lookup": True,
                 "lookup_state": self.last_lookup_state,
                 "empty_table_retry_scheduled": self._schedule_zero_node_rebootstrap(
@@ -1948,6 +1974,20 @@ class AsyncDHTClient:
                 "DHT get_peers query completed: no peers found for info_hash %s (callbacks may have been invoked during query)",
                 info_hash.hex()[:16],
             )
+            if nodes_queried_count > 0:
+                routing_table_size = len(self.routing_table.nodes)
+                self.logger.info(
+                    "DHT get_peers for %s returned 0 peers after querying %d nodes (depth=%d, routing table=%d nodes). This usually indicates a thin swarm or peers not currently announcing.",
+                    info_hash.hex()[:16],
+                    nodes_queried_count,
+                    query_depth,
+                    routing_table_size,
+                )
+            else:
+                self.logger.debug(
+                    "DHT get_peers for %s returned 0 peers because no nodes could be queried.",
+                    info_hash.hex()[:16],
+                )
 
         # Emit DHT query complete event
         try:
@@ -1993,6 +2033,9 @@ class AsyncDHTClient:
             "alpha": alpha,
             "k": k,
             "max_depth": effective_max_depth,
+            "empty_result_reason": (
+                "query_zero_nodes" if nodes_queried_count == 0 else "empty_peer_set"
+            ),
             "zero_node_lookup": len(queried_nodes) == 0,
         }
         if len(queried_nodes) == 0:
@@ -2036,6 +2079,28 @@ class AsyncDHTClient:
                 "Skipping DHT announce_peer for private torrent %s (BEP 27)",
                 info_hash.hex()[:8],
             )
+            return 0
+        if self.is_swarm_discovery_disabled and self.is_swarm_discovery_disabled(
+            info_hash
+        ):
+            self.logger.debug(
+                "Skipping DHT announce_peer for authenticated strict discovery mode %s",
+                info_hash.hex()[:8],
+            )
+            try:
+                from ccbt.monitoring import get_metrics_collector
+                from ccbt.monitoring.metrics_collector import MetricLabel
+                from ccbt.security import SWARM_AUTH_DISCOVERY_SUPPRESSED_TOTAL
+
+                get_metrics_collector().increment_counter(
+                    SWARM_AUTH_DISCOVERY_SUPPRESSED_TOTAL,
+                    labels=[
+                        MetricLabel(name="mode", value="strict"),
+                        MetricLabel(name="component", value="dht"),
+                    ],
+                )
+            except Exception:  # pragma: no cover - optional metrics path
+                pass
             return 0
 
         # Get token(s) for this info hash

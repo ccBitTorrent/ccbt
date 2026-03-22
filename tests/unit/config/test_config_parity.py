@@ -261,3 +261,102 @@ trace_file = "old.trace"
     assert observability.log_format == "%(name)s"
     assert observability.metrics_interval == 7.5
     assert observability.trace_file == "from_env.trace"
+
+
+def test_config_env_mapping_supports_encryption_enable_flag() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    with pytest.MonkeyPatch.context() as monkey:
+        monkey.setenv("CCBT_ENABLE_ENCRYPTION", "false")
+
+        manager = ConfigManager()
+        env_values = manager._get_env_config()
+
+    assert env_values["security"]["enable_encryption"] is False
+
+
+def test_config_manager_normalizes_legacy_security_fields() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    manager = ConfigManager.__new__(ConfigManager)
+    config_data: dict[str, dict[str, object]] = {
+        "security": {"encryption_preference": "require_encrypted"},
+        "network": {"enable_encryption": True},
+    }
+
+    manager._normalize_loaded_config_data(config_data)
+
+    assert config_data["security"]["encryption_mode"] == "required"
+    assert config_data["security"]["enable_encryption"] is True
+
+
+def test_config_manager_normalizes_encryption_mode_aliases() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    manager = ConfigManager.__new__(ConfigManager)
+    config_data = {"security": {"encryption_mode": "plaintext-only"}}
+
+    manager._normalize_loaded_config_data(config_data)
+
+    assert config_data["security"]["encryption_mode"] == "disabled"
+
+
+def test_config_manager_normalizes_encryption_allowed_ciphers() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    manager = ConfigManager.__new__(ConfigManager)
+    config_data = {"security": {"encryption_allowed_ciphers": " RC4, AES, ChAcHa20, "}}
+    manager._normalize_loaded_config_data(config_data)
+    assert config_data["security"]["encryption_allowed_ciphers"] == [
+        "RC4",
+        "AES",
+        "ChAcHa20",
+    ]
+
+    config_data = {
+        "security": {"encryption_allowed_ciphers": [" RC4", "AES, ChAcHa20", ""]},
+    }
+    manager._normalize_loaded_config_data(config_data)
+    assert config_data["security"]["encryption_allowed_ciphers"] == [
+        "RC4",
+        "AES",
+        "ChAcHa20",
+    ]
+
+
+def test_security_config_validates_encryption_fields() -> None:
+    modules = _load_config_modules()
+    SecurityConfig = modules["models"].SecurityConfig
+
+    cfg = SecurityConfig(
+        encryption_mode="REQUIRED",
+        encryption_allowed_ciphers=[" RC4 ", "ChAcHa20"],
+    )
+    assert cfg.encryption_mode == "required"
+    assert cfg.encryption_allowed_ciphers == ["rc4", "chacha20"]
+
+    with pytest.raises(ValueError, match="encryption_mode"):
+        SecurityConfig(encryption_mode="not-a-mode")
+
+    with pytest.raises(ValueError, match="unknown token"):
+        SecurityConfig(encryption_allowed_ciphers=["not-a-cipher"])
+
+
+def test_config_encryption_mirror_prefers_canonical_security_field() -> None:
+    modules = _load_config_modules()
+    Config = modules["models"].Config
+
+    cfg = Config(network={"enable_encryption": True})
+    assert cfg.security.enable_encryption is True
+    assert cfg.network.enable_encryption is True
+
+    cfg = Config(
+        network={"enable_encryption": False},
+        security={"enable_encryption": True},
+    )
+    assert cfg.security.enable_encryption is True
+    assert cfg.network.enable_encryption is True

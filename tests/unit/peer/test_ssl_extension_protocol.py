@@ -173,6 +173,8 @@ class TestSSLExtension:
         msg_type, decoded_id = struct.unpack("!BI", response)
         assert msg_type == SSLMessageType.ACCEPT
         assert decoded_id == request_id
+        assert state.completion_event is not None
+        assert state.completion_event.is_set()
 
     @pytest.mark.asyncio
     async def test_handle_response(self):
@@ -193,39 +195,41 @@ class TestSSLExtension:
 
     @pytest.mark.asyncio
     async def test_handle_request_rejected(self):
-        """Test handling SSL upgrade request that gets rejected (else branch)."""
+        """Test handling SSL upgrade request that is policy-rejected."""
         ext = SSLExtension()
         peer_id = "test_peer_reject"
         request_id = 808
 
-        # Patch the accepted variable to False to test the else branch
-        async def mock_handle_request(pid, rid):
-            """Mock handle_request that rejects."""
-            ext.negotiation_states[pid] = SSLNegotiationState(
-                peer_id=pid, state="requested", timestamp=time.time(), request_id=rid
-            )
-            # Force rejection path (accepted = False)
-            accepted = False
-            if accepted:
-                ext.negotiation_states[pid].state = "accepted"
-                response = ext.encode_accept(rid)
-            else:
-                ext.negotiation_states[pid].state = "rejected"
-                response = ext.encode_reject(rid)
-            return response
-        
-        response = await mock_handle_request(peer_id, request_id)
-        
+        ext.set_request_policy(False)
+        response = await ext.handle_request(peer_id, request_id)
+
         # Verify the rejection response
         assert len(response) == 5
         msg_type, decoded_id = struct.unpack("!BI", response)
         assert msg_type == SSLMessageType.REJECT
         assert decoded_id == request_id
-        
+
         # Verify state
         state = ext.get_negotiation_state(peer_id)
         assert state is not None
         assert state.state == "rejected"
+
+        assert state.completion_event is not None
+        assert state.completion_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_handle_response_missing_state(self):
+        """Handle response when no state exists yet."""
+        ext = SSLExtension()
+        peer_id = "missing_state_peer"
+        request_id = 909
+
+        await ext.handle_response(peer_id, request_id, accepted=True)
+
+        state = ext.get_negotiation_state(peer_id)
+        assert state is not None
+        assert state.state == "accepted"
+        assert state.request_id == request_id
 
     def test_get_negotiation_state(self):
         """Test getting negotiation state."""
@@ -308,6 +312,7 @@ class TestSSLPeerExtensionMethods:
         mock_manager = Mock()
         mock_protocol = Mock()
         mock_ssl_ext = Mock()
+        mock_protocol.get_peer_message_id.return_value = 77
 
         mock_manager.get_extension.return_value = mock_protocol
         mock_manager.get_extension.side_effect = lambda x: (
@@ -327,6 +332,34 @@ class TestSSLPeerExtensionMethods:
 
         mock_writer.write.assert_called_once()
         mock_writer.drain.assert_called_once()
+        mock_protocol.get_peer_message_id.assert_called_once_with(peer_id, "ssl")
+
+    @pytest.mark.asyncio
+    async def test_send_ssl_extension_message_requires_peer_advertised_extension_id(self):
+        """Test SSL extension message requires peer-advertised extension ID."""
+        connection = SSLPeerConnection()
+        mock_writer = Mock()
+        mock_writer.write = Mock()
+        mock_writer.drain = AsyncMock()
+        peer_id = "test_peer"
+
+        mock_manager = Mock()
+        mock_protocol = Mock()
+        mock_ssl_ext = Mock()
+
+        mock_manager.get_extension.return_value = mock_protocol
+        mock_manager.get_extension.side_effect = lambda x: (
+            mock_protocol if x == "protocol" else mock_ssl_ext if x == "ssl" else None
+        )
+        mock_protocol.get_peer_message_id.return_value = None
+
+        mock_ssl_ext.encode_request.return_value = struct.pack("!BI", 0x01, 123)
+        mock_ssl_ext.decode_request.return_value = 123
+        mock_protocol.encode_extension_message.return_value = b"extension_message"
+        connection.extension_manager = mock_manager
+
+        result = await connection._send_ssl_extension_message(mock_writer, peer_id)
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_send_ssl_extension_message_no_extension(self):
@@ -565,16 +598,47 @@ class TestExtensionManagerSSLIntegration:
         # Start extensions to activate SSL extension
         await manager.start()
 
+        config = Config(
+            security={
+                "ssl": {"enable_ssl_peers": True, "ssl_extension_enabled": True}
+            }
+        )
+
         peer_id = "test_peer"
         message_type = 0
         data = struct.pack("!BI", SSLMessageType.REQUEST, 123)
 
-        response = await manager.handle_ssl_message(peer_id, message_type, data)
+        with patch("ccbt.extensions.manager.get_config", return_value=config):
+            response = await manager.handle_ssl_message(peer_id, message_type, data)
 
         assert response is not None
         assert len(response) == 5
         msg_type, decoded_id = struct.unpack("!BI", response)
         assert msg_type == SSLMessageType.ACCEPT
+        assert decoded_id == 123
+
+    @pytest.mark.asyncio
+    async def test_handle_ssl_message_request_rejected_by_policy(self):
+        """Policy gating should allow rejecting SSL requests."""
+        manager = ExtensionManager()
+        await manager.start()
+
+        config = Config(
+            security={
+                "ssl": {"enable_ssl_peers": False, "ssl_extension_enabled": False}
+            }
+        )
+
+        peer_id = "test_peer"
+        message_type = 0
+        data = struct.pack("!BI", SSLMessageType.REQUEST, 123)
+
+        with patch("ccbt.extensions.manager.get_config", return_value=config):
+            response = await manager.handle_ssl_message(peer_id, message_type, data)
+
+        assert response is not None
+        msg_type, decoded_id = struct.unpack("!BI", response)
+        assert msg_type == SSLMessageType.REJECT
         assert decoded_id == 123
 
     @pytest.mark.asyncio

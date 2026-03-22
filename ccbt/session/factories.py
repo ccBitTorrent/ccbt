@@ -55,7 +55,19 @@ class ComponentFactory:
         """
         if self._di and self._di.dht_client_factory:
             try:
-                return self._di.dht_client_factory(bind_ip=bind_ip, bind_port=bind_port)
+                dht_client = self._di.dht_client_factory(
+                    bind_ip=bind_ip, bind_port=bind_port
+                )
+                if hasattr(self.manager, "private_torrents"):
+                    dht_client.is_private_torrent = (
+                        lambda info_hash: info_hash in self.manager.private_torrents
+                    )
+                    dht_client.is_swarm_discovery_disabled = (
+                        lambda info_hash: self.manager._is_dht_discovery_disabled(
+                            info_hash
+                        )
+                    )
+                return dht_client
             except Exception as e:
                 self.logger.debug(
                     "DI dht_client_factory failed, falling back: %s", e, exc_info=True
@@ -70,6 +82,9 @@ class ComponentFactory:
             if hasattr(self.manager, "private_torrents"):
                 dht_client.is_private_torrent = (
                     lambda info_hash: info_hash in self.manager.private_torrents
+                )
+                dht_client.is_swarm_discovery_disabled = (
+                    lambda info_hash: self.manager._is_dht_discovery_disabled(info_hash)
                 )
             return dht_client
         except Exception:

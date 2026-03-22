@@ -124,6 +124,73 @@ class TestUDPTrackerRouting:
         assert response.incomplete == 5  # leechers -> incomplete
 
     @pytest.mark.asyncio
+    async def test_udp_announce_no_http_only_kwargs(self, tracker_client, torrent_data_udp):
+        """UDP announce should pass only UDP-safe parameters to UDP tracker client."""
+        mock_udp_client = AsyncMock()
+        mock_transport = MagicMock()
+        mock_transport.is_closing.return_value = False
+        mock_udp_client.transport = mock_transport
+        mock_udp_client.socket_ready = True
+        mock_udp_client.start = AsyncMock()
+        mock_udp_client.announce_to_tracker_full = AsyncMock(
+            return_value=([], 1800, 0, 0)
+        )
+
+        mock_session_manager = MagicMock()
+        mock_session_manager.udp_tracker_client = mock_udp_client
+        tracker_client._session_manager = mock_session_manager
+
+        await tracker_client.announce(torrent_data_udp)
+
+        call_kwargs = mock_udp_client.announce_to_tracker_full.call_args[1]
+        assert set(call_kwargs) == {"port", "uploaded", "downloaded", "left", "event"}
+        assert "ssl" not in call_kwargs
+        assert "supportcrypto" not in call_kwargs
+        assert "requirecrypto" not in call_kwargs
+        assert "cryptoport" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_udp_and_http_mixed_trackers_keep_udp_paths_http_free(
+        self, tracker_client, torrent_data_mixed
+    ):
+        """Mixed tracker announce should keep UDP announce kwargs free of HTTP-only transport flags."""
+        mock_udp_client = AsyncMock()
+        mock_transport = MagicMock()
+        mock_transport.is_closing.return_value = False
+        mock_udp_client.transport = mock_transport
+        mock_udp_client.socket_ready = True
+        mock_udp_client.start = AsyncMock()
+        mock_udp_client.announce_to_tracker_full = AsyncMock(
+            return_value=([], 1800, 0, 0)  # (peers, interval, seeders, leechers)
+        )
+
+        mock_session_manager = MagicMock()
+        mock_session_manager.udp_tracker_client = mock_udp_client
+        tracker_client._session_manager = mock_session_manager
+
+        # Mock HTTP request path.
+        mock_http_response = TrackerResponse(
+            interval=1800,
+            peers=[{"ip": "192.168.1.1", "port": 6881}],
+        )
+        tracker_client._make_request_async = AsyncMock(
+            return_value=b"d8:intervali1800e5:peersl6:192.168.1.1:6881ee"
+        )
+        tracker_client._parse_response_async = MagicMock(return_value=mock_http_response)
+
+        await tracker_client.announce_to_multiple(
+            torrent_data_mixed,
+            ["http://tracker.example.com/announce", "udp://tracker.opentrackr.org:1337"],
+        )
+
+        assert mock_udp_client.announce_to_tracker_full.called
+        call_kwargs = mock_udp_client.announce_to_tracker_full.call_args[1]
+        assert "ssl" not in call_kwargs
+        assert "supportcrypto" not in call_kwargs
+        assert "requirecrypto" not in call_kwargs
+        assert "cryptoport" not in call_kwargs
+
+    @pytest.mark.asyncio
     async def test_http_tracker_no_routing(self, tracker_client, torrent_data_http):
         """Test that HTTP trackers are NOT routed to UDP client."""
         # Mock HTTP request
@@ -368,6 +435,8 @@ class TestUDPTrackerRouting:
 
         with patch.object(tracker_client, "_announce_to_tracker", new_callable=AsyncMock) as mock_announce:
             mock_announce.return_value = TrackerResponse(interval=1800, peers=[])
+            tracker_client.sessions[healthy_url].quarantine_until = 0.0
+            tracker_client.sessions[backed_off_url].quarantine_until = 0.0
 
             responses = await tracker_client.announce_to_multiple(
                 torrent_data_http,

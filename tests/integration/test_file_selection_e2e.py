@@ -202,6 +202,7 @@ class TestFileSelectionEndToEnd:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
+        session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
         
@@ -299,6 +300,7 @@ class TestFileSelectionEndToEnd:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
+        session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
         
@@ -700,6 +702,7 @@ class TestFileSelectionPriorityWorkflows:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
+        session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
         
@@ -794,6 +797,7 @@ class TestFileSelectionPriorityWorkflows:
         mock_tracker._session_manager = None
         
         session = AsyncSessionManager(output_dir=str(tmp_path))
+        session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
         

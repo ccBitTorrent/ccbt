@@ -1,10 +1,17 @@
 """UDP Tracker Client (BEP 15) for BitTorrent.
 
-High-performance async UDP tracker communication with retry logic,
-concurrent announces across multiple tracker tiers, and proper error handling.
+The BEP 15 UDP transport is a datagram protocol and has no TLS framing.
+It provides retry, pacing, and transaction validation but does not provide
+HTTP(S)-style confidentiality or certificate validation by design.
 
-Supports BEP 15 IPv6 (18-byte peer response when response is from IPv6) and
-optional BEP 41 extensions (URLData) in announce requests.
+In contrast, HTTPS trackers use the HTTP client stack in ``tracker.py``
+(which can use the optional tracker SSL context) and are expected to rely on
+TLS for transport confidentiality.
+
+This module therefore remains explicitly segregated by threat model:
+- **UDP tracker path**: unauthenticated and unencrypted transport channel.
+- **HTTP/HTTPS tracker path**: HTTPS path carries TLS expectations and certificate
+  controls.
 """
 
 from __future__ import annotations
@@ -141,6 +148,10 @@ class AsyncUDPTrackerClient:
         self._last_pending_cleanup: float = 0.0
         self._stale_response_transaction_ids: dict[int, float] = {}
         self._stale_response_allowlist_seconds: float = 30.0
+        self._timeout_warning_summary_window: float = 1.0
+        self._timeout_warning_host_state: dict[str, tuple[float, int]] = {}
+        self._tracker_response_timeout_alpha: float = 0.25
+        self._tracker_response_timeout_ema: dict[str, float] = {}
 
         # Background tasks
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -304,6 +315,58 @@ class AsyncUDPTrackerClient:
         if self._max_pending_requests >= self._pending_request_budget_min:
             return max(self._pending_request_budget_min, effective_cap)
         return effective_cap
+
+    def _get_tracker_host(self, tracker_host: Optional[str]) -> str:
+        """Normalize tracker host for timeout tracking keys."""
+        if not tracker_host:
+            return "unknown"
+        normalized = tracker_host.strip()
+        return normalized if normalized else "unknown"
+
+    def _get_adaptive_wait_timeout(
+        self,
+        timeout: float,
+        tracker_host: Optional[str],
+        pending_count: int,
+    ) -> float:
+        """Calculate adaptive timeout based on queue pressure and host response history."""
+        if timeout <= 0:
+            return timeout
+        pending_count = max(pending_count, 0)
+
+        effective_cap = self._get_effective_pending_request_cap()
+        queue_pressure = pending_count / effective_cap if effective_cap > 0 else 0.0
+        queue_pressure = max(0.0, min(1.0, queue_pressure))
+
+        # When there is queue pressure, reduce per-request timeout to avoid long stalls.
+        queue_scale = 1.0 - (0.45 * queue_pressure)
+
+        host_key = self._get_tracker_host(tracker_host)
+        host_ema = self._tracker_response_timeout_ema.get(host_key)
+        host_scale = 1.0
+        if host_ema is not None and host_ema > 0:
+            host_scale = max(0.75, min(1.75, host_ema / timeout))
+
+        return max(0.5, min(timeout * 2.0, timeout * host_scale * queue_scale))
+
+    def _record_tracker_response_time(
+        self,
+        tracker_host: Optional[str],
+        elapsed: float,
+    ) -> None:
+        """Track EMA of successful tracker response times per host."""
+        if elapsed <= 0:
+            return
+
+        host_key = self._get_tracker_host(tracker_host)
+        previous = self._tracker_response_timeout_ema.get(host_key)
+        if previous is None:
+            self._tracker_response_timeout_ema[host_key] = elapsed
+        else:
+            alpha = self._tracker_response_timeout_alpha
+            self._tracker_response_timeout_ema[host_key] = (
+                1 - alpha
+            ) * previous + alpha * elapsed
 
     def _cleanup_stale_pending_requests(self, now: Optional[float] = None) -> int:
         """Clean up stale pending transactions outside normal response flow."""
@@ -1517,16 +1580,23 @@ class AsyncUDPTrackerClient:
                 timeout = base_timeout + (
                     attempt * 2.0
                 )  # 10s base (or less if errors), increase by 2s per retry attempt
+                adaptive_timeout = self._get_adaptive_wait_timeout(
+                    timeout=timeout,
+                    tracker_host=session.host,
+                    pending_count=len(self.pending_requests),
+                )
                 self.logger.debug(
                     "Waiting for tracker response from %s:%d (timeout=%.1fs, attempt %d/%d)",
                     session.host,
                     session.port,
-                    timeout,
+                    adaptive_timeout,
                     attempt + 1,
                     max_retries,
                 )
                 response = await self._wait_for_response(
-                    transaction_id, timeout=timeout
+                    transaction_id,
+                    timeout=adaptive_timeout,
+                    tracker_host=session.host,
                 )
 
                 if response and response.action == TrackerAction.CONNECT:
@@ -1889,8 +1959,15 @@ class AsyncUDPTrackerClient:
 
             start_time = time.time()
             try:
+                adaptive_timeout = self._get_adaptive_wait_timeout(
+                    timeout=announce_timeout,
+                    tracker_host=session.host,
+                    pending_count=len(self.pending_requests),
+                )
                 response = await self._wait_for_response(
-                    transaction_id, timeout=announce_timeout
+                    transaction_id,
+                    timeout=adaptive_timeout,
+                    tracker_host=session.host,
                 )  # pragma: no cover - Async network wait, tested separately
                 # Track response time for adaptive timeout
                 response_time = time.time() - start_time
@@ -1904,7 +1981,7 @@ class AsyncUDPTrackerClient:
                     "(3) Firewall blocking responses, or (4) Tracker is overloaded",
                     session.host,
                     session.port,
-                    announce_timeout,
+                    adaptive_timeout,
                     response_time,
                 )
                 raise
@@ -2181,7 +2258,13 @@ class AsyncUDPTrackerClient:
             # Trackers may be slow, especially on first announce
             announce_timeout = 30.0  # 30 seconds for announce (matching _send_announce)
             response = await self._wait_for_response(
-                transaction_id, timeout=announce_timeout
+                transaction_id,
+                timeout=self._get_adaptive_wait_timeout(
+                    timeout=announce_timeout,
+                    tracker_host=session.host,
+                    pending_count=len(self.pending_requests),
+                ),
+                tracker_host=session.host,
             )  # pragma: no cover - Async network wait, tested separately
 
             if (
@@ -2222,6 +2305,64 @@ class AsyncUDPTrackerClient:
         self.transaction_counter = (self.transaction_counter + 1) % 65536
         return self.transaction_counter
 
+    def _record_timeout_warning(
+        self,
+        *,
+        now: float,
+        transaction_id: int,
+        timeout: float,
+        pending_count: int,
+        elapsed: float,
+        oldest_age: float,
+        pruned_count: int,
+        tracker_host: Optional[str] = None,
+    ) -> None:
+        """Track timeout warnings and emit batched summaries."""
+        host_key = self._get_tracker_host(tracker_host)
+        timeout_window_start, timeout_count = self._timeout_warning_host_state.get(
+            host_key, (0.0, 0)
+        )
+
+        if timeout_count == 0:
+            self._timeout_warning_host_state[host_key] = (now, 1)
+            self.logger.debug(
+                "Timeout waiting for tracker response (host=%s, transaction_id=%d, timeout=%.1fs). "
+                "Aggregating timeout events for %.1fs windows.",
+                host_key,
+                transaction_id,
+                timeout,
+                self._timeout_warning_summary_window,
+            )
+            return
+
+        timeout_count += 1
+        self._timeout_warning_host_state[host_key] = (
+            timeout_window_start,
+            timeout_count,
+        )
+        if now - timeout_window_start < self._timeout_warning_summary_window:
+            self.logger.debug(
+                "Tracker timeout summary: pending=%d, event_count=%d in %.1fs window",
+                pending_count,
+                timeout_count,
+                now - timeout_window_start,
+            )
+            return
+
+        self.logger.warning(
+            "Tracker response timeout burst for host=%s: %d timeouts in %.1fs (latest tx=%d, timeout=%.1fs, pending=%d, elapsed=%.1fs, oldest_age=%.1fs, pruned=%d)",
+            host_key,
+            timeout_count,
+            now - timeout_window_start,
+            transaction_id,
+            timeout,
+            pending_count,
+            elapsed,
+            oldest_age,
+            pruned_count,
+        )
+        self._timeout_warning_host_state[host_key] = (now, 1)
+
     def _prune_stale_pending_requests(
         self, now: float, timeout: float, additional_new: int = 0
     ) -> int:
@@ -2233,6 +2374,7 @@ class AsyncUDPTrackerClient:
             for transaction_id, timestamp in self._pending_request_timestamps.items()
             if timestamp < cutoff
         ]
+        pruned_count = 0
         for transaction_id in stale_tids:
             future = self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
@@ -2245,6 +2387,7 @@ class AsyncUDPTrackerClient:
                 transaction_id,
                 now - cutoff,
             )
+            pruned_count += 1
 
         projected_count = len(self.pending_requests) + additional_new
         if projected_count > effective_cap:
@@ -2252,32 +2395,52 @@ class AsyncUDPTrackerClient:
             oldest = sorted(
                 self._pending_request_timestamps.items(), key=lambda item: item[1]
             )
+            dropped_tids: list[int] = []
             for transaction_id, _created_at in oldest[:overflow]:
                 future = self.pending_requests.pop(transaction_id, None)
                 self._pending_request_timestamps.pop(transaction_id, None)
                 if future is not None and not future.done():
                     future.cancel()
-            self._mark_stale_transaction(transaction_id, now=now)
-            self._record_pending_request_result(stale=True, now=now)
+                self._mark_stale_transaction(transaction_id, now=now)
+                self._record_pending_request_result(stale=True, now=now)
+                dropped_tids.append(transaction_id)
+                pruned_count += 1
             self.logger.warning(
-                "Dropping oldest tracker request to enforce cap: transaction_id=%d, age=%.1fs",
-                transaction_id,
-                now - _created_at,
+                "Dropping oldest tracker requests to enforce cap: dropped=%s",
+                dropped_tids,
             )
-        return len(stale_tids)
+        return pruned_count
 
     async def _wait_for_response(
         self,
         transaction_id: int,
         timeout: float,
+        tracker_host: Optional[str] = None,
     ) -> Optional[TrackerResponse]:
         """Wait for UDP tracker response."""
+        host = self._get_tracker_host(tracker_host)
         future = asyncio.Future()
         now = time.time()
         start_wait = now
         pruned_count = self._prune_stale_pending_requests(
             now=now, timeout=timeout, additional_new=1
         )
+        adaptive_timeout = self._get_adaptive_wait_timeout(
+            timeout=timeout,
+            tracker_host=host,
+            pending_count=len(self.pending_requests),
+        )
+        if transaction_id in self.pending_requests:
+            stale_future = self.pending_requests.pop(transaction_id, None)
+            self._pending_request_timestamps.pop(transaction_id, None)
+            if stale_future is not None and not stale_future.done():
+                stale_future.cancel()
+            self._mark_stale_transaction(transaction_id, now=time.time())
+            self._record_pending_request_result(stale=True, now=time.time())
+            self.logger.debug(
+                "Replacing existing pending transaction_id=%d while waiting for response",
+                transaction_id,
+            )
         self.logger.debug(
             "Tracker pending request window: total=%d, pruned=%d, oldest_age=%.1fs",
             len(self.pending_requests),
@@ -2290,7 +2453,10 @@ class AsyncUDPTrackerClient:
         self._pending_request_timestamps[transaction_id] = now
 
         try:
-            return await asyncio.wait_for(future, timeout=timeout)
+            response = await asyncio.wait_for(future, timeout=adaptive_timeout)
+            elapsed = time.time() - start_wait
+            self._record_tracker_response_time(host, elapsed)
+            return response
         except asyncio.CancelledError:
             self._mark_stale_transaction(transaction_id, now=time.time())
             self._record_pending_request_result(stale=True, now=time.time())
@@ -2309,17 +2475,15 @@ class AsyncUDPTrackerClient:
                 else 0.0
             )
             self._mark_stale_transaction(transaction_id, now=time.time())
-            self.logger.warning(
-                "Timeout waiting for tracker response (transaction_id=%d, timeout=%.1fs). "
-                "This may indicate: (1) Tracker is slow/unresponsive, (2) Network issues, "
-                "or (3) Firewall blocking responses. "
-                "Pending requests: %d, elapsed=%.1fs, oldest_age=%.1fs, pruned=%d",
-                transaction_id,
-                timeout,
-                len(self.pending_requests),
-                elapsed,
-                oldest,
-                pruned_count,
+            self._record_timeout_warning(
+                now=time.time(),
+                transaction_id=transaction_id,
+                timeout=adaptive_timeout,
+                pending_count=len(self.pending_requests),
+                elapsed=elapsed,
+                oldest_age=oldest,
+                pruned_count=pruned_count,
+                tracker_host=host,
             )
             return None
         finally:
@@ -2925,7 +3089,15 @@ class AsyncUDPTrackerClient:
                     raise
 
             # Wait for response
-            response_data = await self._wait_for_response(transaction_id, timeout=10.0)
+            response_data = await self._wait_for_response(
+                transaction_id,
+                timeout=self._get_adaptive_wait_timeout(
+                    timeout=10.0,
+                    tracker_host=host,
+                    pending_count=len(self.pending_requests),
+                ),
+                tracker_host=host,
+            )
 
             if response_data:
                 # Parse scrape response

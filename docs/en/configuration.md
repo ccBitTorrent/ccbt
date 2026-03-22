@@ -39,7 +39,7 @@ Configuration system: **ConfigManager** in [ccbt/config/config.py](https://githu
 Nested sections are represented in TOML and environment naming conventions:
 - `[network.utp]`, `[network.webtorrent]`, `[network.protocol_v2]`
 - `[disk.attributes]`, `[disk.xet]`
-- `[security.ip_filter]`, `[security.blacklist]`, `[security.blacklist.local_source]`, `[security.ssl]`
+- `[security.ip_filter]`, `[security.blacklist]`, `[security.blacklist.local_source]`, `[security.ssl]`, `[security.authenticated_swarms]`
 - `[plugins.metrics]`
 
 ## Configuration Sources and Precedence
@@ -179,11 +179,18 @@ Optimization config model: [ccbt/models.py:OptimizationConfig](https://github.co
 
 ### Security Configuration
 
-Security settings: section `[security]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml). Nested: `[security.ip_filter]`, `[security.blacklist]`, `[security.ssl]`, `[security.blacklist.local_source]`. Models: `SecurityConfig`, `IPFilterConfig`, `BlacklistConfig`, `SSLConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
+Security settings: section `[security]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml). Nested: `[security.ip_filter]`, `[security.blacklist]`, `[security.ssl]`, `[security.blacklist.local_source]`, `[security.authenticated_swarms]`. Models: `SecurityConfig`, `IPFilterConfig`, `BlacklistConfig`, `SSLConfig`, `AuthenticatedSwarmsConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
+
+**Transport security (four separate concepts):**
+
+1. **Plain BitTorrent** — Standard peer wire protocol over TCP without MSE/PE.
+2. **MSE/PE (BEP 3)** — Optional **obfuscation** of peer traffic for ecosystem compatibility; it does **not** authenticate peer identity.
+3. **HTTPS tracker TLS** — TLS for `https://` tracker announces only. **UDP trackers (BEP 15) use datagrams and have no TLS** in the standard protocol.
+4. **Experimental peer TLS (BEP 10 extension)** — Optional post-handshake TLS upgrade between peers. This is **not** [BEP 47](https://www.bittorrent.org/beps/bep_0047.html) (BEP 47 covers padding files and extended file attributes).
 
 #### Encryption Configuration
 
-ccBitTorrent supports BEP 3 Message Stream Encryption (MSE) and Protocol Encryption (PE) for secure peer connections.
+ccBitTorrent supports BEP 3 Message Stream Encryption (MSE) and Protocol Encryption (PE) for **peer traffic obfuscation and interop**, not for cryptographic authentication of peers.
 
 **Encryption Settings:**
 
@@ -199,6 +206,8 @@ ccBitTorrent supports BEP 3 Message Stream Encryption (MSE) and Protocol Encrypt
     - `"aes"`: AES cipher in CFB mode (more secure)
     - `"chacha20"`: ChaCha20 cipher (not yet implemented)
 - `encryption_allow_plain_fallback` (bool, default: `true`): Allow fallback to plain connection if encryption fails (only applies when `encryption_mode` is `"preferred"`)
+- `enable_ssl_trackers` (bool, default: `true`): Use TLS for `https://` tracker announces. UDP trackers (BEP 15) are UDP datagrams and use no TLS in the standard protocol.
+- `ssl_verify_certificates` (bool, default: `true`): Verify tracker/peer TLS certificates when TLS is used.
 
 **Environment Variables:**
 
@@ -228,7 +237,7 @@ encryption_allow_plain_fallback = true
 3. **Encryption Modes**:
    - `preferred`: Best for compatibility - attempts encryption but falls back gracefully
    - `required`: Most secure but may fail to connect with peers that don't support encryption
-4. **Performance Impact**: Encryption adds minimal overhead (~1-5% for RC4, ~2-8% for AES) but improves privacy and helps avoid traffic shaping.
+4. **Performance Impact**: Encryption adds minimal overhead (~1-5% for RC4, ~2-8% for AES) and can reduce passive visibility of peer traffic; it is not a substitute for authenticated transports.
 
 **Implementation Details:**
 
@@ -237,6 +246,49 @@ Encryption implementation: [ccbt/security/encryption.py:EncryptionManager](https
 - MSE Handshake: [ccbt/security/mse_handshake.py:MSEHandshake](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/security/mse_handshake.py)
 - Cipher Suites: [ccbt/security/ciphers/__init__.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/security/ciphers/__init__.py) (RC4, AES)
 - Diffie-Hellman Exchange: [ccbt/security/dh_exchange.py:DHPeerExchange](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/security/dh_exchange.py)
+
+#### Authenticated Swarms Configuration
+
+Authenticated swarms validate whether peers are permitted for a swarm before exchange proceeds.
+
+Settings: section `[security.authenticated_swarms]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml), with policy wiring implemented in `ccbt/security/swarm_auth_policy.py`.
+
+**Authenticated Swarm Settings:**
+
+- `mode` (str, default: `"off"`): Admission mode (`off`, `opportunistic`, `strict`)
+- `discovery_mode` (str, default: `"trackers_only"`): Discovery mode for authenticated peers (`full`, `trackers_only`, `dht_only`, `pex_off`)
+- `discovery_strict_for_strict_mode` (bool, default: `true`): When strict mode is active, enforce discovery restrictions
+- `strict_ltep_handshake_timeout_s` (float, default: `30.0`): Timeout for inbound peers in strict mode to complete the extension handshake (LTEP) before they are dropped
+- `trusted_swarm_ids` (list[str], default: `[]`): Trusted swarm IDs that bypass strict checks
+- `fail_closed_on_parse_errors` (bool, default: `false`): Keep strict mode closed on parse/validation failures
+- `trust_store_path` (str | null, default: `null`): Optional trust store file path
+- `trust_store_refresh_interval_s` (float, default: `60.0`): Trust store refresh interval in seconds
+- `revocation_profile_path` (str | null, default: `null`): Optional revocation profile file path
+- `revocation_refresh_interval_s` (float, default: `300.0`): Revocation profile refresh interval in seconds
+
+**Environment Variables:**
+
+- `CCBT_AUTHENTICATED_SWARMS_MODE`
+- `CCBT_AUTHENTICATED_SWARMS_DISCOVERY_MODE`
+- `CCBT_AUTHENTICATED_SWARMS_DISCOVERY_STRICT_FOR_STRICT_MODE`
+- `CCBT_AUTHENTICATED_SWARMS_STRICT_LTEP_TIMEOUT_S`
+- `CCBT_AUTHENTICATED_SWARMS_TRUSTED_IDS`
+- `CCBT_AUTHENTICATED_SWARMS_FAIL_CLOSED_ON_PARSE_ERRORS`
+- `CCBT_AUTHENTICATED_SWARMS_TRUST_STORE_PATH`
+- `CCBT_AUTHENTICATED_SWARMS_TRUST_STORE_REFRESH_INTERVAL_S`
+- `CCBT_AUTHENTICATED_SWARMS_REVOCATION_PROFILE_PATH`
+- `CCBT_AUTHENTICATED_SWARMS_REVOCATION_REFRESH_INTERVAL_S`
+
+**Example Configuration:**
+
+```toml
+[security.authenticated_swarms]
+mode = "opportunistic"
+discovery_mode = "trackers_only"
+strict_ltep_handshake_timeout_s = 30.0
+trusted_swarm_ids = []
+fail_closed_on_parse_errors = false
+```
 
 ### Proxy Configuration
 

@@ -27,6 +27,7 @@ class PexPeer:
     ip: str
     port: int
     peer_id: Optional[bytes] = None
+    flags: int = 0
     added_time: float = field(default_factory=time.time)
     source: str = "pex"  # Source of this peer (pex, tracker, dht, etc.)
     reliability_score: float = 1.0
@@ -237,9 +238,19 @@ class AsyncPexManager:
         added_success = False
         dropped_success = False
 
+        from ccbt.extensions.pex import PeerExchange
+
         # Send added peers if any
-        added_count = len(added_peers) // 6 if added_peers else 0
+        added_count = 0
+        dropped_count = 0
+        pex_exchange = PeerExchange()
+
         if added_peers:
+            with contextlib.suppress(Exception):
+                decoded = pex_exchange.decode_bep11_payload(added_peers)
+                added_count = len(decoded[0]) + len(decoded[1])
+            if added_count == 0:
+                added_count = len(added_peers) // 6
             self.logger.info(
                 "PEX: Sending %d added peer(s) to %s",
                 added_count,
@@ -267,7 +278,12 @@ class AsyncPexManager:
                 session.consecutive_failures += 1
 
         # Send dropped peers if any
-        dropped_count = len(dropped_peers) // 6 if dropped_peers else 0
+        if dropped_peers:
+            with contextlib.suppress(Exception):
+                decoded = pex_exchange.decode_bep11_payload(dropped_peers)
+                dropped_count = len(decoded[2]) + len(decoded[3])
+            if dropped_count == 0:
+                dropped_count = len(dropped_peers) // 6
         if dropped_peers:
             self.logger.info(
                 "PEX: Sending %d dropped peer(s) to %s",
@@ -312,8 +328,8 @@ class AsyncPexManager:
             peer_key: The peer we're sending to (will exclude from peer list)
 
         Returns:
-            Tuple of (added_peers_data, dropped_peers_data) as bytes
-            Each is empty bytes if no peers of that type
+            Tuple of (added_payload, dropped_payload) as bytes.
+            Each is BEP11 payload bytes (bencoded dict) or empty bytes.
 
         """
         try:
@@ -374,16 +390,13 @@ class AsyncPexManager:
             # Update previous connected peers for next time
             self.previous_connected_peers[peer_key] = current_connected.copy()
 
-            # Encode peer lists
+            # Encode BEP11 payloads
             pex_exchange = PeerExchange()
 
-            added_data = b""
-            if pex_peers_to_add:
-                added_data = pex_exchange.encode_peers_list(pex_peers_to_add)
-
-            dropped_data = b""
-            if pex_peers_to_drop:
-                dropped_data = pex_exchange.encode_peers_list(pex_peers_to_drop)
+            added_data = pex_exchange.encode_bep11_payload(added_peers=pex_peers_to_add)
+            dropped_data = pex_exchange.encode_bep11_payload(
+                dropped_peers=pex_peers_to_drop
+            )
 
             if added_data or dropped_data:
                 self.logger.debug(

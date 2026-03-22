@@ -12,10 +12,13 @@ PEER_DISCOVERY_DEFAULTS: Final[dict[str, int | float | bool]] = {
     "low_peer_threshold": 1,
     "low_peer_suppression_window_s": 20.0,
     "low_peer_cleanup_suppression_factor": 1.0,
+    "bootstrap_seed_replay_limit": 6,
     "bootstrap_retry_memo_ttl_s": 30.0,
     "dht_zero_state_reprobe_wait_s": 45.0,
-    "dht_bootstrap_memo_ttl_s": 120.0,
+    "dht_rebootstrap_timeout_s": 45.0,
+    "dht_bootstrap_timeout_s": 45.0,
     "dht_bootstrap_retries_max": 3,
+    "dht_bootstrap_memo_ttl_s": 120.0,
     "dht_empty_state_backoff_factor": 1.5,
 }
 

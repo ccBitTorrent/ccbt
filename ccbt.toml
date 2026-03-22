@@ -499,6 +499,19 @@ ssl_extension_enabled = true
 ssl_extension_opportunistic = true
 ssl_extension_timeout = 5.0
 
+[security.authenticated_swarms]
+mode = "off"
+discovery_mode = "trackers_only"
+discovery_strict_for_strict_mode = true
+trusted_swarm_ids = []
+strict_ltep_handshake_timeout_s = 30.0
+fail_closed_on_parse_errors = false
+trust_store_path = null
+trust_store_refresh_interval_s = 60.0
+revocation_profile_path = null
+revocation_refresh_interval_s = 300.0
+
+
 [queue.priority_weights]
 maximum = 5.0
 high = 2.0

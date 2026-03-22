@@ -43,7 +43,7 @@ try:
 
         # Child watcher methods (posix); delegate if present
         def get_child_watcher(self):  # type: ignore[override]
-            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific)
+            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific):
                 raise NotImplementedError  # pragma: no cover - NotImplementedError path, tested via test_get_child_watcher_no_base
 
             if hasattr(
@@ -53,7 +53,7 @@ try:
             return _raise_not_implemented()  # pragma: no cover - Same context
 
         def set_child_watcher(self, watcher):  # type: ignore[override]
-            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific)
+            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific):
                 raise NotImplementedError  # pragma: no cover - NotImplementedError path, tested via test_set_child_watcher_no_base
 
             if hasattr(

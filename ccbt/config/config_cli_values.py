@@ -17,6 +17,7 @@ COMMA_SEPARATED_LIST_PATHS: frozenset[str] = frozenset(
         "security.ip_filter.filter_files",
         "security.ip_filter.filter_urls",
         "security.blacklist.auto_update_sources",
+        "security.authenticated_swarms.trusted_swarm_ids",
         "discovery.dht_bootstrap_nodes",
         "discovery.dht_ipv6_bootstrap_nodes",
         "discovery.default_trackers",
