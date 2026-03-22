@@ -78,6 +78,21 @@ def _to_dict_list(results: Iterable[Any]) -> list[dict[str, Any]]:
     return [_to_dict(item) for item in results]
 
 
+def _flatten_numeric_samples(values: Iterable[Any]) -> list[float]:
+    """Recursively flatten nested list/tuple samples and coerce leaves to float.
+
+    Defensive: older summarize logic could store ``[[x]]`` per metric; ``statistics.mean``
+    then fails on Python 3.11+. Used when aggregating benchmark metrics.
+    """
+    out: list[float] = []
+    for v in values:
+        if isinstance(v, (list, tuple)):
+            out.extend(_flatten_numeric_samples(v))
+        else:
+            out.append(float(v))
+    return out
+
+
 def _is_metric_field(name: str, value: Any) -> bool:
     if name in _DIMENSION_KEYS:
         return False
@@ -194,24 +209,29 @@ def summarize_results_for_docs(
 
         existing = by_scenario.get(scenario_key)
         if existing is None:
-            by_scenario[scenario_key] = (dimensions, {k: [v] for k, v in metric_values.items()})
+            # metric_values values are already list[float]; copy and flatten (guards legacy [[x]] shape).
+            by_scenario[scenario_key] = (
+                dimensions,
+                {k: _flatten_numeric_samples(vals) for k, vals in metric_values.items()},
+            )
             continue
 
         _, existing_metrics = existing
         for metric, values in metric_values.items():
-            existing_metrics.setdefault(metric, []).extend(values)
+            existing_metrics.setdefault(metric, []).extend(_flatten_numeric_samples(values))
 
     scenarios: list[dict[str, Any]] = []
     for scenario_key, (dimensions, metric_values) in by_scenario.items():
         metrics: dict[str, Any] = {}
         for metric, values in metric_values.items():
-            if not values:
+            flat = _flatten_numeric_samples(values)
+            if not flat:
                 continue
             metrics[metric] = {
-                "count": len(values),
-                "mean": statistics.mean(values),
-                "min": min(values),
-                "max": max(values),
+                "count": len(flat),
+                "mean": statistics.mean(flat),
+                "min": min(flat),
+                "max": max(flat),
             }
 
         scenarios.append(

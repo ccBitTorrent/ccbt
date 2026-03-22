@@ -645,10 +645,12 @@ async def run_encrypted_connection_setup_benchmark(
         mse = MSEHandshake(dh_key_size=dh_key_size, prefer_rc4=True)
         result = await mse.respond_as_receiver(reader, writer, info_hash)
 
-        if result.success and result.cipher:
-            # Wrap streams
-            encrypted_reader = EncryptedStreamReader(reader, result.cipher)
-            encrypted_writer = EncryptedStreamWriter(writer, result.cipher)
+        in_cipher = result.inbound_cipher
+        out_cipher = result.outbound_cipher
+        if result.success and in_cipher and out_cipher:
+            # Wrap streams (inbound decrypts peer traffic; outbound encrypts our writes)
+            encrypted_reader = EncryptedStreamReader(reader, in_cipher)
+            encrypted_writer = EncryptedStreamWriter(writer, out_cipher)
 
             # Read BitTorrent handshake through encrypted stream
             await encrypted_reader.readexactly(68)
@@ -686,14 +688,12 @@ async def run_encrypted_connection_setup_benchmark(
                     reader, writer, info_hash
                 )
 
-                if result.success and result.cipher:
-                    # Wrap streams
-                    encrypted_reader = EncryptedStreamReader(
-                        reader, result.cipher
-                    )
-                    encrypted_writer = EncryptedStreamWriter(
-                        writer, result.cipher
-                    )
+                in_cipher = result.inbound_cipher
+                out_cipher = result.outbound_cipher
+                if result.success and in_cipher and out_cipher:
+                    # Wrap streams (inbound decrypts peer traffic; outbound encrypts our writes)
+                    encrypted_reader = EncryptedStreamReader(reader, in_cipher)
+                    encrypted_writer = EncryptedStreamWriter(writer, out_cipher)
 
                     # Send BitTorrent handshake through encrypted stream
                     handshake = Handshake(info_hash, peer_id)
