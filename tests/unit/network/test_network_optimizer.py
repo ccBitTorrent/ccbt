@@ -45,6 +45,20 @@ class TestSocketOptimizer:
         sock.setsockopt.assert_called()
         sock.settimeout.assert_called()
 
+    def test_optimize_socket_ignores_windows_transport_settimeout_error(
+        self, socket_optimizer
+    ):
+        """Asyncio transport sockets may reject non-zero settimeout — do not raise."""
+        sock = MagicMock(spec=socket.socket)
+
+        def _raise_transport_timeout(*_a, **_k):
+            raise OSError("only 0 timeout is allowed on transport sockets")
+
+        sock.settimeout.side_effect = _raise_transport_timeout
+        # Should complete without NetworkError
+        socket_optimizer.optimize_socket(sock, SocketType.PEER_CONNECTION)
+        sock.setsockopt.assert_called()
+
     def test_optimize_socket_tracker_http(self, socket_optimizer):
         """Test optimizing socket for tracker HTTP."""
         sock = MagicMock(spec=socket.socket)

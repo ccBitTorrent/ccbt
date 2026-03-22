@@ -415,6 +415,18 @@ class PeerConnectionHelper:
                 self.session.download_manager, "security_manager", None
             )
 
+        network_cfg = getattr(self.session.config, "network", None)
+        performance_weight = float(
+            getattr(network_cfg, "peer_quality_performance_weight", 0.4)
+        )
+        success_weight = float(
+            getattr(network_cfg, "peer_quality_success_rate_weight", 0.2)
+        )
+        source_weight = float(getattr(network_cfg, "peer_quality_source_weight", 0.2))
+        proximity_weight = float(
+            getattr(network_cfg, "peer_quality_proximity_weight", 0.05)
+        )
+
         scored_peers = []
         for peer in peer_list:
             ip = peer.get("ip", "")
@@ -423,36 +435,50 @@ class PeerConnectionHelper:
 
             score = 0.0
             factors = []
-
-            # Factor 1: Historical performance (0.0-1.0, weight: 0.4)
+            reputation = None
             if security_manager and hasattr(security_manager, "get_peer_reputation"):
                 try:
                     reputation = security_manager.get_peer_reputation(peer_key, ip)
-                    if reputation:
-                        # Use reputation score (0.0-1.0)
-                        perf_score = reputation.reputation_score
-                        score += perf_score * 0.4
-                        factors.append(f"perf={perf_score:.2f}")
-
-                        # Penalize blacklisted peers
-                        if reputation.is_blacklisted:
-                            score = -1.0  # Strongly penalize
-                            factors.append("blacklisted")
                 except Exception:
-                    pass  # No reputation data available
+                    reputation = None
+
+            # Factor 1: Historical performance (0.0-1.0, weight: 0.4)
+            if reputation:
+                # Use reputation score (0.0-1.0)
+                perf_score = float(getattr(reputation, "reputation_score", 0.5))
+                score += perf_score * performance_weight
+                factors.append(f"perf={perf_score:.2f}")
+
+                # Penalize blacklisted peers
+                if bool(getattr(reputation, "is_blacklisted", False)):
+                    score = -1.0  # Strongly penalize
+                    factors.append("blacklisted")
 
             # Factor 2: Connection success rate estimate (0.0-1.0, weight: 0.2)
             # For new peers, assume moderate success rate
             # For peers with history, use actual success rate
             success_rate = 0.5  # Default for unknown peers
-            if security_manager and hasattr(security_manager, "get_peer_reputation"):
+            if reputation:
                 try:
-                    reputation = security_manager.get_peer_reputation(peer_key, ip)
-                    if reputation and hasattr(reputation, "success_rate"):
-                        success_rate = reputation.success_rate
+                    successful_connections = int(
+                        getattr(reputation, "successful_connections", 0) or 0
+                    )
+                    connection_count = int(
+                        getattr(reputation, "connection_count", 0) or 0
+                    )
+                    if connection_count > 0:
+                        success_rate = successful_connections / connection_count
+                    else:
+                        failed_connections = int(
+                            getattr(reputation, "failed_connections", 0) or 0
+                        )
+                        attempts = successful_connections + failed_connections
+                        if attempts > 0:
+                            success_rate = successful_connections / attempts
                 except Exception:
                     pass
-            score += success_rate * 0.2
+            success_rate = max(0.0, min(1.0, success_rate))
+            score += success_rate * success_weight
             factors.append(f"success={success_rate:.2f}")
 
             # Factor 3: Seeder/completion status bonus
@@ -537,7 +563,7 @@ class PeerConnectionHelper:
                 "unknown": 0.5,
             }
             source_score = source_scores.get(source, 0.5)
-            score += source_score * 0.2
+            score += source_score * source_weight
             factors.append(f"source={source}")
 
             # Factor 6: Geographic proximity estimate (0.0-1.0, weight: 0.05 - reduced to allow distant peers)
@@ -548,11 +574,6 @@ class PeerConnectionHelper:
             proximity_score = 0.5  # Default moderate proximity
             # TODO: Implement actual GeoIP lookup for better proximity estimation
             # RELAXED: Use minimal weight to avoid penalizing distant but useful peers
-            proximity_weight = getattr(
-                self.session.config.network,
-                "peer_quality_proximity_weight",
-                0.05,  # Default to 0.05 instead of 0.2
-            )
             score += proximity_score * proximity_weight
             factors.append(f"proximity={proximity_score:.2f}(w={proximity_weight:.2f})")
 
@@ -690,6 +711,9 @@ class PeerConnectionHelper:
             len(peer_list),
             self.session.info.name if hasattr(self.session, "info") else "unknown",
         )
+        attempted_peer_keys = {
+            f"{peer.get('ip', '')}:{peer.get('port', 0)}" for peer in peer_list
+        }
         recent_failure_snapshot: dict[str, dict[str, Any]] = {}
         # Intentional access to peer_manager private attrs for failure snapshot (hasattr guarded)
         if hasattr(peer_manager, "_failed_peer_lock") and hasattr(
@@ -784,7 +808,8 @@ class PeerConnectionHelper:
                 f"{p.get('ip', 'unknown')}:{p.get('port', 0)}" for p in sample_peers
             ]
             self.session.logger.debug(
-                "Sample peer addresses to connect: %s%s",
+                "Sample peer addresses to connect for %s: %s%s",
+                self.session.info.name if hasattr(self.session, "info") else "unknown",
                 ", ".join(peer_addresses),
                 "..." if len(peer_list) > 5 else "",
             )
@@ -901,9 +926,10 @@ class PeerConnectionHelper:
                 self.session.info.name if hasattr(self.session, "info") else "unknown",
             )
             self.session.logger.debug(
-                "Using peer_manager from %s to connect %d peers",
+                "Using peer_manager from %s to connect %d peers for %s",
                 peer_manager_source,
                 len(peer_list),
+                self.session.info.name if hasattr(self.session, "info") else "unknown",
             )
 
             # Note: Process queued peers now that peer_manager is ready
@@ -975,6 +1001,13 @@ class PeerConnectionHelper:
                 batches_in_progress = bool(
                     getattr(peer_manager, "_connection_batches_in_progress", False)
                 )
+                metadata_incomplete = bool(
+                    getattr(
+                        getattr(self.session, "piece_manager", None),
+                        "_metadata_incomplete",
+                        False,
+                    )
+                )
                 if hasattr(peer_manager, "connections"):
                     connections = peer_manager.connections  # type: ignore[attr-defined]
                     actual_peers = len(connections)
@@ -1005,11 +1038,6 @@ class PeerConnectionHelper:
 
                 if not isinstance(connection_summary, dict):
                     connection_summary = {}
-                    metadata_incomplete = bool(
-                        getattr(
-                            self.session.piece_manager, "_metadata_incomplete", False
-                        )
-                    )
                 session_obj = cast("Any", self.session)
                 requestable_connections = int(
                     connection_summary.get("requestable_connections", 0) or 0
@@ -1027,6 +1055,40 @@ class PeerConnectionHelper:
                     batches_in_progress=batches_in_progress,
                     connection_manager_summary=connection_summary,
                     connection_successes=0,
+                )
+                dominant_failed_reason = "none"
+                if hasattr(peer_manager, "_failed_peer_lock") and hasattr(
+                    peer_manager, "_failed_peers"
+                ):
+                    reason_counts: dict[str, int] = {}
+                    async with peer_manager._failed_peer_lock:  # noqa: SLF001  # type: ignore[attr-defined]
+                        failed_peers = cast(
+                            "dict[str, dict[str, Any]]",
+                            peer_manager._failed_peers,  # noqa: SLF001  # type: ignore[attr-defined]
+                        )
+                        for peer_key, failure_info in failed_peers.items():
+                            if (
+                                attempted_peer_keys
+                                and peer_key not in attempted_peer_keys
+                            ):
+                                continue
+                            reason = str(
+                                failure_info.get("reason", "unknown") or "unknown"
+                            )
+                            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                    if reason_counts:
+                        dominant_failed_reason = max(
+                            reason_counts.items(), key=lambda item: item[1]
+                        )[0]
+                self.session.logger.info(
+                    "PEER_BATCH_YIELD: attempted=%d connected=%d active=%d requestable=%d productive=%d dominant_failed_reason=%s source=%s",
+                    len(peer_list),
+                    actual_peers,
+                    active_peers,
+                    requestable_connections,
+                    productive_connections,
+                    dominant_failed_reason,
+                    peer_manager_source,
                 )
 
                 # Enhanced logging for connection results
@@ -1111,6 +1173,29 @@ class PeerConnectionHelper:
                         self.session.update_usable_live_peers_by_source(
                             peer_manager.connections  # type: ignore[attr-defined]
                         )
+                    streak = int(
+                        self.session._peer_discovery_metrics.get(  # noqa: SLF001
+                            "zero_active_batch_streak", 0
+                        )
+                        or 0
+                    )
+                    if (
+                        active_peers == 0
+                        and len(peer_list) > 0
+                        and not batches_in_progress
+                        and streak >= 2
+                    ):
+                        delay = min(8.0, 1.0 + 0.75 * streak)
+                        self.session.logger.info(
+                            "PEER_BATCH_BACKOFF: zero-active streak=%d for %s; "
+                            "inter-batch delay %.1fs (handshake/transport churn dampening)",
+                            streak,
+                            self.session.info.name
+                            if hasattr(self.session, "info")
+                            else "unknown",
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
                 # Update cache with new peer count - but use actual connected count
                 # connect_to_peers doesn't guarantee all peers connect, so we check actual connections
                 if hasattr(peer_manager, "connections"):

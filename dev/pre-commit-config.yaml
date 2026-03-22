@@ -7,7 +7,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
       - id: ruff-format
         name: ruff-format
@@ -15,7 +15,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
       - id: compatibility-linter
         name: compatibility-linter
@@ -23,7 +23,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
       - id: ty
         name: ty
@@ -41,7 +41,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: true
         stages: [pre-commit]
       - id: pytest-coverage
@@ -50,7 +50,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: true
         stages: [pre-push]
       - id: codecov-upload
@@ -59,7 +59,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
         stages: [pre-push]
         require_serial: true

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.monitoring import get_metrics_collector
+from ccbt.utils.shutdown import is_shutting_down
 
 try:
     import psutil
@@ -723,380 +724,6 @@ class PeerConnectionPool:
             )
             return None
 
-    def _is_connection_valid(self, connection: Any) -> bool:
-        """Check if a connection is still valid.
-
-        Args:
-            connection: Connection object
-
-        Returns:
-            True if connection is valid (default to True unless invalid conditions found)
-
-        """
-        if not connection:
-            return False
-
-        # Check connection structure
-        if isinstance(connection, dict):
-            conn_obj = connection.get("connection")
-            if not conn_obj:  # pragma: no cover - Defensive check: dict without connection key, tested via dict with connection
-                return False
-        else:
-            conn_obj = connection  # pragma: no cover - Non-dict connection structure, tested via dict structure
-
-        # Check if reader/writer exist and are not closed
-        # Only check if the attributes exist - if they don't exist, assume valid
-        if hasattr(conn_obj, "reader"):
-            reader = conn_obj.reader
-            if reader is not None:
-                # Only check if reader has actual closing/closed attributes (not MagicMock defaults)
-                if hasattr(reader, "is_closing"):
-                    try:
-                        is_closing = reader.is_closing()
-                        # Check if it's actually callable and returns a boolean
-                        if (
-                            callable(reader.is_closing)
-                            and isinstance(is_closing, bool)
-                            and is_closing
-                        ):
-                            return False
-                    except (TypeError, AttributeError):
-                        # If is_closing is not callable or raises, skip this check
-                        pass
-                if hasattr(reader, "closed"):
-                    try:
-                        closed = reader.closed
-                        # Check if it's actually a boolean attribute
-                        if isinstance(closed, bool) and closed:
-                            return False
-                    except (TypeError, AttributeError):
-                        # If closed access raises, skip this check
-                        pass
-
-        if hasattr(conn_obj, "writer"):
-            writer = conn_obj.writer
-            if writer is not None:
-                # Only check if writer has actual closing/closed attributes (not MagicMock defaults)
-                if hasattr(writer, "is_closing"):
-                    try:
-                        is_closing = writer.is_closing()
-                        # Check if it's actually callable and returns a boolean
-                        if (
-                            callable(writer.is_closing)
-                            and isinstance(is_closing, bool)
-                            and is_closing
-                        ):
-                            return False
-                    except (TypeError, AttributeError):
-                        # If is_closing is not callable or raises, skip this check
-                        pass
-                if hasattr(writer, "closed"):
-                    try:
-                        closed = writer.closed
-                        # Check if it's actually a boolean attribute
-                        if isinstance(closed, bool) and closed:
-                            return False
-                    except (TypeError, AttributeError):
-                        # If closed access raises, skip this check
-                        pass
-
-        # Check socket state via getsockopt if available
-        # Only check if we have actual socket objects, not mocks
-        if hasattr(conn_obj, "writer") and conn_obj.writer is not None:
-            try:
-                sock = getattr(conn_obj.writer, "_transport", None)
-                if sock:
-                    sock_obj = getattr(sock, "_sock", None)
-                    if sock_obj:
-                        import socket
-
-                        # Only check if getsockopt is actually available and returns an integer
-                        if hasattr(sock_obj, "getsockopt") and callable(
-                            sock_obj.getsockopt
-                        ):
-                            try:
-                                error = sock_obj.getsockopt(
-                                    socket.SOL_SOCKET, socket.SO_ERROR
-                                )
-                                # Only fail if error is an actual integer != 0 (not a MagicMock or other mock)
-                                # Check by verifying it's actually an integer type, not a mock
-                                if isinstance(error, int) and error != 0:
-                                    return False
-                            except (OSError, AttributeError, TypeError):
-                                # If getsockopt fails or returns non-integer, assume valid
-                                # (might be mock or different socket type)
-                                pass
-            except (
-                AttributeError,
-                OSError,
-            ):  # pragma: no cover - Socket error checking exception handling, tested via socket error test
-                # If we can't check, assume valid
-                pass
-
-        # Check if connection hasn't exceeded max idle time
-        if isinstance(connection, dict):
-            created_at = connection.get("created_at", 0)
-            if (
-                created_at > 0 and time.time() - created_at > self.max_idle_time
-            ):  # pragma: no cover - Idle timeout check, tested via idle timeout test
-                return False
-
-        # Default to True if no invalid conditions found
-        return True
-
-    async def _remove_connection(self, peer_id: str) -> None:
-        """Remove a connection from the pool.
-
-        Args:
-            peer_id: Peer identifier
-
-        """
-        if peer_id in self.pool:
-            connection = self.pool[peer_id]
-
-            # Extract connection object if wrapped in dict
-            conn_obj = connection
-            if isinstance(connection, dict):
-                conn_obj = connection.get("connection")
-
-            # Close connection properly
-            if conn_obj:
-                try:
-                    # Handle PooledConnection objects
-                    if isinstance(conn_obj, PooledConnection):
-                        conn_obj.close()
-                        await conn_obj.wait_closed()
-                    # Handle objects with close method
-                    elif hasattr(conn_obj, "close"):
-                        if asyncio.iscoroutinefunction(conn_obj.close):
-                            await conn_obj.close()
-                        else:
-                            conn_obj.close()
-                    # Handle writer directly if available
-                    elif hasattr(conn_obj, "writer") and conn_obj.writer:
-                        writer = conn_obj.writer
-                        if not writer.is_closing():
-                            writer.close()
-                            await writer.wait_closed()
-                except Exception as e:
-                    self.logger.warning("Error closing connection %s: %s", peer_id, e)
-
-            # Remove from pool
-            del self.pool[peer_id]
-            if peer_id in self.metrics:
-                del self.metrics[peer_id]
-
-            self.logger.debug("Removed connection for %s", peer_id)
-
-    async def _close_all_connections(self) -> None:
-        """Close all connections in the pool.
-
-        Note: Close connections in batches on Windows to prevent socket buffer exhaustion.
-        WinError 10055 occurs when too many sockets are closed simultaneously.
-        """
-        import sys
-
-        is_windows = sys.platform == "win32"
-        peer_ids = list(self.pool.keys())
-
-        if not peer_ids:
-            return
-
-        # Close in batches on Windows to prevent buffer exhaustion
-        batch_size = 5 if is_windows else 20
-        delay_between_batches = 0.05 if is_windows else 0.01
-        delay_between_connections = 0.01 if is_windows else 0.0
-
-        for batch_start in range(0, len(peer_ids), batch_size):
-            batch = peer_ids[batch_start : batch_start + batch_size]
-
-            for i, peer_id in enumerate(batch):
-                try:
-                    # Add small delay between connections on Windows
-                    if i > 0 and is_windows:
-                        await asyncio.sleep(delay_between_connections)
-
-                    await self._remove_connection(peer_id)
-                except OSError as e:
-                    # Note: Handle WinError 10055 gracefully
-                    error_code = getattr(e, "winerror", None) or getattr(
-                        e, "errno", None
-                    )
-                    if error_code == 10055:
-                        self.logger.debug(
-                            "WinError 10055 (socket buffer exhaustion) during connection pool cleanup. "
-                            "Adding delay and continuing..."
-                        )
-                        await asyncio.sleep(0.1)  # Longer delay on buffer exhaustion
-                    else:
-                        self.logger.debug(
-                            "OSError closing connection %s: %s", peer_id, e
-                        )
-                except Exception as e:
-                    self.logger.debug("Error closing connection %s: %s", peer_id, e)
-
-            # Delay between batches
-            if batch_start + batch_size < len(peer_ids):
-                await asyncio.sleep(delay_between_batches)
-
-    async def _health_check_loop(self) -> None:
-        """Background task for health checks."""
-        while self._running:
-            try:
-                # Use interruptible sleep that checks for shutdown frequently
-                # This ensures the loop responds quickly to shutdown signals
-                sleep_interval = min(
-                    self.health_check_interval, 5.0
-                )  # Check at least every 5 seconds
-                elapsed = 0.0
-                while elapsed < self.health_check_interval and self._running:
-                    await asyncio.sleep(sleep_interval)
-                    elapsed += sleep_interval
-                    # Check shutdown event for immediate response
-                    if self._shutdown_event.is_set():
-                        break
-
-                if not self._running or self._shutdown_event.is_set():
-                    break
-
-                await self._perform_health_checks()
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                self.logger.exception("Error in health check loop")
-
-    async def _cleanup_loop(self) -> None:
-        """Background task for cleanup."""
-        cleanup_interval = 30.0  # Cleanup every 30 seconds
-        while self._running:
-            try:
-                # Use interruptible sleep that checks for shutdown frequently
-                # This ensures the loop responds quickly to shutdown signals
-                sleep_interval = min(
-                    cleanup_interval, 5.0
-                )  # Check at least every 5 seconds
-                elapsed = 0.0
-                while elapsed < cleanup_interval and self._running:
-                    await asyncio.sleep(sleep_interval)
-                    elapsed += sleep_interval
-                    # Check shutdown event for immediate response
-                    if self._shutdown_event.is_set():
-                        break
-
-                if not self._running or self._shutdown_event.is_set():
-                    break
-
-                await self._cleanup_stale_connections()  # pragma: no cover - Background loop execution, tested via direct method calls and exception paths
-            except asyncio.CancelledError:
-                break
-            except Exception:  # pragma: no cover - Background loop exception handler, tested via direct exception testing and background task cancellation
-                self.logger.exception("Error in cleanup loop")
-
-    async def _perform_health_checks(self) -> None:
-        """Perform health checks on all connections and calculate bandwidth."""
-        current_time = time.time()
-        unhealthy_connections = []
-
-        for peer_id, metrics in self.metrics.items():
-            # Calculate bandwidth
-            time_since_update = current_time - metrics.last_bandwidth_update
-            if time_since_update > 0:
-                # Calculate bandwidth (bytes/second)
-                metrics.download_bandwidth = (
-                    metrics.bytes_received_since_update / time_since_update
-                )
-                metrics.upload_bandwidth = (
-                    metrics.bytes_sent_since_update / time_since_update
-                )
-
-                # Reset counters for next measurement
-                metrics.bytes_sent_since_update = 0
-                metrics.bytes_received_since_update = 0
-                metrics.last_bandwidth_update = current_time
-
-            # Check bandwidth thresholds (if configured)
-            if self.config:
-                min_download_bandwidth = getattr(
-                    self.config, "connection_pool_min_download_bandwidth", 0.0
-                )
-                min_upload_bandwidth = getattr(
-                    self.config, "connection_pool_min_upload_bandwidth", 0.0
-                )
-
-                if (
-                    min_download_bandwidth > 0
-                    and metrics.download_bandwidth < min_download_bandwidth
-                ):
-                    self.logger.debug(
-                        "Connection %s download bandwidth too low: %.2f < %.2f bytes/s",
-                        peer_id,
-                        metrics.download_bandwidth,
-                        min_download_bandwidth,
-                    )
-                    metrics.is_healthy = False
-
-                if (
-                    min_upload_bandwidth > 0
-                    and metrics.upload_bandwidth < min_upload_bandwidth
-                ):
-                    self.logger.debug(
-                        "Connection %s upload bandwidth too low: %.2f < %.2f bytes/s",
-                        peer_id,
-                        metrics.upload_bandwidth,
-                        min_upload_bandwidth,
-                    )
-                    metrics.is_healthy = False
-
-            # Check if connection is idle too long
-            if current_time - metrics.last_used > self.max_idle_time:
-                self.logger.debug("Connection %s is idle too long", peer_id)
-                metrics.is_healthy = False
-
-            # Check usage count
-            if metrics.usage_count >= self.max_usage_count:
-                self.logger.debug("Connection %s exceeded usage count", peer_id)
-                metrics.is_healthy = False
-
-            # Check error rate
-            if metrics.errors > 10:  # Arbitrary threshold
-                self.logger.debug("Connection %s has too many errors", peer_id)
-                metrics.is_healthy = False
-
-            if not metrics.is_healthy:
-                unhealthy_connections.append(peer_id)
-
-        # Remove unhealthy connections
-        for peer_id in unhealthy_connections:
-            await self._remove_connection(peer_id)
-            self.semaphore.release()
-
-        if unhealthy_connections:
-            self.logger.debug(
-                "Removed %d unhealthy connections", len(unhealthy_connections)
-            )
-
-        # Update adaptive limit if enabled
-        if self.config and getattr(
-            self.config, "connection_pool_adaptive_limit_enabled", False
-        ):
-            self.update_adaptive_limit()
-
-    async def _cleanup_stale_connections(self) -> None:
-        """Clean up stale connections."""
-        current_time = time.time()
-        stale_connections = []
-
-        for peer_id, metrics in self.metrics.items():
-            if current_time - metrics.last_used > self.max_idle_time * 2:
-                stale_connections.append(peer_id)
-
-        for peer_id in stale_connections:
-            await self._remove_connection(peer_id)
-            self.semaphore.release()
-
-        if stale_connections:
-            self.logger.debug("Cleaned up %d stale connections", len(stale_connections))
-
     def update_connection_metrics(
         self,
         peer_id: str,
@@ -1166,19 +793,6 @@ class PeerConnectionPool:
                 "Warmup completed: %d/%d successful", successes, len(tasks)
             )
 
-    async def _warmup_single_connection(self, peer_info: PeerInfo) -> None:
-        """Warmup a single connection.
-
-        Args:
-            peer_info: Peer information
-
-        """
-        try:
-            await self.acquire(peer_info)
-        except Exception as e:
-            self.logger.debug("Warmup failed for %s: %s", peer_info, e)
-            raise
-
     def _is_connection_valid(self, connection: Any) -> bool:
         """Check if a connection is still valid.
 
@@ -1459,7 +1073,24 @@ class PeerConnectionPool:
         """Background task for health checks."""
         while self._running:
             try:
-                await asyncio.sleep(self.health_check_interval)
+                sleep_interval = min(self.health_check_interval, 5.0)
+                elapsed = 0.0
+                while (
+                    elapsed < self.health_check_interval
+                    and self._running
+                    and not is_shutting_down()
+                ):
+                    await asyncio.sleep(sleep_interval)
+                    elapsed += sleep_interval
+                    if self._shutdown_event.is_set():
+                        break
+
+                if (
+                    not self._running
+                    or self._shutdown_event.is_set()
+                    or is_shutting_down()
+                ):
+                    break
 
                 await self._perform_health_checks()
 
@@ -1471,9 +1102,27 @@ class PeerConnectionPool:
 
     async def _cleanup_loop(self) -> None:
         """Background task for cleanup."""
+        cleanup_interval = 30.0
         while self._running:
             try:
-                await asyncio.sleep(30.0)  # Cleanup every 30 seconds
+                sleep_interval = min(cleanup_interval, 5.0)
+                elapsed = 0.0
+                while (
+                    elapsed < cleanup_interval
+                    and self._running
+                    and not is_shutting_down()
+                ):
+                    await asyncio.sleep(sleep_interval)
+                    elapsed += sleep_interval
+                    if self._shutdown_event.is_set():
+                        break
+
+                if (
+                    not self._running
+                    or self._shutdown_event.is_set()
+                    or is_shutting_down()
+                ):
+                    break
 
                 await self._cleanup_stale_connections()  # pragma: no cover - Background loop execution, tested via direct method calls and exception paths
 
@@ -1485,6 +1134,8 @@ class PeerConnectionPool:
 
     async def _perform_health_checks(self) -> None:
         """Perform health checks on all connections with quality-based prioritization."""
+        if is_shutting_down() or self._shutdown_event.is_set():
+            return
         current_time = time.time()
         cleanup_reason_counts = dict(
             getattr(
@@ -1581,6 +1232,16 @@ class PeerConnectionPool:
         )
         soft_fail_marks = getattr(self, "_soft_cleanup_marks", {})
 
+        def _pool_entry_peer_choking(peer_id_inner: str) -> bool:
+            """True when wrapped connection reports remote choke (BitTorrent sense)."""
+            raw = self.pool.get(peer_id_inner)
+            if raw is None:
+                return False
+            conn_obj = raw.get("connection") if isinstance(raw, dict) else raw
+            if conn_obj is None:
+                return False
+            return bool(getattr(conn_obj, "peer_choking", False))
+
         # IMPROVEMENT: Evaluate connections by quality, not just health
         for peer_id, metrics in self.metrics.items():
             # Calculate connection age
@@ -1643,12 +1304,16 @@ class PeerConnectionPool:
                     else 512.0
                 )  # 512B/s minimum
 
-                # Mark as low quality if below thresholds
-                is_low_quality = (
-                    quality_score < min_quality
-                    or metrics.download_bandwidth < min_download_bandwidth
+                # While the peer chokes us, payload throughput is often zero — do not treat
+                # that as pool "low quality" or we churn connections before UNCHOKE.
+                remote_choked = _pool_entry_peer_choking(peer_id)
+                bandwidth_starved = not remote_choked and (
+                    metrics.download_bandwidth < min_download_bandwidth
                     or metrics.upload_bandwidth < min_upload_bandwidth
                 )
+
+                # Mark as low quality if below thresholds
+                is_low_quality = quality_score < min_quality or bandwidth_starved
 
                 if is_low_quality and not metrics.is_healthy:
                     # Already unhealthy, mark for removal

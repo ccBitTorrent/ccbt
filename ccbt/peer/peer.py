@@ -46,6 +46,9 @@ class PeerState:
             None  # Peer's bitfield (which pieces they have)
         )
         self.pieces_we_have: set[int] = set()  # Pieces we have downloaded
+        # BEP 6 Fast Extension (wire); optional hints for selection / future request rules
+        self.bep6_suggested_pieces: set[int] = set()
+        self.bep6_allowed_fast_pieces: set[int] = set()
 
     def __str__(self) -> str:
         """Return string representation of peer state."""

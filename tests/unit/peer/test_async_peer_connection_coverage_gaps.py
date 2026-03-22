@@ -1076,3 +1076,81 @@ class TestV2MessageSerialization:
         assert connection.stats.last_activity > 0
         assert connection.stats.bytes_uploaded > 0
 
+
+class TestBep6FastWirePayload:
+    """BEP 6 Have All / Have None / Suggest / Allow Fast wire handling."""
+
+    @pytest.mark.asyncio
+    async def test_handle_bep6_have_all_have_none_and_suggest(self, mock_torrent_data):
+        import logging
+
+        from ccbt.extensions.fast import FastExtension
+        from ccbt.peer import async_peer_connection as apc
+        from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
+
+        with patch.object(apc.AsyncPeerConnectionManager, "__init__", lambda self, *a, **k: None):
+            m = apc.AsyncPeerConnectionManager()
+        pm = MagicMock()
+        pm.num_pieces = 4
+        pm.apply_fast_extension_have_all = AsyncMock()
+        pm.apply_fast_extension_have_none = AsyncMock()
+        m.piece_manager = pm
+        m._running = True
+        m.logger = logging.getLogger("test.bep6")
+        m._schedule_piece_selection_if_ready = AsyncMock(return_value=True)
+
+        pi = PeerInfo(ip="1.2.3.4", port=6881)
+        conn = AsyncPeerConnection(peer_info=pi, torrent_data=mock_torrent_data)
+        conn.state = ConnectionState.ACTIVE
+        conn.reserved_bytes = bytearray(8)
+        conn.reserved_bytes[7] |= 0x04
+
+        assert await m._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_have_all()
+        )
+        pm.apply_fast_extension_have_all.assert_called_once_with("1.2.3.4:6881")
+        assert getattr(conn, "is_seeder", False) is True
+
+        assert await m._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_have_none()
+        )
+        pm.apply_fast_extension_have_none.assert_called_once_with("1.2.3.4:6881")
+
+        suggest_payload = FastExtension().encode_suggest(2)
+        assert await m._handle_bep6_fast_wire_payload(conn, suggest_payload)
+        assert 2 in conn.peer_state.bep6_suggested_pieces
+
+        allow_payload = FastExtension().encode_allow_fast(3)
+        assert await m._handle_bep6_fast_wire_payload(conn, allow_payload)
+        assert 3 in conn.peer_state.bep6_allowed_fast_pieces
+
+    @pytest.mark.asyncio
+    async def test_handle_bep6_have_all_deferred_when_no_metadata(self, mock_torrent_data):
+        import logging
+
+        from ccbt.extensions.fast import FastExtension
+        from ccbt.peer import async_peer_connection as apc
+        from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
+
+        with patch.object(apc.AsyncPeerConnectionManager, "__init__", lambda self, *a, **k: None):
+            m = apc.AsyncPeerConnectionManager()
+        pm = MagicMock()
+        pm.num_pieces = 0
+        pm.apply_fast_extension_have_all = AsyncMock()
+        m.piece_manager = pm
+        m._running = True
+        m.logger = logging.getLogger("test.bep6.defer")
+        m._schedule_piece_selection_if_ready = AsyncMock(return_value=True)
+
+        conn = AsyncPeerConnection(
+            peer_info=PeerInfo(ip="5.6.7.8", port=9999),
+            torrent_data=mock_torrent_data,
+        )
+        conn.state = ConnectionState.ACTIVE
+
+        assert await m._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_have_all()
+        )
+        pm.apply_fast_extension_have_all.assert_not_called()
+        assert getattr(conn, "_bep6_have_all_pending", False) is True
+

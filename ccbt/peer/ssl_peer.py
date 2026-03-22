@@ -341,10 +341,15 @@ class SSLPeerConnection:
             request_id = ssl_extension.decode_request(request_data)
             get_state = getattr(ssl_extension, "get_negotiation_state", None)
             existing_state = get_state(peer_id) if callable(get_state) else None
-            completion_event = getattr(existing_state, "completion_event", None)
-            if not isinstance(existing_state, SSLNegotiationState):
+            if isinstance(existing_state, SSLNegotiationState):
+                completion_event: asyncio.Event = existing_state.completion_event
+            else:
                 completion_event = asyncio.Event()
-            ssl_extension.negotiation_states[peer_id] = SSLNegotiationState(
+            negotiation_states = getattr(ssl_extension, "negotiation_states", None)
+            if not isinstance(negotiation_states, dict):
+                negotiation_states = {}
+                ssl_extension.negotiation_states = negotiation_states
+            negotiation_states[peer_id] = SSLNegotiationState(
                 peer_id=peer_id,
                 state="requested",
                 timestamp=time.time(),

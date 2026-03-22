@@ -12,6 +12,8 @@ import socket
 import struct
 from typing import Any, Callable, Optional, cast
 
+from ccbt.discovery.errors import SockRecvfromUnsupportedError
+
 logger = logging.getLogger(__name__)
 
 # BEP 14 standard multicast address and port
@@ -190,8 +192,8 @@ class LocalPeerDiscovery:
                 # Wait for data
                 sock_recvfrom = getattr(loop, "sock_recvfrom", None)
                 if sock_recvfrom is None:
-                    raise RuntimeError("Event loop does not support sock_recvfrom")
-                data, addr = await cast(Any, sock_recvfrom)(self._socket, 1024)
+                    raise SockRecvfromUnsupportedError
+                data, addr = await cast("Any", sock_recvfrom)(self._socket, 1024)
 
                 # Parse announcement
                 try:

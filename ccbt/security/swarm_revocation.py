@@ -17,7 +17,7 @@ class SwarmRevocationProfile:
 
     revoked_fingerprints: frozenset[str] = field(default_factory=frozenset)
     revoked_swarm_ids: frozenset[str] = field(default_factory=frozenset)
-    reason_code: Optional[str]= None
+    reason_code: Optional[str] = None
 
     def is_revoked_swarm_id(self, swarm_id: str) -> bool:
         """Return True when the canonicalized swarm id is revoked."""
@@ -60,9 +60,9 @@ class SwarmRevocationCache:
 
     profile: SwarmRevocationProfile
     loaded_at: float
-    source: Optional[str]= None
+    source: Optional[str] = None
 
-    def is_stale(self, now: Optional[float]= None, ttl_s: float = 60.0) -> bool:
+    def is_stale(self, now: Optional[float] = None, ttl_s: float = 60.0) -> bool:
         """Return True when cache has exceeded TTL."""
         current = time.time() if now is None else now
         return current - self.loaded_at > ttl_s
@@ -152,4 +152,3 @@ def allow_after_parse_failure(
     if fail_closed_on_parse_errors:
         return False
     return stale_cache_present
-

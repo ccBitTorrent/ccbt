@@ -1,7 +1,10 @@
 # Read the Docs configuration file
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 #
-# It references dev/mkdocs.yml for the MkDocs configuration
+# It references dev/mkdocs.yml for the MkDocs configuration.
+#
+# This file lives under dev/ with other tooling config. In Read the Docs:
+# Admin → Settings → Advanced → Configuration file → dev/.readthedocs.yaml
 
 version: 2
 
@@ -42,12 +45,3 @@ python:
 formats:
   - htmlzip
   - pdf
-
-
-
-
-
-
-
-
-

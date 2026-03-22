@@ -22,7 +22,7 @@ def xet() -> None:
 
 
 @xet.command("enable")
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.pass_context
 def xet_enable(_ctx, config_file: Optional[str]) -> None:
     """Enable Xet protocol in configuration."""
@@ -50,7 +50,7 @@ def xet_enable(_ctx, config_file: Optional[str]) -> None:
 
 
 @xet.command("disable")
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.pass_context
 def xet_disable(_ctx, config_file: Optional[str]) -> None:
     """Disable Xet protocol in configuration."""
@@ -78,7 +78,7 @@ def xet_disable(_ctx, config_file: Optional[str]) -> None:
 
 
 @xet.command("status")
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.pass_context
 def xet_status(_ctx, config_file: Optional[str]) -> None:
     """Show Xet protocol status and configuration."""
@@ -156,8 +156,14 @@ def xet_status(_ctx, config_file: Optional[str]) -> None:
 
 
 @xet.command("stats")
-@click.option("--config", "config_file", type=click.Path(), default=None)
-@click.option("--json", "json_output", is_flag=True, help="Output in JSON format")
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
+@click.option(
+    "--json",
+    "-j",
+    "json_output",
+    is_flag=True,
+    help="Output in JSON format",
+)
 @click.pass_context
 def xet_stats(_ctx, config_file: Optional[str], json_output: bool) -> None:
     """Show Xet deduplication cache statistics."""
@@ -202,9 +208,21 @@ def xet_stats(_ctx, config_file: Optional[str], json_output: bool) -> None:
 
 
 @xet.command("cache-info")
-@click.option("--config", "config_file", type=click.Path(), default=None)
-@click.option("--json", "json_output", is_flag=True, help="Output in JSON format")
-@click.option("--limit", type=int, default=10, help="Limit number of chunks to show")
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
+@click.option(
+    "--json",
+    "-j",
+    "json_output",
+    is_flag=True,
+    help="Output in JSON format",
+)
+@click.option(
+    "--limit",
+    "-l",
+    type=int,
+    default=10,
+    help="Limit number of chunks to show",
+)
 @click.pass_context
 def xet_cache_info(
     _ctx, config_file: Optional[str], json_output: bool, limit: int
@@ -277,14 +295,19 @@ def xet_cache_info(
 
 
 @xet.command("cleanup")
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--dry-run",
+    "-n",
     is_flag=True,
     help="Show what would be cleaned without actually cleaning",
 )
 @click.option(
-    "--max-age-days", type=int, default=30, help="Maximum age in days for unused chunks"
+    "--max-age-days",
+    "-g",
+    type=int,
+    default=30,
+    help="Maximum age in days for unused chunks",
 )
 @click.pass_context
 def xet_cleanup(

@@ -156,11 +156,16 @@ class NATManager:
                             e,
                         )
 
-        # NAT traversal is optional - only log as debug to reduce noise
-        # Downloads work fine without NAT traversal (most users don't need it)
+        # NAT traversal is optional; downloads work without it for many users.
+        recommended_action = (
+            "Optional: enable UPnP or NAT-PMP on the router, or configure a manual port forward "
+            "if you need inbound peer connections."
+        )
         self.logger.info(
-            "No NAT traversal protocol available after %d attempts (this is normal and doesn't affect downloads)",
+            "No NAT traversal protocol available after %d attempts "
+            "(this is normal and does not block downloads). recommended_action=%s",
             max_attempts,
+            recommended_action,
         )
         return False
 

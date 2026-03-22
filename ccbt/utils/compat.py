@@ -24,11 +24,11 @@ def sha1_compat(data: bytes, *, usedforsecurity: bool = True) -> Any:
     """Return a SHA-1 hash object with Python 3.8 compatibility."""
     if sys.version_info >= (3, 9):
         return hashlib.sha1(data, usedforsecurity=usedforsecurity)
-    return hashlib.sha1(data)
+    return hashlib.sha1(data)  # nosec B324 — Python 3.8 has no usedforsecurity kwarg
 
 
 def md5_compat(data: bytes, *, usedforsecurity: bool = True) -> Any:
     """Return an MD5 hash object with Python 3.8 compatibility."""
     if sys.version_info >= (3, 9):
         return hashlib.md5(data, usedforsecurity=usedforsecurity)
-    return hashlib.md5(data)
+    return hashlib.md5(data)  # nosec B324 — Python 3.8 has no usedforsecurity kwarg

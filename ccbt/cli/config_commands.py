@@ -113,23 +113,32 @@ def _should_skip_project_local_write(
 @config.command("show")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml"]),
     default="toml",
 )
 @click.option(
     "--section",
+    "-S",
     type=str,
     default=None,
     help=_("Show specific section key path (e.g. network)"),
 )
 @click.option(
     "--key",
+    "-k",
     type=str,
     default=None,
     help=_("Show specific key path (e.g. network.listen_port)"),
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def show_config(
     format_: str,
     section: Optional[str],
@@ -142,6 +151,10 @@ def show_config(
     use ``btbt config describe`` (add ``--include-current`` to compare). For JSON
     Schema, use ``btbt config schema``. To merge a patch file into ``ccbt.toml``,
     use ``btbt config apply``.
+
+    MSE / peer encryption (effective values): ``btbt config security-posture`` or
+    ``btbt config show -S security -f json`` (see ``security.enable_encryption``,
+    ``encryption_mode``) and ``network.enable_encryption`` (mirror).
     """
     cm = ConfigManager(config_file)
     data = cm.config.model_dump(mode="json")
@@ -179,9 +192,43 @@ def show_config(
         click.echo(toml.dumps(data))
 
 
+@config.command("security-posture")
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
+def security_posture(config_file: Optional[str]):
+    """Print effective MSE/PE and related security fields (file + env merged).
+
+    Same merge order as ``config show``. Use this to verify why the session logs
+    ``mse_enabled=`` (maps to ``security.enable_encryption``).
+    """
+    cm = ConfigManager(config_file)
+    sec = cm.config.security
+    net = cm.config.network
+    out = {
+        "security.enable_encryption": sec.enable_encryption,
+        "security.encryption_mode": sec.encryption_mode,
+        "security.encryption_allow_plain_fallback": sec.encryption_allow_plain_fallback,
+        "security.encryption_dh_key_size": sec.encryption_dh_key_size,
+        "network.enable_encryption": net.enable_encryption,
+        "network.peer_quality_probation_timeout": net.peer_quality_probation_timeout,
+    }
+    click.echo(json.dumps(out, indent=2))
+
+
 @config.command("get")
 @click.argument("key")
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def get_value(key: str, config_file: Optional[str]):
     """Get one effective value by dotted path (same merge as ``config show``).
 
@@ -202,6 +249,7 @@ def get_value(key: str, config_file: Optional[str]):
 @config.command("describe")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json", "yaml"]),
     default="table",
@@ -209,23 +257,32 @@ def get_value(key: str, config_file: Optional[str]):
 )
 @click.option(
     "--section",
+    "-S",
     type=str,
     default=None,
     help=_("Only options in this top-level section (e.g. network)"),
 )
 @click.option(
     "--path-prefix",
+    "-p",
     type=str,
     default=None,
     help=_("Only paths starting with this prefix"),
 )
 @click.option(
     "--include-current",
+    "-i",
     is_flag=True,
     help=_("Include effective runtime value from loaded config (file + env)"),
 )
 @click.option("-o", "--output", type=click.Path(), default=None)
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def describe_config(
     format_: str,
     section: Optional[str],
@@ -311,6 +368,7 @@ def describe_config(
 @click.argument("value", required=False, default=None)
 @click.option(
     "--value",
+    "-V",
     "value_opt",
     default=None,
     help=_(
@@ -319,25 +377,29 @@ def describe_config(
 )
 @click.option(
     "--dry-run",
+    "-n",
     "dry_run",
     is_flag=True,
     help=_("Validate only; do not write the config file"),
 )
 @click.option(
     "--global",
+    "-G",
     "global_flag",
     is_flag=True,
     help=_("Set value in global config file"),
 )
 @click.option(
     "--local",
+    "-L",
     "local_flag",
     is_flag=True,
     help=_("Set value in project local ccbt.toml"),
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -345,6 +407,7 @@ def describe_config(
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -454,6 +517,7 @@ def set_value(
 @click.argument("input_file", required=False, type=click.Path(exists=True))
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml", "auto"]),
     default="auto",
@@ -461,25 +525,29 @@ def set_value(
 )
 @click.option(
     "--global",
+    "-G",
     "global_flag",
     is_flag=True,
     help=_("Write merged config to global config file"),
 )
 @click.option(
     "--local",
+    "-L",
     "local_flag",
     is_flag=True,
     help=_("Write merged config to project local ccbt.toml"),
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--dry-run",
+    "-n",
     "dry_run",
     is_flag=True,
     help=_("Validate merged file overlay only; do not write"),
 )
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -487,6 +555,7 @@ def set_value(
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -611,12 +680,13 @@ def apply_config_patch(
 
 
 @config.command("reset")
-@click.option("--section", type=str, default=None)
-@click.option("--key", type=str, default=None)
-@click.option("--confirm", is_flag=True, help=_("Skip confirmation prompt"))
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--section", "-S", type=str, default=None)
+@click.option("--key", "-k", type=str, default=None)
+@click.option("--confirm", "-y", is_flag=True, help=_("Skip confirmation prompt"))
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -624,6 +694,7 @@ def apply_config_patch(
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -703,9 +774,16 @@ def reset_config(
 
 
 @config.command("validate")
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 @click.option(
     "--detailed",
+    "-d",
     is_flag=True,
     help=_("Run additional system compatibility checks after model validation"),
 )
@@ -734,10 +812,16 @@ def validate_config_cmd(config_file: Optional[str], detailed: bool):
 
 
 @config.command("migrate")
-@click.option("--from-version", type=str, default=None)
-@click.option("--to-version", type=str, default=None)
-@click.option("--backup", is_flag=True, help=_("Create backup before migration"))
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option("--from-version", "-F", type=str, default=None)
+@click.option("--to-version", "-T", type=str, default=None)
+@click.option("--backup", "-b", is_flag=True, help=_("Create backup before migration"))
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def migrate_config_cmd(
     from_version: Optional[str],  # noqa: ARG001
     to_version: Optional[str],  # noqa: ARG001

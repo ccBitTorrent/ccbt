@@ -2,6 +2,7 @@
 """
 
 import time
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
@@ -10,6 +11,7 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
 from ccbt.core.bencode import encode
+from ccbt.discovery import tracker as tracker_mod
 from ccbt.discovery.tracker import (
     AsyncTrackerClient,
     TrackerClient,
@@ -626,6 +628,23 @@ class TestAsyncTrackerClientTrackerResilience:
         assert first_session.failure_streak == 1
         assert first_session.quarantine_until > time.time()
 
-
-
+    @pytest.mark.asyncio
+    async def test_announce_udp_skip_sets_context_reason_for_logging(self) -> None:
+        """When UDP client is missing, skip reason is recorded for announce_to_multiple logs."""
+        client = AsyncTrackerClient()
+        await client.start()
+        client._session_manager = SimpleNamespace(udp_tracker_client=None)
+        td = {
+            "announce": "udp://127.0.0.1:6969/announce",
+            "info_hash": b"i" * 20,
+            "peer_id": b"-CC0101-" + b"0" * 12,
+            "file_info": {"total_length": 100},
+        }
+        out = await client.announce(td, port=6881, left=100, event="started")
+        assert out is None
+        assert (
+            tracker_mod._tracker_announce_skip_reason.get()
+            == "udp_client_unavailable"
+        )
+        await client.stop()
 

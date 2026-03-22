@@ -367,31 +367,28 @@ class BitTorrentProtocol(Protocol):
                     # Scrape using appropriate client
                     if is_udp:
                         from ccbt.discovery.tracker_udp_client import (
-                            AsyncUDPTrackerClient,
+                            get_udp_tracker_client,
                         )
 
-                        udp_client = AsyncUDPTrackerClient()
+                        udp_client = get_udp_tracker_client()
                         await udp_client.start()
 
-                        try:
-                            scrape_result = await udp_client.scrape(tracker_data)
-                            if scrape_result:
-                                # Map to standardized format
-                                stats["seeders"] = scrape_result.get("seeders", 0)
-                                stats["leechers"] = scrape_result.get("leechers", 0)
-                                stats["completed"] = scrape_result.get("completed", 0)
+                        scrape_result = await udp_client.scrape(tracker_data)
+                        if scrape_result:
+                            # Map to standardized format
+                            stats["seeders"] = scrape_result.get("seeders", 0)
+                            stats["leechers"] = scrape_result.get("leechers", 0)
+                            stats["completed"] = scrape_result.get("completed", 0)
 
-                                # Success! Return first successful result
-                                if stats["seeders"] > 0 or stats["leechers"] > 0:
-                                    self.logger.info(
-                                        "Successfully scraped from UDP tracker: %s (seeders: %d, leechers: %d)",
-                                        tracker_url,
-                                        stats["seeders"],
-                                        stats["leechers"],
-                                    )
-                                    return stats
-                        finally:
-                            await udp_client.stop()
+                            # Success! Return first successful result
+                            if stats["seeders"] > 0 or stats["leechers"] > 0:
+                                self.logger.info(
+                                    "Successfully scraped from UDP tracker: %s (seeders: %d, leechers: %d)",
+                                    tracker_url,
+                                    stats["seeders"],
+                                    stats["leechers"],
+                                )
+                                return stats
 
                     else:  # HTTP/HTTPS
                         from ccbt.discovery.tracker import AsyncTrackerClient

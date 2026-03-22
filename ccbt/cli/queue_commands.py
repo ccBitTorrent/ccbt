@@ -107,6 +107,7 @@ def queue_list(_ctx) -> None:
 @click.argument("info_hash")
 @click.option(
     "--priority",
+    "-p",
     type=click.Choice(["maximum", "high", "normal", "low", "paused"]),
     default="normal",
     help=_("Priority level"),

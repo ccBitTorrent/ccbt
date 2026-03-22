@@ -230,6 +230,22 @@ def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
         )  # type: ignore[attr-defined]
     if options.get("unchoke_interval") is not None:
         cfg.network.unchoke_interval = float(options["unchoke_interval"])  # type: ignore[attr-defined]
+    if options.get("peer_choked_hard_timeout_seconds") is not None:
+        cfg.network.peer_choked_hard_timeout_seconds = float(
+            options["peer_choked_hard_timeout_seconds"],
+        )
+    if options.get("peer_choked_anchor_timeout_seconds") is not None:
+        cfg.network.peer_choked_anchor_timeout_seconds = float(
+            options["peer_choked_anchor_timeout_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_seconds = float(
+            options["peer_choked_solo_grace_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_zero_bytes_cap_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_zero_bytes_cap_seconds = float(
+            options["peer_choked_solo_grace_zero_bytes_cap_seconds"],
+        )
 
 
 def _apply_disk_overrides(cfg: Config, options: dict[str, Any]) -> None:

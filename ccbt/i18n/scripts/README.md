@@ -43,17 +43,16 @@ Updates translation files when new strings are added to the codebase.
 
 **Usage:**
 ```bash
-# Update all translations
+# Merge canonical POT into every locale .po (including English)
 python -m ccbt.i18n.scripts.update_translations
 
-# Specify source directory
-python -m ccbt.i18n.scripts.update_translations --source-dir /path/to/ccbt
+# Single locale
+python -m ccbt.i18n.scripts.update_translations --lang es
 ```
 
-**What it does:**
-1. Extracts translatable strings from source code
-2. Updates the .pot template file
-3. Merges new strings into existing .po files using `msgmerge`
+**What it does:** Runs `msgmerge -U` so each `*/LC_MESSAGES/ccbt.po` picks up new msgids from `en/LC_MESSAGES/ccbt.pot`. **English** is included: merge `en`, then run `fill_english.py` so new entries get `msgstr` = `msgid`. Regenerate the POT first with `python -m ccbt.i18n.extract ccbt …/ccbt.pot`.
+
+**`generate_translations.py` (es, eu, fr):** Hand-maintained dicts are merged with `ccbt/i18n/locale_data/{es,eu,fr}_supplement.json`. For keys only in the supplement, `msgstr` uses U+200C so `msgstr != msgid` and `check_completeness` passes; placement follows `_zwsp_distinct_msgstr` (ZWSP before a trailing newline so `msgfmt` newline rules hold). The UI still reads as English for those lines until replaced with real translations. Regenerate: `python -m ccbt.i18n.scripts.generate_translations`. Spanish-only: `python -m ccbt.i18n.scripts.fetch_es_supplement --structural-zwsp` rebuilds `es_supplement.json` from the POT.
 
 **Requirements:**
 - GNU gettext tools (`msgmerge` command)

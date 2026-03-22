@@ -740,6 +740,10 @@ async def send_soap_action(
                     "402": "Invalid Args - Check parameter formats",
                     "501": "Action Failed - Router rejected the request",
                     "714": "NoSuchEntryInArray - Port mapping not found (may already exist)",
+                    "713": (
+                        "SpecifiedArrayIndexInvalid - Router IGD quirk or stale mapping index; "
+                        "try manual port forward, power-cycle IGD, or disable auto port mapping"
+                    ),
                     "715": "WildCardNotPermittedInSrcIP - Invalid remote host parameter",
                     "716": "WildCardNotPermittedInExtPort - Invalid external port",
                     "718": "ConflictInMappingEntry - Port mapping conflict (port may be in use)",

@@ -140,6 +140,7 @@ class StatusLoop:
                     or self.s.peer_manager
                 )
                 connection_summary: Optional[dict[str, int]] = None
+                local_requestable_from_summary: Optional[int] = None
                 if peer_manager and hasattr(peer_manager, "connections"):
                     try:
                         if hasattr(peer_manager, "get_connection_summary"):
@@ -155,6 +156,12 @@ class StatusLoop:
                             status["requestable_peers"] = connection_summary.get(
                                 "requestable_connections", 0
                             )
+                            status["remote_choked_peers"] = connection_summary.get(
+                                "remote_choked_connections", 0
+                            )
+                            status["pipeline_saturated_peers"] = connection_summary.get(
+                                "pipeline_saturated_connections", 0
+                            )
                             status["productive_peers"] = connection_summary.get(
                                 "productive_connections", 0
                             )
@@ -166,6 +173,10 @@ class StatusLoop:
                             )
                             status["metadata_capable_peers"] = connection_summary.get(
                                 "metadata_capable_connections", 0
+                            )
+                            local_requestable_from_summary = int(
+                                connection_summary.get("requestable_connections", 0)
+                                or 0
                             )
                         else:
                             actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
@@ -181,6 +192,10 @@ class StatusLoop:
                 connected_peers = status.get("connected_peers", 0)
                 productive_peers = status.get("productive_peers", connected_peers)
                 requestable_peers = status.get("requestable_peers", 0)
+                remote_choked_peers = int(status.get("remote_choked_peers", 0) or 0)
+                pipeline_saturated_peers = int(
+                    status.get("pipeline_saturated_peers", 0) or 0
+                )
                 handshake_complete_peers = int(
                     status.get("handshake_complete_peers", 0) or 0
                 )
@@ -219,6 +234,12 @@ class StatusLoop:
                         requestable_from_swarm = int(
                             swarm_state.get("requestable_peers", 0) or 0
                         )
+                        remote_choked_from_swarm = int(
+                            swarm_state.get("remote_choked_peers", 0) or 0
+                        )
+                        pipeline_saturated_from_swarm = int(
+                            swarm_state.get("pipeline_saturated_peers", 0) or 0
+                        )
                         handshake_complete_from_swarm = int(
                             swarm_state.get("handshake_complete_peers", 0) or 0
                         )
@@ -235,8 +256,13 @@ class StatusLoop:
                             connected_peers = connected_from_swarm
                         if productive_from_swarm > 0 or productive_peers == 0:
                             productive_peers = productive_from_swarm
-                        if requestable_from_swarm > 0 or requestable_peers == 0:
-                            requestable_peers = requestable_from_swarm
+                        remote_choked_peers += remote_choked_from_swarm
+                        pipeline_saturated_peers += pipeline_saturated_from_swarm
+                        requestable_peers = max(
+                            int(requestable_peers or 0),
+                            int(local_requestable_from_summary or 0),
+                            requestable_from_swarm,
+                        )
                         if (
                             handshake_complete_from_swarm > 0
                             or handshake_complete_peers == 0
@@ -542,6 +568,8 @@ class StatusLoop:
                     "connected_peers": connected_peers,
                     "productive_peers": productive_peers,
                     "requestable_peers": requestable_peers,
+                    "remote_choked_peers": remote_choked_peers,
+                    "pipeline_saturated_peers": pipeline_saturated_peers,
                     "handshake_complete_peers": handshake_complete_peers,
                     "extension_capable_peers": extension_capable_peers,
                     "metadata_capable_peers": metadata_capable_peers,

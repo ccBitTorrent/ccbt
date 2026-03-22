@@ -15,6 +15,22 @@ from typing import Any, Optional
 import pytest
 import pytest_asyncio
 
+
+def make_torrent_data(
+    *,
+    num_pieces: int = 100,
+    info_hash: Optional[bytes] = None,
+) -> dict[str, Any]:
+    """Build a fresh torrent dict for tests (avoids accidental cross-test mutation)."""
+    ih = info_hash if info_hash is not None else os.urandom(20)
+    return {
+        "info_hash": ih,
+        "piece_length": 16384,
+        "num_pieces": num_pieces,
+        "pieces_info": {"num_pieces": num_pieces},
+    }
+
+
 # Import network mock fixtures to make them available to all tests
 # This ensures fixtures from tests/fixtures/network_mocks.py are discoverable
 pytest_plugins = ["tests.fixtures.network_mocks"]

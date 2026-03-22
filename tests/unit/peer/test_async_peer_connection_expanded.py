@@ -220,6 +220,43 @@ class TestAsyncPeerConnection:
             require_recent_piece_availability=True
         )
 
+    def test_get_request_block_reason_choked(self, async_peer_connection):
+        """Request block reason should capture remote choke state."""
+        async_peer_connection.state = ConnectionState.ACTIVE
+        async_peer_connection.peer_choking = True
+        async_peer_connection.max_pipeline_depth = 2
+        async_peer_connection.outstanding_requests = {}
+
+        assert async_peer_connection.get_request_block_reason() == "remote_choked"
+
+    def test_get_request_block_reason_pipeline_saturated(self, async_peer_connection):
+        """Request block reason should indicate saturated pipeline."""
+        async_peer_connection.state = ConnectionState.ACTIVE
+        async_peer_connection.peer_choking = False
+        async_peer_connection.max_pipeline_depth = 2
+        async_peer_connection.outstanding_requests = {
+            (0, 0, 1024): RequestInfo(0, 0, 1024, time.time()),
+            (0, 1024, 1024): RequestInfo(0, 1024, 1024, time.time()),
+        }
+
+        assert async_peer_connection.get_request_block_reason() == "pipeline_saturated"
+
+    def test_get_request_block_reason_stale_availability(self, async_peer_connection):
+        """Request block reason should capture stale piece-availability markers."""
+        async_peer_connection.state = ConnectionState.ACTIVE
+        async_peer_connection.peer_choking = False
+        async_peer_connection.max_pipeline_depth = 2
+        async_peer_connection.outstanding_requests = {}
+        async_peer_connection._piece_availability_confidence_window_s = 15.0
+        async_peer_connection._last_piece_availability_at = time.time() - 30.0
+
+        assert (
+            async_peer_connection.get_request_block_reason(
+                require_recent_piece_availability=True
+            )
+            == "availability_stale"
+        )
+
     def test_get_available_pipeline_slots(self, async_peer_connection):
         """Test getting available pipeline slots."""
         async_peer_connection.max_pipeline_depth = 10

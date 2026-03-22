@@ -26,7 +26,7 @@ class TestTrackerServiceCoverage:
         mock_client.scrape = AsyncMock(return_value={"seeders": 10, "leechers": 5})
         
         with patch(
-            "ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient",
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             return_value=mock_client,
         ):
             result = await service.scrape_torrent(
@@ -36,7 +36,7 @@ class TestTrackerServiceCoverage:
             
             assert result == {"seeders": 10, "leechers": 5}
             mock_client.start.assert_called_once()
-            mock_client.stop.assert_called_once()
+            mock_client.stop.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_scrape_from_http_tracker(self):
@@ -74,7 +74,7 @@ class TestTrackerServiceCoverage:
         mock_client.scrape = AsyncMock(side_effect=RuntimeError("Scrape failed"))
         
         with patch(
-            "ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient",
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             return_value=mock_client,
         ):
             result = await service.scrape_torrent(

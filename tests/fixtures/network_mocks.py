@@ -116,14 +116,24 @@ def apply_network_mocks_to_session(session: Any, mock_network_components: dict) 
     patch_dht.start()
     session._network_mock_patches.append(patch_dht)
     
-    # Patch AsyncUDPTrackerClient instantiation at module level (it's imported from ccbt.discovery.tracker_udp_client)
+    # Patch process-wide UDP accessor (session uses ComponentFactory → get_udp_tracker_client).
     from unittest.mock import MagicMock
+
     mock_udp_tracker = MagicMock()
     mock_udp_tracker.start = AsyncMock()
     mock_udp_tracker.stop = AsyncMock()
-    patch_udp = patch("ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient", return_value=mock_udp_tracker)
-    patch_udp.start()
-    session._network_mock_patches.append(patch_udp)
+    patch_get_udp = patch(
+        "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
+        return_value=mock_udp_tracker,
+    )
+    patch_get_udp.start()
+    session._network_mock_patches.append(patch_get_udp)
+    patch_udp_ctor = patch(
+        "ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient",
+        return_value=mock_udp_tracker,
+    )
+    patch_udp_ctor.start()
+    session._network_mock_patches.append(patch_udp_ctor)
     
     # Pre-set DHT client and TCP server to prevent real initialization
     # These will be set before start() is called

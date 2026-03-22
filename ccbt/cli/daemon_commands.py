@@ -99,11 +99,13 @@ def daemon():
 )
 @click.option(
     "--port",
+    "-p",
     type=int,
     help=_("Override IPC server port"),
 )
 @click.option(
     "--generate-api-key",
+    "-K",
     "regenerate_api_key",
     is_flag=True,
     help=_("Generate new API key"),
@@ -126,6 +128,7 @@ def daemon():
 )
 @click.option(
     "--no-wait",
+    "-B",
     "--background-only",
     is_flag=True,
     help=_(
@@ -890,11 +893,13 @@ def _wait_for_daemon_with_progress(
 @daemon.command("exit")
 @click.option(
     "--force",
+    "-f",
     is_flag=True,
     help=_("Force kill without graceful shutdown"),
 )
 @click.option(
     "--timeout",
+    "-t",
     type=float,
     default=30.0,
     help=_("Shutdown timeout in seconds"),

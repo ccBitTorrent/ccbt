@@ -26,13 +26,19 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
 from urllib.parse import urlparse
 
 from ccbt.config.config import get_config
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo
+
+# Callback for immediate peer connection after UDP ANNOUNCE (sync or async).
+ImmediatePeersCallback = Callable[
+    [list[dict[str, Any]], str],
+    Union[None, Awaitable[None]],
+]
 
 # Error message constants
 _ERROR_UDP_TRANSPORT_NOT_INITIALIZED = "UDP transport is not initialized"
@@ -111,7 +117,8 @@ class AsyncUDPTrackerClient:
 
         Args:
             peer_id: Our peer ID (20 bytes)
-            test_mode: If True, bypass socket validation for testing. Defaults to False.
+            test_mode: If True, allow construction outside ``get_udp_tracker_client()`` and
+                bypass socket validation (unit tests only). Production code must use the singleton.
 
         """
         self.config = get_config()
@@ -129,9 +136,16 @@ class AsyncUDPTrackerClient:
         self.socket: Optional[asyncio.DatagramProtocol] = None
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.transaction_counter = 0
+        self._udp_tracker_stale_response_total: int = 0
+        self._udp_tracker_stale_response_by_category: dict[str, int] = {
+            "timeout_suspect": 0,
+            "id_collision": 0,
+            "foreign_tracker": 0,
+        }
 
         # Pending requests
         self.pending_requests: dict[int, asyncio.Future] = {}
+        self.pending_immediate_callbacks: dict[int, ImmediatePeersCallback] = {}
         self._pending_request_timestamps: dict[int, float] = {}
         self._max_pending_requests: int = 128
         self._pending_request_stale_after: float = 30.0
@@ -176,18 +190,18 @@ class AsyncUDPTrackerClient:
         self._socket_recreation_count: int = 0
         self._last_socket_health_check: float = 0.0
 
-        # Note: Immediate peer connection callback
-        # This allows sessions to connect peers immediately when tracker responses arrive
-        # instead of waiting for the announce loop to process them
-        self.on_peers_received: Optional[
-            Callable[[list[dict[str, Any]], str], None]
-        ] = None
-
         # Test mode: bypass socket validation for testing
         self._test_mode: bool = test_mode
         self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
 
         self.logger = logging.getLogger(__name__)
+        if not test_mode and not _udp_singleton_construct_in_progress():
+            msg = (
+                "AsyncUDPTrackerClient must be obtained via get_udp_tracker_client() "
+                "or ComponentFactory.create_udp_tracker_client(); for isolated tests pass "
+                "test_mode=True."
+            )
+            raise RuntimeError(msg)
 
     @property
     def socket_ready(self) -> bool:
@@ -244,6 +258,34 @@ class AsyncUDPTrackerClient:
         ]
         for tx_id in expired:
             self._stale_response_transaction_ids.pop(tx_id, None)
+
+    def _classify_unmatched_response(
+        self,
+        *,
+        transaction_id: int,
+        addr: tuple[str, int],
+        now: float,
+    ) -> tuple[str, Optional[float]]:
+        """Classify unmatched UDP responses for actionable churn diagnostics."""
+        addr_host = addr[0] if addr else "unknown"
+        addr_port = addr[1] if addr else 0
+        known_tracker_addr = any(
+            session.host == addr_host and int(session.port) == int(addr_port)
+            for session in self.sessions.values()
+            if getattr(session, "host", None) and getattr(session, "port", None)
+        )
+        if not known_tracker_addr:
+            return "foreign_tracker", None
+
+        if self.pending_requests:
+            oldest_pending = min(self._pending_request_timestamps.values(), default=now)
+            age_hint = max(0.0, now - oldest_pending)
+            return "id_collision", age_hint
+
+        stale_seen_at = self._stale_response_transaction_ids.get(transaction_id)
+        if stale_seen_at is not None:
+            return "timeout_suspect", max(0.0, now - stale_seen_at)
+        return "timeout_suspect", None
 
     def _trim_request_history(self, now: float) -> None:
         """Trim stale completion history entries from the tracking window."""
@@ -421,6 +463,8 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        on_immediate_peers: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -434,44 +478,61 @@ class AsyncUDPTrackerClient:
             downloaded: Bytes downloaded
             left: Bytes left
             event: Announce event
+            on_immediate_peers: Optional per-announce callback for immediate peer connect (multi-swarm safe).
 
         Returns:
             Tuple of (peers, interval, seeders, leechers) or None on error
 
         """
         return await self._announce_to_tracker_full(
-            url, torrent_data, port, uploaded, downloaded, left, event
+            url,
+            torrent_data,
+            port,
+            uploaded,
+            downloaded,
+            left,
+            event,
+            on_immediate_peers=on_immediate_peers,
         )
 
     async def _call_immediate_connection(
-        self, peers: list[dict[str, Any]], tracker_url: str
+        self,
+        peers: list[dict[str, Any]],
+        tracker_url: str,
+        callback: Optional[ImmediatePeersCallback] = None,
     ) -> None:
         """Call immediate connection callback asynchronously."""
-        if self.on_peers_received:
-            try:
-                # Call the callback - it should be async-safe
-                if asyncio.iscoroutinefunction(self.on_peers_received):
-                    await self.on_peers_received(peers, tracker_url)
-                else:
-                    self.on_peers_received(peers, tracker_url)
-            except Exception as e:
-                self.logger.warning(
-                    "Error in immediate peer connection callback: %s",
-                    e,
-                    exc_info=True,
-                )
+        if callback is None:
+            return
+        try:
+            if asyncio.iscoroutinefunction(callback):
+                await callback(peers, tracker_url)  # type: ignore[misc]
+            else:
+                callback(peers, tracker_url)  # type: ignore[misc]
+        except Exception as e:
+            self.logger.warning(
+                "Error in immediate peer connection callback: %s",
+                e,
+                exc_info=True,
+            )
 
     def _trigger_immediate_connection(
-        self, peers: list[dict[str, Any]], tracker_url: str, log_prefix: str
+        self,
+        peers: list[dict[str, Any]],
+        tracker_url: str,
+        log_prefix: str,
+        *,
+        callback: Optional[ImmediatePeersCallback] = None,
     ) -> None:
         """Trigger immediate peer connection callback in a context-aware way."""
-        if not self.on_peers_received:
+        if callback is None:
             return
+        cb = callback
         try:
             # Primary path: schedule the callback in the running event loop.
             asyncio.get_running_loop()
             task = asyncio.create_task(
-                self._call_immediate_connection(peers, tracker_url)
+                self._call_immediate_connection(peers, tracker_url, cb)
             )
             task.add_done_callback(
                 lambda t: self.logger.debug("%s callback task completed", log_prefix)
@@ -484,11 +545,11 @@ class AsyncUDPTrackerClient:
             )
         except RuntimeError:
             # No running loop - execute inline for unit-test / sync paths.
-            if asyncio.iscoroutinefunction(self.on_peers_received):
-                asyncio.run(self._call_immediate_connection(peers, tracker_url))
+            if asyncio.iscoroutinefunction(cb):
+                asyncio.run(self._call_immediate_connection(peers, tracker_url, cb))
             else:
                 try:
-                    self.on_peers_received(peers, tracker_url)
+                    cb(peers, tracker_url)
                     self.logger.debug("%s callback completed", log_prefix)
                 except Exception as e:
                     self.logger.warning(
@@ -1175,6 +1236,8 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        on_immediate_peers: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -1235,6 +1298,7 @@ class AsyncUDPTrackerClient:
                 downloaded=downloaded,
                 left=left,
                 event=event,
+                on_immediate_peers=on_immediate_peers,
             )
 
         except (
@@ -2041,6 +2105,8 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        on_immediate_peers: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -2265,6 +2331,7 @@ class AsyncUDPTrackerClient:
                     pending_count=len(self.pending_requests),
                 ),
                 tracker_host=session.host,
+                immediate_peers_callback=on_immediate_peers,
             )  # pragma: no cover - Async network wait, tested separately
 
             if (
@@ -2378,6 +2445,7 @@ class AsyncUDPTrackerClient:
         for transaction_id in stale_tids:
             future = self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
+            self.pending_immediate_callbacks.pop(transaction_id, None)
             if future is not None and not future.done():
                 future.cancel()
             self._mark_stale_transaction(transaction_id, now=now)
@@ -2399,6 +2467,7 @@ class AsyncUDPTrackerClient:
             for transaction_id, _created_at in oldest[:overflow]:
                 future = self.pending_requests.pop(transaction_id, None)
                 self._pending_request_timestamps.pop(transaction_id, None)
+                self.pending_immediate_callbacks.pop(transaction_id, None)
                 if future is not None and not future.done():
                     future.cancel()
                 self._mark_stale_transaction(transaction_id, now=now)
@@ -2416,6 +2485,8 @@ class AsyncUDPTrackerClient:
         transaction_id: int,
         timeout: float,
         tracker_host: Optional[str] = None,
+        *,
+        immediate_peers_callback: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[TrackerResponse]:
         """Wait for UDP tracker response."""
         host = self._get_tracker_host(tracker_host)
@@ -2433,6 +2504,7 @@ class AsyncUDPTrackerClient:
         if transaction_id in self.pending_requests:
             stale_future = self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
+            self.pending_immediate_callbacks.pop(transaction_id, None)
             if stale_future is not None and not stale_future.done():
                 stale_future.cancel()
             self._mark_stale_transaction(transaction_id, now=time.time())
@@ -2451,6 +2523,10 @@ class AsyncUDPTrackerClient:
         )
         self.pending_requests[transaction_id] = future
         self._pending_request_timestamps[transaction_id] = now
+        if immediate_peers_callback is not None:
+            self.pending_immediate_callbacks[transaction_id] = immediate_peers_callback
+        else:
+            self.pending_immediate_callbacks.pop(transaction_id, None)
 
         try:
             response = await asyncio.wait_for(future, timeout=adaptive_timeout)
@@ -2489,6 +2565,7 @@ class AsyncUDPTrackerClient:
         finally:
             self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
+            self.pending_immediate_callbacks.pop(transaction_id, None)
             self._cleanup_stale_response_transaction_ids(now=time.time())
 
     @staticmethod
@@ -2538,7 +2615,7 @@ class AsyncUDPTrackerClient:
                 if not (1 <= port <= 65535):
                     invalid_peers += 1
                     continue
-                if not is_ipv6 and ip == "0.0.0.0":
+                if not is_ipv6 and ip == "0.0.0.0":  # nosec B104 — reject invalid peer IP, not bind
                     invalid_peers += 1
                     continue
                 peers.append(
@@ -2658,7 +2735,8 @@ class AsyncUDPTrackerClient:
                 # Enhanced logging for unmatched responses
                 # This can happen if: (1) Response arrived after timeout, (2) Transaction ID collision,
                 # or (3) Response from different tracker/client
-                if self._is_expected_stale_transaction(transaction_id, now=time.time()):
+                now = time.time()
+                if self._is_expected_stale_transaction(transaction_id, now=now):
                     self.logger.debug(
                         "Ignoring stale tracker response for timed-out transaction_id=%d from %s:%d (action=%d)",
                         transaction_id,
@@ -2667,11 +2745,25 @@ class AsyncUDPTrackerClient:
                         action,
                     )
                 else:
+                    stale_category, age_hint = self._classify_unmatched_response(
+                        transaction_id=transaction_id,
+                        addr=_addr,
+                        now=now,
+                    )
+                    self._udp_tracker_stale_response_total += 1
+                    self._udp_tracker_stale_response_by_category[stale_category] = (
+                        self._udp_tracker_stale_response_by_category.get(
+                            stale_category, 0
+                        )
+                        + 1
+                    )
                     self.logger.warning(
                         "Received UDP response with transaction_id=%d from %s:%d but no pending request found. "
                         "This may indicate: (1) Response arrived after timeout, (2) Transaction ID collision, "
                         "or (3) Response from different tracker/client. "
-                        "Pending transaction IDs: %s (count: %d). Response action: %d",
+                        "Pending transaction IDs: %s (count: %d). Response action: %d. "
+                        "stale_category=%s age_hint_s=%s udp_tracker_stale_response_total=%d "
+                        "stale_category_totals=%s",
                         transaction_id,
                         _addr[0] if _addr else "unknown",
                         _addr[1] if _addr else 0,
@@ -2680,6 +2772,10 @@ class AsyncUDPTrackerClient:
                         ],  # Show first 10 for brevity
                         len(self.pending_requests),
                         action,
+                        stale_category,
+                        f"{age_hint:.1f}" if isinstance(age_hint, float) else "n/a",
+                        self._udp_tracker_stale_response_total,
+                        self._udp_tracker_stale_response_by_category,
                     )
                 if action == TrackerAction.ANNOUNCE.value:
                     peers, interval, seeders, leechers = self._extract_announce_peers(
@@ -2687,18 +2783,16 @@ class AsyncUDPTrackerClient:
                     )
                     if peers:
                         tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
-                        self.logger.info(
-                            "UDP Tracker late ANNOUNCE response for %s (transaction_id=%d) recovered "
-                            "with %d peers (interval=%d, seeders=%d, leechers=%d)",
+                        self.logger.debug(
+                            "Late UDP ANNOUNCE (no pending request) for %s "
+                            "(transaction_id=%d, peers=%d, interval=%d, seeders=%d, leechers=%d); "
+                            "skipping immediate connect (unknown swarm)",
                             tracker_url,
                             transaction_id,
                             len(peers),
                             interval,
                             seeders,
                             leechers,
-                        )
-                        self._trigger_immediate_connection(
-                            peers, tracker_url, "Late-response immediate connection"
                         )
                 return
 
@@ -2887,6 +2981,7 @@ class AsyncUDPTrackerClient:
                         seeders=seeders,
                         peers=peers,
                     )
+                    immediate_cb = self.pending_immediate_callbacks.get(transaction_id)
                     self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
@@ -2898,12 +2993,13 @@ class AsyncUDPTrackerClient:
                             len(peers),
                             transaction_id,
                         )
-                        # Call immediate connection callback if registered
-                        if self.on_peers_received:
-                            tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
-                            self._trigger_immediate_connection(
-                                peers, tracker_url, "Immediate connection"
-                            )
+                        tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
+                        self._trigger_immediate_connection(
+                            peers,
+                            tracker_url,
+                            "Immediate connection",
+                            callback=immediate_cb,
+                        )
 
             elif action == TrackerAction.SCRAPE.value:
                 # Scrape response format:
@@ -3317,6 +3413,38 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
             )  # pragma: no cover - Logging statement, tested via other paths
 
 
-# Global UDP tracker client instance
-# Singleton pattern removed - UDP tracker client is now managed via AsyncSessionManager.udp_tracker_client
-# This ensures proper lifecycle management and prevents socket recreation issues
+# Process-wide UDP tracker client (one bound socket per process; BEP 15).
+_udp_tracker_client_singleton: Optional[AsyncUDPTrackerClient] = None
+# True only while get_udp_tracker_client() is creating the module singleton.
+_udp_singleton_construct_active: bool = False
+
+
+def _udp_singleton_construct_in_progress() -> bool:
+    """Return True while the official singleton constructor path is running."""
+    return _udp_singleton_construct_active
+
+
+def get_udp_tracker_client() -> AsyncUDPTrackerClient:
+    """Return the lazily-created process-wide UDP tracker client."""
+    global _udp_tracker_client_singleton, _udp_singleton_construct_active
+    if _udp_tracker_client_singleton is None:
+        _udp_singleton_construct_active = True
+        try:
+            _udp_tracker_client_singleton = AsyncUDPTrackerClient()
+        finally:
+            _udp_singleton_construct_active = False
+    return _udp_tracker_client_singleton
+
+
+async def shutdown_udp_tracker_client() -> None:
+    """Stop the process-wide client and release the module singleton (idempotent)."""
+    global _udp_tracker_client_singleton
+    if _udp_tracker_client_singleton is not None:
+        await _udp_tracker_client_singleton.stop()
+        _udp_tracker_client_singleton = None
+
+
+def reset_udp_tracker_client_for_testing() -> None:
+    """Clear the module singleton without awaiting stop (tests: call after ``stop()`` or with no start)."""
+    global _udp_tracker_client_singleton
+    _udp_tracker_client_singleton = None

@@ -14,6 +14,7 @@ from ccbt.security.mse_handshake import (
     CipherType,
     MSEHandshake,
     MSEHandshakeResult,
+    MSEHandshakeReadFailureReason,
     MSEHandshakeType,
 )
 from ccbt.security.ciphers.aes import AESCipher
@@ -205,6 +206,44 @@ class TestMSEHandshakeInitiationCoverage:
 
         assert result.success is False
         assert "Expected CRYPTO" in result.error
+
+
+class TestMSEHandshakeReadFailureReasons:
+    """Direct coverage for low-level handshake message read failures."""
+
+    @pytest.mark.asyncio
+    async def test_read_handshake_message_classifies_timeout(self, mock_reader, info_hash):
+        handshake = MSEHandshake()
+        mock_reader.readexactly = AsyncMock(side_effect=asyncio.TimeoutError)
+
+        payload, reason = await handshake._read_handshake_message(
+            mock_reader, timeout=0.01
+        )
+
+        assert payload is None
+        assert reason == MSEHandshakeReadFailureReason.TIMEOUT
+
+    @pytest.mark.asyncio
+    async def test_read_handshake_message_classifies_incomplete(self, mock_reader):
+        handshake = MSEHandshake()
+        mock_reader.readexactly = AsyncMock(
+            side_effect=asyncio.IncompleteReadError(b"", 4)
+        )
+
+        payload, reason = await handshake._read_handshake_message(mock_reader, timeout=0.01)
+
+        assert payload is None
+        assert reason == MSEHandshakeReadFailureReason.INCOMPLETE
+
+    @pytest.mark.asyncio
+    async def test_read_handshake_message_classifies_invalid_length(self, mock_reader):
+        handshake = MSEHandshake()
+        mock_reader.readexactly = AsyncMock(return_value=b"\x00\x00\x00\x00")
+
+        payload, reason = await handshake._read_handshake_message(mock_reader, timeout=0.01)
+
+        assert payload is None
+        assert reason == MSEHandshakeReadFailureReason.INVALID_LENGTH
 
     @pytest.mark.asyncio
     async def test_initiate_disallowed_cipher(

@@ -1,7 +1,5 @@
 """Enhanced CLI for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides rich CLI interface with:
 - Interactive TUI
 - Progress bars
@@ -28,6 +26,10 @@ from ccbt.cli.advanced_commands import recover as recover_cmd
 from ccbt.cli.advanced_commands import security as security_cmd
 from ccbt.cli.advanced_commands import test as test_cmd
 from ccbt.cli.auth_commands import auth as auth_group
+from ccbt.cli.cli_option_sets import (
+    DOWNLOAD_MAGNET_SHARED_OPTIONS,
+    compose_click_options,
+)
 from ccbt.cli.config_commands import config as config_group
 from ccbt.cli.create_torrent import create_torrent
 from ccbt.cli.daemon_commands import daemon as daemon_group
@@ -63,6 +65,7 @@ from ccbt.cli.torrent_commands import peer as peer_group
 from ccbt.cli.torrent_commands import pex as pex_group
 from ccbt.cli.torrent_commands import torrent as torrent_control_group
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
+from ccbt.config.env_bootstrap import maybe_load_dotenv_from_env
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
 from ccbt.i18n import _
@@ -1105,6 +1108,22 @@ def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
         )  # type: ignore[attr-defined]
     if options.get("unchoke_interval") is not None:
         cfg.network.unchoke_interval = float(options["unchoke_interval"])  # type: ignore[attr-defined]
+    if options.get("peer_choked_hard_timeout_seconds") is not None:
+        cfg.network.peer_choked_hard_timeout_seconds = float(
+            options["peer_choked_hard_timeout_seconds"],
+        )
+    if options.get("peer_choked_anchor_timeout_seconds") is not None:
+        cfg.network.peer_choked_anchor_timeout_seconds = float(
+            options["peer_choked_anchor_timeout_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_seconds = float(
+            options["peer_choked_solo_grace_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_zero_bytes_cap_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_zero_bytes_cap_seconds = float(
+            options["peer_choked_solo_grace_zero_bytes_cap_seconds"],
+        )
     if options.get("sequential_window_size") is not None:
         cfg.strategy.sequential_window = int(options["sequential_window_size"])  # type: ignore[attr-defined]
     if options.get("sequential_priority_files") is not None:
@@ -1303,6 +1322,7 @@ def _apply_protocol_v2_overrides(cfg: Config, options: dict[str, Any]) -> None:
 @click.pass_context
 def cli(ctx, config, verbose, debug):
     """CcBitTorrent - High-performance BitTorrent client."""
+    maybe_load_dotenv_from_env()
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
     # Convert debug flag to verbosity count for backward compatibility
@@ -1359,115 +1379,7 @@ def cli(ctx, config, verbose, debug):
     is_flag=True,
     help=_("Resume from checkpoint if available"),
 )
-@click.option("--no-checkpoint", is_flag=True, help=_("Disable checkpointing"))
-@click.option("--checkpoint-dir", type=click.Path(), help=_("Checkpoint directory"))
-@click.option("--listen-port", type=int, help=_("Listen port"))
-@click.option("--max-peers", type=int, help=_("Maximum global peers"))
-@click.option("--max-peers-per-torrent", type=int, help=_("Maximum peers per torrent"))
-@click.option("--pipeline-depth", type=int, help=_("Request pipeline depth"))
-@click.option("--block-size-kib", type=int, help=_("Block size (KiB)"))
-@click.option("--connection-timeout", type=float, help=_("Connection timeout (s)"))
-@click.option("--download-limit", type=int, help=_("Global download limit (KiB/s)"))
-@click.option("--upload-limit", type=int, help=_("Global upload limit (KiB/s)"))
-@click.option("--dht-port", type=int, help=_("DHT port"))
-@click.option("--enable-dht", is_flag=True, help=_("Enable DHT"))
-@click.option("--disable-dht", is_flag=True, help=_("Disable DHT"))
-@click.option(
-    "--piece-selection",
-    type=click.Choice(["round_robin", "rarest_first", "sequential"]),
-)
-@click.option("--endgame-threshold", type=float, help=_("Endgame threshold (0..1)"))
-@click.option("--hash-workers", type=int, help=_("Hash verification workers"))
-@click.option("--disk-workers", type=int, help=_("Disk I/O workers"))
-@click.option("--use-mmap", is_flag=True, help=_("Use memory mapping"))
-@click.option("--no-mmap", is_flag=True, help=_("Disable memory mapping"))
-@click.option("--mmap-cache-mb", type=int, help=_("MMap cache size (MB)"))
-@click.option("--write-batch-kib", type=int, help=_("Write batch size (KiB)"))
-@click.option("--write-buffer-kib", type=int, help=_("Write buffer size (KiB)"))
-@click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
-@click.option("--sparse-files", is_flag=True, help=_("Enable sparse files"))
-@click.option("--no-sparse-files", is_flag=True, help=_("Disable sparse files"))
-@click.option(
-    "--enable-io-uring",
-    is_flag=True,
-    help=_("Enable io_uring on Linux if available"),
-)
-@click.option("--disable-io-uring", is_flag=True, help=_("Disable io_uring usage"))
-@click.option(
-    "--direct-io",
-    is_flag=True,
-    help=_("Enable direct I/O for writes when supported"),
-)
-@click.option(
-    "--sync-writes", is_flag=True, help=_("Enable fsync after batched writes")
-)
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"]),
-)
-@click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
-@click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
-@click.option("--metrics-port", type=int, help=_("Metrics port"))
-@click.option("--enable-ipv6", is_flag=True, help=_("Enable IPv6"))
-@click.option("--disable-ipv6", is_flag=True, help=_("Disable IPv6"))
-@click.option("--enable-tcp", is_flag=True, help=_("Enable TCP transport"))
-@click.option("--disable-tcp", is_flag=True, help=_("Disable TCP transport"))
-@click.option("--enable-utp", is_flag=True, help=_("Enable uTP transport"))
-@click.option("--disable-utp", is_flag=True, help=_("Disable uTP transport"))
-@click.option("--enable-encryption", is_flag=True, help=_("Enable protocol encryption"))
-@click.option(
-    "--disable-encryption", is_flag=True, help=_("Disable protocol encryption")
-)
-@click.option("--tcp-nodelay", is_flag=True, help=_("Enable TCP_NODELAY"))
-@click.option("--no-tcp-nodelay", is_flag=True, help=_("Disable TCP_NODELAY"))
-@click.option("--socket-rcvbuf-kib", type=int, help=_("Socket receive buffer (KiB)"))
-@click.option("--socket-sndbuf-kib", type=int, help=_("Socket send buffer (KiB)"))
-@click.option("--listen-interface", type=str, help=_("Listen interface"))
-@click.option("--peer-timeout", type=float, help=_("Peer timeout (s)"))
-@click.option("--dht-timeout", type=float, help=_("DHT timeout (s)"))
-@click.option("--min-block-size-kib", type=int, help=_("Minimum block size (KiB)"))
-@click.option("--max-block-size-kib", type=int, help=_("Maximum block size (KiB)"))
-@click.option("--enable-http-trackers", is_flag=True, help=_("Enable HTTP trackers"))
-@click.option("--disable-http-trackers", is_flag=True, help=_("Disable HTTP trackers"))
-@click.option("--enable-udp-trackers", is_flag=True, help=_("Enable UDP trackers"))
-@click.option("--disable-udp-trackers", is_flag=True, help=_("Disable UDP trackers"))
-@click.option(
-    "--tracker-announce-interval",
-    type=float,
-    help=_("Tracker announce interval (s)"),
-)
-@click.option(
-    "--tracker-scrape-interval",
-    type=float,
-    help=_("Tracker scrape interval (s)"),
-)
-@click.option("--pex-interval", type=float, help=_("PEX interval (s)"))
-@click.option("--endgame-duplicates", type=int, help=_("Endgame duplicate requests"))
-@click.option("--streaming-mode", is_flag=True, help=_("Enable streaming mode"))
-@click.option("--first-piece-priority", is_flag=True, help=_("Prioritize first piece"))
-@click.option("--last-piece-priority", is_flag=True, help=_("Prioritize last piece"))
-@click.option(
-    "--optimistic-unchoke-interval",
-    type=float,
-    help=_("Optimistic unchoke interval (s)"),
-)
-@click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
-@click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
-@click.option(
-    "--enable-v2", "enable_v2", is_flag=True, help=_("Enable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--disable-v2", "disable_v2", is_flag=True, help=_("Disable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--prefer-v2",
-    "prefer_v2",
-    is_flag=True,
-    help=_("Prefer Protocol v2 when available"),
-)
-@click.option(
-    "--v2-only", "v2_only", is_flag=True, help=_("Use Protocol v2 only (disable v1)")
-)
+@compose_click_options(*DOWNLOAD_MAGNET_SHARED_OPTIONS)
 @click.pass_context
 def download(
     ctx,
@@ -1706,6 +1618,7 @@ def download(
 @click.option("--interactive", "-i", is_flag=True, help=_("Start interactive mode"))
 @click.option(
     "--select-files",
+    "-F",
     is_flag=True,
     help=_("Wait for metadata and prompt for file selection (interactive only)"),
 )
@@ -1715,115 +1628,7 @@ def download(
     is_flag=True,
     help=_("Resume from checkpoint if available"),
 )
-@click.option("--no-checkpoint", is_flag=True, help=_("Disable checkpointing"))
-@click.option("--checkpoint-dir", type=click.Path(), help=_("Checkpoint directory"))
-@click.option("--listen-port", type=int, help=_("Listen port"))
-@click.option("--max-peers", type=int, help=_("Maximum global peers"))
-@click.option("--max-peers-per-torrent", type=int, help=_("Maximum peers per torrent"))
-@click.option("--pipeline-depth", type=int, help=_("Request pipeline depth"))
-@click.option("--block-size-kib", type=int, help=_("Block size (KiB)"))
-@click.option("--connection-timeout", type=float, help=_("Connection timeout (s)"))
-@click.option("--download-limit", type=int, help=_("Global download limit (KiB/s)"))
-@click.option("--upload-limit", type=int, help=_("Global upload limit (KiB/s)"))
-@click.option("--dht-port", type=int, help=_("DHT port"))
-@click.option("--enable-dht", is_flag=True, help=_("Enable DHT"))
-@click.option("--disable-dht", is_flag=True, help=_("Disable DHT"))
-@click.option(
-    "--piece-selection",
-    type=click.Choice(["round_robin", "rarest_first", "sequential"]),
-)
-@click.option("--endgame-threshold", type=float, help=_("Endgame threshold (0..1)"))
-@click.option("--hash-workers", type=int, help=_("Hash verification workers"))
-@click.option("--disk-workers", type=int, help=_("Disk I/O workers"))
-@click.option("--use-mmap", is_flag=True, help=_("Use memory mapping"))
-@click.option("--no-mmap", is_flag=True, help=_("Disable memory mapping"))
-@click.option("--mmap-cache-mb", type=int, help=_("MMap cache size (MB)"))
-@click.option("--write-batch-kib", type=int, help=_("Write batch size (KiB)"))
-@click.option("--write-buffer-kib", type=int, help=_("Write buffer size (KiB)"))
-@click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
-@click.option("--sparse-files", is_flag=True, help=_("Enable sparse files"))
-@click.option("--no-sparse-files", is_flag=True, help=_("Disable sparse files"))
-@click.option(
-    "--enable-io-uring",
-    is_flag=True,
-    help=_("Enable io_uring on Linux if available"),
-)
-@click.option("--disable-io-uring", is_flag=True, help=_("Disable io_uring usage"))
-@click.option(
-    "--direct-io",
-    is_flag=True,
-    help=_("Enable direct I/O for writes when supported"),
-)
-@click.option(
-    "--sync-writes", is_flag=True, help=_("Enable fsync after batched writes")
-)
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"]),
-)
-@click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
-@click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
-@click.option("--metrics-port", type=int, help=_("Metrics port"))
-@click.option("--enable-ipv6", is_flag=True, help=_("Enable IPv6"))
-@click.option("--disable-ipv6", is_flag=True, help=_("Disable IPv6"))
-@click.option("--enable-tcp", is_flag=True, help=_("Enable TCP transport"))
-@click.option("--disable-tcp", is_flag=True, help=_("Disable TCP transport"))
-@click.option("--enable-utp", is_flag=True, help=_("Enable uTP transport"))
-@click.option("--disable-utp", is_flag=True, help=_("Disable uTP transport"))
-@click.option("--enable-encryption", is_flag=True, help=_("Enable protocol encryption"))
-@click.option(
-    "--disable-encryption", is_flag=True, help=_("Disable protocol encryption")
-)
-@click.option("--tcp-nodelay", is_flag=True, help=_("Enable TCP_NODELAY"))
-@click.option("--no-tcp-nodelay", is_flag=True, help=_("Disable TCP_NODELAY"))
-@click.option("--socket-rcvbuf-kib", type=int, help=_("Socket receive buffer (KiB)"))
-@click.option("--socket-sndbuf-kib", type=int, help=_("Socket send buffer (KiB)"))
-@click.option("--listen-interface", type=str, help=_("Listen interface"))
-@click.option("--peer-timeout", type=float, help=_("Peer timeout (s)"))
-@click.option("--dht-timeout", type=float, help=_("DHT timeout (s)"))
-@click.option("--min-block-size-kib", type=int, help=_("Minimum block size (KiB)"))
-@click.option("--max-block-size-kib", type=int, help=_("Maximum block size (KiB)"))
-@click.option("--enable-http-trackers", is_flag=True, help=_("Enable HTTP trackers"))
-@click.option("--disable-http-trackers", is_flag=True, help=_("Disable HTTP trackers"))
-@click.option("--enable-udp-trackers", is_flag=True, help=_("Enable UDP trackers"))
-@click.option("--disable-udp-trackers", is_flag=True, help=_("Disable UDP trackers"))
-@click.option(
-    "--tracker-announce-interval",
-    type=float,
-    help=_("Tracker announce interval (s)"),
-)
-@click.option(
-    "--tracker-scrape-interval",
-    type=float,
-    help=_("Tracker scrape interval (s)"),
-)
-@click.option("--pex-interval", type=float, help=_("PEX interval (s)"))
-@click.option("--endgame-duplicates", type=int, help=_("Endgame duplicate requests"))
-@click.option("--streaming-mode", is_flag=True, help=_("Enable streaming mode"))
-@click.option("--first-piece-priority", is_flag=True, help=_("Prioritize first piece"))
-@click.option("--last-piece-priority", is_flag=True, help=_("Prioritize last piece"))
-@click.option(
-    "--optimistic-unchoke-interval",
-    type=float,
-    help=_("Optimistic unchoke interval (s)"),
-)
-@click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
-@click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
-@click.option(
-    "--enable-v2", "enable_v2", is_flag=True, help=_("Enable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--disable-v2", "disable_v2", is_flag=True, help=_("Disable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--prefer-v2",
-    "prefer_v2",
-    is_flag=True,
-    help=_("Prefer Protocol v2 when available"),
-)
-@click.option(
-    "--v2-only", "v2_only", is_flag=True, help=_("Use Protocol v2 only (disable v1)")
-)
+@compose_click_options(*DOWNLOAD_MAGNET_SHARED_OPTIONS)
 @click.pass_context
 def magnet(
     ctx,
@@ -2133,7 +1938,7 @@ def magnet(
 
 @cli.command()
 @click.option("--port", "-p", type=int, default=9090, help=_("Port for web interface"))
-@click.option("--host", "-h", default="localhost", help=_("Host for web interface"))
+@click.option("--host", "-H", default="localhost", help=_("Host for web interface"))
 @click.pass_context
 def web(ctx, port, host):
     """Start web interface."""
@@ -2307,8 +2112,19 @@ def status(ctx):
 
 
 @cli.command()
-@click.option("--set", "locale_code", help=_("Set locale (e.g., 'en', 'es', 'fr')"))
-@click.option("--list", "list_locales", is_flag=True, help=_("List available locales"))
+@click.option(
+    "--set",
+    "-s",
+    "locale_code",
+    help=_("Set locale (e.g., 'en', 'es', 'fr')"),
+)
+@click.option(
+    "--list",
+    "-L",
+    "list_locales",
+    is_flag=True,
+    help=_("List available locales"),
+)
 @click.pass_context
 def language(ctx, locale_code: Optional[str], list_locales: bool) -> None:
     """Manage language/locale settings."""
@@ -2500,6 +2316,7 @@ def list_checkpoints(ctx, _checkpoint_format):
 )
 @click.option(
     "--dry-run",
+    "-n",
     is_flag=True,
     help=_("Show what would be deleted without actually deleting"),
 )
@@ -2650,12 +2467,14 @@ def verify_checkpoint_cmd(ctx, info_hash):
 @click.argument("info_hash")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["json", "binary"]),
     default="json",
 )
 @click.option(
     "--output",
+    "-o",
     "output_path",
     type=click.Path(),
     required=True,
@@ -2694,6 +2513,7 @@ def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
 @click.argument("info_hash")
 @click.option(
     "--destination",
+    "-d",
     "destination",
     type=click.Path(),
     required=True,
@@ -2701,11 +2521,17 @@ def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
 )
 @click.option(
     "--compress",
+    "-c",
     is_flag=True,
     default=True,
     help=_("Compress backup (default: yes)"),
 )
-@click.option("--encrypt", is_flag=True, help=_("Encrypt backup with generated key"))
+@click.option(
+    "--encrypt",
+    "-e",
+    is_flag=True,
+    help=_("Encrypt backup with generated key"),
+)
 @click.pass_context
 def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
     """Backup a checkpoint to a destination path."""
@@ -2744,6 +2570,7 @@ def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
 @click.argument("backup_file", type=click.Path(exists=True))
 @click.option(
     "--info-hash",
+    "-i",
     "info_hash",
     type=str,
     default=None,
@@ -2786,8 +2613,16 @@ def restore_checkpoint_cmd(ctx, backup_file, info_hash):
 
 @checkpoints.command("migrate")
 @click.argument("info_hash")
-@click.option("--from-format", type=click.Choice(["json", "binary"]))
-@click.option("--to-format", type=click.Choice(["json", "binary", "both"]))
+@click.option(
+    "--from-format",
+    "-F",
+    type=click.Choice(["json", "binary"]),
+)
+@click.option(
+    "--to-format",
+    "-T",
+    type=click.Choice(["json", "binary", "both"]),
+)
 @click.pass_context
 def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
     """Migrate a checkpoint between formats."""
@@ -2822,12 +2657,14 @@ def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
 @checkpoints.command("reload")
 @click.argument("info_hash")
 @click.option(
-    "--peers/--no-peers",
+    "-P/--peers/--no-peers",
+    "peers",
     default=True,
     help=_("Reconnect to peers from checkpoint"),
 )
 @click.option(
-    "--trackers/--no-trackers",
+    "-K/--trackers/--no-trackers",
+    "trackers",
     default=True,
     help=_("Refresh tracker state from checkpoint"),
 )
@@ -2917,12 +2754,14 @@ def checkpoint_reload(_ctx, info_hash, peers, trackers):
 @checkpoints.command("refresh")
 @click.argument("info_hash")
 @click.option(
-    "--peers/--no-peers",
+    "-P/--peers/--no-peers",
+    "peers",
     default=True,
     help=_("Reconnect to peers from checkpoint"),
 )
 @click.option(
-    "--trackers/--no-trackers",
+    "-K/--trackers/--no-trackers",
+    "trackers",
     default=True,
     help=_("Refresh tracker state from checkpoint"),
 )
@@ -3082,6 +2921,7 @@ def resume_save(ctx, info_hash):
 @click.argument("info_hash")
 @click.option(
     "--verify-pieces",
+    "-V",
     type=int,
     default=0,
     help=_("Number of pieces to verify for integrity (0 = disable)"),

@@ -13,7 +13,7 @@ import time
 import warnings
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -31,7 +31,7 @@ class ExtensionInfo:
     name: str
     version: str
     message_id: int
-    handler: Optional[Callable]= None
+    handler: Optional[Callable] = None
 
 
 class ExtensionProtocol:
@@ -122,7 +122,7 @@ class ExtensionProtocol:
         self,
         name: str,
         version: str,
-        handler: Optional[Callable]= None,
+        handler: Optional[Callable] = None,
     ) -> int:
         """Register a new extension."""
         if name in self.extensions:
@@ -438,7 +438,7 @@ class ExtensionProtocol:
         self,
         peer_id: str,
         extension_name: str,
-   ) -> Optional[dict[str, Any]]:
+    ) -> Optional[dict[str, Any]]:
         """Get peer extension information."""
         peer_extensions = self.peer_extensions.get(peer_id, {})
         if not isinstance(peer_extensions, dict):
@@ -452,7 +452,7 @@ class ExtensionProtocol:
         self,
         extension_name: str,
         payload: bytes,
-        peer_id: Optional[str]= None,
+        peer_id: Optional[str] = None,
         local_fallback: bool = False,
     ) -> bytes:
         """Build a peer extension message payload with peer-aware routing IDs.
@@ -542,5 +542,3 @@ class ExtensionProtocol:
             "extensions": list(self.extensions.keys()),
             "message_handlers": len(self.message_handlers),
         }
-
-

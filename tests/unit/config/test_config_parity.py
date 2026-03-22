@@ -33,8 +33,20 @@ def _extract_env_mappings() -> dict[str, str]:
         raise RuntimeError(msg)
 
     block = text[start:end]
-    matches = re.findall(r'[\"\']([A-Z0-9_]+)[\"\']\s*:\s*[\"\']([a-z0-9_\\.]+)[\"\']', block)
-    return {env_name: path for env_name, path in matches}
+    out: dict[str, str] = {}
+    # Single-line: "CCBT_X": "section.field"
+    for env_name, path in re.findall(
+        r'[\"\'](CCBT_[A-Z0-9_]+)[\"\']\s*:\s*[\"\']([a-z0-9_\\.]+)[\"\']',
+        block,
+    ):
+        out[env_name] = path
+    # Multi-line: "CCBT_X": (\n                "section.field"\n            ),
+    for env_name, path in re.findall(
+        r'[\"\'](CCBT_[A-Z0-9_]+)[\"\']\s*:\s*\(\s*\n\s*[\"\']([a-z0-9_\\.]+)[\"\']',
+        block,
+    ):
+        out[env_name] = path
+    return out
 
 
 def _parse_env_example(path: Path) -> dict[str, str]:
@@ -276,6 +288,20 @@ def test_config_env_mapping_supports_encryption_enable_flag() -> None:
     assert env_values["security"]["enable_encryption"] is False
 
 
+def test_config_env_network_enable_encryption_mirrors_toml_network_section() -> None:
+    """CCBT_NETWORK_ENABLE_ENCRYPTION sets network.enable_encryption (TOML [network] parity)."""
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    with pytest.MonkeyPatch.context() as monkey:
+        monkey.setenv("CCBT_NETWORK_ENABLE_ENCRYPTION", "true")
+
+        manager = ConfigManager()
+        env_values = manager._get_env_config()
+
+    assert env_values["network"]["enable_encryption"] is True
+
+
 def test_config_manager_normalizes_legacy_security_fields() -> None:
     modules = _load_config_modules()
     ConfigManager = modules["config"].ConfigManager
@@ -344,6 +370,21 @@ def test_security_config_validates_encryption_fields() -> None:
 
     with pytest.raises(ValueError, match="unknown token"):
         SecurityConfig(encryption_allowed_ciphers=["not-a-cipher"])
+
+
+def test_full_config_network_env_enables_security_encryption() -> None:
+    """network.enable_encryption from env must enable MSE via model sync."""
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    with pytest.MonkeyPatch.context() as monkey:
+        monkey.delenv("CCBT_ENABLE_ENCRYPTION", raising=False)
+        monkey.setenv("CCBT_NETWORK_ENABLE_ENCRYPTION", "true")
+
+        manager = ConfigManager()
+
+    assert manager.config.security.enable_encryption is True
+    assert manager.config.network.enable_encryption is True
 
 
 def test_config_encryption_mirror_prefers_canonical_security_field() -> None:

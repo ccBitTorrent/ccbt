@@ -819,6 +819,24 @@ class IPCServer:
         # Get global stats
         global_stats = await self.session_manager.get_global_stats()
 
+        inbound_top: dict[str, int] = {}
+        try:
+            raw_unknown = (
+                await self.session_manager.get_inbound_unknown_info_hash_metrics()
+            )
+            if isinstance(raw_unknown, dict) and raw_unknown:
+                top_n = 32
+                sorted_items = sorted(
+                    raw_unknown.items(),
+                    key=lambda kv: (-int(kv[1]), str(kv[0])),
+                )[:top_n]
+                inbound_top = {str(k): int(v) for k, v in sorted_items}
+        except Exception:
+            logger.debug(
+                "status: inbound unknown info-hash metrics unavailable",
+                exc_info=True,
+            )
+
         status = StatusResponse(
             status="running",
             pid=pid,
@@ -826,6 +844,7 @@ class IPCServer:
             version=self._get_package_version(),
             num_torrents=global_stats.get("num_torrents", 0),
             ipc_url=f"http://{self.host}:{self.port}",
+            inbound_unknown_info_hash_metrics_top=inbound_top,
         )
 
         return web.json_response(status.model_dump())  # type: ignore[attr-defined]
@@ -2114,27 +2133,22 @@ class IPCServer:
                                         else 0.0
                                     )
 
-                        # Get active peers count
+                        # Align with session peer manager: connected post-handshake peers,
+                        # not only those with non-zero rate (choked/idle peers still matter).
                         active_peers = 0
                         if hasattr(torrent_session, "download_manager"):
                             download_manager = torrent_session.download_manager
                             if hasattr(download_manager, "peer_manager"):
                                 peer_manager = download_manager.peer_manager
                                 if peer_manager and hasattr(
+                                    peer_manager, "get_active_peers"
+                                ):
+                                    ap = peer_manager.get_active_peers()
+                                    active_peers = len(ap) if ap else 0
+                                elif peer_manager and hasattr(
                                     peer_manager, "connections"
                                 ):
-                                    # Count active peers (those with download/upload activity)
-                                    active_peers = sum(
-                                        1
-                                        for conn in peer_manager.connections.values()
-                                        if hasattr(conn, "stats")
-                                        and (
-                                            getattr(conn.stats, "download_rate", 0.0)
-                                            > 0
-                                            or getattr(conn.stats, "upload_rate", 0.0)
-                                            > 0
-                                        )
-                                    )
+                                    active_peers = len(peer_manager.connections)
 
                         sample = SwarmHealthSample(
                             info_hash=info_hash_hex,
@@ -5680,6 +5694,8 @@ class IPCServer:
                 "peer_added": EventType.PEER_CONNECTED,  # Map to PEER_CONNECTED
                 "peer_removed": EventType.PEER_DISCONNECTED,  # Map to PEER_DISCONNECTED
                 "peer_connection_failed": EventType.PEER_DISCONNECTED,  # Map to PEER_DISCONNECTED
+                "peer_quality_ranked": EventType.PEER_QUALITY_RANKED,
+                "peer_choking_optimized": EventType.GLOBAL_STATS_UPDATED,
                 # Piece events
                 "piece_requested": EventType.PIECE_REQUESTED,
                 "piece_downloaded": EventType.PIECE_DOWNLOADED,
@@ -5764,17 +5780,36 @@ class IPCServer:
                         event_data = self._normalize_xet_event_data(
                             ipc_event_type, event_data
                         )
+                        if hasattr(event, "priority"):
+                            event_priority = event.priority
+                        else:
+                            event_priority = None
+                        if isinstance(event_priority, int):
+                            event_priority_text = {
+                                1: "low",
+                                2: "normal",
+                                3: "high",
+                                4: "critical",
+                            }.get(event_priority)
+                        elif isinstance(event_priority, str):
+                            event_priority_text = event_priority.lower()
+                        elif event_priority is not None and hasattr(
+                            event_priority, "name"
+                        ):
+                            event_priority_text = str(event_priority.name).lower()
+                        else:
+                            event_priority_text = (
+                                str(event_priority).lower()
+                                if event_priority is not None
+                                else None
+                            )
                         await self.emit_websocket_event(
                             ipc_event_type,
                             event_data,
                             raw_type=event.event_type,
                             event_id=getattr(event, "event_id", None),
                             source=getattr(event, "source", None),
-                            priority=(
-                                event.priority.value
-                                if getattr(event, "priority", None) is not None
-                                else None
-                            ),
+                            priority=event_priority_text,
                             correlation_id=getattr(event, "correlation_id", None),
                         )
                 except Exception as e:
@@ -5846,13 +5881,29 @@ class IPCServer:
         if not self.websocket_enabled:
             return
 
+        normalized_priority = None
+        if priority is not None:
+            if isinstance(priority, int):
+                normalized_priority = {
+                    1: "low",
+                    2: "normal",
+                    3: "high",
+                    4: "critical",
+                }.get(priority)
+            elif isinstance(priority, str):
+                normalized_priority = priority.lower()
+            elif hasattr(priority, "name"):
+                normalized_priority = str(priority.name).lower()
+            elif priority is not None:
+                normalized_priority = str(priority)
+
         event = WebSocketEvent(
             type=event_type,
             timestamp=time.time(),
             raw_type=raw_type or event_type.value,
             event_id=event_id,
             source=source,
-            priority=priority,
+            priority=normalized_priority,
             correlation_id=correlation_id,
             data=data,
         )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Iterable, Optional
 
 import click
 from rich.console import Console
@@ -225,7 +225,7 @@ def auth_set_discovery_strict(ctx, enabled: str) -> None:
 
 @auth.command("set-trusted-ids")
 @click.argument("ids", nargs=-1)
-@click.option("--clear", is_flag=True, default=False)
+@click.option("--clear", "-C", is_flag=True, default=False)
 @click.pass_context
 def auth_set_trusted_ids(ctx, ids: Iterable[str], clear: bool) -> None:
     """Set explicit trusted swarm ids list."""

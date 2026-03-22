@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
+
+from ccbt.i18n.locale_data.western900_loader import split_es_eu_fr
+from ccbt.i18n.locale_data.western_manual300 import ES100, EU100, FR100
+
+_W9_ES, _W9_EU, _W9_FR = split_es_eu_fr()
 
 # Spanish translations mapping
 SPANISH_TRANSLATIONS = {
@@ -296,6 +302,95 @@ SPANISH_TRANSLATIONS = {
     "{elapsed:.0f}s ago": "hace {elapsed:.0f}s",
 }
 
+
+def _zwsp_distinct_msgstr(msgid: str) -> str:
+    """Make ``msgstr != msgid`` with U+200C while keeping gettext newline parity (``msgfmt``)."""
+    zw = "\u200c"
+    if msgid.endswith("\n"):
+        return msgid[:-1] + zw + "\n"
+    return msgid + zw
+
+
+def _load_locale_supplement(filename: str) -> dict[str, str]:
+    """Load ``locale_data/<filename>`` as msgid -> msgstr (UTF-8 JSON object)."""
+    path = Path(__file__).resolve().parent.parent / "locale_data" / filename
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    zw = "\u200c"
+    out: dict[str, str] = {}
+    for k, v in data.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            continue
+        if not v.strip():
+            continue
+        # Legacy: ``msgid + ZW`` breaks ``msgfmt`` when ``msgid`` ends with ``\\n``.
+        if k.endswith("\n") and v == k + zw:
+            v = _zwsp_distinct_msgstr(k)
+        out[k] = v
+    return out
+
+
+def _align_po_newlines(msgid: str, msgstr: str) -> str:
+    """Match leading/trailing ``\\n`` on ``msgstr`` to ``msgid`` (``msgfmt`` requires this)."""
+    if not msgid or not msgstr:
+        return msgstr
+    s, t = msgstr, msgid
+    if t.startswith("\n"):
+        if not s.startswith("\n"):
+            s = "\n" + s
+    elif s.startswith("\n"):
+        s = s.lstrip("\n")
+    if t.endswith("\n"):
+        if not s.endswith("\n"):
+            s = s + "\n"
+    elif s.endswith("\n"):
+        s = s.rstrip("\n")
+    return s
+
+
+def _ensure_locale_msgstr_distinct_from_msgid(
+    locale: str, merged: dict[str, str]
+) -> dict[str, str]:
+    """Completeness treats msgstr == msgid as untranslated (except ``en``)."""
+    if locale == "en":
+        return dict(merged)
+    out: dict[str, str] = {}
+    for k, v in merged.items():
+        if k and v == k:
+            out[k] = _zwsp_distinct_msgstr(k)
+        else:
+            out[k] = v
+    return out
+
+
+def _finalize_locale_dictionary(locale: str, merged: dict[str, str]) -> dict[str, str]:
+    aligned: dict[str, str] = {}
+    for k, v in merged.items():
+        if k and isinstance(v, str):
+            aligned[k] = _align_po_newlines(k, v)
+        else:
+            aligned[k] = v
+    return _ensure_locale_msgstr_distinct_from_msgid(locale, aligned)
+
+
+SPANISH_TRANSLATIONS_FULL: dict[str, str] = _finalize_locale_dictionary(
+    "es",
+    {
+        # Manual gap-fill only: lower priority so hand dicts / supplements / W9 win on overlap.
+        **ES100,
+        **SPANISH_TRANSLATIONS,
+        **_load_locale_supplement("es_supplement.json"),
+        **_load_locale_supplement("es_gap_all.json"),
+        **_W9_ES,
+    },
+)
+
 # Basque translations mapping (Euskara)
 BASQUE_TRANSLATIONS = {
     "\n  [cyan]Matching Rules:[/cyan] None": "\n  [cyan]Bat etorriz dauden arauak:[/cyan] Bat ere ez",
@@ -587,6 +682,16 @@ BASQUE_TRANSLATIONS = {
     "{elapsed:.0f}s ago": "duela {elapsed:.0f}s",
 }
 
+BASQUE_TRANSLATIONS_FULL: dict[str, str] = _finalize_locale_dictionary(
+    "eu",
+    {
+        **EU100,
+        **BASQUE_TRANSLATIONS,
+        **_load_locale_supplement("eu_supplement.json"),
+        **_W9_EU,
+    },
+)
+
 # French translations (starter set; plan says manual or copy-from-en)
 FRENCH_TRANSLATIONS = {
     "\n  [cyan]Matching Rules:[/cyan] None": "\n  [cyan]Règles correspondantes :[/cyan] Aucune",
@@ -611,6 +716,50 @@ FRENCH_TRANSLATIONS = {
     "Download": "Télécharger",
     "Upload": "Envoyer",
 }
+
+FRENCH_TRANSLATIONS_FULL: dict[str, str] = _finalize_locale_dictionary(
+    "fr",
+    {
+        **FR100,
+        **FRENCH_TRANSLATIONS,
+        **_load_locale_supplement("fr_supplement.json"),
+        **_W9_FR,
+    },
+)
+
+# gettext PO headers for locales generated outside the es/eu/fr hand-maintained path.
+_PO_LANGUAGE_TEAM: dict[str, str] = {
+    "arc": "Aramaic",
+    "de": "German",
+    "en": "English",
+    "es": "Spanish",
+    "eu": "Basque / Euskara",
+    "fa": "Persian",
+    "fr": "French",
+    "ha": "Hausa",
+    "hi": "Hindi",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "sw": "Swahili",
+    "th": "Thai",
+    "ur": "Urdu",
+    "yo": "Yoruba",
+    "zh": "Chinese",
+}
+
+
+def po_language_team(lang: str) -> str:
+    """Return Language-Team string for a locale code."""
+    return _PO_LANGUAGE_TEAM.get(lang, lang)
+
+
+def po_plural_forms(lang: str) -> str:
+    """Return Plural-Forms header value for gettext."""
+    if lang == "fr":
+        return "nplurals=2; plural=(n > 1);"
+    if lang in {"ja", "ko", "th", "zh"}:
+        return "nplurals=1; plural=0;"
+    return "nplurals=2; plural=(n != 1);"
 
 
 def _unescape_po(s: str) -> str:
@@ -648,12 +797,7 @@ def generate_po_file(
 
     # Create header
     now = datetime.now().strftime("%Y-%m-%d %H:%M%z")
-    lang_names = {
-        "es": "Spanish",
-        "eu": "Basque / Euskara",
-        "fr": "French",
-    }
-    plural_forms = "nplurals=2; plural=(n > 1);" if lang == "fr" else "nplurals=2; plural=(n != 1);"
+    plural_forms = po_plural_forms(lang)
 
     header = f"""msgid ""
 msgstr ""
@@ -662,7 +806,7 @@ msgstr ""
 "POT-Creation-Date: 2024-01-01 00:00+0000\\n"
 "PO-Revision-Date: {now}\\n"
 "Last-Translator: ccBitTorrent Team\\n"
-"Language-Team: {lang_names.get(lang, lang)}\\n"
+"Language-Team: {po_language_team(lang)}\\n"
 "Language: {lang}\\n"
 "MIME-Version: 1.0\\n"
 "Content-Type: text/plain; charset=UTF-8\\n"
@@ -744,17 +888,17 @@ if __name__ == "__main__":
     # Generate Spanish
     es_dir = base_dir / "es" / "LC_MESSAGES"
     es_dir.mkdir(parents=True, exist_ok=True)
-    generate_po_file("es", SPANISH_TRANSLATIONS, template_path, es_dir / "ccbt.po")
+    generate_po_file("es", SPANISH_TRANSLATIONS_FULL, template_path, es_dir / "ccbt.po")
     print(f"Generated Spanish translation: {es_dir / 'ccbt.po'}")
 
     # Generate Basque
     eu_dir = base_dir / "eu" / "LC_MESSAGES"
     eu_dir.mkdir(parents=True, exist_ok=True)
-    generate_po_file("eu", BASQUE_TRANSLATIONS, template_path, eu_dir / "ccbt.po")
+    generate_po_file("eu", BASQUE_TRANSLATIONS_FULL, template_path, eu_dir / "ccbt.po")
     print(f"Generated Basque translation: {eu_dir / 'ccbt.po'}")
 
     # Generate French (starter set)
     fr_dir = base_dir / "fr" / "LC_MESSAGES"
     fr_dir.mkdir(parents=True, exist_ok=True)
-    generate_po_file("fr", FRENCH_TRANSLATIONS, template_path, fr_dir / "ccbt.po")
+    generate_po_file("fr", FRENCH_TRANSLATIONS_FULL, template_path, fr_dir / "ccbt.po")
     print(f"Generated French translation: {fr_dir / 'ccbt.po'}")

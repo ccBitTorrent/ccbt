@@ -15,6 +15,7 @@
     "CCBT_DHT_BOOTSTRAP_NODES",
     "CCBT_DHT_TIMEOUT",
     "CCBT_DISK_QUEUE_SIZE",
+    "CCBT_DOTENV_PATH",
     "CCBT_DOWNLOAD_PATH",
     "CCBT_ENABLE_IO_URING",
     "CCBT_ENABLE_IPV6",
@@ -28,6 +29,7 @@
     "CCBT_HASH_QUEUE_SIZE",
     "CCBT_LAST_PIECE_PRIORITY",
     "CCBT_LIMITS_GLOBAL_DOWN_KIB",
+    "CCBT_LOAD_DOTENV",
     "CCBT_LIMITS_GLOBAL_UP_KIB",
     "CCBT_LIMITS_PER_PEER_UP_KIB",
     "CCBT_LIMITS_PER_TORRENT_DOWN_KIB",
@@ -65,7 +67,7 @@
     "CCBT_WEBTORRENT_MAX_CONNECTIONS",
     "CCBT_WRITE_BUFFER_KIB"
   ],
-  "env_example_count": 387,
+  "env_example_count": 451,
   "expected_model_sections": [
     "daemon",
     "dashboard",
@@ -89,8 +91,8 @@
     "webtorrent",
     "xet_sync"
   ],
-  "legacy_env_count": 64,
-  "mapped_env_count": 323,
+  "legacy_env_count": 66,
+  "mapped_env_count": 385,
   "mapped_env_missing_tolerant_allowlist": [],
   "min_nested_discovery_paths": 480,
   "surface_cli_override_path_allowlist": [

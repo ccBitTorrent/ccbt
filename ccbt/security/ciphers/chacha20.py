@@ -6,9 +6,9 @@ Note: The cryptography library requires 16-byte (128-bit) nonces.
 """
 
 from __future__ import annotations
-from typing import Optional
 
 import secrets
+from typing import Optional
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
@@ -19,7 +19,7 @@ from ccbt.security.ciphers.base import CipherSuite
 class ChaCha20Cipher(CipherSuite):
     """ChaCha20 stream cipher implementation."""
 
-    def __init__(self, key: bytes, nonce: Optional[bytes]= None):
+    def __init__(self, key: bytes, nonce: Optional[bytes] = None):
         """Initialize ChaCha20 cipher.
 
         Args:

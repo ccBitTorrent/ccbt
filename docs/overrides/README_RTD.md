@@ -13,7 +13,7 @@ Read the Docs uses the same patched build script (`dev/build_docs_patched_clean.
 - ✅ Handles files without alternates attribute
 - ✅ Applies all necessary i18n plugin fixes
 
-**Configuration in `.readthedocs.yaml`:**
+**Configuration in `dev/.readthedocs.yaml`** (set Read the Docs **Admin → Advanced → Configuration file** to `dev/.readthedocs.yaml`):
 ```yaml
 build:
   commands:
@@ -30,13 +30,13 @@ The custom language templates in `docs/overrides/partials/languages/` are automa
 ### 3. **Path Resolution**
 
 - **Project Root**: Read the Docs runs from repository root
-- **MkDocs Config**: `dev/mkdocs.yml` (specified in `.readthedocs.yaml`)
+- **MkDocs Config**: `dev/mkdocs.yml` (specified in `dev/.readthedocs.yaml`)
 - **Custom Dir**: `docs/overrides` (resolved from project root)
 - **Templates**: `docs/overrides/partials/languages/*.html`
 
 ## Verification Checklist
 
-- [x] `.readthedocs.yaml` uses `dev/build_docs_patched_clean.py`
+- [x] `dev/.readthedocs.yaml` uses `dev/build_docs_patched_clean.py`
 - [x] `dev/mkdocs.yml` has `custom_dir: docs/overrides`
 - [x] All language templates exist in `docs/overrides/partials/languages/`
 - [x] Aramaic locale patch is in `dev/build_docs_patched_clean.py`

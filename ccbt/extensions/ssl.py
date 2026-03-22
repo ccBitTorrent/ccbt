@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import struct
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Callable, Optional
 
@@ -41,7 +41,7 @@ class SSLNegotiationState:
     state: str  # "idle", "requested", "accepted", "rejected"
     timestamp: float
     request_id: Optional[int] = None
-    completion_event: Optional[asyncio.Event] = None
+    completion_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class SSLExtension:
@@ -260,7 +260,6 @@ class SSLExtension:
         state = SSLNegotiationState(
             peer_id=peer_id,
             state="requested",
-            completion_event=asyncio.Event(),
             timestamp=time.time(),
             request_id=request_id,
         )
@@ -308,13 +307,11 @@ class SSLExtension:
                 state="accepted" if accepted else "rejected",
                 timestamp=time.time(),
                 request_id=request_id,
-                completion_event=asyncio.Event(),
             )
             self.negotiation_states[peer_id] = state
 
         if state.request_id == request_id:
             state.state = "accepted" if accepted else "rejected"
-            state.completion_event = state.completion_event or asyncio.Event()
             state.completion_event.set()
 
         # Emit event

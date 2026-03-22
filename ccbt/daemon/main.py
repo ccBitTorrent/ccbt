@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import sys
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from ccbt.config.config import init_config
+from ccbt.config.env_bootstrap import maybe_load_dotenv_from_env
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_protocol import EventType
 from ccbt.daemon.ipc_server import IPCServer  # type: ignore[attr-defined]
@@ -25,6 +27,13 @@ from ccbt.session.session import AsyncSessionManager
 from ccbt.utils.logging_config import get_logger, setup_logging
 
 logger = get_logger(__name__)
+
+
+def _flush_log_handlers() -> None:
+    """Best-effort flush so shutdown logs reach files before process exit."""
+    for handler in logging.root.handlers:
+        with contextlib.suppress(Exception):
+            handler.flush()
 
 
 def _is_workspace_id_hex(workspace_id_hex: str) -> bool:
@@ -102,6 +111,7 @@ class DaemonMain:
 
         """
         self.foreground = foreground
+        maybe_load_dotenv_from_env()
         self.config_manager = init_config(config_file)
         self.config = self.config_manager.config
 
@@ -1116,7 +1126,7 @@ class DaemonMain:
         from ccbt.utils.shutdown import set_shutdown
 
         set_shutdown()
-        logger.info("Stopping daemon...")
+        logger.info("Daemon shutdown sequence started")
 
         # Note: Verify daemon is actually running before stopping
         # This prevents issues with stale PID files
@@ -1170,6 +1180,7 @@ class DaemonMain:
                 logger.exception("Error saving state during shutdown")
 
         # Stop session manager (releases all network ports via TCP server, UDP tracker, DHT, NAT)
+        session_manager_stop_failed = False
         if self.session_manager:
             try:
                 # Note: Add delay before stopping session manager on Windows
@@ -1189,14 +1200,23 @@ class DaemonMain:
                         "This is a transient Windows issue. Continuing shutdown..."
                     )
                 else:
+                    session_manager_stop_failed = True
                     logger.exception("OSError stopping session manager")
             except Exception:
+                session_manager_stop_failed = True
                 logger.exception("Error stopping session manager")
+
+        if session_manager_stop_failed:
+            logger.error(
+                "Daemon shutdown incomplete: session manager stop raised errors; "
+                "see logs above. Removing PID file anyway."
+            )
 
         # Remove PID file and release lock (must be last)
         self.daemon_manager.remove_pid()
 
         logger.info("Daemon stopped (all ports released, PID file removed)")
+        _flush_log_handlers()
 
 
 async def main() -> int:
@@ -1205,11 +1225,13 @@ async def main() -> int:
 
     parser = argparse.ArgumentParser(description="ccBitTorrent Daemon")
     parser.add_argument(
+        "-c",
         "--config",
         type=str,
         help="Path to config file",
     )
     parser.add_argument(
+        "-f",
         "--foreground",
         action="store_true",
         help="Run in foreground (for debugging)",
@@ -1222,6 +1244,7 @@ async def main() -> int:
         help="Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)",
     )
     parser.add_argument(
+        "-l",
         "--log-level",
         type=str,
         choices=["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -1242,6 +1265,7 @@ async def main() -> int:
     # This ensures we can log errors during initialization
     try:
         debug_log("Initializing configuration...")
+        maybe_load_dotenv_from_env()
         config_manager = init_config(args.config)
         # Set locale from config so any user-facing log or IPC messages use the same locale
         try:

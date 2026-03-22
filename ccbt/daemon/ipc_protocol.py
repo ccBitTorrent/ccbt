@@ -46,6 +46,7 @@ class EventType(str, Enum):
     PEER_DISCONNECTED = "peer_disconnected"
     PEER_HANDSHAKE_COMPLETE = "peer_handshake_complete"
     PEER_BITFIELD_RECEIVED = "peer_bitfield_received"
+    PEER_QUALITY_RANKED = "peer_quality_ranked"
     # Seeding events
     SEEDING_STARTED = "seeding_started"
     SEEDING_STOPPED = "seeding_stopped"
@@ -93,6 +94,13 @@ class StatusResponse(BaseModel):
     version: str = Field(..., description="Daemon version")
     num_torrents: int = Field(0, description="Number of active torrents")
     ipc_url: str = Field(..., description="IPC server URL")
+    inbound_unknown_info_hash_metrics_top: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Top unknown inbound info-hash prefixes (16-char hex) by count across TCP listeners; "
+            "empty when none. See GET /api/v1/status and network troubleshooting docs."
+        ),
+    )
 
 
 class XetSyncModeRequest(BaseModel):
@@ -135,6 +143,14 @@ class XetDiscoveryBackendStatus(BaseModel):
     last_success: Optional[float] = Field(
         None,
         description="Timestamp of last successful backend operation",
+    )
+    udp_tracker_client_ready: Optional[bool] = Field(
+        None,
+        description="UDP BEP-15 client running (tracker backend only)",
+    )
+    udp_tracker_client_init_failed: Optional[bool] = Field(
+        None,
+        description="UDP tracker client failed to start (tracker backend only)",
     )
 
 
@@ -1046,7 +1062,9 @@ class DetailedGlobalMetricsResponse(BaseModel):
     total_bytes_uploaded: int = Field(
         0, description="Total bytes uploaded to all peers"
     )
-    swarm_auth_gate_total: int = Field(0, description="Total swarm-auth gate evaluations")
+    swarm_auth_gate_total: int = Field(
+        0, description="Total swarm-auth gate evaluations"
+    )
     swarm_auth_gate_by_mode_strict_total: int = Field(
         0, description="Swarm-auth gate decisions in strict mode"
     )

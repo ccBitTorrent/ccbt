@@ -28,18 +28,21 @@ logger = logging.getLogger(__name__)
 )
 @click.option(
     "--v2",
+    "-V",
     "format_v2",
     is_flag=True,
     help="Create v2-only torrent (BEP 52)",
 )
 @click.option(
     "--hybrid",
+    "-Y",
     "format_hybrid",
     is_flag=True,
     help="Create hybrid torrent (v1 + v2 metadata)",
 )
 @click.option(
     "--v1",
+    "-b",
     "format_v1",
     is_flag=True,
     help="Create v1-only torrent (default if none specified)",
@@ -53,6 +56,7 @@ logger = logging.getLogger(__name__)
 )
 @click.option(
     "--web-seed",
+    "-w",
     multiple=True,
     type=str,
     help="Web seed URL (can specify multiple times)",
@@ -65,17 +69,20 @@ logger = logging.getLogger(__name__)
 )
 @click.option(
     "--created-by",
+    "-B",
     type=str,
     default="ccBitTorrent",
     help="Created by field (default: ccBitTorrent)",
 )
 @click.option(
     "--piece-length",
+    "-L",
     type=int,
     help="Piece length in bytes (must be power of 2, default: auto)",
 )
 @click.option(
     "--private",
+    "-r",
     is_flag=True,
     help="Mark torrent as private (BEP 27)",
 )

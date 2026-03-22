@@ -4,7 +4,7 @@ import asyncio
 import socket
 import struct
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -16,6 +16,9 @@ from ccbt.discovery.tracker_udp_client import (
     TrackerEvent,
     TrackerResponse,
     TrackerSession,
+    get_udp_tracker_client,
+    reset_udp_tracker_client_for_testing,
+    shutdown_udp_tracker_client,
 )
 
 
@@ -97,7 +100,7 @@ class TestAsyncUDPTrackerClientBasics:
 
     def test_client_initialization(self):
         """Test client initialization."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         assert client.our_peer_id is not None
         assert len(client.our_peer_id) == 20
         assert client.sessions == {}
@@ -106,33 +109,33 @@ class TestAsyncUDPTrackerClientBasics:
     def test_client_initialization_with_peer_id(self):
         """Test client initialization with custom peer ID."""
         peer_id = b"\x11" * 20
-        client = AsyncUDPTrackerClient(peer_id=peer_id)
+        client = AsyncUDPTrackerClient(peer_id=peer_id, test_mode=True)
         assert client.our_peer_id == peer_id
 
     def test_get_transaction_id(self):
         """Test transaction ID generation."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         id1 = client._get_transaction_id()
         id2 = client._get_transaction_id()
         assert id2 == (id1 + 1) % 65536
 
     def test_parse_udp_url(self):
         """Test UDP URL parsing."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         host, port = client._parse_udp_url("udp://tracker.example.com:6969")
         assert host == "tracker.example.com"
         assert port == 6969
 
     def test_parse_udp_url_default_port(self):
         """Test UDP URL parsing with default port."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         host, port = client._parse_udp_url("udp://tracker.example.com")
         assert host == "tracker.example.com"
         assert port == 80
 
     def test_extract_tracker_urls_single(self):
         """Test extracting single tracker URL."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {"announce": "udp://tracker.example.com:6969"}
         urls = client._extract_tracker_urls(torrent_data)
         assert len(urls) == 1
@@ -140,7 +143,7 @@ class TestAsyncUDPTrackerClientBasics:
 
     def test_extract_tracker_urls_announce_list(self):
         """Test extracting tracker URLs from announce_list."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {
             "announce_list": [
                 ["udp://tracker1.example.com:6969"],
@@ -154,14 +157,14 @@ class TestAsyncUDPTrackerClientBasics:
 
     def test_extract_tracker_urls_no_udp(self):
         """Test extracting tracker URLs with no UDP trackers."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {"announce": "http://tracker.example.com"}
         urls = client._extract_tracker_urls(torrent_data)
         assert len(urls) == 0
 
     def test_extract_tracker_urls_none(self):
         """Test extracting tracker URLs when none exist."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {}
         urls = client._extract_tracker_urls(torrent_data)
         assert len(urls) == 0
@@ -173,7 +176,7 @@ class TestAsyncUDPTrackerClientStartStop:
     @pytest.mark.asyncio
     async def test_start_stop(self):
         """Test starting and stopping the client."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
         assert client.transport is not None
         assert client.socket is not None
@@ -185,7 +188,7 @@ class TestAsyncUDPTrackerClientStartStop:
     @pytest.mark.asyncio
     async def test_start_is_idempotent_when_already_ready(self):
         """Start should be a no-op once the UDP socket is healthy."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
         first_transport = client.transport
         first_socket = client.socket
@@ -199,7 +202,7 @@ class TestAsyncUDPTrackerClientStartStop:
     @pytest.mark.asyncio
     async def test_stop_cancels_pending_requests(self):
         """Test that stop cancels pending requests."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
         # Create a pending request
@@ -218,7 +221,7 @@ class TestAsyncUDPTrackerClientConnection:
     @pytest.mark.asyncio
     async def test_wait_for_response_prunes_stale_pending_requests(self) -> None:
         """Stale pending requests should be pruned before adding a new one."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
         stale_future = asyncio.Future()
@@ -236,7 +239,7 @@ class TestAsyncUDPTrackerClientConnection:
     @pytest.mark.asyncio
     async def test_wait_for_response_enforces_pending_request_cap(self) -> None:
         """Incoming requests beyond cap should drop oldest pending requests."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         client._max_pending_requests = 1
         await client.start()
 
@@ -254,7 +257,7 @@ class TestAsyncUDPTrackerClientConnection:
     @pytest.mark.asyncio
     async def test_connect_without_transport(self):
         """Test connecting without transport raises error."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         session = TrackerSession("udp://tracker.example.com:6969", "tracker.example.com", 6969)
 
         with pytest.raises(RuntimeError):
@@ -284,7 +287,7 @@ class TestAsyncUDPTrackerClientConnection:
     @pytest.mark.asyncio
     async def test_connect_invalid_response(self):
         """Test connection with invalid response."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
         session = TrackerSession(
@@ -315,7 +318,7 @@ class TestAsyncUDPTrackerClientAnnounce:
     @pytest.mark.asyncio
     async def test_announce_no_trackers(self):
         """Test announce with no UDP trackers."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {
             "announce": "http://tracker.example.com",
             "file_info": {"total_length": 1000},
@@ -326,7 +329,7 @@ class TestAsyncUDPTrackerClientAnnounce:
     @pytest.mark.asyncio
     async def test_announce_connection_failure(self):
         """Test announce with connection failure."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
         torrent_data = {
@@ -343,7 +346,7 @@ class TestAsyncUDPTrackerClientAnnounce:
     @pytest.mark.asyncio
     async def test_announce_transport_not_initialized(self):
         """Test announce fails when transport not initialized."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {
             "announce": "udp://tracker.example.com:6969",
             "info_hash": b"\x00" * 20,
@@ -357,7 +360,7 @@ class TestAsyncUDPTrackerClientAnnounce:
     @pytest.mark.asyncio
     async def test_send_announce_reconnect_on_timeout(self):
         """Test announce reconnects when connection times out."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
         session = TrackerSession(
@@ -394,7 +397,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_connect(self):
         """Test handling CONNECT response."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         # Note: Set socket ready flag so handle_response doesn't drop the response
         client._socket_ready = True
         # Also mock transport to ensure socket health checks pass
@@ -421,7 +424,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_announce(self):
         """Test handling ANNOUNCE response."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         # Note: Set socket ready flag so handle_response doesn't drop the response
         client._socket_ready = True
         # Also mock transport to ensure socket health checks pass
@@ -465,9 +468,50 @@ class TestAsyncUDPTrackerClientResponseHandling:
         assert result.peers[0]["ip"] == "192.168.1.1"
         assert result.peers[0]["port"] == 6881
 
+    @pytest.mark.asyncio
+    async def test_handle_response_announce_invokes_per_tid_callback(self):
+        """ANNOUNCE with peers invokes the per-transaction on_immediate_peers callback."""
+        client = AsyncUDPTrackerClient(test_mode=True)
+        client._socket_ready = True
+        mock_transport = Mock()
+        mock_transport.is_closing = Mock(return_value=False)
+        mock_transport.get_extra_info = Mock(return_value=("127.0.0.1", 0))
+        client.transport = mock_transport
+        transaction_id = 12345
+        future = asyncio.Future()
+        client.pending_requests[transaction_id] = future
+
+        per_calls: list[str] = []
+
+        def per_cb(peers: list, url: str) -> None:
+            per_calls.append("per")
+
+        client.pending_immediate_callbacks[transaction_id] = per_cb
+
+        interval = 1800
+        leechers = 5
+        seeders = 10
+        peer1 = socket.inet_aton("192.168.1.1") + struct.pack("!H", 6881)
+        response_data = (
+            struct.pack(
+                "!IIIII",
+                TrackerAction.ANNOUNCE.value,
+                transaction_id,
+                interval,
+                leechers,
+                seeders,
+            )
+            + peer1
+        )
+
+        client.handle_response(response_data, ("127.0.0.1", 6969))
+        await asyncio.sleep(0)
+
+        assert per_calls == ["per"]
+
     def test_handle_response_error(self):
         """Test handling ERROR response."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         # Note: Set socket ready flag so handle_response doesn't drop the response
         client._socket_ready = True
         # Also mock transport to ensure socket health checks pass
@@ -493,7 +537,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_short_packet(self):
         """Test handling short response packet."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 12345
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
@@ -507,7 +551,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_unknown_transaction(self):
         """Test handling response for unknown transaction."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 99999
 
         # Create response for unknown transaction
@@ -516,17 +560,10 @@ class TestAsyncUDPTrackerClientResponseHandling:
         # Should not crash
         client.handle_response(response_data, ("127.0.0.1", 6969))
 
-    def test_handle_response_unknown_transaction_triggers_late_connection(self):
-        """Unmatched ANNOUNCE responses should still trigger immediate connection."""
-        client = AsyncUDPTrackerClient()
+    def test_handle_response_unknown_transaction_skips_late_immediate_connect(self):
+        """Unmatched ANNOUNCE responses must not invoke immediate connect (unknown swarm)."""
+        client = AsyncUDPTrackerClient(test_mode=True)
         client._socket_ready = True
-
-        called = []
-
-        def on_peers_received(peers, tracker_url):
-            called.append((tuple((p["ip"], p["port"]) for p in peers), tracker_url))
-
-        client.on_peers_received = on_peers_received
 
         transaction_id = 99999
         interval = 1800
@@ -540,17 +577,13 @@ class TestAsyncUDPTrackerClientResponseHandling:
             + peer2
         )
 
-        client.handle_response(response_data, ("127.0.0.1", 6969))
-
-        assert called
-        peers, tracker_url = called[0]
-        assert len(peers) == 2
-        assert peers[0] == ("192.168.1.1", 6881)
-        assert "127.0.0.1:6969" in tracker_url
+        with patch.object(client, "_trigger_immediate_connection") as trigger:
+            client.handle_response(response_data, ("127.0.0.1", 6969))
+            trigger.assert_not_called()
 
     def test_handle_response_unknown_transaction_suppresses_expected_stale_warning(self):
         """Late responses for known stale transaction IDs should be logged as debug only."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         stale_id = 99999
         client._socket_ready = True
         client.socket = Mock()
@@ -566,7 +599,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_unknown_transaction_warns_after_stale_window(self):
         """Stale tracking should expire after allowlist window and log warning again."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         stale_id = 99998
         client._socket_ready = True
         client.socket = Mock()
@@ -583,7 +616,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_already_done(self):
         """Test handling response for already completed request."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 12345
         future = asyncio.Future()
         future.set_result(TrackerResponse(TrackerAction.CONNECT, transaction_id))
@@ -597,7 +630,7 @@ class TestAsyncUDPTrackerClientResponseHandling:
 
     def test_handle_response_announce_short(self):
         """Test handling ANNOUNCE response that's too short."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 12345
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
@@ -616,7 +649,7 @@ class TestAsyncUDPTrackerClientAdaptiveBudget:
 
     def test_adaptive_budget_reduces_on_high_stale_ratio(self):
         """High stale ratio should reduce effective pending budget."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         now = time.time()
         client._pending_request_budget_base = 20
         client._pending_request_budget_per_tracker = 10
@@ -633,7 +666,7 @@ class TestAsyncUDPTrackerClientAdaptiveBudget:
 
     def test_adaptive_budget_increases_on_low_stale_ratio(self):
         """Low stale ratio should allow budget growth up to base."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         now = time.time()
         client._pending_request_budget_base = 20
         client._pending_request_budget_per_tracker = 10
@@ -655,7 +688,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_timeout(self):
         """Test waiting for response times out."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 12345
 
         result = await client._wait_for_response(transaction_id, timeout=0.1)
@@ -664,7 +697,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_timeout_aggregates_bursts(self):
         """Timeout warnings should be aggregated and emitted as a burst summary."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         client._timeout_warning_summary_window = 0.0
         client.logger.warning = Mock()  # type: ignore[method-assign]
         client.logger.debug = Mock()  # type: ignore[method-assign]
@@ -698,7 +731,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
 
     def test_record_timeout_warning_host_isolated(self):
         """Timeout aggregation should be tracked separately for each tracker host."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         client._timeout_warning_summary_window = 0.0
         client.logger.warning = Mock()  # type: ignore[method-assign]
         client.logger.debug = Mock()  # type: ignore[method-assign]
@@ -757,7 +790,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_timeout_logs_debug_if_summary_window(self):
         """Single timeout in burst window should remain at debug level."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         client.logger.warning = Mock()  # type: ignore[method-assign]
         client.logger.debug = Mock()  # type: ignore[method-assign]
 
@@ -779,7 +812,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_success(self):
         """Test waiting for response succeeds."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 12345
 
         # Set up response handler
@@ -803,7 +836,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_adapts_timeout_with_queue_pressure(self, monkeypatch):
         """Adaptive timeout should shrink when pending queue is under pressure."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         client._get_effective_pending_request_cap = Mock(return_value=4)  # type: ignore[method-assign]
 
         now = time.time()
@@ -826,7 +859,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_records_tracker_response_time_ema(self):
         """Successful waits should update per-host response EWMA."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         transaction_id = 12345
         host = "tracker.example.com"
 
@@ -853,7 +886,7 @@ class TestAsyncUDPTrackerClientWaitForResponse:
     @pytest.mark.asyncio
     async def test_wait_for_response_replaces_matching_pending_transaction(self):
         """Existing matching transaction id should be replaced safely."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         stale_future = asyncio.Future()
         client.pending_requests[555] = stale_future
         client._pending_request_timestamps[555] = time.time()
@@ -872,7 +905,7 @@ class TestAsyncUDPTrackerClientCleanup:
     @pytest.mark.asyncio
     async def test_cleanup_sessions_old(self):
         """Test cleanup removes old sessions."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         session = TrackerSession(
             url="udp://tracker.example.com:6969",
             host="tracker.example.com",
@@ -887,7 +920,7 @@ class TestAsyncUDPTrackerClientCleanup:
     @pytest.mark.asyncio
     async def test_cleanup_sessions_max_retries(self):
         """Test cleanup removes sessions with max retries."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         session = TrackerSession(
             url="udp://tracker.example.com:6969",
             host="tracker.example.com",
@@ -902,7 +935,7 @@ class TestAsyncUDPTrackerClientCleanup:
     @pytest.mark.asyncio
     async def test_cleanup_sessions_keeps_active(self):
         """Test cleanup keeps active sessions."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         session = TrackerSession(
             url="udp://tracker.example.com:6969",
             host="tracker.example.com",
@@ -916,7 +949,7 @@ class TestAsyncUDPTrackerClientCleanup:
 
     def test_cleanup_stale_pending_requests_records_stale_outcomes(self):
         """Stale pending request cleanup should drop requests and record stale outcomes."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         stale_time = time.time() - 120.0
         future_1 = asyncio.Future()
         future_2 = asyncio.Future()
@@ -936,7 +969,7 @@ class TestAsyncUDPTrackerClientCleanup:
 
     def test_prune_stale_pending_requests_enforces_effective_cap(self):
         """Pruning should drop oldest pending requests when cap is exceeded."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         client._max_pending_requests = 2
         client._get_adaptive_pending_request_cap = Mock(return_value=2)  # type: ignore[method-assign]
 
@@ -971,7 +1004,7 @@ class TestAsyncUDPTrackerClientScrape:
     @pytest.mark.asyncio
     async def test_scrape_no_info_hash(self):
         """Test scrape with no info hash."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {}
         result = await client.scrape(torrent_data)
         assert result == {}
@@ -979,7 +1012,7 @@ class TestAsyncUDPTrackerClientScrape:
     @pytest.mark.asyncio
     async def test_scrape_no_trackers(self):
         """Test scrape with no UDP trackers."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {"info_hash": b"\x00" * 20, "announce": "http://tracker.example.com"}
         result = await client.scrape(torrent_data)
         assert result == {}
@@ -987,7 +1020,7 @@ class TestAsyncUDPTrackerClientScrape:
     @pytest.mark.asyncio
     async def test_scrape_transport_not_initialized(self):
         """Test scrape fails when transport not initialized."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         torrent_data = {
             "info_hash": b"\x00" * 20,
             "announce": "udp://tracker.example.com:6969",
@@ -998,7 +1031,7 @@ class TestAsyncUDPTrackerClientScrape:
 
     def test_encode_scrape_request(self):
         """Test encoding scrape request."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         connection_id = 0x41727101980  # Magic number
         transaction_id = 12345
         info_hash = b"\x00" * 20
@@ -1013,7 +1046,7 @@ class TestAsyncUDPTrackerClientScrape:
         """Test decoding scrape response."""
         from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
 
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         # Scrape response: action(4) + transaction_id(4) + complete(4) + downloaded(4) + incomplete(4)
         complete = 10
         downloaded = 100
@@ -1040,7 +1073,7 @@ class TestAsyncUDPTrackerClientScrape:
         """Test decoding short scrape response."""
         from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
 
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         info_hash = b"\x00" * 20
 
         # Create a response with incomplete data
@@ -1059,7 +1092,7 @@ class TestAsyncUDPTrackerClientScrape:
         """Test decoding scrape response with wrong action."""
         from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
 
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         info_hash = b"\x00" * 20
 
         # Create response with wrong action
@@ -1074,11 +1107,17 @@ class TestAsyncUDPTrackerClientScrape:
 
 
 class TestAsyncUDPTrackerClientModuleFunctions:
-    """Test AsyncUDPTrackerClient direct usage (singleton functions removed in refactoring)."""
+    """Module-level UDP accessors and direct AsyncUDPTrackerClient usage."""
+
+    def test_rejects_direct_construction_without_test_mode(self) -> None:
+        """Production code must use get_udp_tracker_client(); tests pass test_mode=True."""
+        reset_udp_tracker_client_for_testing()
+        with pytest.raises(RuntimeError, match="get_udp_tracker_client"):
+            AsyncUDPTrackerClient()
 
     def test_create_client_directly(self):
-        """Test creating AsyncUDPTrackerClient directly."""
-        client = AsyncUDPTrackerClient()
+        """Isolated tests may construct with test_mode=True."""
+        client = AsyncUDPTrackerClient(test_mode=True)
         assert isinstance(client, AsyncUDPTrackerClient)
         assert client.our_peer_id is not None
         assert len(client.our_peer_id) == 20
@@ -1086,7 +1125,7 @@ class TestAsyncUDPTrackerClientModuleFunctions:
     @pytest.mark.asyncio
     async def test_start_and_stop_client(self):
         """Test starting and stopping AsyncUDPTrackerClient."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
         assert client.transport is not None
         await client.stop()
@@ -1096,26 +1135,25 @@ class TestAsyncUDPTrackerClientModuleFunctions:
     @pytest.mark.asyncio
     async def test_client_lifecycle(self):
         """Test full client lifecycle."""
-        client = AsyncUDPTrackerClient()
+        client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
         assert client.transport is not None
         await client.stop()
         # Verify cleanup
         assert client.transport is None
-
 
     @pytest.mark.asyncio
     async def test_shutdown_udp_tracker(self):
-        """Test stopping UDP tracker client (replaces removed shutdown_udp_tracker function)."""
-        # Module-level functions (get_udp_tracker_client, init_udp_tracker, shutdown_udp_tracker)
-        # were removed during refactoring. UDP tracker client is now managed through
-        # session manager or used directly. This test verifies direct client usage.
-        client = AsyncUDPTrackerClient()
+        """Process-wide UDP client shutdown is idempotent and clears the module singleton."""
+        reset_udp_tracker_client_for_testing()
+        client = get_udp_tracker_client()
         await client.start()
         assert client.transport is not None
-        await client.stop()
-        # Should not crash if called multiple times
-        await client.stop()
-        # Verify cleanup
+        await shutdown_udp_tracker_client()
         assert client.transport is None
+        await shutdown_udp_tracker_client()
+        fresh = get_udp_tracker_client()
+        assert fresh is not client
+        assert fresh.transport is None
+        reset_udp_tracker_client_for_testing()
 

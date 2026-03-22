@@ -204,7 +204,11 @@ jobs:
       
       - name: Build documentation
         run: |
-          uv run mkdocs build --strict -f dev/mkdocs.yml
+          mkdir -p site/reports/htmlcov
+          if [ ! -f site/reports/htmlcov/index.html ]; then
+            echo '<html><body><h1>Coverage Report</h1><p>Placeholder for mkdocs-coverage during release build.</p></body></html>' > site/reports/htmlcov/index.html
+          fi
+          MKDOCS_STRICT=true uv run python dev/build_docs_patched_clean.py
       
       - name: Build package
         run: |

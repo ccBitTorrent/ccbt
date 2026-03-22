@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,39 @@ from ccbt.i18n.po_parse import PoEntry, po_entries_by_msgid, pot_msgids
 
 # Max length for untranslated string samples (chars) to avoid huge lines
 _SAMPLE_MAX_LEN = 60
+
+
+def _default_locales_dir() -> Path:
+    """Resolve locale root: package tree by default; cwd ``./locales`` only if it looks like a full tree.
+
+    A stray repo-root ``locales/en`` (single locale) must not shadow ``ccbt/i18n/locales`` when running
+    completeness from the repository root.
+    """
+    pkg_locales = Path(__file__).resolve().parent.parent / "locales"
+    cwd_locales = Path.cwd() / "locales"
+    if not cwd_locales.is_dir():
+        return pkg_locales
+    pot = cwd_locales / "en" / "LC_MESSAGES" / "ccbt.pot"
+    if not pot.is_file():
+        return pkg_locales
+    locale_dirs = [
+        p for p in cwd_locales.iterdir() if p.is_dir() and not p.name.startswith(".")
+    ]
+    # Tests use tmp cwd with en+es+fr (or similar); partial ./locales with only "en" is not authoritative.
+    if len(locale_dirs) >= 2:
+        return cwd_locales.resolve()
+    return pkg_locales
+
+
+def _safe_print_report(text: str) -> None:
+    """Print report without crashing on narrow Windows consoles."""
+    if hasattr(sys.stdout, "reconfigure"):
+        with contextlib.suppress(Exception):
+            sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode("unicode_escape", errors="ignore").decode("ascii"))
 
 
 def _safe_sample(msg: str) -> str:
@@ -144,16 +178,10 @@ def check_all(
     report = "\n".join(lines)
     if output_path is not None:
         output_path.write_text(report + "\n", encoding="utf-8")
-        print(f"Report written to {output_path}")
+        _safe_print_report(f"Report written to {output_path}")
         return
 
-    # Safe stdout: try UTF-8 on Windows
-    if sys.stdout.encoding and sys.stdout.encoding.upper() != "UTF-8":
-        try:
-            sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-        except Exception:
-            pass
-    print(report)
+    _safe_print_report(report)
 
 
 def main() -> None:
@@ -188,9 +216,16 @@ def main() -> None:
         metavar="PATH",
         help="Path to canonical POT file",
     )
+    parser.add_argument(
+        "--locales-dir",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="Locale root (default: ./locales if it exists, else ccbt/i18n/locales next to this package)",
+    )
     args = parser.parse_args()
 
-    base_dir = Path(__file__).resolve().parent.parent / "locales"
+    base_dir = args.locales_dir.resolve() if args.locales_dir is not None else _default_locales_dir()
     check_all(
         base_dir,
         lang_filter=args.lang,

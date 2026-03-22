@@ -7,6 +7,7 @@ Target: 95%+ coverage for ccbt/discovery/tracker.py.
 from __future__ import annotations
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -901,6 +902,48 @@ class TestAsyncTrackerClient:
         assert session.quarantine_until > 0.0
         assert session.quarantine_reason is not None
         assert "html/xml payload" in session.quarantine_reason
+
+    def test_apply_tracker_quarantine_preserves_tracker_diversity(self, client):
+        """Quarantine should be skipped when it would reduce eligible trackers below minimum."""
+        primary_url = "http://tracker-primary.example.com/announce"
+        secondary_url = "http://tracker-secondary.example.com/announce"
+        primary = TrackerSession(url=primary_url)
+        secondary = TrackerSession(url=secondary_url)
+        secondary.quarantine_until = time.time() + 300.0
+        client.sessions[primary_url] = primary
+        client.sessions[secondary_url] = secondary
+        client._tracker_quarantine_min_eligible_urls = 2
+        client._apply_tracker_quarantine(
+            primary,
+            failure_reason="Connection refused while contacting tracker",
+            failure_count=3,
+        )
+
+        assert primary.quarantine_until == 0.0
+        assert primary.quarantine_reason is None
+
+    def test_apply_tracker_quarantine_escalates_dns_refused_bursts(self, client):
+        """DNS/refused bursts beyond escalation threshold should increase cooldown further."""
+        primary_url = "http://tracker-a.example.com/announce"
+        backup_1 = "http://tracker-b.example.com/announce"
+        backup_2 = "http://tracker-c.example.com/announce"
+        primary = TrackerSession(url=primary_url)
+        client.sessions[primary_url] = primary
+        client.sessions[backup_1] = TrackerSession(url=backup_1)
+        client.sessions[backup_2] = TrackerSession(url=backup_2)
+        client.config.network.tracker_network_failure_quarantine_seconds = 60.0
+        client.config.network.tracker_dns_refused_escalation_streak = 2
+        client._tracker_quarantine_min_eligible_urls = 2
+        start = time.time()
+        client._apply_tracker_quarantine(
+            primary,
+            failure_reason="Name resolution failed: temporary failure in name resolution",
+            failure_count=4,
+        )
+
+        cooldown = primary.quarantine_until - start
+        assert primary.quarantine_until > 0.0
+        assert cooldown >= 100.0
 
     def test_parse_response_async_success(self, client):
         """Test parsing successful tracker response."""

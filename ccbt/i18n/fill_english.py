@@ -22,7 +22,7 @@ def _fill_english(po_file: Path) -> list[str]:
     return lines
 
 
-def fill_english(po_file: Optional[Path]= None) -> None:
+def fill_english(po_file: Optional[Path] = None) -> None:
     """Fill empty English msgstr fields from msgid."""
     target = po_file or PO_FILE
     lines = _fill_english(target)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
@@ -10,6 +12,31 @@ from ccbt.models import TorrentInfo as TorrentInfoModel
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+# Rate-limit repeated conversion-failure DEBUG lines (hot paths call this often).
+_CONVERSION_FAIL_LOG: dict[str, float] = {}
+_CONVERSION_FAIL_LOG_TTL_S = 60.0
+
+
+def _torrent_info_conversion_fail_key(torrent_data: dict[str, Any]) -> str:
+    raw = torrent_data.get("info_hash", b"")
+    if isinstance(raw, (bytes, bytearray)) and raw:
+        return raw[:20].hex()
+    return "unknown"
+
+
+def _log_conversion_failure_rate_limited(
+    logger: Any, torrent_data: dict[str, Any]
+) -> None:
+    if not logger or not logger.isEnabledFor(logging.DEBUG):
+        return
+    key = _torrent_info_conversion_fail_key(torrent_data)
+    now = time.monotonic()
+    last = _CONVERSION_FAIL_LOG.get(key)
+    if last is not None and (now - last) < _CONVERSION_FAIL_LOG_TTL_S:
+        return
+    _CONVERSION_FAIL_LOG[key] = now
+    logger.debug("Could not convert torrent_data to TorrentInfo (key=%s)", key)
 
 
 def get_torrent_info(
@@ -30,6 +57,13 @@ def get_torrent_info(
         return torrent_data
 
     if isinstance(torrent_data, dict):
+        _pi = torrent_data.get("pieces_info")
+        if isinstance(_pi, dict):
+            _pl = _pi.get("piece_length")
+        else:
+            _pl = torrent_data.get("piece_length")
+        if _pl is not None and int(_pl) <= 0:
+            return None
         # Try to extract file information from dict
         try:
             # Check if files are in the dict directly
@@ -103,7 +137,7 @@ def get_torrent_info(
             )
         except Exception:
             if logger:
-                logger.debug("Could not convert torrent_data to TorrentInfo")
+                _log_conversion_failure_rate_limited(logger, torrent_data)
             return None
 
     return None

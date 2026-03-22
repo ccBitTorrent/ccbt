@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Protocol, Union, cast
 
@@ -34,6 +35,12 @@ from ccbt.utils.tracker_utils import (
 )
 from ccbt.utils.version import get_user_agent
 
+# Per-task: why announce() returned None (skip, not TrackerError).
+# Subscript ContextVar so default=None is typed as str|None, not the None singleton type.
+_tracker_announce_skip_reason: ContextVar[Optional[str]] = ContextVar[Optional[str]](
+    "_tracker_announce_skip_reason", default=None
+)
+
 
 class _UDPTrackerAnnounceProtocol(Protocol):
     """Protocol for UDP tracker client used in announce path (ty/socket_ready)."""
@@ -46,11 +53,12 @@ class _UDPTrackerAnnounceProtocol(Protocol):
         url: str,
         torrent_data: dict[str, Any],
         *,
-        port: Optional[int]= None,
+        port: Optional[int] = None,
         uploaded: int = 0,
         downloaded: int = 0,
         left: int = 0,
         event: Any = None,
+        on_immediate_peers: Any = None,
     ) -> Union[Any, None]: ...
 
 
@@ -131,7 +139,7 @@ class UDPTrackerAnnounceRequest:
     uploaded: int = 0
     downloaded: int = 0
     left: int = 0
-    event: Optional[Any]= None
+    event: Optional[Any] = None
 
     def as_kwargs(self) -> dict[str, Any]:
         """Convert to kwargs for UDP announce calls."""
@@ -152,11 +160,11 @@ class TrackerResponse:
     peers: (
         list[PeerInfo] | list[dict[str, Any]]
     )  # Support both formats for backward compatibility
-    complete: Optional[int]= None
-    incomplete: Optional[int]= None
-    download_url: Optional[str]= None
-    tracker_id: Optional[str]= None
-    warning_message: Optional[str]= None
+    complete: Optional[int] = None
+    incomplete: Optional[int] = None
+    download_url: Optional[str] = None
+    tracker_id: Optional[str] = None
+    warning_message: Optional[str] = None
 
 
 @dataclass
@@ -191,19 +199,19 @@ class TrackerSession:
     url: str
     last_announce: float = 0.0
     interval: int = 1800
-    min_interval: Optional[int]= None
-    tracker_id: Optional[str]= None
+    min_interval: Optional[int] = None
+    tracker_id: Optional[str] = None
     failure_count: int = 0
     failure_streak: int = 0
     last_failure: float = 0.0
     backoff_delay: float = 1.0
     quarantine_until: float = 0.0
-    quarantine_reason: Optional[str]= None
+    quarantine_reason: Optional[str] = None
     performance: TrackerPerformance = None  # type: ignore[assignment]
     # Statistics from last tracker response (announce or scrape)
-    last_complete: Optional[int]= None  # Number of seeders (complete peers)
-    last_incomplete: Optional[int]= None  # Number of leechers (incomplete peers)
-    last_downloaded: Optional[int]= None  # Total number of completed downloads
+    last_complete: Optional[int] = None  # Number of seeders (complete peers)
+    last_incomplete: Optional[int] = None  # Number of leechers (incomplete peers)
+    last_downloaded: Optional[int] = None  # Total number of completed downloads
     last_scrape_time: float = 0.0  # Timestamp of last scrape/announce with statistics
 
     def __post_init__(self):
@@ -215,14 +223,20 @@ class TrackerSession:
 class AsyncTrackerClient:
     """High-performance async client for communicating with BitTorrent trackers."""
 
-    def __init__(self, peer_id_prefix: Optional[bytes]= None):
+    def __init__(
+        self,
+        peer_id_prefix: Optional[bytes] = None,
+        session_manager: Optional[Any] = None,
+    ):
         """Initialize the async tracker client.
 
         Args:
             peer_id_prefix: Prefix for generating peer IDs. If None, uses ccBitTorrent prefix -CC0101-.
+            session_manager: Optional AsyncSessionManager for process-wide UDP tracker client (BEP 15).
 
         """
         self.config = get_config()
+        self._session_manager: Optional[Any] = session_manager
         if peer_id_prefix is None:
             # Use ccBitTorrent-specific prefix -CC0101- instead of version-based -BT0001-
             # This matches the expected format for ccBitTorrent client identification
@@ -236,7 +250,7 @@ class AsyncTrackerClient:
         self.user_agent = get_user_agent()
 
         # HTTP session
-        self.session: Optional[aiohttp.ClientSession]= None
+        self.session: Optional[aiohttp.ClientSession] = None
 
         # Tracker sessions
         self.sessions: dict[str, TrackerSession] = {}
@@ -245,12 +259,12 @@ class AsyncTrackerClient:
         self.health_manager = TrackerHealthManager()
 
         # Background tasks
-        self._announce_task: Optional[asyncio.Task]= None
+        self._announce_task: Optional[asyncio.Task] = None
 
         # Session metrics
         self._session_metrics: dict[str, dict[str, Any]] = {}
         self._xet_chunk_registry: dict[tuple[bytes, str | None], list[PeerInfo]] = {}
-        self._tracker_certificate_pinner: Optional[CertificatePinner]= None
+        self._tracker_certificate_pinner: Optional[CertificatePinner] = None
 
         self.logger = logging.getLogger(__name__)
         self._immediate_connection_window = 0.25
@@ -261,15 +275,15 @@ class AsyncTrackerClient:
         # Note: Immediate peer connection callback
         # This allows sessions to connect peers immediately when tracker responses arrive
         # instead of waiting for the announce loop to process them
-        self.on_peers_received: None | (
-            Callable[[list[dict[str, Any]], str], Awaitable[None] | None]
+        self.on_peers_received: (
+            None | (Callable[[list[dict[str, Any]], str], Awaitable[None] | None])
         ) = None
 
     async def announce_chunk(
         self,
         chunk_hash: bytes,
-        peer_info: Optional[PeerInfo]= None,
-        workspace_id_hex: Optional[str]= None,
+        peer_info: Optional[PeerInfo] = None,
+        workspace_id_hex: Optional[str] = None,
     ) -> None:
         """Record XET chunk availability for tracker-backed lookup."""
         key = (chunk_hash, workspace_id_hex)
@@ -284,7 +298,7 @@ class AsyncTrackerClient:
             peers.append(peer_info)
 
     async def get_chunk_peers(
-        self, chunk_hash: bytes, workspace_id_hex: Optional[str]= None
+        self, chunk_hash: bytes, workspace_id_hex: Optional[str] = None
     ) -> list[PeerInfo]:
         """Return peers recorded for an XET chunk."""
         if workspace_id_hex is None:
@@ -619,7 +633,7 @@ class AsyncTrackerClient:
         self.logger.info("Async tracker client stopped")
 
     def get_healthy_trackers(
-        self, exclude_urls: Optional[set[str]]= None
+        self, exclude_urls: Optional[set[str]] = None
     ) -> list[str]:
         """Get list of healthy trackers for use in announces.
 
@@ -633,7 +647,7 @@ class AsyncTrackerClient:
         return self.health_manager.get_healthy_trackers(exclude_urls)
 
     def get_fallback_trackers(
-        self, exclude_urls: Optional[set[str]]= None
+        self, exclude_urls: Optional[set[str]] = None
     ) -> list[str]:
         """Get fallback trackers when no healthy trackers are available.
 
@@ -937,9 +951,7 @@ class AsyncTrackerClient:
         )
 
     @staticmethod
-    def _classify_tracker_failure_tier(
-        failure_reason: Union[str, None]
-    ) -> str:
+    def _classify_tracker_failure_tier(failure_reason: Union[str, None]) -> str:
         """Classify tracker failure into quarantine severity tiers."""
         if not failure_reason:
             return "ignore"
@@ -1010,8 +1022,8 @@ class AsyncTrackerClient:
     def _apply_tracker_quarantine(
         self,
         session: TrackerSession,
-        failure_reason: Optional[str]= None,
-        failure_count: Optional[int]= None,
+        failure_reason: Optional[str] = None,
+        failure_count: Optional[int] = None,
     ) -> None:
         failure_reason = failure_reason or "unclassified tracker failure"
         failure_streak = (
@@ -1025,35 +1037,39 @@ class AsyncTrackerClient:
         if failure_tier == "critical":
             # Malformed HTML responses are almost certainly wrong endpoint usage.
             cooldown_seconds = float(
-                getattr(
-                    self.config.network,
-                    "tracker_payload_failure_quarantine_seconds",
-                    120.0,
-                )
+                self.config.network.tracker_payload_failure_quarantine_seconds
             )
             should_quarantine = failure_streak >= 1
         elif failure_tier == "high":
             # Parse/encoding glitches on otherwise reachable trackers are transient.
             cooldown_seconds = float(
-                getattr(
-                    self.config.network,
-                    "tracker_payload_failure_quarantine_seconds",
-                    120.0,
-                )
+                self.config.network.tracker_payload_failure_quarantine_seconds
             )
             cooldown_seconds = max(min(cooldown_seconds, 45.0), 10.0)
             should_quarantine = failure_streak >= 3
         elif failure_tier == "medium":
             # Repeated network failures should throttle requests temporarily.
             cooldown_seconds = float(
-                getattr(
-                    self.config.network,
-                    "tracker_network_failure_quarantine_seconds",
-                    90.0,
-                )
+                self.config.network.tracker_network_failure_quarantine_seconds
             )
             cooldown_seconds = max(min(cooldown_seconds, 240.0), 15.0)
             should_quarantine = failure_streak >= 2
+            norm = (failure_reason or "").lower()
+            dns_or_refused = any(
+                marker in norm
+                for marker in (
+                    "name resolution",
+                    "getaddrinfo",
+                    "temporary failure in name resolution",
+                    "connection refused",
+                )
+            )
+            esc = int(self.config.network.tracker_dns_refused_escalation_streak)
+            if dns_or_refused and failure_streak >= esc:
+                should_quarantine = failure_streak >= 1
+                cooldown_seconds = min(cooldown_seconds * 1.35, 600.0)
+                if failure_streak >= esc + 2:
+                    cooldown_seconds = min(cooldown_seconds * 1.5, 900.0)
         else:
             cooldown_seconds = 0.0
             should_quarantine = False
@@ -1063,6 +1079,36 @@ class AsyncTrackerClient:
 
         if cooldown_seconds < 0.0:
             cooldown_seconds = 120.0
+        min_eligible_raw = getattr(self, "_tracker_quarantine_min_eligible_urls", None)
+        if min_eligible_raw is None:
+            min_eligible_raw = getattr(
+                self.config.network,
+                "tracker_quarantine_min_eligible_urls",
+                0,
+            )
+        min_eligible_urls = max(0, int(min_eligible_raw or 0))
+        if min_eligible_urls > 0:
+            current_time = time.time()
+            eligible_other_urls = {
+                tracker_url
+                for tracker_url, other_session in self.sessions.items()
+                if tracker_url != session.url
+                and (
+                    not other_session.quarantine_until
+                    or current_time >= other_session.quarantine_until
+                )
+            }
+            if len(eligible_other_urls) < min_eligible_urls:
+                self.logger.info(
+                    "Skipping tracker quarantine for %s to preserve tracker diversity "
+                    "(eligible_other_urls=%d, min_required=%d, tier=%s, failure_streak=%d)",
+                    session.url,
+                    len(eligible_other_urls),
+                    min_eligible_urls,
+                    failure_tier,
+                    failure_streak,
+                )
+                return
         session.quarantine_until = time.time() + cooldown_seconds
         session.quarantine_reason = failure_reason[:240]
         self.logger.warning(
@@ -1233,7 +1279,7 @@ class AsyncTrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: Optional[int]= None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> Union[TrackerResponse, None]:
         """Announce to the tracker and get peer list asynchronously.
@@ -1258,6 +1304,7 @@ class AsyncTrackerClient:
             raise TrackerError(msg)
 
         try:
+            _tracker_announce_skip_reason.set(None)
             # Note: Validate torrent_data is a dict before accessing it
             # Log immediately for debugging
             self.logger.debug(
@@ -1440,7 +1487,7 @@ class AsyncTrackerClient:
 
             # Track performance: start time
             start_time = time.time()
-            response_time: Optional[float]= None
+            response_time: Optional[float] = None
 
             # Emit tracker announce started event
             try:
@@ -1499,7 +1546,7 @@ class AsyncTrackerClient:
             )
 
             is_udp = tracker_url_is_udp(normalized_url)
-            fallback_url: Optional[str]= None
+            fallback_url: Optional[str] = None
             tracker_host = urllib.parse.urlparse(normalized_url).hostname or ""
 
             # BEP 15 (UDP) uses 20-byte info_hash; BEP 41 extends UDP with URLData only. Skip UDP for 32-byte (XET).
@@ -1516,8 +1563,7 @@ class AsyncTrackerClient:
                 )
 
             if is_udp:
-                # Route to UDP tracker client
-                # Note: Singleton pattern removed - use session_manager.udp_tracker_client
+                # Route to UDP tracker client (process-wide socket via session_manager.udp_tracker_client).
                 # Socket must be initialized during daemon startup and never recreated
                 # This prevents WinError 10022 on Windows and ensures proper socket lifecycle
                 udp_client = None
@@ -1546,6 +1592,7 @@ class AsyncTrackerClient:
                     )
                     # Don't raise - skip this UDP tracker and continue with HTTP trackers
                     # This allows downloads to work even if UDP tracker client initialization failed
+                    _tracker_announce_skip_reason.set("udp_client_unavailable")
                     return None
 
                 # Note: Validate socket is ready before use
@@ -1553,6 +1600,7 @@ class AsyncTrackerClient:
                 # Type narrowing: udp_client is guaranteed to be non-None after check above
                 if not hasattr(udp_client, "announce_to_tracker_full"):
                     self.logger.warning("UDP tracker client missing announce API")
+                    _tracker_announce_skip_reason.set("udp_client_missing_announce_api")
                     return None
 
                 udp_client_typed = cast("_UDPTrackerAnnounceProtocol", udp_client)
@@ -1626,15 +1674,15 @@ class AsyncTrackerClient:
                     )
                     if invalid_kwargs:
                         msg = f"UDP announce path received HTTP-only kwargs: {sorted(invalid_kwargs)}"
-                        raise TrackerError(
-                            msg
-                        )
+                        raise TrackerError(msg)
 
                     # Use the full response method to get interval, seeders, leechers.
+                    # Per-announce immediate connect avoids last-writer-wins on shared UDP client.
                     udp_result = await udp_client_typed.announce_to_tracker_full(
                         tracker_url,
                         single_tracker_data,
                         **udp_request.as_kwargs(),
+                        on_immediate_peers=self.on_peers_received,
                     )
 
                     if udp_result is None:
@@ -1662,6 +1710,9 @@ class AsyncTrackerClient:
                             self.logger.warning(
                                 "UDP tracker announce failed for %s and no explicit HTTP fallback tracker is configured; treating tracker as UDP-only",
                                 normalized_url,
+                            )
+                            _tracker_announce_skip_reason.set(
+                                "udp_announce_no_response_no_http_fallback"
                             )
                             return None
                     else:
@@ -1702,6 +1753,9 @@ class AsyncTrackerClient:
                             "UDP tracker announce failed for %s: %s, and no explicit HTTP fallback tracker exists (UDP-only path)",
                             normalized_url,
                             udp_error,
+                        )
+                        _tracker_announce_skip_reason.set(
+                            "udp_announce_error_no_http_fallback"
                         )
                         return None
 
@@ -1748,6 +1802,7 @@ class AsyncTrackerClient:
                     "Unsupported tracker protocol for %s (expected udp://, http://, or https://)",
                     normalized_url,
                 )
+                _tracker_announce_skip_reason.set("unsupported_tracker_protocol")
                 return None
 
             # If we reach here and is_udp is still True, UDP failed but no fallback was attempted
@@ -2035,7 +2090,7 @@ class AsyncTrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: Optional[int]= None,
+        left: Optional[int] = None,
         event: str = "started",
         allow_all_failure_retry: bool = True,
     ) -> list[TrackerResponse]:
@@ -2230,13 +2285,14 @@ class AsyncTrackerClient:
                     type(result.peers).__name__ if result.peers else "None",
                 )
             elif result is None:
-                # Note: Handle None result (UDP tracker skipped due to missing client)
                 tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
                 skipped_count += 1
+                skip_detail = _tracker_announce_skip_reason.get() or "unknown_skip"
                 self.logger.debug(
-                    "%s tracker %s skipped (UDP tracker client unavailable)",
+                    "%s tracker %s skipped (%s)",
                     tracker_type,
                     url[:80] + "..." if len(url) > 80 else url,
+                    skip_detail,
                 )
             elif isinstance(result, Exception):
                 tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
@@ -2375,7 +2431,7 @@ class AsyncTrackerClient:
         downloaded: int,
         left: Optional[int],
         event: str,
-        _tracker_failure_marks: Optional[dict[int, bool]]= None,
+        _tracker_failure_marks: Optional[dict[int, bool]] = None,
     ) -> Union[TrackerResponse, None]:
         """Announce to a single tracker.
 
@@ -2796,7 +2852,7 @@ class AsyncTrackerClient:
         downloaded: int,
         left: int,
         event: str,
-        crypto_flags: Optional[dict[str, str]]= None,
+        crypto_flags: Optional[dict[str, str]] = None,
     ) -> str:
         """Build the complete tracker URL with all required parameters.
 
@@ -3005,7 +3061,7 @@ class AsyncTrackerClient:
             session.last_scrape_time = time.time()
 
     def _handle_tracker_failure(
-        self, url: str, failure_reason: Optional[str]= None
+        self, url: str, failure_reason: Optional[str] = None
     ) -> None:
         """Handle tracker failure with exponential backoff and jitter."""
         if url not in self.sessions:
@@ -3210,7 +3266,7 @@ class AsyncTrackerClient:
                 tracker_url=tracker_url,
             )
             peers_data = decoded[b"peers"]
-            tracker_encryption_preference: Optional[str]= None
+            tracker_encryption_preference: Optional[str] = None
             if tracker_url:
                 crypto_flags = self._parse_tracker_crypto_flags(tracker_url)
 
@@ -3585,7 +3641,9 @@ class AsyncTrackerClient:
             self.logger.exception("HTTP scrape failed")
             return {}
 
-    def _build_scrape_url(self, info_hash: bytes, announce_url: str) -> Union[str, None]:
+    def _build_scrape_url(
+        self, info_hash: bytes, announce_url: str
+    ) -> Union[str, None]:
         """Build scrape URL from tracker URL.
 
         Args:
@@ -3832,7 +3890,7 @@ class TrackerHealthManager:
         }
 
         # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task]= None
+        self._cleanup_task: Optional[asyncio.Task] = None
         self._running = False
 
     async def start(self):
@@ -3918,7 +3976,7 @@ class TrackerHealthManager:
             metrics.record_failure()
 
     def get_healthy_trackers(
-        self, exclude_urls: Optional[set[str]]= None
+        self, exclude_urls: Optional[set[str]] = None
     ) -> list[str]:
         """Get list of healthy trackers, optionally excluding some URLs."""
         if exclude_urls is None:
@@ -3935,7 +3993,7 @@ class TrackerHealthManager:
         return [url for url, _ in healthy]
 
     def get_fallback_trackers(
-        self, exclude_urls: Optional[set[str]]= None
+        self, exclude_urls: Optional[set[str]] = None
     ) -> list[str]:
         """Get fallback trackers that aren't already in use."""
         if exclude_urls is None:
@@ -3971,7 +4029,7 @@ class TrackerHealthManager:
 class TrackerClient:
     """Synchronous tracker client for backward compatibility."""
 
-    def __init__(self, peer_id_prefix: Optional[bytes]= None):
+    def __init__(self, peer_id_prefix: Optional[bytes] = None):
         """Initialize the tracker client.
 
         Args:
@@ -4014,7 +4072,7 @@ class TrackerClient:
         left: int = 0,
         event: str = "",
         compact: int = 1,
-        crypto_flags: Optional[dict[str, str]]= None,
+        crypto_flags: Optional[dict[str, str]] = None,
     ) -> str:
         """Build tracker URL with parameters."""
         params = {
@@ -4273,7 +4331,7 @@ class TrackerClient:
             interval = self._coerce_tracker_int(decoded[b"interval"], "interval")
 
             # Parse peers
-            tracker_encryption_preference: Optional[str]= None
+            tracker_encryption_preference: Optional[str] = None
             if tracker_url:
                 crypto_flags = self._parse_tracker_crypto_flags(tracker_url)
 
@@ -4455,7 +4513,7 @@ class TrackerClient:
         port: int = 6881,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: Optional[int]= None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> dict[str, Any]:
         """Announce to the tracker and get peer list.

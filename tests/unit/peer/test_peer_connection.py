@@ -802,12 +802,15 @@ class TestPeerConnectionManager:
         connection1 = AsyncPeerConnection(peer1, self.torrent_data)
         connection2 = AsyncPeerConnection(peer2, self.torrent_data)
 
-        # Note: Set mock reader/writer for connection1 (ACTIVE state requires them)
-        # connection2 (BITFIELD_RECEIVED) doesn't need reader/writer per get_active_peers() logic
+        # get_active_peers() requires live reader/writer for all post-handshake states
         mock_reader1 = AsyncMock()
         mock_writer1 = MagicMock()
         connection1.reader = mock_reader1
         connection1.writer = mock_writer1
+        mock_reader2 = AsyncMock()
+        mock_writer2 = MagicMock()
+        connection2.reader = mock_reader2
+        connection2.writer = mock_writer2
 
         # Add connections
         async with self.manager.connection_lock:

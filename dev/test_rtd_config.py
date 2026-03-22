@@ -71,16 +71,16 @@ def test_mkdocs_config():
         else:
             print("  [WARN] No languages found with build=true")
         
-        # Check that .readthedocs.yaml references the build script
+        # Check that dev/.readthedocs.yaml references the build script
         try:
-            with open('.readthedocs.yaml', 'r', encoding='utf-8') as f:
+            with open('dev/.readthedocs.yaml', 'r', encoding='utf-8') as f:
                 rtd_content = f.read()
             if 'build_docs_patched_clean.py' in rtd_content:
-                print("  [OK] .readthedocs.yaml references patched build script")
+                print("  [OK] dev/.readthedocs.yaml references patched build script")
             else:
-                print("  [WARN] .readthedocs.yaml may not use patched build script")
+                print("  [WARN] dev/.readthedocs.yaml may not use patched build script")
         except FileNotFoundError:
-            print("  [WARN] .readthedocs.yaml not found")
+            print("  [WARN] dev/.readthedocs.yaml not found")
         
         return True
     except Exception as e:

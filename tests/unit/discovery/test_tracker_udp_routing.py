@@ -143,7 +143,14 @@ class TestUDPTrackerRouting:
         await tracker_client.announce(torrent_data_udp)
 
         call_kwargs = mock_udp_client.announce_to_tracker_full.call_args[1]
-        assert set(call_kwargs) == {"port", "uploaded", "downloaded", "left", "event"}
+        assert set(call_kwargs) == {
+            "port",
+            "uploaded",
+            "downloaded",
+            "left",
+            "event",
+            "on_immediate_peers",
+        }
         assert "ssl" not in call_kwargs
         assert "supportcrypto" not in call_kwargs
         assert "requirecrypto" not in call_kwargs

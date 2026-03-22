@@ -1,6 +1,6 @@
 # Requirements file for Read the Docs builds
 # This file lists all dependencies needed to build the documentation
-# Read the Docs will use this if .readthedocs.yaml specifies it
+# Read the Docs will use this if dev/.readthedocs.yaml specifies it
 #
 # Note: The project itself is installed separately via pip install -e .
 # which will install all runtime dependencies needed for mkdocstrings

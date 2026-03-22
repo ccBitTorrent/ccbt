@@ -57,37 +57,39 @@ def proxy() -> None:
 
 
 @proxy.command("set")
-@click.option("--host", required=True, help="Proxy server hostname or IP")
-@click.option("--port", type=int, required=True, help="Proxy server port")
+@click.option("--host", "-H", required=True, help="Proxy server hostname or IP")
+@click.option("--port", "-p", type=int, required=True, help="Proxy server port")
 @click.option(
     "--type",
+    "-T",
     "proxy_type",
     type=click.Choice(["http", "socks4", "socks5"]),
     default="http",
     help="Proxy type",
 )
-@click.option("--user", "username", help="Proxy username for authentication")
+@click.option("--user", "-U", "username", help="Proxy username for authentication")
 @click.option("--pass", "password", help="Proxy password for authentication")
 @click.option(
-    "--for-trackers/--no-for-trackers",
+    "-A/--for-trackers/--no-for-trackers",
     "for_trackers",
     default=True,
     help="Use proxy for tracker requests",
 )
 @click.option(
-    "--for-peers/--no-for-peers",
+    "-R/--for-peers/--no-for-peers",
     "for_peers",
     default=False,
     help="Use proxy for peer connections",
 )
 @click.option(
-    "--for-webseeds/--no-for-webseeds",
+    "-W/--for-webseeds/--no-for-webseeds",
     "for_webseeds",
     default=True,
     help="Use proxy for WebSeed requests",
 )
 @click.option(
     "--bypass-list",
+    "-B",
     help="Comma-separated list of hosts/IPs to bypass proxy",
 )
 @click.pass_context

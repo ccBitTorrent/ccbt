@@ -9,6 +9,7 @@ __version__ = "0.0.1"
 # This avoids RuntimeError: There is no current event loop in thread 'MainThread'.
 try:
     import asyncio
+    import warnings
 
     class _SafeEventLoopPolicy(asyncio.AbstractEventLoopPolicy):
         """Wrapper policy that ensures a loop exists when requested."""
@@ -20,16 +21,19 @@ try:
             try:
                 return asyncio.get_running_loop()
             except RuntimeError:
-                # No running loop - try to get one from base policy first
-                # This allows pytest-asyncio and other tools to manage event loops
-                try:
-                    return self._base.get_event_loop()
-                except RuntimeError:
-                    # Base policy also can't provide a loop - create new one
-                    # This is the fallback for user code that needs a loop
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    return loop
+                # No running loop - try to get thread-default loop from base policy first.
+                # Python 3.12+ deprecates asyncio.get_event_loop() when no loop is set;
+                # suppress only for this delegation so we still return a pytest-managed loop.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    try:
+                        return self._base.get_event_loop()
+                    except RuntimeError:
+                        # Base policy also can't provide a loop - create new one
+                        # This is the fallback for user code that needs a loop
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        return loop
 
         def set_event_loop(self, loop):  # type: ignore[override]
             return self._base.set_event_loop(loop)
@@ -96,7 +100,9 @@ try:
     ):  # pragma: no cover - Exception handling during policy setup, defensive fallback
         # As a fallback, ensure a loop is set at import time
         try:
-            asyncio.get_event_loop()  # pragma: no cover - Same context
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                asyncio.get_event_loop()  # pragma: no cover - Same context
         except RuntimeError:  # pragma: no cover - Same context
             loop = asyncio.new_event_loop()  # pragma: no cover - Same context
             asyncio.set_event_loop(loop)  # pragma: no cover - Same context

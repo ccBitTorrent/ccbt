@@ -41,11 +41,11 @@ class SwarmTrustAnchor:
 
     type: str
     value: str
-    expires_at: Optional[int]= None
-    not_before: Optional[int]= None
-    source: Optional[str]= None
+    expires_at: Optional[int] = None
+    not_before: Optional[int] = None
+    source: Optional[str] = None
 
-    def is_current(self, now: Optional[int]= None) -> bool:
+    def is_current(self, now: Optional[int] = None) -> bool:
         """Return True if the anchor is within optional validity bounds."""
         current = int(now if now is not None else time.time())
         if self.not_before is not None and current < self.not_before:
@@ -186,10 +186,9 @@ def current_swarm_anchors(
     store: SwarmTrustStore,
     swarm_id: str,
     *,
-    now: Optional[int]= None,
+    now: Optional[int] = None,
 ) -> list[SwarmTrustAnchor]:
     """Return currently valid anchors for a swarm id."""
     return [
         anchor for anchor in store.anchors_for(swarm_id) if anchor.is_current(now=now)
     ]
-

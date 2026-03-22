@@ -44,6 +44,9 @@ class ScrapeManager:
             self.logger.debug("Invalid info_hash format: %s", e)
             return False
 
+        if getattr(self.manager, "_manager_shutting_down", False):
+            return False
+
         # Find torrent session
         async with self.manager.lock:
             session = self.manager.torrents.get(info_hash)

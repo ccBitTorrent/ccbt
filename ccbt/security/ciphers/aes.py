@@ -5,9 +5,9 @@ Supports AES-128 and AES-256.
 """
 
 from __future__ import annotations
-from typing import Optional
 
 import secrets
+from typing import Optional
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -18,7 +18,7 @@ from ccbt.security.ciphers.base import CipherSuite
 class AESCipher(CipherSuite):
     """AES cipher implementation using CFB mode."""
 
-    def __init__(self, key: bytes, iv: Optional[bytes]= None):
+    def __init__(self, key: bytes, iv: Optional[bytes] = None):
         """Initialize AES cipher.
 
         Args:

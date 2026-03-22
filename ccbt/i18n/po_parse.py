@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Optional, Union
+from typing import TYPE_CHECKING, Final, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -118,7 +118,7 @@ def iter_po_entries(path: Path) -> list[PoEntry]:
 
     current_msgid: list[str] = []
     current_msgstr: dict[int, list[str]] = {}
-    current_msgstr_index: Optional[int]= None
+    current_msgstr_index: Optional[int] = None
     active = ""
     has_msgid = False
     is_fuzzy = False
@@ -266,4 +266,3 @@ SUPPORTED_LOCALES: Final[tuple[str, ...]] = (
     "ha",
     "yo",
 )
-

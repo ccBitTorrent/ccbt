@@ -335,7 +335,24 @@ class ConfigManager:
             "CCBT_BLOCK_SIZE_KIB": "network.block_size_kib",
             "CCBT_CONNECTION_TIMEOUT": "network.connection_timeout",
             "CCBT_HANDSHAKE_TIMEOUT": "network.handshake_timeout",
+            "CCBT_HANDSHAKE_TIMEOUT_DESPERATION_MIN": "network.handshake_timeout_desperation_min",
+            "CCBT_HANDSHAKE_TIMEOUT_DESPERATION_MAX": "network.handshake_timeout_desperation_max",
+            "CCBT_HANDSHAKE_TIMEOUT_NORMAL_MIN": "network.handshake_timeout_normal_min",
+            "CCBT_HANDSHAKE_TIMEOUT_NORMAL_MAX": "network.handshake_timeout_normal_max",
+            "CCBT_HANDSHAKE_TIMEOUT_HEALTHY_MIN": "network.handshake_timeout_healthy_min",
+            "CCBT_HANDSHAKE_TIMEOUT_HEALTHY_MAX": "network.handshake_timeout_healthy_max",
+            "CCBT_HANDSHAKE_ADAPTIVE_TIMEOUT_ENABLED": "network.handshake_adaptive_timeout_enabled",
+            "CCBT_ADAPTIVE_TIMEOUT_HEALTH_PEER_SOURCE": (
+                "network.adaptive_timeout_health_peer_source"
+            ),
+            "CCBT_ADAPTIVE_TIMEOUT_DESPERATION_MAX_PEERS": (
+                "network.adaptive_timeout_desperation_max_peers"
+            ),
+            "CCBT_ADAPTIVE_TIMEOUT_NORMAL_MAX_PEERS": (
+                "network.adaptive_timeout_normal_max_peers"
+            ),
             "CCBT_METADATA_EXCHANGE_TIMEOUT": "network.metadata_exchange_timeout",
+            "CCBT_PEER_QUALITY_PROBATION_TIMEOUT": "network.peer_quality_probation_timeout",
             "CCBT_METADATA_PIECE_TIMEOUT": "network.metadata_piece_timeout",
             "CCBT_CONNECTION_HEALTH_CHECK_INTERVAL": "network.connection_health_check_interval",
             "CCBT_CONNECTION_VALIDATION_ENABLED": "network.connection_validation_enabled",
@@ -351,6 +368,54 @@ class ConfigManager:
             "CCBT_PER_PEER_DOWN_KIB": "network.per_peer_down_kib",
             "CCBT_PER_PEER_UP_KIB": "network.per_peer_up_kib",
             "CCBT_MAX_UPLOAD_SLOTS": "network.max_upload_slots",
+            "CCBT_RECIPROCATION_CHOKED_PEER_SCORE_BOOST": (
+                "network.reciprocation_choked_peer_score_boost"
+            ),
+            "CCBT_RECIPROCATION_REMOTE_NOT_INTERESTED_BOOST": (
+                "network.reciprocation_remote_not_interested_boost"
+            ),
+            "CCBT_LOW_DOWNLOAD_DIVERSITY_THRESHOLD": (
+                "network.low_download_diversity_threshold"
+            ),
+            "CCBT_LOW_DOWNLOAD_DIVERSITY_FULL_UNCHOKE": (
+                "network.low_download_diversity_full_unchoke"
+            ),
+            "CCBT_LOW_DOWNLOAD_DIVERSITY_USE_HYSTERESIS": (
+                "network.low_download_diversity_use_hysteresis"
+            ),
+            "CCBT_LOW_DOWNLOAD_DIVERSITY_EXIT_MARGIN": (
+                "network.low_download_diversity_exit_margin"
+            ),
+            "CCBT_LOW_DOWNLOAD_DIVERSITY_MAX_PEERS": (
+                "network.low_download_diversity_max_peers"
+            ),
+            "CCBT_LEECH_HEAVY_SWARM_TOTAL_UPLOAD_BPS_THRESHOLD": (
+                "network.leech_heavy_swarm_total_upload_bps_threshold"
+            ),
+            "CCBT_INBOUND_UNKNOWN_HASH_WARNING_SAMPLE_INTERVAL": (
+                "network.inbound_unknown_hash_warning_sample_interval"
+            ),
+            "CCBT_RECIPROCATION_MAX_COMBINED_BOOST": (
+                "network.reciprocation_max_combined_boost"
+            ),
+            "CCBT_OPTIMISTIC_UNCHOKE_TOP_CANDIDATES": (
+                "network.optimistic_unchoke_top_candidates"
+            ),
+            "CCBT_OPTIMISTIC_UNCHOKE_USE_JITTER": (
+                "network.optimistic_unchoke_use_jitter"
+            ),
+            "CCBT_PEER_CHOKED_HARD_TIMEOUT_SECONDS": (
+                "network.peer_choked_hard_timeout_seconds"
+            ),
+            "CCBT_PEER_CHOKED_ANCHOR_TIMEOUT_SECONDS": (
+                "network.peer_choked_anchor_timeout_seconds"
+            ),
+            "CCBT_PEER_CHOKED_SOLO_GRACE_SECONDS": (
+                "network.peer_choked_solo_grace_seconds"
+            ),
+            "CCBT_PEER_CHOKED_SOLO_GRACE_ZERO_BYTES_CAP_SECONDS": (
+                "network.peer_choked_solo_grace_zero_bytes_cap_seconds"
+            ),
             "CCBT_TRACKER_TIMEOUT": "network.tracker_timeout",
             "CCBT_DNS_CACHE_TTL": "network.dns_cache_ttl",
             # Connection pool
@@ -376,6 +441,18 @@ class ConfigManager:
             "CCBT_TRACKER_KEEPALIVE_TIMEOUT": "network.tracker_keepalive_timeout",
             "CCBT_TRACKER_ENABLE_DNS_CACHE": "network.tracker_enable_dns_cache",
             "CCBT_TRACKER_DNS_CACHE_TTL": "network.tracker_dns_cache_ttl",
+            "CCBT_TRACKER_NETWORK_FAILURE_QUARANTINE_SECONDS": (
+                "network.tracker_network_failure_quarantine_seconds"
+            ),
+            "CCBT_TRACKER_PAYLOAD_FAILURE_QUARANTINE_SECONDS": (
+                "network.tracker_payload_failure_quarantine_seconds"
+            ),
+            "CCBT_TRACKER_DNS_REFUSED_ESCALATION_STREAK": (
+                "network.tracker_dns_refused_escalation_streak"
+            ),
+            "CCBT_TRACKER_ZERO_ACTIVE_BATCHES_BEFORE_DHT_SHORT_CIRCUIT": (
+                "network.tracker_zero_active_batches_before_dht_short_circuit"
+            ),
             # Timeout and retry
             "CCBT_TIMEOUT_ADAPTIVE": "network.timeout_adaptive",
             "CCBT_TIMEOUT_MIN_SECONDS": "network.timeout_min_seconds",
@@ -464,6 +541,9 @@ class ConfigManager:
             "CCBT_TRACKER_ANNOUNCE_INTERVAL": "discovery.tracker_announce_interval",
             "CCBT_TRACKER_SCRAPE_INTERVAL": "discovery.tracker_scrape_interval",
             "CCBT_TRACKER_AUTO_SCRAPE": "discovery.tracker_auto_scrape",
+            "CCBT_TRACKER_STOPPED_ANNOUNCE_TIMEOUT_S": (
+                "discovery.tracker_stopped_announce_timeout_s"
+            ),
             "CCBT_TRACKER_ADAPTIVE_INTERVAL_ENABLED": "discovery.tracker_adaptive_interval_enabled",
             "CCBT_TRACKER_ADAPTIVE_INTERVAL_MIN": "discovery.tracker_adaptive_interval_min",
             "CCBT_TRACKER_ADAPTIVE_INTERVAL_MAX": "discovery.tracker_adaptive_interval_max",
@@ -505,6 +585,13 @@ class ConfigManager:
             "CCBT_DHT_ADAPTIVE_INTERVAL_MAX": "discovery.dht_adaptive_interval_max",
             "CCBT_DHT_QUALITY_TRACKING_ENABLED": "discovery.dht_quality_tracking_enabled",
             "CCBT_DHT_QUALITY_RESPONSE_TIME_WINDOW": "discovery.dht_quality_response_time_window",
+            "CCBT_DHT_ADAPTIVE_TIMEOUT_ENABLED": "discovery.dht_adaptive_timeout_enabled",
+            "CCBT_DHT_TIMEOUT_DESPERATION_MIN": "discovery.dht_timeout_desperation_min",
+            "CCBT_DHT_TIMEOUT_DESPERATION_MAX": "discovery.dht_timeout_desperation_max",
+            "CCBT_DHT_TIMEOUT_NORMAL_MIN": "discovery.dht_timeout_normal_min",
+            "CCBT_DHT_TIMEOUT_NORMAL_MAX": "discovery.dht_timeout_normal_max",
+            "CCBT_DHT_TIMEOUT_HEALTHY_MIN": "discovery.dht_timeout_healthy_min",
+            "CCBT_DHT_TIMEOUT_HEALTHY_MAX": "discovery.dht_timeout_healthy_max",
             # DHT query parameters (Kademlia algorithm)
             "CCBT_DHT_NORMAL_ALPHA": "discovery.dht_normal_alpha",
             "CCBT_DHT_NORMAL_K": "discovery.dht_normal_k",
@@ -516,6 +603,13 @@ class ConfigManager:
             "CCBT_DHT_BOOTSTRAP_RETRIES_MAX": "discovery.dht_bootstrap_retries_max",
             "CCBT_BOOTSTRAP_RETRY_MEMO_TTL_S": "discovery.bootstrap_retry_memo_ttl_s",
             "CCBT_DHT_BOOTSTRAP_MEMO_TTL_S": "discovery.dht_bootstrap_memo_ttl_s",
+            "CCBT_DHT_DNS_HOST_BACKOFF_INITIAL_S": (
+                "discovery.dht_dns_host_backoff_initial_s"
+            ),
+            "CCBT_DHT_DNS_HOST_BACKOFF_MAX_S": "discovery.dht_dns_host_backoff_max_s",
+            "CCBT_DHT_DNS_HOST_BACKOFF_MULTIPLIER": (
+                "discovery.dht_dns_host_backoff_multiplier"
+            ),
             "CCBT_DHT_ZERO_STATE_REPROBE_WAIT_S": "discovery.dht_zero_state_reprobe_wait_s",
             "CCBT_DHT_EMPTY_STATE_BACKOFF_FACTOR": "discovery.dht_empty_state_backoff_factor",
             "CCBT_DHT_REBOOTSTRAP_TIMEOUT_S": "discovery.dht_rebootstrap_timeout_s",
@@ -538,8 +632,11 @@ class ConfigManager:
             "CCBT_MEDIA_VLC_EXECUTABLE_PATH": "media.vlc_executable_path",
             "CCBT_ENABLE_INLINE_MEDIA_PREVIEW": "media.enable_inline_media_preview",
             "CCBT_INLINE_MEDIA_PREVIEW_MODE": "media.inline_media_preview_mode",
-            # Security
+            # Security / MSE-PE (BEP 3). Canonical toggle is security.enable_encryption;
+            # CCBT_NETWORK_ENABLE_ENCRYPTION mirrors [network] enable_encryption in ccbt.toml
+            # (merged into security by Config model validation).
             "CCBT_ENABLE_ENCRYPTION": "security.enable_encryption",
+            "CCBT_NETWORK_ENABLE_ENCRYPTION": "network.enable_encryption",
             "CCBT_ENCRYPTION_MODE": "security.encryption_mode",
             "CCBT_ENCRYPTION_DH_KEY_SIZE": "security.encryption_dh_key_size",
             "CCBT_ENCRYPTION_PREFER_RC4": "security.encryption_prefer_rc4",

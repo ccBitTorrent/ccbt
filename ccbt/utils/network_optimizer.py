@@ -337,9 +337,18 @@ class SocketOptimizer:
                     if tcp_window_scale is not None:
                         sock.setsockopt(socket.IPPROTO_TCP, tcp_window_scale, 1)
 
-            # Set timeouts
+            # Set timeouts (asyncio transport-backed sockets on Windows often reject this)
             if config.so_rcvtimeo > 0:
-                sock.settimeout(config.so_rcvtimeo)
+                try:
+                    sock.settimeout(config.so_rcvtimeo)
+                except (OSError, TypeError, ValueError) as te:
+                    err = str(te).lower()
+                    if "only 0 timeout" in err or "transport" in err:
+                        self.logger.debug(
+                            "Skipping SO_RCVTIMEO on transport-backed socket: %s", te
+                        )
+                    else:
+                        raise
 
             self.logger.debug("Optimized socket for %s", socket_type)
 

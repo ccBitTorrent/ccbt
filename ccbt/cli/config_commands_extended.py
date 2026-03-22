@@ -74,6 +74,7 @@ console = Console()
 @config.command("schema")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["json", "yaml"]),
     default="json",
@@ -81,6 +82,7 @@ console = Console()
 )
 @click.option(
     "--model",
+    "-m",
     type=str,
     default=None,
     help="Specific model to generate schema for (e.g., Config, NetworkConfig)",
@@ -138,6 +140,7 @@ def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
 @click.argument("template_name")
 @click.option(
     "--apply",
+    "-a",
     is_flag=True,
     help="Apply template to current configuration",
 )
@@ -147,9 +150,12 @@ def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
     type=click.Path(),
     help="Output file path for template config",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -157,6 +163,7 @@ def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -262,6 +269,7 @@ def template_cmd(
 @click.argument("profile_name")
 @click.option(
     "--apply",
+    "-a",
     is_flag=True,
     help="Apply profile to current configuration",
 )
@@ -271,9 +279,12 @@ def template_cmd(
     type=click.Path(),
     help="Output file path for profile config",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -281,6 +292,7 @@ def template_cmd(
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -399,11 +411,14 @@ def profile_cmd(
 )
 @click.option(
     "--compress",
+    "-z",
     is_flag=True,
     default=True,
     help="Compress backup",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 def backup_cmd(description: str, compress: bool, config_file: Optional[str]):
     """Create configuration backup."""
     try:
@@ -440,10 +455,11 @@ def backup_cmd(description: str, compress: bool, config_file: Optional[str]):
 @click.argument("backup_file", type=click.Path(exists=True))
 @click.option(
     "--confirm",
+    "-y",
     is_flag=True,
     help="Skip confirmation prompt",
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 def restore_cmd(backup_file: str, confirm: bool, config_file: Optional[str]):
     """Restore configuration from backup."""
     try:
@@ -476,6 +492,7 @@ def restore_cmd(backup_file: str, confirm: bool, config_file: Optional[str]):
 @config.command("list-backups")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json"]),
     default="table",
@@ -523,6 +540,7 @@ def list_backups_cmd(format_: str):
 @click.argument("config2", type=click.Path(exists=True))
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["unified", "json"]),
     default="unified",
@@ -626,6 +644,7 @@ def capabilities_summary_cmd():
 @config.command("auto-tune")
 @click.option(
     "--apply",
+    "-a",
     is_flag=True,
     help="Apply auto-tuning to current configuration",
 )
@@ -635,9 +654,12 @@ def capabilities_summary_cmd():
     type=click.Path(),
     help="Output file path for tuned config",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -645,6 +667,7 @@ def capabilities_summary_cmd():
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -736,6 +759,7 @@ def auto_tune_cmd(
 @config.command("export")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml"]),
     default="toml",
@@ -748,7 +772,9 @@ def auto_tune_cmd(
     required=True,
     help="Output file path",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 def export_cmd(format_: str, output: str, config_file: Optional[str]):
     """Export configuration to file."""
     try:
@@ -786,6 +812,7 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
 @click.argument("import_file", type=click.Path(exists=True))
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml"]),
     default=None,
@@ -797,9 +824,10 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
     type=click.Path(),
     help="Output file path (default: overwrite current config)",
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -807,6 +835,7 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -814,6 +843,7 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
 )
 @click.option(
     "--mode",
+    "-M",
     type=click.Choice(["replace", "merge"]),
     default="replace",
     help=_(
@@ -953,6 +983,7 @@ def import_cmd(
 @config.command("list-templates")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json"]),
     default="table",
@@ -986,6 +1017,7 @@ def list_templates_cmd(format_: str):
 @config.command("list-profiles")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json"]),
     default="table",

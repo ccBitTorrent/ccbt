@@ -20,6 +20,7 @@ from typing import Any, Callable, Optional, Union
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
 from ccbt.models import PeerInfo
+from ccbt.utils.shutdown import is_shutting_down
 
 # Error message constants
 _ERROR_DHT_TRANSPORT_NOT_INITIALIZED = "DHT transport is not initialized"
@@ -519,6 +520,21 @@ class AsyncDHTClient:
         self._dht_bootstrap_memo_ttl_s = float(
             getattr(discovery_cfg, "dht_bootstrap_memo_ttl_s", 120.0)
         )
+        self._dht_bootstrap_timeout_s = float(
+            getattr(discovery_cfg, "dht_bootstrap_timeout_s", 30.0) or 30.0
+        )
+        # Host-level DNS failure backoff (memoized per hostname; monotonic deadlines)
+        self._dht_dns_host_backoff_until: dict[str, float] = {}
+        self._dht_dns_host_fail_streak: dict[str, int] = {}
+        self._dht_dns_host_backoff_initial_s = float(
+            getattr(discovery_cfg, "dht_dns_host_backoff_initial_s", 2.0) or 2.0
+        )
+        self._dht_dns_host_backoff_max_s = float(
+            getattr(discovery_cfg, "dht_dns_host_backoff_max_s", 120.0) or 120.0
+        )
+        self._dht_dns_host_backoff_multiplier = float(
+            getattr(discovery_cfg, "dht_dns_host_backoff_multiplier", 2.0) or 2.0
+        )
         self.bootstrap_success_count = 0
         self.bootstrap_failure_count = 0
         self.last_bootstrap_reason = "not_started"
@@ -680,6 +696,13 @@ class AsyncDHTClient:
         4. Clear socket reference
         5. Clear transport reference
         """
+        # Release in-flight query waiters immediately (avoids 60s tails during shutdown)
+        if self.pending_queries:
+            for _tid, fut in list(self.pending_queries.items()):
+                if not fut.done():
+                    fut.cancel()
+            self.pending_queries.clear()
+
         if self._refresh_task:
             self._refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -775,58 +798,68 @@ class AsyncDHTClient:
         start_time = time.time()
         self._prune_bootstrap_attempt_state(start_time)
 
-        # Note: Add overall timeout to bootstrap process (30 seconds max)
-        # This prevents hanging indefinitely if all bootstrap nodes are unreachable
-        bootstrap_timeout = 30.0
+        # Overall bootstrap wall clock (config: discovery.dht_bootstrap_timeout_s)
+        bootstrap_timeout = self._dht_bootstrap_timeout_s
 
-        # Try to find nodes from bootstrap servers
-        for host, port in self.bootstrap_nodes:
-            # Check if we've exceeded overall timeout
-            if time.time() - start_time > bootstrap_timeout:
-                self.logger.warning(
-                    "Bootstrap timeout (%.1fs) - continuing with %d nodes",
-                    bootstrap_timeout,
-                    len(self.routing_table.nodes),
-                )
-                self.last_bootstrap_failure_reason = "bootstrap_timeout"
-                self.last_bootstrap_state = "failed:bootstrap_timeout"
-                break
+        try:
+            # Try to find nodes from bootstrap servers
+            for host, port in self.bootstrap_nodes:
+                # Check if we've exceeded overall timeout
+                if time.time() - start_time > bootstrap_timeout:
+                    self.logger.warning(
+                        "Bootstrap timeout (%.1fs) - continuing with %d nodes",
+                        bootstrap_timeout,
+                        len(self.routing_table.nodes),
+                    )
+                    self.last_bootstrap_failure_reason = "bootstrap_timeout"
+                    self.last_bootstrap_state = "failed:bootstrap_timeout"
+                    break
 
-            if not await self._bootstrap_step(host, port):
-                continue
+                if not await self._bootstrap_step(host, port):
+                    continue
 
-            # If we have enough nodes, we can stop early
-            if len(self.routing_table.nodes) >= 8:
+                # If we have enough nodes, we can stop early
+                if len(self.routing_table.nodes) >= 8:
+                    self.bootstrap_success_count += 1
+                    self.logger.info(
+                        "Bootstrap complete: found %d nodes",
+                        len(self.routing_table.nodes),
+                    )
+                    return
+
+            # If we still don't have enough nodes, try to find more (with timeout check)
+            if (
+                len(self.routing_table.nodes) < 8
+                and time.time() - start_time < bootstrap_timeout
+            ):
+                try:
+                    await asyncio.wait_for(
+                        self._refresh_routing_table(),
+                        timeout=max(
+                            1.0, bootstrap_timeout - (time.time() - start_time)
+                        ),
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.debug("Refresh routing table timeout during bootstrap")
+                    self.last_bootstrap_failure_reason = "routing_refresh_timeout"
+
+            if len(self.routing_table.nodes) > 0:
                 self.bootstrap_success_count += 1
-                self.logger.info(
-                    "Bootstrap complete: found %d nodes", len(self.routing_table.nodes)
+                self._empty_table_rebootstrap_attempts = 0
+                self._empty_table_rebootstrap_backoff = 1.0
+                self.last_bootstrap_state = "succeeded"
+            else:
+                self.bootstrap_failure_count += 1
+                if not self.last_bootstrap_failure_reason:
+                    self.last_bootstrap_failure_reason = "no_nodes_discovered"
+                self.last_bootstrap_state = (
+                    f"failed:{self.last_bootstrap_failure_reason}"
                 )
-                return
-
-        # If we still don't have enough nodes, try to find more (with timeout check)
-        if (
-            len(self.routing_table.nodes) < 8
-            and time.time() - start_time < bootstrap_timeout
-        ):
-            try:
-                await asyncio.wait_for(
-                    self._refresh_routing_table(),
-                    timeout=max(1.0, bootstrap_timeout - (time.time() - start_time)),
-                )
-            except asyncio.TimeoutError:
-                self.logger.debug("Refresh routing table timeout during bootstrap")
-                self.last_bootstrap_failure_reason = "routing_refresh_timeout"
-
-        if len(self.routing_table.nodes) > 0:
-            self.bootstrap_success_count += 1
-            self._empty_table_rebootstrap_attempts = 0
-            self._empty_table_rebootstrap_backoff = 1.0
-            self.last_bootstrap_state = "succeeded"
-        else:
-            self.bootstrap_failure_count += 1
+        except asyncio.CancelledError:
             if not self.last_bootstrap_failure_reason:
-                self.last_bootstrap_failure_reason = "no_nodes_discovered"
-            self.last_bootstrap_state = f"failed:{self.last_bootstrap_failure_reason}"
+                self.last_bootstrap_failure_reason = "bootstrap_cancelled_or_timeout"
+            raise
+
         self.logger.info(
             "Bootstrap completed with %d nodes", len(self.routing_table.nodes)
         )
@@ -883,6 +916,71 @@ class AsyncDHTClient:
         for bootstrap_key in stale_keys:
             self._bootstrap_attempt_failures.pop(bootstrap_key, None)
             self._bootstrap_attempt_timestamps.pop(bootstrap_key, None)
+
+    @staticmethod
+    def _normalize_dht_dns_host(host: str) -> str:
+        """Normalize hostname for DNS backoff keys (case-insensitive)."""
+        return host.strip().lower()
+
+    def _is_dns_host_in_backoff(self, host: str) -> bool:
+        """Return True if this hostname should skip resolver calls until backoff expires."""
+        host_key = self._normalize_dht_dns_host(host)
+        until = self._dht_dns_host_backoff_until.get(host_key)
+        if until is None:
+            return False
+        now_m = time.monotonic()
+        if now_m >= until:
+            self._dht_dns_host_backoff_until.pop(host_key, None)
+            return False
+        return True
+
+    def _dns_host_backoff_remaining_s(self, host: str) -> float:
+        """Seconds remaining in host-level DNS backoff, or 0.0 if none."""
+        host_key = self._normalize_dht_dns_host(host)
+        until = self._dht_dns_host_backoff_until.get(host_key)
+        if until is None:
+            return 0.0
+        return max(0.0, until - time.monotonic())
+
+    def _record_dns_host_failure(self, host: str) -> None:
+        """Apply exponential per-host backoff after DNS timeout or resolver error."""
+        host_key = self._normalize_dht_dns_host(host)
+        streak = self._dht_dns_host_fail_streak.get(host_key, 0) + 1
+        self._dht_dns_host_fail_streak[host_key] = streak
+        initial = max(0.5, self._dht_dns_host_backoff_initial_s)
+        mult = max(1.0, self._dht_dns_host_backoff_multiplier)
+        max_s = max(initial, self._dht_dns_host_backoff_max_s)
+        delay = min(max_s, initial * (mult ** (streak - 1)))
+        self._dht_dns_host_backoff_until[host_key] = time.monotonic() + delay
+        self.logger.debug(
+            "DHT DNS host backoff scheduled: host=%s streak=%d delay=%.1fs",
+            host_key,
+            streak,
+            delay,
+        )
+
+    def _clear_dns_host_backoff(self, host: str) -> None:
+        """Clear memoized DNS failure state after a successful resolve."""
+        host_key = self._normalize_dht_dns_host(host)
+        self._dht_dns_host_backoff_until.pop(host_key, None)
+        self._dht_dns_host_fail_streak.pop(host_key, None)
+
+    def _empty_routing_operational_context(self) -> str:
+        """Compact diagnostics for empty-routing warnings (bind, DHT IP prefs, bootstrap)."""
+        discovery = getattr(self.config, "discovery", None)
+        ipv6 = bool(getattr(discovery, "dht_enable_ipv6", False))
+        prefer6 = bool(getattr(discovery, "dht_prefer_ipv6", False))
+        fr = self.last_bootstrap_failure_reason or "unset"
+        return (
+            f"bind={self.bind_ip}:{self.bind_port} "
+            f"dht_ipv6_enabled={ipv6} dht_prefer_ipv6={prefer6} "
+            f"bootstrap_nodes={len(self.bootstrap_nodes)} "
+            f"last_bootstrap_failure_reason={fr!r}"
+        )
+
+    def _log_empty_routing_warning(self, summary: str) -> None:
+        """Emit one WARNING line with operational context for empty routing table."""
+        self.logger.warning("%s %s", summary, self._empty_routing_operational_context())
 
     def _schedule_zero_node_rebootstrap(
         self, reason: str = "empty_routing_table"
@@ -951,6 +1049,16 @@ class AsyncDHTClient:
                 f"bootstrap_retry_suppressed:{host}:{port}"
             )
             return False
+        if self._is_dns_host_in_backoff(host):
+            remaining = self._dns_host_backoff_remaining_s(host)
+            self.last_bootstrap_failure_reason = f"dns_host_backoff:{host}"
+            self.logger.debug(
+                "Skipping bootstrap DNS for %s:%s: host-level backoff active (%.1fs remaining)",
+                host,
+                port,
+                remaining,
+            )
+            return False
         start_time = time.time()
 
         try:
@@ -987,8 +1095,10 @@ class AsyncDHTClient:
                     )
                 # Extract IPv4 address from first result
                 addr = (addr_info[0][4][0], port)
+                self._clear_dns_host_backoff(host)
             except asyncio.TimeoutError:
                 self.last_bootstrap_failure_reason = f"dns_timeout:{host}:{port}"
+                self._record_dns_host_failure(host)
                 self._mark_bootstrap_attempt_failed(bootstrap_key)
                 self.logger.debug(
                     "DNS resolution timeout for bootstrap node %s:%s", host, port
@@ -998,6 +1108,7 @@ class AsyncDHTClient:
                 self.last_bootstrap_failure_reason = (
                     f"dns_failed:{host}:{port}:{type(dns_error).__name__}"
                 )
+                self._record_dns_host_failure(host)
                 self._mark_bootstrap_attempt_failed(bootstrap_key)
                 self.logger.debug(
                     "DNS resolution failed for bootstrap node %s:%s: %s",
@@ -1622,10 +1733,9 @@ class AsyncDHTClient:
         if not closest_set:
             self.last_lookup_state = "empty_routing_table"
             self.last_zero_node_lookup_at = time.time()
-            self.logger.warning(
-                "DHT lookup for %s cannot start because the routing table is empty (queried 0 nodes). "
-                "Bootstrap is missing, blocked, or has not completed yet.",
-                info_hash.hex()[:8],
+            self._log_empty_routing_warning(
+                f"DHT lookup for {info_hash.hex()[:8]} cannot start because the routing table "
+                f"is empty (queried 0 nodes). Bootstrap is missing, blocked, or has not completed yet."
             )
             self._last_query_metrics = {
                 "duration": 0.0,
@@ -2423,6 +2533,8 @@ class AsyncDHTClient:
         """Send a DHT query and wait for response, tracking response time for quality metrics."""
         # Calculate adaptive timeout based on peer health
         query_timeout = self._calculate_adaptive_query_timeout()
+        if is_shutting_down():
+            query_timeout = min(query_timeout, 1.0)
 
         # Generate transaction ID
         tid = os.urandom(2)
@@ -2884,8 +2996,8 @@ class AsyncDHTClient:
                 interval = self._calculate_adaptive_interval()
                 await asyncio.sleep(interval)
                 if len(self.routing_table.nodes) == 0:
-                    self.logger.warning(
-                        "DHT refresh detected empty routing table; triggering rebootstrap"
+                    self._log_empty_routing_warning(
+                        "DHT refresh detected empty routing table; triggering rebootstrap."
                     )
                     await self.rebootstrap()
                     continue

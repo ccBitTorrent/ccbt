@@ -106,7 +106,7 @@ class SwarmAuthProof:
     public_key: bytes
     signature: bytes
     timestamp: int
-    trust_proof_hint: Optional[str]= None
+    trust_proof_hint: Optional[str] = None
 
     def to_extension_dict(self) -> dict[str, Any]:
         """Return proof values in extension handshake shape."""
@@ -234,7 +234,7 @@ def build_swarm_auth_extension(
     public_key: bytes,
     signature: bytes,
     timestamp: int,
-    trust_proof_hint: Optional[str]= None,
+    trust_proof_hint: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build BEP-10 extension payload value for key `e.swarm_auth`."""
     proof = SwarmAuthProof(
@@ -289,7 +289,7 @@ def evaluate_swarm_auth_verification_order(
     transport_hint: str,
     signer_verify: Callable[[bytes, bytes, bytes], bool],
     trusted_swarm_ids: Iterable[str],
-    now: Optional[float]= None,
+    now: Optional[float] = None,
     freshness_window_seconds: int = 300,
 ) -> tuple[bool, str]:
     """Evaluate proof with canonical verification steps.

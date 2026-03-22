@@ -12,6 +12,8 @@ exclude = [
     "tests/",
     "benchmarks/",
     "ccbt/interface/",
+    "ccbt/i18n/scripts/**",
+    "ccbt/i18n/locale_data/**",
     "dev/",
     "dist/",
     "docs/",

@@ -100,8 +100,13 @@ async def _get_ipfs_protocol() -> Optional[Any]:  # Optional[IPFSProtocol]
 
 @click.command("ipfs-add")
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--pin/--no-pin", default=False, help="Pin content after adding")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option(
+    "-i/--pin/--no-pin",
+    "pin",
+    default=False,
+    help="Pin content after adding",
+)
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
     """Add file or directory to IPFS."""
     console = Console()
@@ -147,7 +152,7 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
 @click.option(
     "--output", "-o", type=click.Path(path_type=Path), help="Output file path"
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_get(cid: str, output: Optional[Path], json_output: bool) -> None:
     """Get content from IPFS by CID."""
     console = Console()
@@ -187,7 +192,7 @@ def ipfs_get(cid: str, output: Optional[Path], json_output: bool) -> None:
 
 @click.command("ipfs-pin")
 @click.argument("cid", type=str)
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_pin(cid: str, json_output: bool) -> None:
     """Pin content in IPFS."""
     console = Console()
@@ -213,7 +218,7 @@ def ipfs_pin(cid: str, json_output: bool) -> None:
 
 @click.command("ipfs-unpin")
 @click.argument("cid", type=str)
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_unpin(cid: str, json_output: bool) -> None:
     """Unpin content in IPFS."""
     console = Console()
@@ -239,8 +244,14 @@ def ipfs_unpin(cid: str, json_output: bool) -> None:
 
 @click.command("ipfs-stats")
 @click.argument("cid", type=str, required=False)
-@click.option("--all", "all_stats", is_flag=True, help="Show stats for all content")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option(
+    "-a",
+    "--all",
+    "all_stats",
+    is_flag=True,
+    help="Show stats for all content",
+)
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_stats(cid: Optional[str], all_stats: bool, json_output: bool) -> None:
     """Show IPFS content statistics."""
     console = Console()
@@ -293,7 +304,7 @@ def ipfs_stats(cid: Optional[str], all_stats: bool, json_output: bool) -> None:
 
 
 @click.command("ipfs-peers")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_peers(json_output: bool) -> None:
     """List connected IPFS peers."""
     console = Console()
@@ -337,7 +348,7 @@ def ipfs_peers(json_output: bool) -> None:
 
 
 @click.command("ipfs-content")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_content(json_output: bool) -> None:
     """List all IPFS content."""
     console = Console()

@@ -21,9 +21,16 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
 
 
 @click.command("dashboard")
-@click.option("--refresh", type=float, default=1.0, help="Refresh interval (s)")
+@click.option(
+    "--refresh",
+    "-r",
+    type=float,
+    default=1.0,
+    help="Refresh interval (s)",
+)
 @click.option(
     "--rules",
+    "-f",
     type=click.Path(),
     default=None,
     help="Path to alert rules JSON to load on start",
@@ -152,44 +159,52 @@ def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
 
 
 @click.command("alerts")
-@click.option("--list", "list_", is_flag=True, help="List alert rules")
-@click.option("--list-active", is_flag=True, help="List active alerts")
-@click.option("--add", "add_rule", is_flag=True, help="Add an alert rule")
-@click.option("--remove", "remove_rule", is_flag=True, help="Remove an alert rule")
-@click.option("--clear-active", is_flag=True, help="Resolve all active alerts")
+@click.option("--list", "-L", "list_", is_flag=True, help="List alert rules")
+@click.option("--list-active", "-I", is_flag=True, help="List active alerts")
+@click.option("--add", "-a", "add_rule", is_flag=True, help="Add an alert rule")
+@click.option(
+    "--remove", "-R", "remove_rule", is_flag=True, help="Remove an alert rule"
+)
+@click.option("--clear-active", "-C", is_flag=True, help="Resolve all active alerts")
 @click.option(
     "--test",
+    "-t",
     "test_rule",
     is_flag=True,
     help="Test a rule by evaluating a value",
 )
 @click.option(
     "--load",
+    "-l",
     type=click.Path(),
     default=None,
     help="Load alert rules from JSON file",
 )
 @click.option(
     "--save",
+    "-s",
     type=click.Path(),
     default=None,
     help="Save alert rules to JSON file",
 )
-@click.option("--name", type=str, default=None, help="Rule name")
-@click.option("--metric", type=str, default=None, help="Metric name for rule")
+@click.option("--name", "-n", type=str, default=None, help="Rule name")
+@click.option("--metric", "-m", type=str, default=None, help="Metric name for rule")
 @click.option(
     "--condition",
+    "-c",
     type=str,
     default=None,
     help="Condition expression, e.g., 'value > 80'",
 )
 @click.option(
     "--severity",
+    "-e",
     type=click.Choice(["info", "warning", "error", "critical"]),
     default="warning",
 )
 @click.option(
     "--value",
+    "-V",
     type=str,
     default=None,
     help="Value to evaluate when using --test",
@@ -360,6 +375,7 @@ def alerts(
 @click.command("metrics")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["json", "prometheus"]),
     default="json",
@@ -367,29 +383,34 @@ def alerts(
 )
 @click.option(
     "--output",
+    "-o",
     type=click.Path(),
     default=None,
     help="Output file (defaults to stdout)",
 )
 @click.option(
     "--duration",
+    "-d",
     type=float,
     default=0.0,
     help="Collect for N seconds (0 = once)",
 )
 @click.option(
     "--interval",
+    "-i",
     type=float,
     default=None,
     help="Collection interval seconds (defaults to config)",
 )
 @click.option(
     "--include-system",
+    "-s",
     is_flag=True,
     help="Include system metrics snapshot in JSON output",
 )
 @click.option(
     "--include-performance",
+    "-p",
     is_flag=True,
     help="Include performance metrics snapshot in JSON output",
 )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Optional, cast, Union
+from typing import Any, Callable, Literal, Optional, Union, cast
 
 from ccbt.security.swarm_auth_contract import (
     build_swarm_auth_extension,
@@ -25,7 +25,9 @@ SWARM_AUTH_METRIC_REASONS = "swarm_auth_reject_reason_total"
 SWARM_AUTH_DISCOVERY_SUPPRESSED_TOTAL = "swarm_auth_discovery_suppressed_total"
 SWARM_AUTH_TRUSTSTORE_RELOAD_TOTAL = "swarm_auth_truststore_reload_total"
 SWARM_AUTH_REVOCATION_HITS_TOTAL = "swarm_auth_revocation_hits_total"
-SWARM_AUTH_OPPORTUNISTIC_VERIFY_FAILED_TOTAL = "swarm_auth_opportunistic_verify_failed_total"
+SWARM_AUTH_OPPORTUNISTIC_VERIFY_FAILED_TOTAL = (
+    "swarm_auth_opportunistic_verify_failed_total"
+)
 SWARM_AUTH_STRICT_LTEP_TIMEOUT_TOTAL = "swarm_auth_strict_ltep_timeout_total"
 SWARM_AUTH_REJECTION_REASON_LABEL = "reason_code"
 _LOGGER = logging.getLogger(__name__)
@@ -228,7 +230,9 @@ def _session_swarm_id(session: Any) -> Optional[str]:
         try:
             return canonicalize_swarm_id(value)
         except Exception as err:
-            _LOGGER.debug("Failed to canonicalize swarm_id %r from session: %s", value, err)
+            _LOGGER.debug(
+                "Failed to canonicalize swarm_id %r from session: %s", value, err
+            )
             continue
 
     torrent_data = getattr(session, "torrent_data", None)
@@ -286,7 +290,9 @@ def _session_trusted_swarm_ids(session: Any) -> list[str]:
         try:
             canonical.append(canonicalize_swarm_id(raw_value))
         except Exception as err:
-            _LOGGER.debug("Failed to canonicalize trusted swarm id %r: %s", raw_value, err)
+            _LOGGER.debug(
+                "Failed to canonicalize trusted swarm id %r: %s", raw_value, err
+            )
             continue
     return canonical
 
@@ -379,8 +385,8 @@ def _extract_session_fail_closed_on_parse_errors(session: Any) -> bool:
 
 def _resolve_swarm_auth_materials(session: Any, mode: AuthMode) -> list[str]:
     """Resolve trust-store/revocation based failures and return failure reason."""
-    trust_store, revocation_cache, trust_err, revocation_err = _session_auth_material_state(
-        session
+    trust_store, revocation_cache, trust_err, revocation_err = (
+        _session_auth_material_state(session)
     )
     if mode == "off":
         return []
@@ -404,7 +410,7 @@ def _resolve_swarm_auth_materials(session: Any, mode: AuthMode) -> list[str]:
 def _validate_trust_store_and_revocation_constraints(
     session: Any,
     raw_swarm_auth: Any,
-    peer_tls_public_key_from_cert: Optional[bytes]= None,
+    peer_tls_public_key_from_cert: Optional[bytes] = None,
     transport_hint: str = "plain",
 ) -> Optional[str]:
     """Validate trust-store and revocation gates against a parsed proof."""
@@ -429,9 +435,8 @@ def _validate_trust_store_and_revocation_constraints(
             anchors = []
         if not anchors:
             return "trust_lookup_failed"
-        if (
-            proof.trust_proof_hint is None
-            and any(anchor.type == "ed25519_pubkey_hex" for anchor in anchors)
+        if proof.trust_proof_hint is None and any(
+            anchor.type == "ed25519_pubkey_hex" for anchor in anchors
         ):
             current_key = proof.public_key.hex()
             if not any(
@@ -485,8 +490,8 @@ def build_outbound_swarm_auth_payload(
     peer_id: bytes,
     info_hash: Union[bytes, tuple[bytes | None, bytes | None]],
     transport_hint: str,
-    timestamp: Optional[int]= None,
-    trust_proof_hint: Optional[str]= None,
+    timestamp: Optional[int] = None,
+    trust_proof_hint: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build a swarm-auth extension payload from local session data."""
     if not isinstance(peer_id, (bytes, bytearray)):
@@ -498,7 +503,10 @@ def build_outbound_swarm_auth_payload(
     peer_id_bytes = bytes(peer_id)
 
     if not isinstance(info_hash, tuple):
-        if not isinstance(info_hash, (bytes, bytearray)) or len(info_hash) not in {20, 32}:
+        if not isinstance(info_hash, (bytes, bytearray)) or len(info_hash) not in {
+            20,
+            32,
+        }:
             msg = "info_hash must be 20 or 32 bytes, or a v1/v2 tuple"
             raise ValueError(msg)
         info_hash_bytes = bytes(info_hash)
@@ -509,9 +517,7 @@ def build_outbound_swarm_auth_payload(
         info_hash_bytes = None
         v1 = info_hash[0]
         v2 = info_hash[1] if len(info_hash) > 1 else None
-        info_hash_bytes = (
-            bytes(v1) if isinstance(v1, (bytes, bytearray)) else b""
-        ) + (
+        info_hash_bytes = (bytes(v1) if isinstance(v1, (bytes, bytearray)) else b"") + (
             bytes(v2) if isinstance(v2, (bytes, bytearray)) else b""
         )
 
@@ -672,11 +678,11 @@ class SwarmAuthPolicy:
                     "transport": transport_hint,
                 },
             )
-        if (
-            decision.mode == "opportunistic"
-            and decision.reason_code
-            not in {"allow", "swarm_auth_mode_off", "no_trust_material"}
-        ):
+        if decision.mode == "opportunistic" and decision.reason_code not in {
+            "allow",
+            "swarm_auth_mode_off",
+            "no_trust_material",
+        }:
             _record_swarm_auth_metric(
                 SWARM_AUTH_OPPORTUNISTIC_VERIFY_FAILED_TOTAL,
                 {
@@ -695,16 +701,32 @@ class SwarmAuthPolicy:
         session: Any,
         transport_hint: str,
         tls_hint: Optional[str],
-        peer_tls_public_key_from_cert: Optional[bytes]= None,
+        peer_tls_public_key_from_cert: Optional[bytes] = None,
     ) -> AuthDecision:
-        peer_id = _extract_peer_id(parsed_handshake)
-        info_hash_v1, info_hash_v2 = _extract_info_hashes(parsed_handshake)
-        if peer_id is None or (info_hash_v1 is None and info_hash_v2 is None):
-            return AuthDecision(False, "strict", "invalid_handshake_fields")
-
         mode = _extract_session_mode(session)
         if mode == "off":
             return AuthDecision(True, "off", "swarm_auth_mode_off")
+
+        peer_id = _extract_peer_id(parsed_handshake)
+        info_hash_v1, info_hash_v2 = _extract_info_hashes(parsed_handshake)
+        if peer_id is None and info_hash_v1 is None and info_hash_v2 is None:
+            return AuthDecision(
+                allowed=mode != "strict",
+                mode=mode,
+                reason_code="missing_peer_id_and_info_hash",
+            )
+        if peer_id is None:
+            return AuthDecision(
+                allowed=mode != "strict",
+                mode=mode,
+                reason_code="missing_peer_id",
+            )
+        if info_hash_v1 is None and info_hash_v2 is None:
+            return AuthDecision(
+                allowed=mode != "strict",
+                mode=mode,
+                reason_code="missing_info_hash",
+            )
 
         trusted = _session_trusted_swarm_ids(session)
         if not trusted:
@@ -721,9 +743,20 @@ class SwarmAuthPolicy:
             )
 
         raw_swarm_auth = _extract_swarm_auth_payload(parsed_handshake)
+        raw_schema_candidate = _extract_handshake_field(
+            parsed_handshake, ("swarm_auth", "swarm_auth_payload")
+        )
+        if raw_schema_candidate is None:
+            extensions = _extract_handshake_field(parsed_handshake, ("extensions",))
+            if isinstance(extensions, dict) and "swarm_auth" in extensions:
+                raw_schema_candidate = extensions.get("swarm_auth")
         signer_verify = _resolve_signer_verify(session)
         if raw_swarm_auth is None:
-            reason = "missing_schema"
+            reason = (
+                "swarm_auth_parse_mismatch"
+                if raw_schema_candidate is not None
+                else "missing_schema"
+            )
             return AuthDecision(
                 allowed=mode != "strict",
                 mode=mode,
@@ -775,8 +808,8 @@ class SwarmAuthPolicy:
         parsed_handshake: Any,
         session: Any,
         transport_hint: str,
-        tls_hint: Optional[str]= None,
-        peer_tls_public_key_from_cert: Optional[bytes]= None,
+        tls_hint: Optional[str] = None,
+        peer_tls_public_key_from_cert: Optional[bytes] = None,
     ) -> AuthDecision:
         """Evaluate whether an inbound connection should be admitted."""
         key = self._cache_key(
@@ -818,7 +851,7 @@ class SwarmAuthPolicy:
         peer_id: bytes,
         torrent_data: Any,
         transport_hint: str,
-        tls_hint: Optional[str]= None,
+        tls_hint: Optional[str] = None,
     ) -> AuthDecision:
         """Evaluate whether an outbound connection should proceed."""
         key = self._cache_key_outbound(
@@ -1018,8 +1051,8 @@ def evaluate_inbound_admission(
     parsed_handshake: Any,
     session: Any,
     transport_hint: str,
-    tls_hint: Optional[str]= None,
-    peer_tls_public_key_from_cert: Optional[bytes]= None,
+    tls_hint: Optional[str] = None,
+    peer_tls_public_key_from_cert: Optional[bytes] = None,
 ) -> AuthDecision:
     """Convenience wrapper for inbound admission decision."""
     return _DEFAULT_POLICY.evaluate_inbound_admission(
@@ -1037,7 +1070,7 @@ def evaluate_outbound_admission(
     peer_id: bytes,
     torrent_data: Any,
     transport_hint: str,
-    tls_hint: Optional[str]= None,
+    tls_hint: Optional[str] = None,
 ) -> AuthDecision:
     """Convenience wrapper for outbound admission decision."""
     return _DEFAULT_POLICY.evaluate_outbound_admission(
@@ -1047,5 +1080,3 @@ def evaluate_outbound_admission(
         transport_hint=transport_hint,
         tls_hint=tls_hint,
     )
-
-

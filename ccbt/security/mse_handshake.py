@@ -11,14 +11,17 @@ from __future__ import annotations
 import asyncio
 import secrets
 import struct
-from enum import IntEnum
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union, cast
+from enum import Enum, IntEnum
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, cast
 
 from ccbt.security.ciphers.aes import AESCipher
 from ccbt.security.ciphers.chacha20 import ChaCha20Cipher
 from ccbt.security.ciphers.rc4 import RC4Cipher
 from ccbt.security.dh_exchange import DHPeerExchange
-from ccbt.security.ciphers.base import CipherSuite
+
+if TYPE_CHECKING:
+    from ccbt.security.ciphers.base import CipherSuite
+
 
 class MSEHandshakeType(IntEnum):
     """MSE handshake message types."""
@@ -36,17 +39,28 @@ class CipherType(IntEnum):
     CHACHA20 = 0x03
 
 
+class MSEHandshakeReadFailureReason(Enum):
+    """Typed reasons for MSE handshake message read failures."""
+
+    NONE = "none"
+    TIMEOUT = "timeout"
+    INCOMPLETE = "incomplete_read"
+    INVALID_LENGTH = "invalid_length"
+    INVALID_FRAME = "invalid_frame"
+    TRANSPORT_ERROR = "transport_error"
+
+
 class MSEHandshakeResult(NamedTuple):
     """Result of MSE handshake."""
 
     success: bool
     cipher: Optional[CipherSuite]
-    error: Optional[str]= None
-    selected_method: Optional[str]= None
-    resolved_info_hash: Optional[bytes]= None
-    decrypted_initial_data: Optional[bytes]= None
-    inbound_cipher: Optional[CipherSuite]= None
-    outbound_cipher: Optional[CipherSuite]= None
+    error: Optional[str] = None
+    selected_method: Optional[str] = None
+    resolved_info_hash: Optional[bytes] = None
+    decrypted_initial_data: Optional[bytes] = None
+    inbound_cipher: Optional[CipherSuite] = None
+    outbound_cipher: Optional[CipherSuite] = None
     inbound_stream_state: Optional[dict[str, Any]] = None
     outbound_stream_state: Optional[dict[str, Any]] = None
 
@@ -67,7 +81,7 @@ class MSEHandshake:
         self,
         dh_key_size: int = 768,
         prefer_rc4: bool = True,
-        allowed_ciphers: Optional[list[CipherType]]= None,
+        allowed_ciphers: Optional[list[CipherType]] = None,
     ):
         """Initialize MSE handshake handler.
 
@@ -135,9 +149,15 @@ class MSEHandshake:
             await writer.drain()
 
             # Packet 2: YB + PadD from peer
-            rke_message = await self._read_handshake_message(reader, timeout=timeout)
+            rke_message, rke_failure = await self._read_handshake_message(
+                reader, timeout=timeout
+            )
             if rke_message is None:
-                return MSEHandshakeResult(False, None, "Failed to read RKEYE message")
+                return MSEHandshakeResult(
+                    False,
+                    None,
+                    f"Failed to read RKEYE message ({rke_failure.value})",
+                )
             legacy_type = None
             if len(rke_message) > 0:
                 try:
@@ -201,11 +221,15 @@ class MSEHandshake:
             await writer.drain()
 
             # Packet 4: RC4(V C||crypto_select||padD_len||PadD)
-            crypto_response = await self._read_handshake_message(
+            crypto_response, crypto_failure = await self._read_handshake_message(
                 reader, timeout=timeout
             )
             if crypto_response is None:
-                return MSEHandshakeResult(False, None, "Failed to read CRYPTO message")
+                return MSEHandshakeResult(
+                    False,
+                    None,
+                    f"Failed to read CRYPTO message ({crypto_failure.value})",
+                )
             legacy_crypto_type = None
             if len(crypto_response) > 0:
                 try:
@@ -221,7 +245,7 @@ class MSEHandshake:
                     None,
                     f"Expected CRYPTO message, got {legacy_crypto_type.name}",
                 )
-            selected_cipher: Optional[CipherType]= None
+            selected_cipher: Optional[CipherType] = None
             if len(crypto_response) == 2 and crypto_response[0] == int(
                 MSEHandshakeType.CRYPTO
             ):
@@ -283,7 +307,7 @@ class MSEHandshake:
         timeout: float = 10.0,
         initial_payload_size: int = 0,
         initial_payload_timeout: float = 0.25,
-        info_hash_candidates: Optional[list[bytes]]= None,
+        info_hash_candidates: Optional[list[bytes]] = None,
     ) -> MSEHandshakeResult:
         """Respond to MSE handshake as connection receiver using BEP 3 transcript."""
         if len(info_hash) != 20:
@@ -295,9 +319,15 @@ class MSEHandshake:
 
         try:
             # Packet 1: peer sends YA + PadC.
-            ske_message = await self._read_handshake_message(reader, timeout=timeout)
+            ske_message, ske_failure = await self._read_handshake_message(
+                reader, timeout=timeout
+            )
             if ske_message is None:
-                return MSEHandshakeResult(False, None, "Failed to read SKEYE message")
+                return MSEHandshakeResult(
+                    False,
+                    None,
+                    f"Failed to read SKEYE message ({ske_failure.value})",
+                )
             legacy_type = None
             if len(ske_message) > 0:
                 try:
@@ -350,9 +380,15 @@ class MSEHandshake:
             )
 
             # Packet 3 from peer: req1 + req2xorreq3 + RC4(VC + crypto_provide + lengths)
-            crypto_message = await self._read_handshake_message(reader, timeout=timeout)
+            crypto_message, crypto_failure = await self._read_handshake_message(
+                reader, timeout=timeout
+            )
             if crypto_message is None:
-                return MSEHandshakeResult(False, None, "Failed to read CRYPTO message")
+                return MSEHandshakeResult(
+                    False,
+                    None,
+                    f"Failed to read CRYPTO message ({crypto_failure.value})",
+                )
             legacy_crypto_type = None
             if len(crypto_message) > 0:
                 try:
@@ -494,7 +530,7 @@ class MSEHandshake:
         timeout: float = 10.0,
         initial_payload_size: int = 0,
         initial_payload_timeout: float = 0.25,
-        info_hash_candidates: Optional[list[bytes]]= None,
+        info_hash_candidates: Optional[list[bytes]] = None,
     ) -> MSEHandshakeResult:
         """Compatibility shim retained for call sites expecting a dedicated initial-data API."""
         result = await self.respond_as_receiver(
@@ -576,24 +612,27 @@ class MSEHandshake:
 
     async def _read_handshake_message(
         self, reader: asyncio.StreamReader, timeout: float
-    ) -> Optional[bytes]:
-        """Read a length-prefixed handshake payload."""
+    ) -> tuple[Optional[bytes], MSEHandshakeReadFailureReason]:
+        """Read a length-prefixed handshake payload and classify read outcomes."""
         try:
             length_bytes = await asyncio.wait_for(
                 reader.readexactly(4), timeout=timeout
             )
             frame_length = struct.unpack("!I", length_bytes)[0]
             if frame_length <= 0:
-                return None
+                return None, MSEHandshakeReadFailureReason.INVALID_LENGTH
             if frame_length > 65535:
-                return None
-            return await asyncio.wait_for(
+                return None, MSEHandshakeReadFailureReason.INVALID_LENGTH
+            payload = await asyncio.wait_for(
                 reader.readexactly(frame_length), timeout=timeout
             )
+            return payload, MSEHandshakeReadFailureReason.NONE
         except asyncio.TimeoutError:
-            raise
+            return None, MSEHandshakeReadFailureReason.TIMEOUT
         except (asyncio.IncompleteReadError, ConnectionError):
-            return None
+            return None, MSEHandshakeReadFailureReason.INCOMPLETE
+        except Exception:
+            return None, MSEHandshakeReadFailureReason.TRANSPORT_ERROR
 
     def _select_cipher_from_mask(self, mask: int) -> CipherType:
         """Select an allowed cipher from the peer's `crypto_provide` or `crypto_select`."""
@@ -642,7 +681,7 @@ class MSEHandshake:
             return None
         rc4 = self._create_cipher(CipherType.RC4, inbound_key)
         if hasattr(rc4, "discard_keystream"):
-            cast(Any, rc4).discard_keystream(1024)
+            cast("Any", rc4).discard_keystream(1024)
         plain = rc4.decrypt(payload)
         if plain[:8] != self.dh_exchange.verification_constant():
             return None
@@ -654,7 +693,7 @@ class MSEHandshake:
     ) -> bytes:
         rc4 = self._create_cipher(CipherType.RC4, inbound_key)
         if hasattr(rc4, "discard_keystream"):
-            cast(Any, rc4).discard_keystream(1024)
+            cast("Any", rc4).discard_keystream(1024)
         return rc4.encrypt(
             self.dh_exchange.verification_constant()
             + crypto_select
@@ -681,7 +720,7 @@ class MSEHandshake:
         )
         rc4 = self._create_cipher(CipherType.RC4, outbound_key)
         if hasattr(rc4, "discard_keystream"):
-            cast(Any, rc4).discard_keystream(1024)
+            cast("Any", rc4).discard_keystream(1024)
         encrypted = rc4.encrypt(
             self.dh_exchange.verification_constant()
             + struct.pack("!I", crypto_provide)
@@ -732,7 +771,7 @@ class MSEHandshake:
             return None
         rc4 = self._create_cipher(CipherType.RC4, outbound_key)
         if hasattr(rc4, "discard_keystream"):
-            cast(Any, rc4).discard_keystream(1024)
+            cast("Any", rc4).discard_keystream(1024)
         decrypted = rc4.decrypt(rc4_payload)
         if len(decrypted) < 12:
             return None
@@ -904,9 +943,9 @@ class MSEHandshake:
     def _create_cipher_pair(
         self,
         cipher_type: CipherType,
-        key: Optional[bytes]= None,
-        inbound_key: Optional[bytes]= None,
-        outbound_key: Optional[bytes]= None,
+        key: Optional[bytes] = None,
+        inbound_key: Optional[bytes] = None,
+        outbound_key: Optional[bytes] = None,
     ) -> tuple[CipherSuite, CipherSuite]:
         """Create independent inbound and outbound cipher instances."""
         if inbound_key is None and outbound_key is None:
@@ -1064,5 +1103,3 @@ class MSEHandshake:
         # PE mode is same as current respond_as_receiver behavior
         # (encryption handshake before BitTorrent protocol)
         return await self.respond_as_receiver(reader, writer, info_hash, timeout)
-
-

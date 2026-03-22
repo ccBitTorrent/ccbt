@@ -1,12 +1,12 @@
 """Utilities for swarm identifier normalization and legacy fallback IDs."""
 
 from __future__ import annotations
-from typing import Optional
 
 import base64
 import re
 import uuid
 from hashlib import sha256
+from typing import Optional
 
 _HEX_PATTERN = re.compile(r"^[0-9a-f]+$")
 _UUID_PATTERN = re.compile(
@@ -50,9 +50,7 @@ def canonicalize_swarm_id(raw_swarm_id: str) -> str:
             return base64.b32decode(normalized, casefold=True).hex()
         except Exception as exc:  # pragma: no cover - fallback path
             msg = f"invalid base32/swarm_id payload: {raw_swarm_id}"
-            raise ValueError(
-                msg
-            ) from exc
+            raise ValueError(msg) from exc
 
     try:
         return uuid.UUID(candidate).hex
@@ -73,7 +71,7 @@ def legacy_swarm_id_fallback(info_hash_family_bytes: bytes) -> str:
 
 
 def canonical_torrent_info_hash_family(
-    *, info_hash_v1: Optional[bytes]= None, info_hash_v2: Optional[bytes]= None
+    *, info_hash_v1: Optional[bytes] = None, info_hash_v2: Optional[bytes] = None
 ) -> bytes:
     """Return canonical v1/v2 info-hash family bytes for deterministic fallback IDs."""
     if info_hash_v1 is None and info_hash_v2 is None:

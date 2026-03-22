@@ -50,6 +50,13 @@ class DIContainer:
     backoff_policy: Optional[_Factory] = None
 
 
+def default_udp_tracker_client_provider() -> Any:
+    """Return the process-wide UDP tracker client singleton."""
+    from ccbt.discovery.tracker_udp_client import get_udp_tracker_client
+
+    return get_udp_tracker_client()
+
+
 def default_container(config: Optional[Config] = None) -> DIContainer:
     """Build a container with minimal sensible defaults."""
     cfg = config or get_config()
@@ -59,5 +66,6 @@ def default_container(config: Optional[Config] = None) -> DIContainer:
 
     return DIContainer(
         config_provider=_cfg,
+        udp_tracker_client_provider=default_udp_tracker_client_provider,
         # Other factories intentionally left None; callers fall back to defaults.
     )

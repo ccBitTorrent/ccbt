@@ -136,7 +136,7 @@ class PeerExchange:
         )
 
     def decode_peers_list(
-        self, data: bytes, is_ipv6: bool = False, flags: Optional[bytes]= None
+        self, data: bytes, is_ipv6: bool = False, flags: Optional[bytes] = None
     ) -> list[PEXPeer]:
         """Decode list of peers from compact format."""
         peers = []
@@ -168,8 +168,8 @@ class PeerExchange:
     def encode_bep11_payload(
         self,
         *,
-        added_peers: Optional[list[PEXPeer]]= None,
-        dropped_peers: Optional[list[PEXPeer]]= None,
+        added_peers: Optional[list[PEXPeer]] = None,
+        dropped_peers: Optional[list[PEXPeer]] = None,
     ) -> bytes:
         """Encode BEP11 payload containing peer list updates."""
         payload: dict[bytes, bytes] = {}
@@ -213,7 +213,9 @@ class PeerExchange:
         encoder = BencodeEncoder()
         return encoder.encode(payload)
 
-    def _extract_bep11_bytes(self, payload: dict[Any, Any], key: Union[str, bytes]) -> bytes:
+    def _extract_bep11_bytes(
+        self, payload: dict[Any, Any], key: Union[str, bytes]
+    ) -> bytes:
         """Extract a bytes field from a BEP11 payload."""
         if not isinstance(payload, dict):
             return b""
@@ -547,4 +549,3 @@ class PeerExchange:
                 merged_peers.append(peer)
 
         return merged_peers
-

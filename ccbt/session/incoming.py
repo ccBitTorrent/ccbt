@@ -99,7 +99,7 @@ class IncomingPeerHandler:
         handshake: Any,
         peer_ip: str,
         peer_port: int,
-        protocol_classification: Optional[InboundProtocolKind]= None,
+        protocol_classification: Optional[InboundProtocolKind] = None,
     ) -> None:
         """Accept an incoming peer connection.
 

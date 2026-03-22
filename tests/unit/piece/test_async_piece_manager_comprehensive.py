@@ -566,6 +566,50 @@ class TestCleanupOperations:
     """Test cleanup operations (lines 767, 859, 881-892, 896-907)."""
 
     @pytest.mark.asyncio
+    async def test_peer_availability_not_wiped_when_active_peers_snapshot_empty(
+        self, mock_torrent_data
+    ):
+        """Regression: empty get_active_peers() must not delete all peer_availability.
+
+        _select_pieces calls get_active_peers() multiple times; if a later call returns
+        [] transiently, treating that as 'all peers disconnected' cleared every cached
+        bitfield and zeroed piece_frequency (download chain collapse).
+        """
+        manager = AsyncPieceManager(mock_torrent_data)
+        await manager.start()
+        manager.is_downloading = True
+        manager.download_complete = False
+        manager._metadata_incomplete = False
+
+        peer_key = "192.0.2.99:6000"
+        manager.peer_availability[peer_key] = PeerAvailability(peer_key)
+        manager.peer_availability[peer_key].pieces = {0, 1}
+        manager.piece_frequency[0] = 1
+        manager.piece_frequency[1] = 1
+
+        mock_conn = MagicMock()
+        mock_conn.peer_info = PeerInfo(ip="192.0.2.99", port=6000)
+        mock_conn.peer_state = MagicMock()
+        mock_conn.peer_state.pieces_we_have = set()
+        mock_conn.can_request = MagicMock(return_value=True)
+
+        peer_manager = MagicMock()
+        peer_manager.connections = {"k": mock_conn}
+        # Many non-empty snapshots, then one empty (simulates race before stale refresh)
+        peer_manager.get_active_peers = MagicMock(
+            side_effect=[ [mock_conn] ] * 24 + [ [] ]
+        )
+        manager._peer_manager = peer_manager
+
+        with patch.object(manager, "_select_rarest_first", AsyncMock()):
+            await manager._select_pieces()
+
+        assert peer_key in manager.peer_availability
+        assert manager.piece_frequency.get(0) == 1
+        assert manager.piece_frequency.get(1) == 1
+        await manager.stop()
+
+    @pytest.mark.asyncio
     async def test_remove_peer_updates_frequency(self, piece_manager, mock_peer_connection):
         """Test removing peer updates piece frequency (lines 315-334)."""
         peer = mock_peer_connection
@@ -599,10 +643,45 @@ class TestCleanupOperations:
     async def test_calculate_swarm_health(self, piece_manager):
         """Test calculating swarm health (lines 791-827)."""
         result = await piece_manager._calculate_swarm_health()
-        
+
         assert "total_pieces" in result
         assert "active_peers" in result
+        assert "live_peer_count" in result
+        assert "availability_peer_count" in result
         assert "rarest_piece_availability" in result
+        assert result["availability_peer_count"] == len(piece_manager.peer_availability)
+        assert piece_manager._peer_manager is None
+        assert result["active_peers"] == result["availability_peer_count"]
+
+    @pytest.mark.asyncio
+    async def test_calculate_swarm_health_live_vs_availability(self, mock_torrent_data):
+        """When peer manager is wired, active_peers reflects live transport count."""
+        manager = AsyncPieceManager(mock_torrent_data)
+        await manager.start()
+        peer_mgr = MagicMock()
+        peer_mgr.get_active_peers = MagicMock(return_value=[MagicMock(), MagicMock()])
+        manager._peer_manager = peer_mgr
+        await manager.update_peer_availability("10.0.0.1:1", b"\xff\x03")
+        await manager.update_peer_availability("10.0.0.2:2", b"\xff\x03")
+        await manager.update_peer_availability("10.0.0.3:3", b"\xff\x03")
+        result = await manager._calculate_swarm_health()
+        assert result["live_peer_count"] == 2
+        assert result["availability_peer_count"] == 3
+        assert result["active_peers"] == 2
+        await manager.stop()
+
+    @pytest.mark.asyncio
+    async def test_apply_fast_extension_have_all_and_none(self, piece_manager):
+        """BEP 6 Have All / Have None update availability and piece_frequency."""
+        peer_key = "127.0.0.1:6881"
+        await piece_manager.update_peer_availability(peer_key, b"\x00\x00")
+        assert len(piece_manager.peer_availability[peer_key].pieces) == 0
+
+        await piece_manager.apply_fast_extension_have_all(peer_key)
+        assert len(piece_manager.peer_availability[peer_key].pieces) == piece_manager.num_pieces
+
+        await piece_manager.apply_fast_extension_have_none(peer_key)
+        assert len(piece_manager.peer_availability[peer_key].pieces) == 0
 
     @pytest.mark.asyncio
     async def test_generate_endgame_requests(self, piece_manager, mock_peer_connection):

@@ -157,6 +157,60 @@ async def test_peer_count_low_queues_tracker_peers_when_peer_manager_unavailable
 
 
 @pytest.mark.asyncio
+async def test_peer_count_low_suppression_reports_non_negative_retry_window(
+    tmp_path,
+) -> None:
+    """Suppressed low-peer recovery should emit a clamped, non-negative retry window."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "suppression-window-test",
+        "info_hash": b"\x0e" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.logger = SimpleNamespace(
+        info=lambda *a, **k: None,
+        warning=lambda *a, **k: None,
+        debug=lambda *a, **k: None,
+        error=lambda *a, **k: None,
+    )
+    session._low_peer_threshold = lambda: 1  # type: ignore[method-assign]
+    session._low_peer_suppression_window_s = lambda: 30.0  # type: ignore[method-assign]
+    session._get_swarm_recovery_state = AsyncMock(
+        return_value={
+            "metadata_incomplete": False,
+            "active_peers": 0,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "peers_with_piece_info": 0,
+            "active_block_requests": 0,
+        }
+    )
+    session._low_peer_recovery_suppressed_until = time.monotonic() + 5.0
+
+    await session._recover_from_peer_count_low(
+        {
+            "active_peers": 0,
+            "active_peer_count": 0,
+            "info_hash": session.info.info_hash.hex(),
+        }
+    )
+
+    cycle = session._peer_discovery_metrics["last_peer_count_low_recovery_cycle"]
+    assert cycle["decision"] == "suppressed"
+    assert cycle["retry_plan"] == "suppress_until_low_peer_window"
+    assert cycle["retry_in_s"] >= 0.0
+    assert cycle["retry_in_s"] <= 5.1
+
+
+@pytest.mark.asyncio
 async def test_peer_count_low_handler_schedules_single_background_recovery_per_session(
     tmp_path,
 ) -> None:
@@ -675,9 +729,11 @@ async def test_initial_query_skips_zero_node_lookup_after_failed_bootstrap(
 
     dht_client.get_peers.assert_not_awaited()
     assert setup._dht_query_metrics["bootstrap_failure_count"] == 1
-    assert (
-        setup._dht_query_metrics["last_bootstrap_failure_reason"]
-        == "no_nodes_discovered"
+    # _ensure_bootstrap_ready runs _run_bootstrap_with_fallback; with no bootstrap_nodes
+    # on the stub client, seed candidates are empty and the failure reason is set to
+    # "{reason}:no_seed_candidates" (reason includes initial_query + session name).
+    assert setup._dht_query_metrics["last_bootstrap_failure_reason"] == (
+        "initial_query:magnet-bootstrap-zero:no_seed_candidates"
     )
 
 
@@ -1205,3 +1261,57 @@ def test_rebootstrap_health_summary_includes_bootstrap_metrics() -> None:
     assert summary["bootstrap_zero_nodes_last_reason"] == "summary-test"
     assert summary["bootstrap_health_state"] == "stalled"
     assert summary["rebootstrap_attempt_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_swarm_recovery_state_projects_block_reasons(tmp_path) -> None:
+    """Recovery state should include requestable and request-block reason counters."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "recovery-state-requests",
+        "info_hash": b"\x0D" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.piece_manager = SimpleNamespace(
+        _metadata_incomplete=False,
+        peer_availability={},
+    )
+
+    async def _connection_summary() -> dict[str, int]:
+        return {
+            "active_connections": 2,
+            "remote_choked_connections": 1,
+            "pipeline_saturated_connections": 1,
+            "requestable_connections": 0,
+            "productive_connections": 1,
+            "handshake_complete_connections": 2,
+            "extension_capable_connections": 1,
+            "metadata_capable_connections": 1,
+            "metadata_exchange_active": 0,
+            "peers_with_piece_info": 0,
+            "bitfield_complete_connections": 2,
+        }
+
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(
+            get_connection_summary=AsyncMock(side_effect=_connection_summary),
+            connections={},
+            get_active_peers=lambda: [],
+        )
+    )
+
+    state = await session._get_swarm_recovery_state()  # type: ignore[attr-defined]
+
+    assert state["active_peers"] == 2
+    assert state["remote_choked_peers"] == 1
+    assert state["pipeline_saturated_peers"] == 1
+    assert state["requestable_peers"] == 0
+    assert state["productive_peers"] == 1

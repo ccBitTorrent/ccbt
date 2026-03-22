@@ -50,6 +50,7 @@ Configuration is loaded in this order (later sources override earlier ones):
 2. **Config File**: `ccbt.toml` in current directory or `~/.config/ccbt/ccbt.toml`. See [ccbt/config/config.py:_find_config_file](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/config/config.py#L107)
 3. **Environment Variables**: `CCBT_*` prefixed variables. See [env.example](https://github.com/ccBittorrent/ccbt/blob/main/env.example)
 4. **CLI Arguments**: Command-line overrides. See [ccbt/cli/overrides.py:apply_cli_overrides](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/overrides.py#L17) {#cli-overrides}
+   Most `btbt` options accept a **short alias** (for example `btbt download -L 6882 …` for `--listen-port`). Expert-only knobs on `download` / `magnet` may stay long-only; see `CLI_SHORT_FLAG_EXCEPTIONS` in [ccbt/cli/cli_short_flag_exceptions.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/cli_short_flag_exceptions.py). Shared `download` / `magnet` tuning options are defined in [ccbt/cli/cli_option_sets.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/cli_option_sets.py).
 5. **Per-Torrent Defaults**: Global defaults for per-torrent options. See [Per-Torrent Configuration](#per-torrent-configuration) section
 6. **Per-Torrent Overrides**: Individual torrent settings (set via CLI, TUI, or programmatically)
 
@@ -106,6 +107,16 @@ Network settings: section `[network]` in [ccbt.toml](https://github.com/ccBittor
 
 Network config model: `NetworkConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
 
+#### Choking, upload slots, and remote UNCHOKE
+
+Download stalls with **successful handshakes** but **no piece data** are often **tit-for-tat**: remotes keep `peer_choking` true if we never give them a useful upload slot or optimistic unchoke. Tune these under `[network]` (see `NetworkConfig` / `env.example`):
+
+- **`max_upload_slots`** / `CCBT_MAX_UPLOAD_SLOTS`: how many peers we unchoke for uploads; too low can reduce reciprocal UNCHOKE from strict clients.
+- **`low_download_diversity_threshold`**, **`low_download_diversity_full_unchoke`**, **`low_download_diversity_max_peers`**, **`low_download_diversity_use_hysteresis`**, **`low_download_diversity_exit_margin`**: when few remotes have unchoked us, the client can **unchoke all active peers** (or the top N) to avoid deadlock; see field descriptions in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py) (`NetworkConfig`).
+- **`reciprocation_*`**, **`leech_heavy_swarm_total_upload_bps_threshold`**, **`optimistic_unchoke_*`**: scoring and rotation for who gets our upload slots and optimistic unchoke.
+
+The peer manager also applies a **bootstrap** path when **every** active peer still chokes us: it keeps our side fully unchoked for all actives to avoid a reciprocal choke loop ([`AsyncPeerConnectionManager._update_choking`](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/peer/async_peer_connection.py)).
+
 ### Plugins Configuration
 
 Section `[plugins]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml): `enable_plugins`, `auto_load_plugins`, `plugin_directories`. Model: `PluginsConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
@@ -138,6 +149,8 @@ Recovery behavior uses the following network/discovery controls:
 - `min_peers_before_dht` / `CCBT_MIN_PEERS_BEFORE_DHT`: threshold for deciding when immediate DHT fallback is needed.
 
 Low-peer recovery outcomes are now logged per-cycle with a single structured summary line that includes tracker/DHT outcomes, queued peer count, retry plan, and final recovery state.
+
+**Torrent shutdown and `event=stopped`:** When a torrent session stops, the client tears down peer connections and piece work first, then sends a best-effort BEP-style `stopped` announce to configured HTTP and UDP trackers (bounded by `tracker_stopped_announce_timeout_s` / `CCBT_TRACKER_STOPPED_ANNOUNCE_TIMEOUT_S`), then closes the tracker HTTP session. Trackers only need the client id, info hash, and stat snapshot for the announce; they do not require open peer sockets.
 
 Discovery config model: `DiscoveryConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
 
@@ -500,5 +513,8 @@ Per-torrent configuration is persisted in:
 - Configure timeouts based on network conditions in `ccbt.toml`.
 - Enable/disable protocols as needed in `ccbt.toml`.
 - Set rate limits appropriately in `ccbt.toml`.
+- **Peer discovery and pool:** `network.max_concurrent_connection_attempts` limits parallel outbound TCP attempts (reduces socket exhaustion). On Windows, connection pool warmup may be disabled automatically to avoid semaphore timeouts; see logs if you see “warmup disabled”.
+- **Tracker failures:** `network.tracker_payload_failure_quarantine_seconds` and `network.tracker_network_failure_quarantine_seconds` control backoff when announces return invalid payloads (for example HTML error pages) or network errors.
+- **Remote choke stall recovery:** `network.peer_choked_hard_timeout_seconds`, `network.peer_choked_anchor_timeout_seconds`, `network.peer_choked_solo_grace_seconds`, and optional `network.peer_choked_solo_grace_zero_bytes_cap_seconds` tune how long the client waits for a remote **UNCHOKE** before disconnecting and retrying other peers. Defaults favor keeping a single TCP path alive when discovery is weak; see [Network troubleshooting](network-troubleshooting.md).
 
 For detailed performance tuning, see [Performance Tuning Guide](performance.md).

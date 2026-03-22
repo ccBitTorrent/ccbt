@@ -10,7 +10,8 @@ import asyncio
 import contextlib
 import logging
 import socket
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from collections import defaultdict
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ccbt.config.config import get_config
 from ccbt.peer.inbound_protocol_classifier import (
@@ -114,7 +115,7 @@ class _ReplayableStreamReader:
             return
         wait = getattr(self._stream_reader, "wait", None)
         if callable(wait):
-            await cast(Any, wait)()
+            await cast("Any", wait)()
 
 
 class _MSEInboundSessionResolver:
@@ -155,7 +156,7 @@ class _MSEInboundSessionResolver:
     @staticmethod
     def resolve_single_session(
         session_manager: Optional[AsyncSessionManager],
-        info_hash: Optional[bytes]= None,
+        info_hash: Optional[bytes] = None,
     ) -> Optional[tuple[Any, bytes]]:
         candidates = _MSEInboundSessionResolver.resolve_session_candidates(
             session_manager
@@ -206,7 +207,7 @@ class IncomingPeerServer:
     """TCP server for accepting incoming BitTorrent peer connections."""
 
     def __init__(
-        self, session_manager: AsyncSessionManager, config: Optional[Any]= None
+        self, session_manager: AsyncSessionManager, config: Optional[Any] = None
     ):
         """Initialize incoming peer server.
 
@@ -217,13 +218,48 @@ class IncomingPeerServer:
         """
         self.session_manager = session_manager
         self.config = config or get_config()
-        self.server: Optional[asyncio.Server]= None
+        self.server: Optional[asyncio.Server] = None
         self._running = False
         self.logger = logging.getLogger(__name__)
         self._inbound_registration_probation: dict[str, int] = {}
         self._inbound_registration_probation_window = 8.0
         self._inbound_registration_probation_retry_interval = 0.5
         self._probation_tasks: set[asyncio.Task[None]] = set()
+        # Unknown-info-hash observability and bounded probation fan-out (wrong swarm / scanners).
+        self._inbound_unknown_hash_counts: defaultdict[str, int] = defaultdict(int)
+        self._probation_inflight_by_hash: dict[str, int] = {}
+        # Allow more concurrent registration waits per hash so magnet/slow-start
+        # torrents do not discard viable inbound peers during session registration races.
+        self._max_probation_inflight_per_hash = 8
+        # WARNING log sampling when sessions exist but this info_hash is unknown (storm control).
+        _net = getattr(self.config, "network", None)
+        _warn_n = 32
+        if _net is not None:
+            raw_iv = getattr(_net, "inbound_unknown_hash_warning_sample_interval", 32)
+            try:
+                _warn_n = int(raw_iv)
+            except (TypeError, ValueError):
+                _warn_n = 32
+        self._unknown_inbound_hash_warning_every_n = max(2, min(10_000, _warn_n))
+
+    def _should_abort_inbound_registration_wait(self) -> bool:
+        """True when inbound session lookup / probation should end immediately.
+
+        Includes global process shutdown and AsyncSessionManager.stop() (TCP may still
+        be accepting briefly while the manager is tearing down).
+        """
+        if not self._running or is_shutting_down():
+            return True
+        sm = self.session_manager
+        if sm is not None:
+            fn = getattr(sm, "is_shutting_down", None)
+            if callable(fn):
+                with contextlib.suppress(Exception):
+                    raw = fn()
+                    # Mocks may return non-bool truthy objects; only real True aborts
+                    if raw is True:
+                        return True
+        return False
 
     def _register_probation_task(self, task: asyncio.Task[None]) -> None:
         """Track background probation task for shutdown cleanup."""
@@ -250,15 +286,27 @@ class IncomingPeerServer:
         )
 
     @staticmethod
+    async def _close_writer_safely(writer: asyncio.StreamWriter) -> None:
+        """Close writer; ignore reset/broken-pipe errors common after remote hangup."""
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            pass
+
+    @staticmethod
     def _is_strict_mode(session: Any) -> bool:
         security = getattr(session, "config", None)
         if security is None:
             return False
-        return getattr(
-            getattr(security, "authenticated_swarms", None),
-            "mode",
-            "off",
-        ) == "strict"
+        return (
+            getattr(
+                getattr(security, "authenticated_swarms", None),
+                "mode",
+                "off",
+            )
+            == "strict"
+        )
 
     def _allow_inbound_admission(
         self,
@@ -561,11 +609,95 @@ class IncomingPeerServer:
     def _format_handshake_info_hash(
         self, parsed_handshake: ParsedInboundPlainHandshake
     ) -> str:
-        """Format v1 info hash for structured logs."""
+        """Format v1 info hash prefix for structured logs (full hash is 40 hex chars)."""
         info_hash = self._extract_probation_info_hash(parsed_handshake)
         if not info_hash:
             return "unknown"
-        return info_hash.hex()[:16]
+        return f"{info_hash.hex()[:16]}(prefix)"
+
+    def _inbound_unknown_hash_metric_key(
+        self, parsed_handshake: ParsedInboundPlainHandshake
+    ) -> str:
+        """Metric / sampling key (16-char hex prefix) for unknown inbound hashes."""
+        raw = self._extract_probation_info_hash(parsed_handshake)
+        return raw.hex()[:16] if raw else "unknown"
+
+    def _record_inbound_unknown_info_hash(
+        self, parsed_handshake: ParsedInboundPlainHandshake
+    ) -> None:
+        """Count inbound handshakes that did not map to an active session (by hash prefix)."""
+        key = self._inbound_unknown_hash_metric_key(parsed_handshake)
+        self._inbound_unknown_hash_counts[key] += 1
+
+    def _should_emit_unknown_inbound_hash_warning(self, metric_key: str) -> bool:
+        """First event and every Nth per hash prefix emit WARNING; others use DEBUG only."""
+        n = self._inbound_unknown_hash_counts.get(metric_key, 0)
+        interval = max(2, int(self._unknown_inbound_hash_warning_every_n))
+        return n == 1 or (n > 0 and n % interval == 0)
+
+    def _probation_hash_slot_key(self, info_hash: bytes) -> str:
+        return info_hash.hex() if info_hash else ""
+
+    def _reserve_probation_slot_for_hash(self, info_hash: bytes) -> bool:
+        """Limit concurrent probation waits per info hash to reduce resource burn."""
+        hk = self._probation_hash_slot_key(info_hash)
+        n = self._probation_inflight_by_hash.get(hk, 0)
+        if n >= self._max_probation_inflight_per_hash:
+            return False
+        self._probation_inflight_by_hash[hk] = n + 1
+        return True
+
+    def _release_probation_slot_for_hash(self, info_hash: bytes) -> None:
+        hk = self._probation_hash_slot_key(info_hash)
+        n = self._probation_inflight_by_hash.get(hk, 0)
+        if n <= 1:
+            self._probation_inflight_by_hash.pop(hk, None)
+        else:
+            self._probation_inflight_by_hash[hk] = n - 1
+
+    def get_inbound_unknown_info_hash_metrics(self) -> dict[str, int]:
+        """Snapshot of unknown inbound info-hash counts (16-char hex prefix keys)."""
+        return dict(self._inbound_unknown_hash_counts)
+
+    def _inbound_session_registration_wait_cap_s(
+        self,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        has_any_sessions: bool,
+    ) -> float:
+        """Max poll time for session lookup before probation / reject (wrong-swarm aware)."""
+        if not has_any_sessions:
+            return 60.0
+        prefix = self._inbound_unknown_hash_metric_key(parsed_handshake)
+        prior = self._inbound_unknown_hash_counts.get(prefix, 0)
+        if prior >= 12:
+            return 8.0
+        return 15.0
+
+    def _grace_poll_seconds_after_probation_cap(
+        self,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        has_any_sessions: bool,
+    ) -> float:
+        """Extra session poll when probation slots are saturated."""
+        if not has_any_sessions:
+            return 8.0
+        prefix = self._inbound_unknown_hash_metric_key(parsed_handshake)
+        if self._inbound_unknown_hash_counts.get(prefix, 0) >= 12:
+            return 1.5
+        return 2.5
+
+    def _probation_window_s_for_inbound(
+        self,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        has_any_sessions: bool,
+    ) -> float:
+        """Bounded probation retry window; shorter under unknown-hash storms."""
+        if not has_any_sessions:
+            return float(self._inbound_registration_probation_window)
+        prefix = self._inbound_unknown_hash_metric_key(parsed_handshake)
+        if self._inbound_unknown_hash_counts.get(prefix, 0) >= 12:
+            return 4.0
+        return float(self._inbound_registration_probation_window)
 
     def _should_probation_inbound(
         self, info_hash: bytes, peer_ip: str, peer_port: int
@@ -586,6 +718,29 @@ class IncomingPeerServer:
             self._get_inbound_probation_key(info_hash, peer_ip, peer_port), None
         )
 
+    async def _grace_poll_session_for_handshake(
+        self,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        *,
+        seconds: float,
+    ) -> Any:
+        """Short extra poll when probation fan-out is saturated (registration race)."""
+        if self.session_manager is None:
+            return None
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + max(0.0, seconds)
+        while (
+            loop.time() < deadline
+            and not self._should_abort_inbound_registration_wait()
+        ):
+            session = await self.session_manager.get_session_for_info_hash(
+                parsed_handshake
+            )
+            if session is not None:
+                return session
+            await asyncio.sleep(0.15)
+        return None
+
     async def _await_session_for_inbound_peer(
         self,
         reader: asyncio.StreamReader,
@@ -595,27 +750,26 @@ class IncomingPeerServer:
         peer_port: int,
         start_time: float,
         protocol_classification: InboundProtocolKind,
+        *,
+        probation_window_s: Optional[float] = None,
     ) -> None:
         """Retry inbound session lookup briefly before closing stalled handshakes."""
-        if is_shutting_down() or not self._running:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+        if self._should_abort_inbound_registration_wait():
+            await self._close_writer_safely(writer)
             return
 
         try:
             session = None
-            deadline = (
-                asyncio.get_event_loop().time()
-                + self._inbound_registration_probation_window
+            window = (
+                float(probation_window_s)
+                if probation_window_s is not None
+                else float(self._inbound_registration_probation_window)
             )
+            deadline = asyncio.get_event_loop().time() + max(0.5, window)
             while (
                 session is None
                 and asyncio.get_event_loop().time() < deadline
-                and self._running
-                and not is_shutting_down()
+                and not self._should_abort_inbound_registration_wait()
             ):
                 if self.session_manager is not None:
                     session = await self.session_manager.get_session_for_info_hash(
@@ -627,9 +781,8 @@ class IncomingPeerServer:
                     )
 
             if session is None:
-                if not self._running or is_shutting_down():
-                    writer.close()
-                    await writer.wait_closed()
+                if self._should_abort_inbound_registration_wait():
+                    await self._close_writer_safely(writer)
                     return
                 elapsed = asyncio.get_event_loop().time() - start_time
                 self.logger.debug(
@@ -639,8 +792,8 @@ class IncomingPeerServer:
                     peer_port,
                     elapsed,
                 )
-                writer.close()
-                await writer.wait_closed()
+                self._record_inbound_unknown_info_hash(parsed_handshake)
+                await self._close_writer_safely(writer)
                 return
 
             if (
@@ -655,12 +808,10 @@ class IncomingPeerServer:
                     peer_port,
                     self._format_handshake_info_hash(parsed_handshake),
                 )
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
-            if is_shutting_down() or not self._running:
-                writer.close()
-                await writer.wait_closed()
+            if self._should_abort_inbound_registration_wait():
+                await self._close_writer_safely(writer)
                 return
 
             if not self._allow_inbound_admission(
@@ -669,14 +820,12 @@ class IncomingPeerServer:
                 session,
                 protocol_classification,
             ):
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
 
             handshake_info_hash = self._extract_probation_info_hash(parsed_handshake)
             if not handshake_info_hash:
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
             handshake = Handshake(
                 handshake_info_hash,
@@ -697,15 +846,11 @@ class IncomingPeerServer:
                 peer_ip,
                 peer_port,
             )
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+            await self._close_writer_safely(writer)
         finally:
-            await self._release_inbound_probation(
-                self._extract_probation_info_hash(parsed_handshake), peer_ip, peer_port
-            )
+            ih = self._extract_probation_info_hash(parsed_handshake)
+            await self._release_inbound_probation(ih, peer_ip, peer_port)
+            self._release_probation_slot_for_hash(ih)
 
     async def _handle_inbound_mse_connection(
         self,
@@ -715,6 +860,13 @@ class IncomingPeerServer:
         peer_port: int,
     ) -> None:
         """Run inbound MSE/PE receiver handshake and hand off decrypted payload."""
+        if self._should_abort_inbound_registration_wait():
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
         try:
             candidates = _MSEInboundSessionResolver.resolve_session_candidates(
                 self.session_manager
@@ -754,7 +906,7 @@ class IncomingPeerServer:
 
             timeout = self.config.network.handshake_timeout
             result = await mse.respond_as_receiver_with_initial_data(
-                reader=cast(asyncio.StreamReader, reader),
+                reader=cast("asyncio.StreamReader", reader),
                 writer=writer,
                 info_hash=fallback_info_hash,
                 initial_payload_size=0,
@@ -867,7 +1019,7 @@ class IncomingPeerServer:
 
         self.logger.debug("Incoming connection from %s:%d", peer_ip, peer_port)
 
-        if is_shutting_down() or not self._running:
+        if self._should_abort_inbound_registration_wait():
             try:
                 writer.close()
                 await writer.wait_closed()
@@ -977,19 +1129,25 @@ class IncomingPeerServer:
 
             # Note: Lookup torrent session by info_hash with retry logic
             # Session may not be registered yet if it's starting in background
-            # Wait up to 60 seconds for session registration before rejecting connection
-            # Increased to 60s to handle slow session initialization, especially for magnet links
-            # Magnet links take longer to initialize (metadata fetching) than torrent files
+            # Shorter wait when other torrents are already active (likely wrong-swarm inbound).
             session = None
-            max_wait_time = 60.0  # Maximum time to wait for session registration (increased to 60s for magnet links)
+            has_any_sessions = False
+            if self.session_manager:
+                async with self.session_manager.lock:
+                    has_any_sessions = len(self.session_manager.torrents) > 0
+            # When other torrents are active, long waits mostly burn resources on wrong-swarm
+            # inbound; use a shorter cap (further reduced if this prefix is already noisy).
+            max_wait_time = self._inbound_session_registration_wait_cap_s(
+                parsed_handshake,
+                has_any_sessions,
+            )
             check_interval = 0.2  # Check every 200ms
             start_time = asyncio.get_event_loop().time()
 
             while (
                 session is None
                 and (asyncio.get_event_loop().time() - start_time) < max_wait_time
-                and self._running
-                and not is_shutting_down()
+                and not self._should_abort_inbound_registration_wait()
             ):
                 if self.session_manager is not None:
                     session = await self.session_manager.get_session_for_info_hash(
@@ -1001,72 +1159,125 @@ class IncomingPeerServer:
                     await asyncio.sleep(check_interval)
 
             if session is None:
-                if is_shutting_down() or not self._running:
+                if self._should_abort_inbound_registration_wait():
                     writer.close()
                     await writer.wait_closed()
                     return
                 elapsed = asyncio.get_event_loop().time() - start_time
-                if self._should_probation_inbound(
-                    self._extract_probation_info_hash(parsed_handshake),
-                    peer_ip,
-                    peer_port,
-                ):
-                    self.logger.debug(
-                        "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
-                        "Entering bounded registration probation for this peer.",
-                        self._format_handshake_info_hash(parsed_handshake),
-                        peer_ip,
-                        peer_port,
-                        elapsed,
-                    )
-                    probation_task = asyncio.create_task(
-                        self._await_session_for_inbound_peer(
-                    cast(asyncio.StreamReader, replayable_reader),
-                            writer,
-                            parsed_handshake,
+                probation_ih = self._extract_probation_info_hash(parsed_handshake)
+                if self._should_probation_inbound(probation_ih, peer_ip, peer_port):
+                    if self._reserve_probation_slot_for_hash(probation_ih):
+                        self.logger.debug(
+                            "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
+                            "Entering bounded registration probation for this peer.",
+                            self._format_handshake_info_hash(parsed_handshake),
                             peer_ip,
                             peer_port,
-                            start_time,
-                            protocol_kind,
+                            elapsed,
                         )
-                    )
-                    self._register_probation_task(probation_task)
-                    return
-                # Note: Check if any sessions exist at all
-                # If no sessions are registered, this is expected during startup - use DEBUG level
-                # If sessions exist but this one doesn't, it's a real issue - use WARNING level
-                has_any_sessions = False
-                if self.session_manager:
-                    async with self.session_manager.lock:
-                        has_any_sessions = len(self.session_manager.torrents) > 0
-
-                if not has_any_sessions:
-                    # No sessions registered yet - expected during startup
+                        probation_task = asyncio.create_task(
+                            self._await_session_for_inbound_peer(
+                                cast("asyncio.StreamReader", replayable_reader),
+                                writer,
+                                parsed_handshake,
+                                peer_ip,
+                                peer_port,
+                                start_time,
+                                protocol_kind,
+                                probation_window_s=self._probation_window_s_for_inbound(
+                                    parsed_handshake,
+                                    has_any_sessions,
+                                ),
+                            )
+                        )
+                        self._register_probation_task(probation_task)
+                        return
                     self.logger.debug(
-                        "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
-                        "No sessions registered yet (this is normal during daemon startup).",
+                        "No active torrent for info_hash %s from %s:%d — skipping probation "
+                        "(max %d concurrent probation wait(s) for this hash already in flight); "
+                        "grace-polling session registration briefly",
                         self._format_handshake_info_hash(parsed_handshake),
                         peer_ip,
                         peer_port,
-                        elapsed,
+                        self._max_probation_inflight_per_hash,
                     )
-                else:
-                    # Sessions exist but this one wasn't found - this is a real issue
-                    self.logger.warning(
-                        "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
-                        "Session may not be registered yet or torrent not active. "
-                        "This may indicate slow session initialization (especially for magnet links) or session registration failure. "
-                        "If this is a magnet link, metadata fetching may still be in progress.",
-                        self._format_handshake_info_hash(parsed_handshake),
-                        peer_ip,
-                        peer_port,
-                        elapsed,
+                    session = await self._grace_poll_session_for_handshake(
+                        parsed_handshake,
+                        seconds=self._grace_poll_seconds_after_probation_cap(
+                            parsed_handshake,
+                            has_any_sessions,
+                        ),
                     )
+                if session is None:
+                    self._record_inbound_unknown_info_hash(parsed_handshake)
+                    # Note: Check if any sessions exist at all
+                    # If no sessions are registered, this is expected during startup - use DEBUG level
+                    # If sessions exist but this one doesn't, it's a real issue - use WARNING level
+                    if self.session_manager:
+                        async with self.session_manager.lock:
+                            has_any_sessions = len(self.session_manager.torrents) > 0
+                    else:
+                        has_any_sessions = False
+
+                    if not has_any_sessions:
+                        # No sessions registered yet - expected during startup
+                        self.logger.debug(
+                            "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
+                            "No sessions registered yet (this is normal during daemon startup).",
+                            self._format_handshake_info_hash(parsed_handshake),
+                            peer_ip,
+                            peer_port,
+                            elapsed,
+                        )
+                    else:
+                        # Sessions exist but this one wasn't found — sample WARNING to limit log storms.
+                        unk_key = self._inbound_unknown_hash_metric_key(
+                            parsed_handshake
+                        )
+                        total_for_prefix = self._inbound_unknown_hash_counts.get(
+                            unk_key, 0
+                        )
+                        ih_fmt = self._format_handshake_info_hash(parsed_handshake)
+                        if self._should_emit_unknown_inbound_hash_warning(unk_key):
+                            self.logger.warning(
+                                "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
+                                "Session may not be registered yet or torrent not active. "
+                                "This may indicate slow session initialization "
+                                "(especially for magnet links) or session registration failure. "
+                                "If this is a magnet link, metadata fetching may still be in progress. "
+                                "(unknown-hash occurrence #%d for this prefix; see metrics)",
+                                ih_fmt,
+                                peer_ip,
+                                peer_port,
+                                elapsed,
+                                total_for_prefix,
+                            )
+                        else:
+                            self.logger.debug(
+                                "No active torrent for info_hash %s from %s:%d after waiting %.1fs. "
+                                "Session may not be registered yet or torrent not active. "
+                                "This may indicate slow session initialization "
+                                "(especially for magnet links) or session registration failure. "
+                                "If this is a magnet link, metadata fetching may still be in progress. "
+                                "[suppressed WARNING #%d for prefix %s; emit every %d]",
+                                ih_fmt,
+                                peer_ip,
+                                peer_port,
+                                elapsed,
+                                total_for_prefix,
+                                unk_key,
+                                self._unknown_inbound_hash_warning_every_n,
+                            )
+                    writer.close()
+                    await writer.wait_closed()
+                    return
+
+            if self._should_abort_inbound_registration_wait():
                 writer.close()
                 await writer.wait_closed()
                 return
 
-            if is_shutting_down() or not self._running:
+            if session is None:
                 writer.close()
                 await writer.wait_closed()
                 return
@@ -1105,7 +1316,7 @@ class IncomingPeerServer:
                 return
 
             await session.accept_incoming_peer(
-                cast(asyncio.StreamReader, replayable_reader),
+                cast("asyncio.StreamReader", replayable_reader),
                 writer,
                 handshake,
                 peer_ip,
@@ -1184,5 +1395,3 @@ class IncomingPeerServer:
                 pass
             except Exception:
                 pass  # Ignore other errors during cleanup
-
-

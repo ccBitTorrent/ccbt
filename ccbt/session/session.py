@@ -53,7 +53,11 @@ from ccbt.peer.inbound_protocol_classifier import InboundProtocolKind
 from ccbt.piece.file_selection import FileSelectionManager
 from ccbt.security.xet_allowlist import XetAllowlist
 from ccbt.services.peer_service import PeerService
-from ccbt.session.announce import AnnounceLoop, _queue_tracker_peers_for_later
+from ccbt.session.announce import (
+    AnnounceController,
+    AnnounceLoop,
+    _queue_tracker_peers_for_later,
+)
 from ccbt.session.checkpoint_operations import CheckpointOperations
 from ccbt.session.checkpointing import CheckpointController
 from ccbt.session.download_manager import AsyncDownloadManager
@@ -123,12 +127,12 @@ class TorrentSessionInfo:
     name: str
     output_dir: str
     added_time: float
-    swarm_id: Optional[str]= None
+    swarm_id: Optional[str] = None
     status: str = "stopped"  # starting, downloading, seeding, stopped, error
-    priority: Optional[str]= (
+    priority: Optional[str] = (
         None  # Queue priority (TorrentPriority enum value as string)
     )
-    queue_position: Optional[int]= (
+    queue_position: Optional[int] = (
         None  # Position in queue (0 = highest priority position)
     )
 
@@ -139,8 +143,8 @@ class AsyncTorrentSession:
     def __init__(
         self,
         torrent_data: Union[dict[str, Any], TorrentInfoModel],
-        output_dir: Union[str, Path]= ".",
-        session_manager: Optional[AsyncSessionManager]= None,
+        output_dir: Union[str, Path] = ".",
+        session_manager: Optional[AsyncSessionManager] = None,
     ) -> None:
         """Initialize TorrentSession with torrent data and output directory."""
         self.config = get_config()
@@ -161,48 +165,50 @@ class AsyncTorrentSession:
 
         # Set the piece manager on the download manager for compatibility
         self.download_manager.piece_manager = self.piece_manager
-        self.file_selection_manager: Optional[FileSelectionManager]= None
+        self.file_selection_manager: Optional[FileSelectionManager] = None
         self.ensure_file_selection_manager()
 
         # Note: Pass session_manager to AsyncTrackerClient
         # This ensures it uses the daemon's initialized UDP tracker client
         # instead of creating a new one, preventing WinError 10048
-        self.tracker = AsyncTrackerClient()
-        # Store session_manager reference so tracker can use initialized UDP client
-        if session_manager:
-            self.tracker._session_manager = session_manager  # type: ignore[attr-defined]
+        self.tracker = AsyncTrackerClient(session_manager=session_manager)
 
         # Note: Register immediate connection callback for tracker responses
         # This connects peers IMMEDIATELY when tracker responses arrive, before announce loop
         # Note: Callback will be registered in start() after components are initialized
-        self.pex_manager: Optional[AsyncPexManager]= None
+        self.pex_manager: Optional[AsyncPexManager] = None
         self.checkpoint_manager = CheckpointManager(self.config.disk)
 
         # Initialize checkpoint controller (will be fully initialized after ctx is created)
-        self.checkpoint_controller: Optional[CheckpointController]= None
+        self.checkpoint_controller: Optional[CheckpointController] = None
 
         # Note: Timestamp to track when tracker peers are being connected
         # This prevents DHT from starting until tracker connections complete
         # Use timestamp instead of boolean to handle multiple concurrent callbacks
-        self._tracker_peers_connecting_until: Optional[float]= None  # type: ignore[attr-defined]
-        self._tracker_immediate_connection_cooldown_until: Optional[float]= None
+        self._tracker_peers_connecting_until: Optional[float] = None  # type: ignore[attr-defined]
+        self._tracker_immediate_connection_cooldown_until: Optional[float] = None
         self._tracker_immediate_connect_burst_per_source = 24
         self._tracker_immediate_connect_burst_total = 24
+        self._tracker_immediate_connect_window_s = 20.0
+        self._tracker_immediate_connect_window_cap = 6
+        self._tracker_immediate_connect_timestamps: deque[float] = deque(maxlen=64)
+        self._last_immediate_zero_streak_log = 0
         self._last_tracker_metadata_fallback_at: float = 0.0
         self._tracker_metadata_fallback_in_progress: bool = False
         self._magnet_metadata_exchange_lock = asyncio.Lock()
         self._magnet_metadata_exchange_in_progress: bool = False
         self._last_magnet_metadata_exchange_attempt_at: float = 0.0
         self._magnet_metadata_exchange_failures: int = 0
-        self._magnet_metadata_exchange_source: Optional[str]= None
+        self._magnet_metadata_exchange_source: Optional[str] = None
         self._piece_map_revalidated_after_metadata: bool = False
-        self._low_peers_since: Optional[float]= None
+        self._low_peers_since: Optional[float] = None
         self._low_peers_lock = asyncio.Lock()
         self._low_peer_recovery_suppressed_until: float = 0.0
-        self._peer_count_low_recovery_task: Optional[asyncio.Task[None]]= None
+        self._peer_count_low_recovery_task: Optional[asyncio.Task[None]] = None
         self._peer_count_low_recovery_tasks_by_info_hash: dict[
             str, asyncio.Task[None]
         ] = {}
+        self._peer_count_low_recovery_started_monotonic: dict[str, float] = {}
         # Task tracking for piece verification and download completion
         # These are sets to track asyncio tasks and prevent garbage collection
         self._piece_verified_tasks: set[asyncio.Task[None]] = set()
@@ -272,24 +278,24 @@ class AsyncTorrentSession:
         self._peer_count_low_handler: Any = self._create_peer_count_low_handler()
 
         # Source tracking for checkpoint metadata
-        self.torrent_file_path: Optional[str]= None
-        self.magnet_uri: Optional[str]= None
+        self.torrent_file_path: Optional[str] = None
+        self.magnet_uri: Optional[str] = None
 
         # Background tasks
         self._task_supervisor = TaskSupervisor()
-        self._announce_task: Optional[asyncio.Task[None]]= None
-        self._status_task: Optional[asyncio.Task[None]]= None
-        self._checkpoint_task: Optional[asyncio.Task[None]]= None
-        self._seeding_stats_task: Optional[asyncio.Task[None]]= None
+        self._announce_task: Optional[asyncio.Task[None]] = None
+        self._status_task: Optional[asyncio.Task[None]] = None
+        self._checkpoint_task: Optional[asyncio.Task[None]] = None
+        self._seeding_stats_task: Optional[asyncio.Task[None]] = None
         self._stop_event = asyncio.Event()
         self._stopped = False  # Flag for incoming peer queue processor
-        self._swarm_auth_trust_store: Optional[Any]= None
-        self._swarm_auth_revocation_cache: Optional[Any]= None
+        self._swarm_auth_trust_store: Optional[Any] = None
+        self._swarm_auth_revocation_cache: Optional[Any] = None
         self._swarm_auth_trust_store_parse_error: bool = False
         self._swarm_auth_revocation_parse_error: bool = False
         self._swarm_auth_last_trust_store_reload: float = 0.0
         self._swarm_auth_last_revocation_reload: float = 0.0
-        self._swarm_auth_material_refresh_task: Optional[asyncio.Task[None]]= None
+        self._swarm_auth_material_refresh_task: Optional[asyncio.Task[None]] = None
 
         # Note: Initialize incoming peer handler and queue
         # This allows the TCP server to route incoming connections to this session
@@ -306,7 +312,7 @@ class AsyncTorrentSession:
             ]
         ] = asyncio.Queue()
         self._incoming_peer_handler = IncomingPeerHandler(self)
-        self._incoming_queue_task: Optional[asyncio.Task[None]]= None
+        self._incoming_queue_task: Optional[asyncio.Task[None]] = None
 
         # Checkpoint state
         self.checkpoint_loaded = False
@@ -388,6 +394,7 @@ class AsyncTorrentSession:
             "fail_fast_skipped_count": 0,
             "fail_fast_last_reason": "",
             "fail_fast_reason_counts": {},
+            "zero_active_batch_streak": 0,
         }
 
         # Discovery controller is initialized lazily by DHT setup.
@@ -815,6 +822,14 @@ class AsyncTorrentSession:
 
     def _schedule_peer_count_low_recovery(self, event_data: dict[str, Any]) -> None:
         """Schedule background peer_count_low recovery with local dedupe."""
+        stale_recovery_s = float(
+            getattr(
+                getattr(self.config, "network", None),
+                "peer_count_low_recovery_stale_after_s",
+                90.0,
+            )
+            or 90.0
+        )
         info_hash_raw = event_data.get("info_hash", "")
         if isinstance(info_hash_raw, bytes):
             info_hash_key = info_hash_raw.hex()
@@ -826,13 +841,39 @@ class AsyncTorrentSession:
             info_hash_key
         )
         if existing_task is not None and not existing_task.done():
-            self.logger.debug(
-                "Peer-count-low recovery already in progress for %s; skipping redundant scheduling",
-                info_hash_key,
-            )
-            return
-        if existing_task is not None:
+            started = self._peer_count_low_recovery_started_monotonic.get(info_hash_key)
+            if started is None:
+                self.logger.warning(
+                    "Cancelling peer_count_low recovery for %s (missing start timestamp)",
+                    info_hash_key,
+                )
+                existing_task.cancel()
+                self._peer_count_low_recovery_tasks_by_info_hash.pop(
+                    info_hash_key, None
+                )
+                self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
+            else:
+                age_s = time.monotonic() - started
+                if age_s < stale_recovery_s:
+                    self.logger.debug(
+                        "Peer-count-low recovery already in progress for %s; skipping redundant scheduling",
+                        info_hash_key,
+                    )
+                    return
+                self.logger.warning(
+                    "Replacing stale peer_count_low recovery for %s (age %.1fs >= %.1fs)",
+                    info_hash_key,
+                    age_s,
+                    stale_recovery_s,
+                )
+                existing_task.cancel()
+                self._peer_count_low_recovery_tasks_by_info_hash.pop(
+                    info_hash_key, None
+                )
+                self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
+        elif existing_task is not None and existing_task.done():
             self._peer_count_low_recovery_tasks_by_info_hash.pop(info_hash_key, None)
+            self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
 
         self._peer_count_low_recovery_task = self._task_supervisor.create_task(
             self._recover_from_peer_count_low(event_data),
@@ -840,6 +881,9 @@ class AsyncTorrentSession:
         )
         self._peer_count_low_recovery_tasks_by_info_hash[info_hash_key] = (
             self._peer_count_low_recovery_task
+        )
+        self._peer_count_low_recovery_started_monotonic[info_hash_key] = (
+            time.monotonic()
         )
         self._peer_count_low_recovery_task.add_done_callback(
             lambda task, key=info_hash_key: self._clear_peer_count_low_recovery_task(
@@ -883,6 +927,7 @@ class AsyncTorrentSession:
             self._peer_count_low_recovery_tasks_by_info_hash.pop(info_hash_key, None)
         if self._peer_count_low_recovery_task is task:
             self._peer_count_low_recovery_task = None
+        self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
 
     async def _recover_from_peer_count_low(self, event_data: dict[str, Any]) -> None:
         """Run the full peer_count_low recovery flow in a background task."""
@@ -1076,28 +1121,31 @@ class AsyncTorrentSession:
                 not metadata_incomplete and active_peer_count <= low_peer_threshold
             )
             if low_peer_state and low_peer_window > 0.0:
-                low_peer_recovery_now = time.time()
+                low_peer_recovery_now = time.monotonic()
                 if low_peer_recovery_now < self._low_peer_recovery_suppressed_until:
-                    self.logger.debug(
-                        "🧱 DHT SKIP: Low-peer recovery for %s is suppressed for %.1fs more",
-                        self.info.name,
+                    remaining_s = max(
+                        0.0,
                         self._low_peer_recovery_suppressed_until
                         - low_peer_recovery_now,
                     )
-                _emit_recovery_cycle_summary(
-                    final_active=active_peer_count,
-                    final_productive=productive_peers,
-                    final_requestable=requestable_peers,
-                    final_piece_info=peers_with_piece_info,
-                    final_metadata_incomplete=metadata_incomplete,
-                    decision="suppressed",
-                    retry_plan="suppress_until_low_peer_window",
-                    retry_in_s=self._low_peer_recovery_suppressed_until
-                    - low_peer_recovery_now,
-                    fail_fast_triggered=False,
-                    fail_fast_reason="suppressed_low_peer_window",
-                )
-                return
+                    self.logger.debug(
+                        "🧱 DHT SKIP: Low-peer recovery for %s is suppressed for %.1fs more",
+                        self.info.name,
+                        remaining_s,
+                    )
+                    _emit_recovery_cycle_summary(
+                        final_active=active_peer_count,
+                        final_productive=productive_peers,
+                        final_requestable=requestable_peers,
+                        final_piece_info=peers_with_piece_info,
+                        final_metadata_incomplete=metadata_incomplete,
+                        decision="suppressed",
+                        retry_plan="suppress_until_low_peer_window",
+                        retry_in_s=remaining_s,
+                        fail_fast_triggered=False,
+                        fail_fast_reason="suppressed_low_peer_window",
+                    )
+                    return
             fail_fast_triggered = False
             current_time = time.monotonic()
             if (
@@ -1345,7 +1393,7 @@ class AsyncTorrentSession:
             if active_peer_count < min_peers_before_dht and not fail_fast_triggered:
                 if low_peer_state and low_peer_window > 0.0:
                     self._low_peer_recovery_suppressed_until = (
-                        time.time() + low_peer_window
+                        time.monotonic() + low_peer_window
                     )
                 self.logger.debug(
                     "DHT skip: swarm still below DHT threshold (active=%d, productive=%d, requestable=%d, piece_info=%d; minimum=%d). "
@@ -1529,16 +1577,7 @@ class AsyncTorrentSession:
                     return _TrackerHandoffOutcome.TRACKER_HANDOFF_FAILED
 
             tracker_handoff_outcome = _TrackerHandoffOutcome.TRACKER_BATCH_EXHAUSTED
-            if (not hasattr(self, "_announce_task") or not self._announce_task) or (
-                hasattr(self, "_announce_task")
-                and self._announce_task
-                and not self._announce_task.done()
-            ):
-                tracker_handoff_outcome = await immediate_announce()
-            else:
-                self.logger.debug(
-                    "Skipping immediate tracker handoff: announce loop task has completed (periodic announces no longer running)"
-                )
+            tracker_handoff_outcome = await immediate_announce()
             recovery_summary["tracker_outcome"] = tracker_handoff_outcome.value
             if (
                 tracker_handoff_outcome
@@ -1577,7 +1616,7 @@ class AsyncTorrentSession:
             min_interval_between_immediate_queries = (
                 low_peer_window
                 if low_peer_state and low_peer_window > 0.0
-                else 60.0  # Increased from 10s to 60s to prevent blacklisting
+                else max(10.0, float(fail_fast_timeout) / 2.0)
             )
 
             if (
@@ -1620,7 +1659,7 @@ class AsyncTorrentSession:
                     if dht_client:
                         if low_peer_state and low_peer_window > 0.0:
                             self._low_peer_recovery_suppressed_until = (
-                                current_time + low_peer_window
+                                time.monotonic() + low_peer_window
                             )
 
                         # Note: Use very conservative parameters to prevent
@@ -1775,9 +1814,11 @@ class AsyncTorrentSession:
             # Initialize authenticated-swarm trust material (allow-list/revocation) and start refresh loop.
             self._load_swarm_auth_materials(force=True)
             if self._has_swarm_auth_material_sources():
-                self._swarm_auth_material_refresh_task = self._task_supervisor.create_task(
-                    self._swarm_auth_material_refresh_loop(),
-                    name="swarm_auth_material_refresh",
+                self._swarm_auth_material_refresh_task = (
+                    self._task_supervisor.create_task(
+                        self._swarm_auth_material_refresh_loop(),
+                        name="swarm_auth_material_refresh",
+                    )
                 )
 
             # Apply per-torrent configuration options (override global config)
@@ -2293,7 +2334,7 @@ class AsyncTorrentSession:
         handshake: Any,
         peer_ip: str,
         peer_port: int,
-        protocol_classification: Optional[InboundProtocolKind]= None,
+        protocol_classification: Optional[InboundProtocolKind] = None,
     ) -> None:
         """Accept an incoming peer connection.
 
@@ -2317,6 +2358,116 @@ class AsyncTorrentSession:
             peer_port,
             protocol_classification=protocol_classification,
         )
+
+    async def _announce_stopped_best_effort(self) -> None:
+        """Send event=stopped to all configured trackers (bounded time, best-effort)."""
+        disc = self.config.discovery
+        if not disc.enable_http_trackers and not disc.enable_udp_trackers:
+            self.logger.debug(
+                "Skipping stopped announce: HTTP and UDP trackers are disabled"
+            )
+            return
+
+        tracker = self.tracker
+        if not getattr(tracker, "session", None):
+            self.logger.debug(
+                "Skipping stopped announce: tracker client was never started"
+            )
+            return
+
+        ctx = SessionContext(
+            config=self.config,
+            torrent_data=self._normalized_td,
+            output_dir=self.output_dir,
+            info=self.info,
+            logger=self.logger,
+            session_manager=self.session_manager,
+        )
+        controller = AnnounceController(ctx, cast("TrackerClientProtocol", tracker))
+        td = controller.prepare_torrent_dict(self._normalized_td)
+        tracker_urls = controller.collect_trackers(td)
+        filtered: list[str] = []
+        for url in tracker_urls:
+            if url.startswith("udp://") and not disc.enable_udp_trackers:
+                continue
+            if (
+                url.startswith(("http://", "https://"))
+                and not disc.enable_http_trackers
+            ):
+                continue
+            filtered.append(url)
+        if not filtered:
+            self.logger.debug("No tracker URLs for stopped announce; skipping")
+            return
+
+        listen_port = (
+            self.config.network.listen_port_tcp or self.config.network.listen_port
+        )
+        announce_port = int(listen_port)
+        if self.session_manager is not None:
+            nat_manager = getattr(self.session_manager, "nat_manager", None)
+            if nat_manager is not None:
+                try:
+                    ext = await nat_manager.get_external_port(listen_port, "tcp")
+                    if ext is not None:
+                        announce_port = int(ext)
+                except Exception:
+                    self.logger.debug(
+                        "NAT external port lookup failed for stopped announce; using %d",
+                        announce_port,
+                        exc_info=True,
+                    )
+
+        downloaded = 0
+        if self.piece_manager is not None:
+            downloaded = int(getattr(self.piece_manager, "bytes_downloaded", 0) or 0)
+        uploaded = 0
+        pm = getattr(self.download_manager, "peer_manager", None)
+        if pm is not None:
+            for conn in pm.get_connected_peers():
+                stats = getattr(conn, "stats", None)
+                if stats is not None and hasattr(stats, "bytes_uploaded"):
+                    uploaded += int(getattr(stats, "bytes_uploaded", 0) or 0)
+
+        fi = td.get("file_info") if isinstance(td, dict) else None
+        total_length = 0
+        if isinstance(fi, dict):
+            total_length = int(fi.get("total_length", 0) or 0)
+        left = max(0, total_length - downloaded) if total_length > 0 else 0
+
+        timeout_s = float(disc.tracker_stopped_announce_timeout_s)
+
+        async def _do_stopped_announces() -> None:
+            if hasattr(tracker, "announce_to_multiple"):
+                await tracker.announce_to_multiple(
+                    td,
+                    filtered,
+                    port=announce_port,
+                    uploaded=uploaded,
+                    downloaded=downloaded,
+                    left=left,
+                    event="stopped",
+                    allow_all_failure_retry=True,
+                )
+
+        try:
+            await asyncio.wait_for(_do_stopped_announces(), timeout=timeout_s)
+            self.logger.info(
+                "Stopped announce sent (best-effort) to %d tracker(s) for %s",
+                len(filtered),
+                self.info.name,
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "Stopped announce timed out after %.1fs for %s (%d trackers)",
+                timeout_s,
+                self.info.name,
+                len(filtered),
+            )
+        except Exception:
+            self.logger.debug(
+                "Stopped announce failed for %s", self.info.name, exc_info=True
+            )
 
     async def stop(self) -> None:
         """Stop the async torrent session."""
@@ -2387,6 +2538,7 @@ class AsyncTorrentSession:
             if recovery_task and not recovery_task.done():
                 recovery_task.cancel()
                 tasks_to_cancel.append(recovery_task)
+        self._peer_count_low_recovery_started_monotonic.clear()
 
         # Use lifecycle controller for task cancellation sequencing
         await self.lifecycle_controller.on_stop(self)
@@ -2429,6 +2581,16 @@ class AsyncTorrentSession:
 
         await self.download_manager.stop()
         await self.piece_manager.stop()
+
+        # Best-effort stopped announces (BEP) before closing the tracker HTTP session
+        try:
+            await self._announce_stopped_best_effort()
+        except Exception:
+            self.logger.debug(
+                "Stopped announce phase error for %s",
+                self.info.name,
+                exc_info=True,
+            )
 
         # Note: Ensure tracker is properly stopped and session is closed
         # This prevents "Unclosed client session" warnings
@@ -2672,12 +2834,73 @@ class AsyncTorrentSession:
                 )
                 return
 
+            streak = int(
+                self._peer_discovery_metrics.get("zero_active_batch_streak", 0) or 0
+            )
+            short_k = int(
+                getattr(
+                    self.config.network,
+                    "tracker_zero_active_batches_before_dht_short_circuit",
+                    3,
+                )
+                or 3
+            )
+            if streak >= short_k and streak > self._last_immediate_zero_streak_log:
+                self.logger.info(
+                    "⚡ IMMEDIATE CONNECTION: zero-active batch streak crossed threshold (%d >= %d) for %s",
+                    streak,
+                    short_k,
+                    self.info.name,
+                )
+                self._last_immediate_zero_streak_log = streak
+            elif streak == 0 and self._last_immediate_zero_streak_log != 0:
+                self._last_immediate_zero_streak_log = 0
+
+            # Circuit-breaker: when callbacks arrive in bursts while zero-active streak is high,
+            # skip this callback and apply short cooldown to avoid immediate-connection churn.
+            while (
+                self._tracker_immediate_connect_timestamps
+                and connection_start_time
+                - self._tracker_immediate_connect_timestamps[0]
+                > self._tracker_immediate_connect_window_s
+            ):
+                self._tracker_immediate_connect_timestamps.popleft()
+            if (
+                streak >= max(2, short_k - 1)
+                and len(self._tracker_immediate_connect_timestamps)
+                >= self._tracker_immediate_connect_window_cap
+            ):
+                cooldown_seconds = min(3.0, 0.6 + 0.25 * streak)
+                self._tracker_immediate_connection_cooldown_until = (
+                    connection_start_time + cooldown_seconds
+                )
+                self.logger.info(
+                    "⚡ IMMEDIATE CONNECTION: burst cap engaged (callbacks=%d within %.1fs, streak=%d); "
+                    "skipping %d peer(s) and cooling down %.1fs",
+                    len(self._tracker_immediate_connect_timestamps),
+                    self._tracker_immediate_connect_window_s,
+                    streak,
+                    len(peers),
+                    cooldown_seconds,
+                )
+                return
+            self._tracker_immediate_connect_timestamps.append(connection_start_time)
+
             self.record_discovered_peers(peers, source="tracker")
 
             # Note: Set timestamp to indicate tracker peers are being connected
             # This prevents DHT from starting until tracker connections complete
             # Use timestamp to handle multiple concurrent callbacks - extend the time if needed
             max_wait_time = 4.0 if self._metadata_is_incomplete() else 2.0
+            if streak >= short_k:
+                max_wait_time = min(max_wait_time, 0.5)
+                self.logger.info(
+                    "⚡ IMMEDIATE CONNECTION: zero-active batch streak=%d (>=%d): "
+                    "shortening tracker→DHT deferral to %.1fs",
+                    streak,
+                    short_k,
+                    max_wait_time,
+                )
             max_peers_per_torrent = getattr(
                 self.config.network,
                 "max_peers_per_torrent",
@@ -2828,9 +3051,23 @@ class AsyncTorrentSession:
 
                             now = time_module.time()
                             fallback_cooldown = 15.0
+                            defer_metadata_fallback = False
+                            with contextlib.suppress(Exception):
+                                pm = getattr(
+                                    self.download_manager, "peer_manager", None
+                                )
+                                if pm is not None and bool(
+                                    getattr(
+                                        pm, "_connection_batches_in_progress", False
+                                    )
+                                ):
+                                    conns = getattr(pm, "connections", None)
+                                    if isinstance(conns, dict) and len(conns) == 0:
+                                        defer_metadata_fallback = True
                             if (
                                 metadata_incomplete
                                 and not self._tracker_metadata_fallback_in_progress
+                                and not defer_metadata_fallback
                                 and (
                                     severe_metadata_starvation
                                     or now - self._last_tracker_metadata_fallback_at
@@ -2980,16 +3217,12 @@ class AsyncTorrentSession:
         # Type ignore: immediate_peer_connection is async but tracker handles both sync and async callbacks
         self.tracker.on_peers_received = immediate_peer_connection  # type: ignore[assignment]
 
-        # Register callback on UDP tracker client (via session_manager)
-        if self.session_manager and hasattr(self.session_manager, "udp_tracker_client"):
-            udp_client = self.session_manager.udp_tracker_client
-            if udp_client:
-                # Type ignore: immediate_peer_connection is async but tracker handles both sync and async callbacks
-                udp_client.on_peers_received = immediate_peer_connection  # type: ignore[assignment]
-                self.logger.info(
-                    "✅ IMMEDIATE CONNECTION: Registered callback on HTTP and UDP tracker clients for %s",
-                    self.info.name,
-                )
+        # UDP: immediate connect only via announce_to_tracker_full(..., on_immediate_peers=...)
+        # per torrent/swarm (shared UDP client; no global handler on the UDP client).
+        self.logger.info(
+            "✅ IMMEDIATE CONNECTION: Registered callback on HTTP tracker client for %s (UDP via per-announce)",
+            self.info.name,
+        )
 
     async def _announce_loop(self) -> None:
         """Background task for periodic tracker announces with adaptive intervals.
@@ -4744,7 +4977,7 @@ class AsyncTorrentSession:
         productive_connections: int,
         metadata_incomplete: bool,
         batches_in_progress: bool,
-        connection_manager_summary: Optional[dict[str, int]]= None,
+        connection_manager_summary: Optional[dict[str, int]] = None,
         connection_successes: int = 0,
     ) -> None:
         """Record peer-connection batch metrics for discovery observability."""
@@ -4760,6 +4993,19 @@ class AsyncTorrentSession:
             "batches_in_progress": bool(batches_in_progress),
             "connection_manager_summary": dict(connection_manager_summary or {}),
         }
+        if attempted_peers > 0 and not batches_in_progress:
+            any_success = (
+                active_connections > 0
+                or requestable_connections > 0
+                or productive_connections > 0
+                or connection_successes > 0
+            )
+            if any_success:
+                metrics["zero_active_batch_streak"] = 0
+            else:
+                metrics["zero_active_batch_streak"] = (
+                    int(metrics.get("zero_active_batch_streak", 0) or 0) + 1
+                )
         if connection_successes:
             metrics["connection_successes"] = int(
                 metrics.get("connection_successes", 0)
@@ -4776,7 +5022,7 @@ class AsyncTorrentSession:
         self,
         peers: list[dict[str, Any]] | list[tuple[str, int]],
         *,
-        source: Optional[str]= None,
+        source: Optional[str] = None,
     ) -> None:
         """Record peer discovery ingress counts before ranking/filtering."""
         source_counts: dict[str, int] = {}
@@ -4878,7 +5124,7 @@ class AsyncTorrentSession:
         return max(0.0, self._metadata_exchange_retry_delay() - elapsed)
 
     async def _report_metadata_exchange_attempt(
-        self, metadata_source: str, *, success: bool, error: Optional[Exception]= None
+        self, metadata_source: str, *, success: bool, error: Optional[Exception] = None
     ) -> None:
         """Record metadata exchange telemetry."""
         metrics = self._peer_discovery_metrics
@@ -4939,6 +5185,8 @@ class AsyncTorrentSession:
             "active_peers": 0,
             "productive_peers": 0,
             "requestable_peers": 0,
+            "remote_choked_peers": 0,
+            "pipeline_saturated_peers": 0,
             "peers_with_piece_info": 0,
             "handshake_complete_peers": 0,
             "extension_capable_peers": 0,
@@ -4964,6 +5212,12 @@ class AsyncTorrentSession:
                 )
                 state["requestable_peers"] = int(
                     summary.get("requestable_connections", 0) or 0
+                )
+                state["remote_choked_peers"] = int(
+                    summary.get("remote_choked_connections", 0) or 0
+                )
+                state["pipeline_saturated_peers"] = int(
+                    summary.get("pipeline_saturated_connections", 0) or 0
                 )
                 state["peers_with_piece_info"] = int(
                     summary.get("peers_with_piece_info", 0) or 0
@@ -5256,7 +5510,7 @@ class AsyncTorrentSession:
                     Any,  # Handshake
                     str,  # peer_ip
                     int,  # peer_port
-            InboundProtocolKind,  # Protocol classification
+                    InboundProtocolKind,  # Protocol classification
                 ]
             ]()
         return self._incoming_peer_queue
@@ -5265,7 +5519,7 @@ class AsyncTorrentSession:
 class AsyncSessionManager:
     """High-performance async session manager for multiple torrents."""
 
-    def __init__(self, output_dir: str = ".", key_manager: Optional[Any]= None):
+    def __init__(self, output_dir: str = ".", key_manager: Optional[Any] = None):
         """Initialize async session manager."""
         self.config = get_config()
         self.output_dir = output_dir
@@ -5274,20 +5528,21 @@ class AsyncSessionManager:
         self.lock = asyncio.Lock()
         # Backward-compatibility flag used by sync wrapper tests.
         self._session_started = False
+        self._manager_shutting_down = False
 
         # Global components
-        self.dht_client: Optional[AsyncDHTClient]= None
-        self.metrics: Optional[Metrics]= None  # Initialized in start() if enabled
-        self.peer_service: Optional[PeerService]= PeerService(
+        self.dht_client: Optional[AsyncDHTClient] = None
+        self.metrics: Optional[Metrics] = None  # Initialized in start() if enabled
+        self.peer_service: Optional[PeerService] = PeerService(
             max_peers=self.config.network.max_global_peers,
             connection_timeout=self.config.network.connection_timeout,
         )
 
         # Background tasks
         self._task_supervisor = TaskSupervisor()
-        self._cleanup_task: Optional[asyncio.Task]= None
-        self._metrics_task: Optional[asyncio.Task]= None
-        self._metrics_restart_task: Optional[asyncio.Task]= None
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._metrics_task: Optional[asyncio.Task] = None
+        self._metrics_restart_task: Optional[asyncio.Task] = None
         self._metrics_sample_interval = 1.0
         self._metrics_emit_interval = 10.0
         self._last_metrics_emit = 0.0
@@ -5304,6 +5559,7 @@ class AsyncSessionManager:
             Callable[[bytes, str], None]
             | Callable[[bytes, str], Coroutine[Any, Any, None]]
         ) = None
+        self.on_component_started: Optional[Callable[[str, dict[str, Any]], Any]] = None
         # XET folder callbacks
         self.on_xet_folder_added: Callable[[str, str], None] | None = None
         self.on_xet_folder_removed: Callable[[str], None] | None = None
@@ -5332,75 +5588,78 @@ class AsyncSessionManager:
                 global_up_kib,
             )
 
-        # Optional dependency injection container
-        self._di: Optional[DIContainer]= None
+        # Default DI: process-wide UDP tracker via udp_tracker_client_provider, etc.
+        from ccbt.utils.di import default_container
+
+        self._di: DIContainer = default_container()
 
         # Components initialized by startup functions
-        self.security_manager: Optional[Any]= None
-        self.nat_manager: Optional[Any]= None
-        self.tcp_server: Optional[Any]= None
+        self.security_manager: Optional[Any] = None
+        self.nat_manager: Optional[Any] = None
+        self.tcp_server: Optional[Any] = None
         # Note: Store reference to initialized UDP tracker client
         # This ensures all torrent sessions use the same initialized socket
         # The UDP tracker client is a singleton, but we store the reference
         # to ensure it's accessible and to prevent any lazy initialization
-        self.udp_tracker_client: Optional[Any]= None
+        self.udp_tracker_client: Optional[Any] = None
+        self._udp_tracker_client_init_failed: bool = False
         # Queue manager for priority-based torrent scheduling
-        self.queue_manager: Optional[Any]= None
-        self.key_manager: Optional[Any]= None
+        self.queue_manager: Optional[Any] = None
+        self.key_manager: Optional[Any] = None
 
         # Note: Store executor initialized at daemon startup
         # This ensures executor uses the session manager's initialized components
         # and prevents duplicate executor creation
-        self.executor: Optional[Any]= None
+        self.executor: Optional[Any] = None
 
         # Note: Store protocol manager initialized at daemon startup
         # Singleton pattern removed - protocol manager is now managed via session manager
         # This ensures proper lifecycle management and prevents conflicts
-        self.protocol_manager: Optional[Any]= None
+        self.protocol_manager: Optional[Any] = None
 
         # Note: Store WebTorrent WebSocket server initialized at daemon startup
         # WebSocket server socket must be initialized once and never recreated
         # This prevents port conflicts and socket recreation issues
-        self.webtorrent_websocket_server: Optional[Any]= None
+        self.webtorrent_websocket_server: Optional[Any] = None
 
         # Note: Store WebRTC connection manager initialized at daemon startup
         # WebRTC manager should be shared across all WebTorrent protocol instances
         # This ensures proper resource management and prevents duplicate managers
-        self.webrtc_manager: Optional[Any]= None
+        self.webrtc_manager: Optional[Any] = None
 
         # Note: Store uTP socket manager initialized at daemon startup
         # Singleton pattern removed - uTP socket manager is now managed via session manager
         # This ensures proper socket lifecycle management and prevents socket recreation
-        self.utp_socket_manager: Optional[Any]= None
+        self.utp_socket_manager: Optional[Any] = None
 
         # Note: Store extension manager initialized at daemon startup
         # Singleton pattern removed - extension manager is now managed via session manager
         # This ensures proper lifecycle management and prevents conflicts
-        self.extension_manager: Optional[Any]= None
+        self.extension_manager: Optional[Any] = None
         self._extension_manager_resolution_source: str = "unresolved"
         self._extension_manager_initialization_time: float = 0.0
-        self._extension_manager_last_error: Optional[str]= None
+        self._extension_manager_last_error: Optional[str] = None
 
         # Note: Store disk I/O manager initialized at daemon startup
         # Singleton pattern removed - disk I/O manager is now managed via session manager
         # This ensures proper lifecycle management and prevents conflicts
-        self.disk_io_manager: Optional[Any]= None
+        self.disk_io_manager: Optional[Any] = None
 
         # Private torrents set (used by DHT client factory)
         self.private_torrents: set[bytes] = set()
 
         # XET folder synchronization components
         self._xet_transport_registry: dict[str, dict[str, Any]] = {}
-        self._xet_realtime_sync: Optional[Any]= None
-        self.xet_cas_client: Optional[P2PCASClient]= None
-        self.xet_catalog: Optional[XetChunkCatalog]= None
-        self.xet_bloom_filter: Optional[XetChunkBloomFilter]= None
-        self.xet_lpd_client: Optional[LocalPeerDiscovery]= None
-        self.xet_multicast_broadcaster: Optional[XetMulticastBroadcaster]= None
-        self.xet_gossip_manager: Optional[XetGossipManager]= None
-        self.xet_flooding_client: Optional[ControlledFlooding]= None
+        self._xet_realtime_sync: Optional[Any] = None
+        self.xet_cas_client: Optional[P2PCASClient] = None
+        self.xet_catalog: Optional[XetChunkCatalog] = None
+        self.xet_bloom_filter: Optional[XetChunkBloomFilter] = None
+        self.xet_lpd_client: Optional[LocalPeerDiscovery] = None
+        self.xet_multicast_broadcaster: Optional[XetMulticastBroadcaster] = None
+        self.xet_gossip_manager: Optional[XetGossipManager] = None
+        self.xet_flooding_client: Optional[ControlledFlooding] = None
         # Shared PEX manager for XET discovery (created in _ensure_xet_discovery_graph if needed)
-        self.pex_manager: Optional[AsyncPexManager]= None
+        self.pex_manager: Optional[AsyncPexManager] = None
         self._xet_discovery_status: dict[str, Any] = {}
         # XET folder sessions (keyed by info_hash or folder_path)
         self.xet_folders: dict[str, Any] = {}  # folder_path or info_hash -> XetFolder
@@ -5424,7 +5683,7 @@ class AsyncSessionManager:
         self.scrape_cache_lock = asyncio.Lock()
 
         # Periodic scrape task (started in start() if auto-scrape enabled)
-        self.scrape_task: Optional[asyncio.Task]= None
+        self.scrape_task: Optional[asyncio.Task] = None
 
         # Initialize torrent addition handler
         self.torrent_addition_handler = TorrentAdditionHandler(self)
@@ -5528,7 +5787,7 @@ class AsyncSessionManager:
         # CRITICAL: Import here to ensure test patches work (patches apply before this import)
         from ccbt.discovery.tracker import AsyncTrackerClient
 
-        tracker_client = AsyncTrackerClient()
+        tracker_client = AsyncTrackerClient(session_manager=self)
         try:
             await tracker_client.start()
             torrent_data = {
@@ -5597,7 +5856,7 @@ class AsyncSessionManager:
         await self.pex_manager.add_peers([peer])
 
     def _is_xet_peer_authorized(
-        self, peer_id: str, workspace_id_hex: Optional[str]= None
+        self, peer_id: str, workspace_id_hex: Optional[str] = None
     ) -> bool:
         """Return whether any active peer manager recognizes peer_id as XET-authorized."""
         for session in self.torrents.values():
@@ -5680,6 +5939,11 @@ class AsyncSessionManager:
         if not isinstance(last_success, dict):
             last_success = {}
 
+        try:
+            udp_trackers_enabled = bool(self.config.discovery.enable_udp_trackers)
+        except AttributeError:
+            udp_trackers_enabled = True
+
         self._xet_discovery_status = {
             "dht": {
                 "enabled": self.dht_client is not None,
@@ -5688,10 +5952,17 @@ class AsyncSessionManager:
                 "last_success": last_success.get("dht"),
             },
             "tracker": {
-                "enabled": getattr(self, "udp_tracker_client", None) is not None,
+                "enabled": udp_trackers_enabled,
                 "injected": getattr(self, "udp_tracker_client", None) is not None,
-                "health": getattr(self, "udp_tracker_client", None) is not None,
+                "health": udp_trackers_enabled
+                and getattr(self, "udp_tracker_client", None) is not None
+                and not getattr(self, "_udp_tracker_client_init_failed", False),
                 "last_success": last_success.get("tracker"),
+                "udp_tracker_client_ready": getattr(self, "udp_tracker_client", None)
+                is not None,
+                "udp_tracker_client_init_failed": getattr(
+                    self, "_udp_tracker_client_init_failed", False
+                ),
             },
             "catalog": {
                 "enabled": self.xet_catalog is not None,
@@ -5924,12 +6195,16 @@ class AsyncSessionManager:
         # UDP tracker client initialization
         async def start_udp_tracker_client() -> None:
             try:
-                from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
+                from ccbt.session.factories import ComponentFactory
 
-                self.udp_tracker_client = AsyncUDPTrackerClient()
+                self.udp_tracker_client = ComponentFactory(
+                    self
+                ).create_udp_tracker_client()
                 await self.udp_tracker_client.start()
+                self._udp_tracker_client_init_failed = False
                 self.logger.info("UDP tracker client initialized successfully")
             except Exception:
+                self._udp_tracker_client_init_failed = True
                 # Best-effort: log and continue
                 self.logger.warning(
                     "UDP tracker client initialization failed. UDP tracker operations may not work.",
@@ -5958,9 +6233,12 @@ class AsyncSessionManager:
                         # Emit COMPONENT_STARTED event
                         try:
                             if self.on_component_started:  # type: ignore[has-type]
-                                await self.on_component_started(  # type: ignore[misc]
-                                    "dht_client", {"port": dht_port}
+                                callback_result = self.on_component_started(
+                                    "dht_client",
+                                    {"port": dht_port},
                                 )
+                                if asyncio.iscoroutine(callback_result):
+                                    await callback_result
                         except Exception as e:
                             self.logger.debug(
                                 "Failed to emit COMPONENT_STARTED event for DHT client: %s",
@@ -5981,12 +6259,14 @@ class AsyncSessionManager:
         sec = self.config.security
         ssl_cfg = sec.ssl
         self.logger.info(
-            "Startup security posture: mse_enabled=%s mse_mode=%s mse_dh_bits=%s | "
+            "Startup security posture: mse_enabled=%s mse_mode=%s mse_dh_bits=%s "
+            "mse_plain_fallback=%s | "
             "tracker_tls_enabled=%s tracker_verify=%s | "
             "peer_tls_enabled=%s peer_tls_extension=%s peer_tls_allow_insecure=%s",
             sec.enable_encryption,
             sec.encryption_mode,
             sec.encryption_dh_key_size,
+            sec.encryption_allow_plain_fallback,
             ssl_cfg.enable_ssl_trackers,
             ssl_cfg.ssl_verify_certificates,
             ssl_cfg.enable_ssl_peers,
@@ -6168,75 +6448,94 @@ class AsyncSessionManager:
         self._session_started = True
         self.logger.info("Async session manager started")
 
+    def is_shutting_down(self) -> bool:
+        """Return True while session manager shutdown is in progress."""
+        return self._manager_shutting_down
+
     async def stop(self) -> None:
         """Stop the async session manager and all components."""
-        # Stop background tasks first (in correct order)
-        if self._cleanup_task:
-            try:
-                if not self._cleanup_task.done():
-                    self._cleanup_task.cancel()
-                    with contextlib.suppress(
-                        asyncio.CancelledError, asyncio.TimeoutError
-                    ):
-                        await asyncio.wait_for(self._cleanup_task, timeout=2.0)
-                self.logger.info("Manager cleanup loop stopped")
-            except Exception:
-                self.logger.warning(
-                    "Error stopping manager cleanup loop", exc_info=True
-                )
-
-        if self._metrics_task:
-            try:
-                if not self._metrics_task.done():
-                    self._metrics_task.cancel()
-                    with contextlib.suppress(
-                        asyncio.CancelledError, asyncio.TimeoutError
-                    ):
-                        await asyncio.wait_for(self._metrics_task, timeout=2.0)
-                self.logger.info("Manager metrics loop stopped")
-            except Exception:
-                self.logger.warning(
-                    "Error stopping manager metrics loop", exc_info=True
-                )
-
-        # Stop periodic scrape loop
-        if self.scrape_task:
-            try:
-                if not self.scrape_task.done():
-                    self.scrape_task.cancel()
-                    with contextlib.suppress(
-                        asyncio.CancelledError, asyncio.TimeoutError
-                    ):
-                        await asyncio.wait_for(self.scrape_task, timeout=2.0)
-                self.logger.info("Periodic scrape loop stopped")
-            except Exception:
-                self.logger.warning(
-                    "Error stopping periodic scrape loop", exc_info=True
-                )
-
-        # Stop queue manager if enabled
-        if self.queue_manager:
-            try:
-                await self.queue_manager.stop()
-                self.logger.info("Queue manager stopped")
-            except Exception:
-                self.logger.warning("Error stopping queue manager", exc_info=True)
-
+        self._manager_shutting_down = True
         try:
-            await self.media_stream_manager.stop_all_streams()
-        except Exception:
-            self.logger.warning("Error stopping media streams", exc_info=True)
+            # Stop background tasks first (in correct order)
+            if self._cleanup_task:
+                try:
+                    if not self._cleanup_task.done():
+                        self._cleanup_task.cancel()
+                        with contextlib.suppress(
+                            asyncio.CancelledError, asyncio.TimeoutError
+                        ):
+                            await asyncio.wait_for(self._cleanup_task, timeout=2.0)
+                    self.logger.info("Manager cleanup loop stopped")
+                except Exception:
+                    self.logger.warning(
+                        "Error stopping manager cleanup loop", exc_info=True
+                    )
 
-        # Stop all XET folder runtimes
-        async with self._xet_folders_lock:
-            for runtime in list(self.xet_folders.values()):
-                if isinstance(runtime, XetFolderRuntime):
-                    with contextlib.suppress(Exception):
-                        await runtime.stop()
+            if self._metrics_task:
+                try:
+                    if not self._metrics_task.done():
+                        self._metrics_task.cancel()
+                        with contextlib.suppress(
+                            asyncio.CancelledError, asyncio.TimeoutError
+                        ):
+                            await asyncio.wait_for(self._metrics_task, timeout=2.0)
+                    self.logger.info("Manager metrics loop stopped")
+                except Exception:
+                    self.logger.warning(
+                        "Error stopping manager metrics loop", exc_info=True
+                    )
 
-        # Stop all torrent sessions
-        async with self.lock:
-            for info_hash, session in list(self.torrents.items()):
+            # Stop periodic scrape loop
+            if self.scrape_task:
+                try:
+                    if not self.scrape_task.done():
+                        self.scrape_task.cancel()
+                        with contextlib.suppress(
+                            asyncio.CancelledError, asyncio.TimeoutError
+                        ):
+                            await asyncio.wait_for(self.scrape_task, timeout=2.0)
+                    self.logger.info("Periodic scrape loop stopped")
+                except Exception:
+                    self.logger.warning(
+                        "Error stopping periodic scrape loop", exc_info=True
+                    )
+
+            self._task_supervisor.cancel_all()
+            with contextlib.suppress(Exception):
+                await self._task_supervisor.wait_all_cancelled(timeout=5.0)
+
+            # Stop queue manager if enabled
+            if self.queue_manager:
+                try:
+                    await self.queue_manager.stop()
+                    self.logger.info("Queue manager stopped")
+                except Exception:
+                    self.logger.warning("Error stopping queue manager", exc_info=True)
+
+            try:
+                await self.media_stream_manager.stop_all_streams()
+            except Exception:
+                self.logger.warning("Error stopping media streams", exc_info=True)
+
+            # Stop all XET folder runtimes
+            async with self._xet_folders_lock:
+                for runtime in list(self.xet_folders.values()):
+                    if isinstance(runtime, XetFolderRuntime):
+                        with contextlib.suppress(Exception):
+                            await runtime.stop()
+
+            # Stop inbound peer listener before draining torrent sessions
+            if self.tcp_server:
+                try:
+                    await self.tcp_server.stop()
+                    self.logger.info("TCP server stopped")
+                except Exception:
+                    self.logger.warning("Error stopping TCP server", exc_info=True)
+
+            torrent_items: list[tuple[bytes, Any]] = []
+            async with self.lock:
+                torrent_items = list(self.torrents.items())
+            for info_hash, session in torrent_items:
                 try:
                     await session.stop()
                 except Exception:
@@ -6246,57 +6545,66 @@ class AsyncSessionManager:
                         exc_info=True,
                     )
 
-        # Stop DHT client
-        if self.dht_client:
-            try:
-                await self.dht_client.stop()
-            except Exception:
-                self.logger.warning("Error stopping DHT client", exc_info=True)
+            # Stop DHT client
+            if self.dht_client:
+                try:
+                    await self.dht_client.stop()
+                except Exception:
+                    self.logger.warning("Error stopping DHT client", exc_info=True)
 
-        # Stop TCP server
-        if self.tcp_server:
-            try:
-                await self.tcp_server.stop()
-            except Exception:
-                self.logger.warning("Error stopping TCP server", exc_info=True)
+            # Stop UDP tracker client (process-wide singleton)
+            if self.udp_tracker_client:
+                try:
+                    from ccbt.discovery.tracker_udp_client import (
+                        shutdown_udp_tracker_client,
+                    )
 
-        # Stop UDP tracker client
-        if self.udp_tracker_client:
-            try:
-                await self.udp_tracker_client.stop()
-            except Exception:
-                self.logger.warning("Error stopping UDP tracker client", exc_info=True)
+                    await shutdown_udp_tracker_client()
+                    self.udp_tracker_client = None
+                    self.logger.info("UDP tracker client stopped")
+                except Exception:
+                    self.logger.warning(
+                        "Error stopping UDP tracker client", exc_info=True
+                    )
 
-        # Stop protocol manager (unregister all protocols)
-        if self.protocol_manager:
-            try:
-                # Unregister all protocols
-                for protocol_type in list(self.protocol_manager.protocols.keys()):
-                    try:
-                        protocol = self.protocol_manager.protocols[protocol_type]
-                        if hasattr(protocol, "stop"):
-                            await protocol.stop()
-                        await self.protocol_manager.unregister_protocol(protocol_type)
-                    except Exception:
-                        self.logger.warning(
-                            "Error stopping protocol %s", protocol_type, exc_info=True
-                        )
-                self.logger.info("Protocol manager stopped")
-            except Exception:
-                self.logger.warning("Error stopping protocol manager", exc_info=True)
+            # Stop protocol manager (unregister all protocols)
+            if self.protocol_manager:
+                try:
+                    # Unregister all protocols
+                    for protocol_type in list(self.protocol_manager.protocols.keys()):
+                        try:
+                            protocol = self.protocol_manager.protocols[protocol_type]
+                            if hasattr(protocol, "stop"):
+                                await protocol.stop()
+                            await self.protocol_manager.unregister_protocol(
+                                protocol_type
+                            )
+                        except Exception:
+                            self.logger.warning(
+                                "Error stopping protocol %s",
+                                protocol_type,
+                                exc_info=True,
+                            )
+                    self.logger.info("Protocol manager stopped")
+                except Exception:
+                    self.logger.warning(
+                        "Error stopping protocol manager", exc_info=True
+                    )
 
-        # Stop NAT manager
-        if self.nat_manager:
-            try:
-                await self.nat_manager.stop()
-            except Exception:
-                self.logger.warning("Error stopping NAT manager", exc_info=True)
+            # Stop NAT manager
+            if self.nat_manager:
+                try:
+                    await self.nat_manager.stop()
+                except Exception:
+                    self.logger.warning("Error stopping NAT manager", exc_info=True)
 
-        # Clear metrics reference
-        self.metrics = None
+            # Clear metrics reference
+            self.metrics = None
 
-        self._session_started = False
-        self.logger.info("Async session manager stopped")
+            self._session_started = False
+            self.logger.info("Async session manager stopped")
+        finally:
+            self._manager_shutting_down = False
 
     async def start_web_interface(
         self, host: str = "127.0.0.1", port: int = 9090
@@ -6351,7 +6659,7 @@ class AsyncSessionManager:
     async def add_torrent(
         self,
         torrent_path: Union[str, dict[str, Any]],
-        output_dir: Optional[str]= None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> str:
         """Add a torrent file or torrent data dictionary.
@@ -6499,15 +6807,17 @@ class AsyncSessionManager:
 
         # Trigger auto-scrape if enabled
         if self.config.discovery.tracker_auto_scrape:
-            # Start auto-scrape in background (non-blocking) - fire-and-forget
-            asyncio.create_task(self._auto_scrape_torrent(info_hash.hex()))  # noqa: RUF006
+            self._task_supervisor.create_task(
+                self._auto_scrape_torrent(info_hash.hex()),
+                name=f"auto_scrape:{info_hash.hex()[:12]}",
+            )
 
         return info_hash.hex()
 
     async def add_magnet(
         self,
         magnet_uri: str,
-        output_dir: Optional[str]= None,
+        output_dir: Optional[str] = None,
         resume: bool = False,
     ) -> str:
         """Add a magnet link.
@@ -6574,8 +6884,10 @@ class AsyncSessionManager:
 
         # Trigger auto-scrape if enabled
         if self.config.discovery.tracker_auto_scrape:
-            # Start auto-scrape in background (non-blocking) - fire-and-forget
-            asyncio.create_task(self._auto_scrape_torrent(info_hash.hex()))  # noqa: RUF006
+            self._task_supervisor.create_task(
+                self._auto_scrape_torrent(info_hash.hex()),
+                name=f"auto_scrape:{info_hash.hex()[:12]}",
+            )
 
         return info_hash.hex()
 
@@ -6634,6 +6946,8 @@ class AsyncSessionManager:
         try:
             # Wait a short delay to ensure torrent is fully initialized
             await asyncio.sleep(2.0)
+            if self.is_shutting_down():
+                return
 
             # Perform scrape using session manager's force_scrape method
             # This allows tests to mock force_scrape on the session manager
@@ -6690,7 +7004,7 @@ class AsyncSessionManager:
             await self.media_stream_manager.stop_stream_for_torrent(info_hash_hex)
 
         effective_upload_kib = self._resolve_peer_upload_limit(upload_kib)
-        session: Optional[AsyncTorrentSession]= None
+        session: Optional[AsyncTorrentSession] = None
         async with self.lock:
             session = self.torrents.get(info_hash)
             if not session:
@@ -6784,7 +7098,7 @@ class AsyncSessionManager:
         self,
         session: AsyncTorrentSession,
         upload_kib: int,
-        info_hash_hex: Optional[str]= None,
+        info_hash_hex: Optional[str] = None,
     ) -> None:
         """Apply upload cap to a torrent session's peer manager."""
         peer_manager = getattr(session, "peer_manager", None)
@@ -7192,7 +7506,7 @@ class AsyncSessionManager:
         self,
         info_hash_hex: str,
         file_index: int,
-        port: Optional[int]= None,
+        port: Optional[int] = None,
     ) -> dict[str, Any]:
         """Start a media stream for a torrent file."""
         return await self.media_stream_manager.start_stream(
@@ -7208,8 +7522,8 @@ class AsyncSessionManager:
     async def get_media_stream_status(
         self,
         *,
-        stream_id: Optional[str]= None,
-        info_hash_hex: Optional[str]= None,
+        stream_id: Optional[str] = None,
+        info_hash_hex: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Return the status for an active media stream."""
         return await self.media_stream_manager.get_status(
@@ -7250,7 +7564,7 @@ class AsyncSessionManager:
             return self._xet_metadata_version_registry.get(workspace_id_hex)
 
     async def fetch_xet_metadata(
-        self, workspace_id_hex: str, expected_version: Optional[str]= None
+        self, workspace_id_hex: str, expected_version: Optional[str] = None
     ) -> Optional[bytes]:
         """Fetch tonic metadata for a workspace.
 
@@ -7346,7 +7660,7 @@ class AsyncSessionManager:
         return None
 
     def get_xet_transport_state(
-        self, workspace_id_hex: Optional[str]= None
+        self, workspace_id_hex: Optional[str] = None
     ) -> Optional[XetTransportState]:
         """Return live XET transport state for handshake construction.
 
@@ -7423,8 +7737,8 @@ class AsyncSessionManager:
         chunk_hash: bytes,
         git_ref: Optional[str],
         operation: str = "upsert",
-        metadata_version: Optional[str]= None,
-        metadata_root: Optional[str]= None,
+        metadata_version: Optional[str] = None,
+        metadata_root: Optional[str] = None,
     ) -> None:
         """Route an incoming XET update to the matching workspace runtime."""
         runtimes: list[XetFolderRuntime] = []
@@ -7451,7 +7765,7 @@ class AsyncSessionManager:
             )
             return
 
-        metadata_bytes: Optional[bytes]= None
+        metadata_bytes: Optional[bytes] = None
 
         def _metadata_has_matching_file(candidate: Any, target_hash: bytes) -> bool:
             if candidate is None:
@@ -7559,7 +7873,7 @@ class AsyncSessionManager:
                     return Path(row[0]).read_bytes()
         return None
 
-    def _get_xet_peer_ids(self, workspace_id_hex: Optional[str]= None) -> list[str]:
+    def _get_xet_peer_ids(self, workspace_id_hex: Optional[str] = None) -> list[str]:
         """Return currently connected peer identifiers that may carry XET messages."""
         peer_ids: set[str] = set()
         for session in self.torrents.values():
@@ -7650,7 +7964,7 @@ class AsyncSessionManager:
         self,
         workspace_id_hex: str,
         chunk_hash: bytes,
-        exclude_folder_key: Optional[str]= None,
+        exclude_folder_key: Optional[str] = None,
     ) -> Optional[bytes]:
         """Return chunk bytes from another active runtime for the same workspace."""
         async with self._xet_folders_lock:
@@ -7676,7 +7990,7 @@ class AsyncSessionManager:
         file_path: str,
         chunk_hash: bytes,
         git_ref: Optional[str],
-        file_metadata: Optional[Any]= None,
+        file_metadata: Optional[Any] = None,
         deleted: bool = False,
     ) -> None:
         """Broadcast a workspace update to sibling runtimes and active peers."""
@@ -7721,17 +8035,17 @@ class AsyncSessionManager:
     async def add_xet_folder(
         self,
         folder_path: str,
-        tonic_file: Optional[str]= None,
-        tonic_link: Optional[str]= None,
-        sync_mode: Optional[str]= None,
-        source_peers: Optional[list[str]]= None,
-        check_interval: Optional[float]= None,
-        folder_key: Optional[str]= None,
-        metadata_bytes: Optional[bytes]= None,
-        allowlist_path: Optional[str]= None,
-        auth_scope: Optional[str]= None,
-        require_signed_metadata: Optional[bool]= None,
-        hash_algorithm: Optional[str]= None,
+        tonic_file: Optional[str] = None,
+        tonic_link: Optional[str] = None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        check_interval: Optional[float] = None,
+        folder_key: Optional[str] = None,
+        metadata_bytes: Optional[bytes] = None,
+        allowlist_path: Optional[str] = None,
+        auth_scope: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
     ) -> AddXetFolderResult:
         """Register and start an XET workspace runtime."""
         from ccbt.storage.xet_hashing import XetHasher
@@ -8014,7 +8328,7 @@ class AsyncSessionManager:
         self,
         folder_key: str,
         sync_mode: str,
-        source_peers: Optional[list[str]]= None,
+        source_peers: Optional[list[str]] = None,
     ) -> Optional[dict[str, Any]]:
         """Update the live sync mode for a registered XET workspace."""
         async with self._xet_folders_lock:
@@ -8054,17 +8368,17 @@ class AsyncSessionManager:
         self,
         workspace_id_hex: str,
         *,
-        sync_mode: Optional[str]= None,
-        source_peers: Optional[list[str]]= None,
-        auth_scope: Optional[str]= None,
-        allowlist_path: Optional[str]= None,
-        require_signed_metadata: Optional[bool]= None,
-        hash_algorithm: Optional[str]= None,
+        sync_mode: Optional[str] = None,
+        source_peers: Optional[list[str]] = None,
+        auth_scope: Optional[str] = None,
+        allowlist_path: Optional[str] = None,
+        require_signed_metadata: Optional[bool] = None,
+        hash_algorithm: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Update live policy for all active runtimes in a workspace."""
         from ccbt.storage.xet_hashing import XetHasher
 
-        normalized_hash_algorithm: Optional[str]= None
+        normalized_hash_algorithm: Optional[str] = None
         if hash_algorithm is not None:
             normalized_hash_algorithm = XetHasher.normalize_hash_algorithm(
                 hash_algorithm
@@ -8348,7 +8662,9 @@ class AsyncSessionManager:
                 label_values = {
                     label.name: label.value for label in getattr(item, "labels", [])
                 }
-                if all(label_values.get(key) == value for key, value in filters.items()):
+                if all(
+                    label_values.get(key) == value for key, value in filters.items()
+                ):
                     total += _to_int(getattr(item, "value", 0))
             return total
 
@@ -8657,6 +8973,40 @@ class AsyncSessionManager:
                 "connected_peers": connected_peers,
             }
 
+    async def get_inbound_unknown_info_hash_metrics(self) -> dict[str, int]:
+        """Merge unknown inbound info-hash observation counts from all TCP listeners.
+
+        Each ``AsyncTorrentSession`` may own an ``IncomingPeerServer``; counts use
+        16-character hex prefix keys (see :meth:`IncomingPeerServer.get_inbound_unknown_info_hash_metrics`).
+        """
+        async with self.lock:
+            sessions = list(self.torrents.values())
+        merged: dict[str, int] = {}
+        for torrent in sessions:
+            tcp = getattr(torrent, "tcp_server", None)
+            if tcp is None:
+                continue
+            getter = getattr(tcp, "get_inbound_unknown_info_hash_metrics", None)
+            if not callable(getter):
+                continue
+            try:
+                snap = getter()
+            except Exception:
+                self.logger.debug(
+                    "get_inbound_unknown_info_hash_metrics: snapshot failed for a session",
+                    exc_info=True,
+                )
+                continue
+            if not isinstance(snap, dict):
+                continue
+            for key, val in snap.items():
+                try:
+                    k = str(key)
+                    merged[k] = merged.get(k, 0) + int(val)
+                except (TypeError, ValueError):
+                    continue
+        return merged
+
     async def get_status(self) -> dict[str, Any]:
         """Get status for all torrents.
 
@@ -8731,10 +9081,18 @@ class AsyncSessionManager:
                 session = self.torrents.get(candidate)
                 if session is not None:
                     return session
+            for session in self.torrents.values():
+                if self._session_matches_inbound_info_hash_candidates(
+                    session,
+                    candidates,
+                ):
+                    return session
             return None
 
     @staticmethod
-    def _extract_inbound_info_hash_candidates(info_hash: Union[bytes, Any]) -> list[bytes]:
+    def _extract_inbound_info_hash_candidates(
+        info_hash: Union[bytes, Any],
+    ) -> list[bytes]:
         """Extract one or more candidate lookup keys from info hash inputs."""
         candidates: list[bytes] = []
         if isinstance(info_hash, (bytes, bytearray)):
@@ -8750,6 +9108,43 @@ class AsyncSessionManager:
         if isinstance(info_hash_v2, (bytes, bytearray)):
             candidates.append(bytes(info_hash_v2))
         return candidates
+
+    def _session_matches_inbound_info_hash_candidates(
+        self,
+        session: AsyncTorrentSession,
+        candidates: list[bytes],
+    ) -> bool:
+        """True if any inbound candidate matches session primary or TorrentInfo v1/v2."""
+        if not candidates:
+            return False
+        cand_set = frozenset(candidates)
+        try:
+            primary = session.info.info_hash
+        except Exception:
+            primary = None
+        if primary is not None and primary in cand_set:
+            return True
+        td = session.torrent_data
+        if isinstance(td, dict):
+            raw_ih = td.get("info_hash")
+            if isinstance(raw_ih, (bytes, bytearray)):
+                b = bytes(raw_ih)
+                if b in cand_set:
+                    return True
+        get_ti = getattr(session, "_get_torrent_info", None)
+        if not callable(get_ti):
+            return False
+        try:
+            ti = get_ti(session.torrent_data)
+        except Exception:
+            return False
+        if ti is None:
+            return False
+        v2 = getattr(ti, "info_hash_v2", None)
+        if isinstance(v2, (bytes, bytearray)) and bytes(v2) in cand_set:
+            return True
+        v1 = getattr(ti, "info_hash_v1", None)
+        return isinstance(v1, (bytes, bytearray)) and bytes(v1) in cand_set
 
     async def rehash_torrent(self, info_hash: str) -> bool:
         """Rehash all pieces for a torrent.
@@ -8922,7 +9317,7 @@ class AsyncSessionManager:
         self,
         info_hash: bytes,
         checkpoint: TorrentCheckpoint,
-        torrent_path: Optional[str]= None,
+        torrent_path: Optional[str] = None,
     ) -> str:
         """Resume torrent from checkpoint via checkpoint operations delegate."""
         if not await self.validate_checkpoint(checkpoint):
@@ -8988,5 +9383,3 @@ class AsyncSessionManager:
 
 # Alias for backward compatibility - to be deprecated
 SessionManager = AsyncSessionManager
-
-

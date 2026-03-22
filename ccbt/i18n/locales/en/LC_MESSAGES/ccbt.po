@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ccBitTorrent\n"
 "Language: en\n"
-"Content-Type: text/plain; charset=UTF-8\n"
 "MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 ""
 
@@ -876,6 +876,12 @@ msgstr "Browse"
 msgid "Browse and add torrent"
 msgstr "Browse and add torrent"
 
+msgid "Bytes Downloaded"
+msgstr "Downloaded"
+
+msgid "Bytes Uploaded"
+msgstr "Uploaded"
+
 msgid "CPU"
 msgstr "CPU"
 
@@ -1057,6 +1063,9 @@ msgstr "Connected"
 msgid "Connected Peers"
 msgstr "Connected Peers"
 
+msgid "Connected Torrents"
+msgstr "Create Torrent"
+
 msgid "Connected to {peers} peer(s), fetching metadata..."
 msgstr "Connected to {peers} peer(s), fetching metadata..."
 
@@ -1068,6 +1077,9 @@ msgstr "Connecting to daemon at %s (config_path=%s)"
 
 msgid "Connecting to peers..."
 msgstr "Connecting to peers..."
+
+msgid "Connection Duration"
+msgstr "Connection Timeout"
 
 msgid "Connection Efficiency"
 msgstr "Connection Efficiency"
@@ -1318,9 +1330,6 @@ msgstr ""
 "  4. If daemon crashed, restart it: 'btbt daemon start'\n"
 "  5. If you want to run locally, stop the daemon: 'btbt daemon exit'"
 
-msgid "Daemon appears to be running but API key is missing from config. Run 'btbt daemon status' to check daemon state, or restart the daemon."
-msgstr "Daemon appears to be running but API key is missing from config. Run 'btbt daemon status' to check daemon state, or restart the daemon."
-
 msgid "Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs..."
 msgstr "Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs..."
 
@@ -1526,6 +1535,9 @@ msgstr "Download Limit"
 msgid "Download Limit (KiB/s):"
 msgstr "Download Limit (KiB/s):"
 
+msgid "Download Rate"
+msgstr "Avg Download Rate"
+
 msgid "Download Rate Limit (bytes/sec, 0 = unlimited):"
 msgstr "Download Rate Limit (bytes/sec, 0 = unlimited):"
 
@@ -1576,6 +1588,9 @@ msgstr "Dracula"
 
 msgid "Duplicate Requests Prevented"
 msgstr "Duplicate Requests Prevented"
+
+msgid "Duration"
+msgstr "Configuration"
 
 msgid "ETA"
 msgstr "ETA"
@@ -1811,6 +1826,9 @@ msgstr "Error loading configuration: {error}"
 
 msgid "Error loading info: {error}"
 msgstr "Error loading info: {error}"
+
+msgid "Error loading peer data: {error}"
+msgstr "Error loading DHT data: {error}"
 
 msgid "Error loading section: {error}"
 msgstr "Error loading section: {error}"
@@ -2366,6 +2384,9 @@ msgstr "Global Config"
 msgid "Global Configuration"
 msgstr "Global Configuration"
 
+msgid "Global Connected Peers"
+msgstr "Connected Peers"
+
 msgid "Global KPIs"
 msgstr "Global KPIs"
 
@@ -2444,6 +2465,9 @@ msgstr "IP Filter"
 msgid "IP filter not available"
 msgstr "IP filter not available"
 
+msgid "IP:Port"
+msgstr "Port"
+
 msgid "IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)"
 msgstr "IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)"
 
@@ -2483,6 +2507,9 @@ msgid "Info"
 msgstr "Info"
 
 msgid "Info Hash"
+msgstr "Info Hash"
+
+msgid "Info Hashes"
 msgstr "Info Hash"
 
 msgid "Info hash copied to clipboard"
@@ -2610,6 +2637,9 @@ msgstr "Loading configuration..."
 
 msgid "Loading file list…"
 msgstr "Loading file list…"
+
+msgid "Loading peer metrics..."
+msgstr "Loading piece selection metrics..."
 
 msgid "Loading piece selection metrics..."
 msgstr "Loading piece selection metrics..."
@@ -3150,6 +3180,9 @@ msgstr "Paused {info_hash}…"
 msgid "Peer"
 msgstr "Peer"
 
+msgid "Peer Details"
+msgstr "Details"
+
 msgid "Peer Distribution"
 msgstr "Peer Distribution"
 
@@ -3170,6 +3203,9 @@ msgstr "Peer banning not yet implemented. Selected peer: {ip}:{port}"
 
 msgid "Peer distribution - Error: {error}"
 msgstr "Peer distribution - Error: {error}"
+
+msgid "Peer not found"
+msgstr "Peers Found"
 
 msgid "Peer quality - Error: {error}"
 msgstr "Peer quality - Error: {error}"
@@ -3250,6 +3286,12 @@ msgid "Piece selection metrics are unavailable in the current mode."
 msgstr "Piece selection metrics are unavailable in the current mode."
 
 msgid "Pieces"
+msgstr "Pieces"
+
+msgid "Pieces Received"
+msgstr "Queries Received"
+
+msgid "Pieces Served"
 msgstr "Pieces"
 
 msgid "Pin Content in IPFS:"
@@ -3490,6 +3532,9 @@ msgid "Reputation Tracking"
 msgstr "Reputation Tracking"
 
 msgid "Request Efficiency"
+msgstr "Request Efficiency"
+
+msgid "Request Latency"
 msgstr "Request Efficiency"
 
 msgid "Request Success"
@@ -4207,6 +4252,9 @@ msgstr "Total Nodes"
 msgid "Total Peers"
 msgstr "Total Peers"
 
+msgid "Total Peers: {total} | Active Peers: {active}"
+msgstr "Total Peers: {total} | Active Peers: {active}"
+
 msgid "Total Queries"
 msgstr "Total Queries"
 
@@ -4311,6 +4359,9 @@ msgstr "Upload Limit"
 
 msgid "Upload Limit (KiB/s):"
 msgstr "Upload Limit (KiB/s):"
+
+msgid "Upload Rate"
+msgstr "Avg Upload Rate"
 
 msgid "Upload Rate Limit (bytes/sec, 0 = unlimited):"
 msgstr "Upload Rate Limit (bytes/sec, 0 = unlimited):"
@@ -5149,6 +5200,9 @@ msgstr "[green]Wrote metrics to {out}[/green]"
 msgid "[green]Wrote metrics to {path}[/green]"
 msgstr "[green]Wrote metrics to {path}[/green]"
 
+msgid "[green]{message}: {config_file}[/green]"
+msgstr "[green]Deselected {count} file(s)[/green]"
+
 msgid "[green]✓ Port mapping removed[/green]"
 msgstr "[green]✓ Port mapping removed[/green]"
 
@@ -5353,6 +5407,9 @@ msgstr "[red]Error listing allowlist: {e}[/red]"
 msgid "[red]Error pinning content: {e}[/red]"
 msgstr "[red]Error pinning content: {e}[/red]"
 
+msgid "[red]Error reading authenticated swarm status: {e}[/red]"
+msgstr "[red]Error getting Xet status: {e}[/red]"
+
 msgid "[red]Error removing alias: {e}[/red]"
 msgstr "[red]Error removing alias: {e}[/red]"
 
@@ -5395,8 +5452,23 @@ msgstr "[red]Error starting sync: {e}[/red]"
 msgid "[red]Error unpinning content: {e}[/red]"
 msgstr "[red]Error unpinning content: {e}[/red]"
 
+msgid "[red]Error updating authenticated swarm mode: {e}[/red]"
+msgstr "[red]Error getting sync mode: {e}[/red]"
+
 msgid "[red]Error updating configuration: {error}[/red]"
 msgstr "[red]Error updating configuration: {error}[/red]"
+
+msgid "[red]Error updating discovery mode: {e}[/red]"
+msgstr "[red]Error getting sync mode: {e}[/red]"
+
+msgid "[red]Error updating parse-policy behavior: {e}[/red]"
+msgstr "[red]Error updating configuration: {error}[/red]"
+
+msgid "[red]Error updating strict discovery mode: {e}[/red]"
+msgstr "[red]Error getting sync mode: {e}[/red]"
+
+msgid "[red]Error updating trusted IDs: {e}[/red]"
+msgstr "[red]Error getting stats: {e}[/red]"
 
 msgid "[red]Error: Cannot specify both --hybrid and --v1[/red]"
 msgstr "[red]Error: Cannot specify both --hybrid and --v1[/red]"
@@ -5706,6 +5778,15 @@ msgstr "[yellow]All files deselected[/yellow]"
 msgid "[yellow]Allowlist is empty[/yellow]"
 msgstr "[yellow]Allowlist is empty[/yellow]"
 
+msgid "[yellow]Authenticated swarm setting updated (configuration not persisted - no config file)[/yellow]"
+msgstr "[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]"
+
+msgid "[yellow]Authenticated swarm setting updated (test mode, write skipped)[/yellow]"
+msgstr "[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]"
+
+msgid "[yellow]Authenticated swarms not configured[/yellow]"
+msgstr "[yellow]No filter rules configured.[/yellow]"
+
 msgid "[yellow]Automatic repair not implemented[/yellow]"
 msgstr "[yellow]Automatic repair not implemented[/yellow]"
 
@@ -5817,6 +5898,9 @@ msgstr "[yellow]No alias found for peer {peer_id}[/yellow]"
 msgid "[yellow]No aliases found in allowlist[/yellow]"
 msgstr "[yellow]No aliases found in allowlist[/yellow]"
 
+msgid "[yellow]No authenticated swarms configuration found[/yellow]"
+msgstr "[yellow]Proxy configuration not found[/yellow]"
+
 msgid "[yellow]No cached scrape results[/yellow]"
 msgstr "[yellow]No cached scrape results[/yellow]"
 
@@ -5857,6 +5941,9 @@ msgid "[yellow]No resume data found in checkpoint[/yellow]"
 msgstr "[yellow]No resume data found in checkpoint[/yellow]"
 
 msgid "[yellow]No security action specified[/yellow]"
+msgstr "[yellow]No security action specified[/yellow]"
+
+msgid "[yellow]No security configuration loaded[/yellow]"
 msgstr "[yellow]No security action specified[/yellow]"
 
 msgid "[yellow]No valid indices, keeping default selection.[/yellow]"
@@ -6045,8 +6132,14 @@ msgstr "[yellow]Warning: Failed to set queue priority: {error}[/yellow]"
 msgid "[yellow]Warning: IPC client not available[/yellow]"
 msgstr "[yellow]Warning: IPC client not available[/yellow]"
 
+msgid "[yellow]Warning: SSL certificate verification is disabled while SSL is used in strict mode[/yellow]"
+msgstr "[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]"
+
 msgid "[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]"
 msgstr "[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]"
+
+msgid "[yellow]Warning: certificate verification is disabled while SSL is in strict posture[/yellow]"
+msgstr "[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]"
 
 msgid "[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]"
 msgstr "[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]"

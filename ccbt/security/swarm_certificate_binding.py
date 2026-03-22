@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 from ccbt.security.swarm_auth_contract import ALLOWED_TRUST_PROOF_HINTS
 
@@ -48,7 +48,7 @@ def _anchor_value_matches(
     anchor: SwarmTrustAnchor,
     public_key: bytes,
     *,
-    transport_hint: Optional[str]= None,
+    transport_hint: Optional[str] = None,
 ) -> bool:
     """Return True if a single anchor matches the presented key."""
     value = _normalize_anchor_value(anchor.value)
@@ -82,9 +82,7 @@ def evaluate_certificate_binding(
         )
 
     for anchor in anchors:
-        if (
-            trust_hint is not None and trust_hint not in (anchor.type, "cert_sha256")
-        ):
+        if trust_hint is not None and trust_hint not in (anchor.type, "cert_sha256"):
             continue
         if trust_hint == "cert_sha256" and anchor.type not in {"cert_sha256"}:
             continue
@@ -103,4 +101,3 @@ def evaluate_certificate_binding(
         selected_anchor_type=None,
         reason_code="no_matching_binding",
     )
-

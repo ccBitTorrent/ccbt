@@ -6,6 +6,7 @@ import struct
 
 import pytest
 
+from ccbt.core.bencode import BencodeEncoder
 from ccbt.extensions.protocol import ExtensionProtocol
 
 
@@ -97,3 +98,17 @@ async def test_handle_extension_handshake_stores_encryption_preference():
     await protocol.handle_extension_handshake("peer-1", {b"m": {b"xet": 1}, b"e": b"required"})
     peer_state = protocol.get_peer_extensions("peer-1")
     assert peer_state["e"] == "required"
+
+
+def test_decode_handshake_normalizes_non_utf8_keys() -> None:
+    """decode_handshake replaces invalid UTF-8 keys instead of preserving bytes."""
+    protocol = ExtensionProtocol()
+    bencoded = BencodeEncoder().encode({b"m": {b"ut_metadata": 1}, b"\xff": b"v"})
+    handshake_message = struct.pack("!IB", len(bencoded) + 1, 20) + bencoded
+
+    decoded = protocol.decode_handshake(handshake_message)
+
+    assert isinstance(decoded, dict)
+    assert "m" in decoded
+    assert all(isinstance(key, str) for key in decoded.keys())
+    assert any("\ufffd" in key for key in decoded.keys())

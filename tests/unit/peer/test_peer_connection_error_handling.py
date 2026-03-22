@@ -26,6 +26,7 @@ from ccbt.peer.async_peer_connection import (
     AsyncPeerConnectionManager,
     AsyncPeerConnection,
     ConnectionState,
+    PeerConnectionError,
 )
 from ccbt.peer.peer_connection import PeerConnection
 
@@ -266,4 +267,41 @@ async def test_handle_message_keepalive_updates_activity_only(
     # Keepalive is handled in the first branch, not in message handlers
     # Message handling should complete without error
     assert connection.state in [ConnectionState.ACTIVE, ConnectionState.CHOKED]
+
+
+def test_classify_handshake_incomplete_peer_connection_error(
+    mock_torrent_data, mock_piece_manager
+):
+    """Handshake incomplete reads map to handshake_incomplete taxonomy."""
+    manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
+    exc = PeerConnectionError("Handshake incomplete read during prefix: expected 28 bytes, got 3")
+    reason, temp, tclass, transient = manager._classify_connection_failure_detailed(exc)
+    assert reason == "handshake_incomplete"
+    assert temp is True
+    assert tclass == "handshake_incomplete"
+
+
+def test_classify_info_hash_mismatch(mock_torrent_data, mock_piece_manager):
+    """Info hash mismatch maps to protocol_mismatch (non-retry friendly)."""
+    manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
+    exc = PeerConnectionError(
+        "Info hash mismatch: expected aabbccdd, got 00112233"
+    )
+    reason, temp, tclass, transient = manager._classify_connection_failure_detailed(exc)
+    assert reason == "protocol_mismatch"
+    assert temp is False
+    assert tclass == "protocol_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_reconnection_loop_exits_when_process_shutting_down(
+    mock_torrent_data, mock_piece_manager
+):
+    """_reconnection_loop should stop quickly when global shutdown is signaled."""
+    manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
+    manager._running = True
+    with patch(
+        "ccbt.peer.async_peer_connection.is_shutting_down", return_value=True
+    ):
+        await manager._reconnection_loop()
 

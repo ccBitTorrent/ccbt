@@ -8,9 +8,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ccbt.peer.tcp_server import _ReplayableStreamReader, IncomingPeerServer
-from ccbt.peer.tcp_server import _MSEInboundSessionResolver
 from ccbt.peer.inbound_protocol_classifier import InboundProtocolKind
+from ccbt.peer.peer import Handshake, ParsedInboundPlainHandshake
+from ccbt.peer.tcp_server import (
+    IncomingPeerServer,
+    _MSEInboundSessionResolver,
+    _ReplayableStreamReader,
+)
+from ccbt.protocols.bittorrent_v2 import PROTOCOL_STRING_LEN
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
@@ -23,12 +28,7 @@ def _build_stream_reader(payload: bytes) -> asyncio.StreamReader:
 
 
 def _build_bittorrent_handshake(info_hash: bytes, peer_id: bytes) -> bytes:
-    return (
-        b"\x13BitTorrent protocol"
-        + b"\x00" * 8
-        + info_hash
-        + peer_id
-    )
+    return b"\x13BitTorrent protocol" + b"\x00" * 8 + info_hash + peer_id
 
 
 @pytest.mark.asyncio
@@ -93,6 +93,64 @@ def test_mse_inbound_session_resolver_rejects_multiple_sessions() -> None:
     assert _MSEInboundSessionResolver.resolve_single_session(session_manager) is None
 
 
+def _sample_parsed_handshake(info_hash: bytes) -> ParsedInboundPlainHandshake:
+    return ParsedInboundPlainHandshake(
+        protocol_len=PROTOCOL_STRING_LEN,
+        protocol=Handshake.PROTOCOL_STRING,
+        reserved_bytes=b"\x00" * 8,
+        info_hash_v1=info_hash,
+        info_hash_v2=None,
+        peer_id=b"-CC0101-testpeer---",
+    )
+
+
+def test_inbound_unknown_info_hash_metrics_increment() -> None:
+    """Unknown inbound hash counter uses 16-char hex prefix keys."""
+    sm = SimpleNamespace(torrents={}, lock=asyncio.Lock())
+    srv = IncomingPeerServer(sm, config=MagicMock())
+    ph = _sample_parsed_handshake(b"\xcd" * 20)
+    assert srv.get_inbound_unknown_info_hash_metrics() == {}
+    srv._record_inbound_unknown_info_hash(ph)
+    assert srv.get_inbound_unknown_info_hash_metrics() == {"cd" * 8: 1}
+    srv._record_inbound_unknown_info_hash(ph)
+    assert srv.get_inbound_unknown_info_hash_metrics() == {"cd" * 8: 2}
+
+
+def test_unknown_inbound_hash_warning_sampling() -> None:
+    """WARNING path samples every N occurrences per hash prefix (storm control)."""
+    sm = SimpleNamespace(torrents={}, lock=asyncio.Lock())
+    srv = IncomingPeerServer(sm, config=MagicMock())
+    key = "a" * 16
+    srv._unknown_inbound_hash_warning_every_n = 4
+    for n in range(1, 10):
+        srv._inbound_unknown_hash_counts[key] = n
+        emit = srv._should_emit_unknown_inbound_hash_warning(key)
+        assert emit == (n == 1 or n % 4 == 0), n
+
+
+def test_inbound_unknown_hash_warning_interval_reads_network_config() -> None:
+    """Sample interval comes from network.inbound_unknown_hash_warning_sample_interval."""
+    sm = SimpleNamespace(torrents={}, lock=asyncio.Lock())
+    cfg = SimpleNamespace(
+        network=SimpleNamespace(inbound_unknown_hash_warning_sample_interval=9),
+    )
+    srv = IncomingPeerServer(sm, config=cfg)
+    assert srv._unknown_inbound_hash_warning_every_n == 9
+
+
+def test_probation_inflight_per_hash_cap() -> None:
+    """At most _max_probation_inflight_per_hash concurrent probation slots per hash."""
+    sm = SimpleNamespace(torrents={}, lock=asyncio.Lock())
+    srv = IncomingPeerServer(sm, config=MagicMock())
+    ih = b"\xee" * 20
+    cap = srv._max_probation_inflight_per_hash
+    for _ in range(cap):
+        assert srv._reserve_probation_slot_for_hash(ih) is True
+    assert srv._reserve_probation_slot_for_hash(ih) is False
+    srv._release_probation_slot_for_hash(ih)
+    assert srv._reserve_probation_slot_for_hash(ih) is True
+
+
 def test_mse_inbound_session_resolver_resolves_by_info_hash() -> None:
     """Resolver returns the requested session when a target info hash is provided."""
     info_hash_a = b"\x01" * 20
@@ -120,10 +178,10 @@ async def test_inbound_mse_connection_routes_to_accept_incoming_encrypted() -> N
     accept_incoming_encrypted = AsyncMock()
     respond_from_peer = SimpleNamespace(
         success=True,
-            decrypted_initial_data=_build_bittorrent_handshake(
-                info_hash=info_hash,
-                peer_id=b"\x22" * 20,
-            ),
+        decrypted_initial_data=_build_bittorrent_handshake(
+            info_hash,
+            b"\x22" * 20,
+        ),
     )
     mse = SimpleNamespace(
         respond_as_receiver_with_initial_data=AsyncMock(return_value=respond_from_peer)
@@ -142,6 +200,7 @@ async def test_inbound_mse_connection_routes_to_accept_incoming_encrypted() -> N
     )
 
     server = IncomingPeerServer(session_manager, config=config)
+    server._running = True
     server._allow_inbound_admission = lambda *args, **kwargs: True
     reader = _ReplayableStreamReader(_build_stream_reader(b"payload"))
     writer = MagicMock()
@@ -164,7 +223,9 @@ async def test_inbound_mse_connection_routes_to_accept_incoming_encrypted() -> N
 
 
 @pytest.mark.asyncio
-async def test_inbound_mse_connection_routes_to_resolved_session_for_multi_hash() -> None:
+async def test_inbound_mse_connection_routes_to_resolved_session_for_multi_hash() -> (
+    None
+):
     """MSE inbound routing uses resolved hash to select the correct torrent session."""
     info_hash_one = b"\x11" * 20
     info_hash_two = b"\x22" * 20
@@ -173,16 +234,20 @@ async def test_inbound_mse_connection_routes_to_resolved_session_for_multi_hash(
     accept_from_two = AsyncMock()
     respond_from_peer = SimpleNamespace(
         success=True,
-            decrypted_initial_data=_build_bittorrent_handshake(
-                info_hash=info_hash_two,
-                peer_id=b"\x33" * 20,
-            ),
+        decrypted_initial_data=_build_bittorrent_handshake(
+            info_hash_two,
+            b"\x33" * 20,
+        ),
         resolved_info_hash=info_hash_two,
     )
     peer_manager_one = SimpleNamespace(
-        _create_mse_handshake=MagicMock(return_value=SimpleNamespace(
-            respond_as_receiver_with_initial_data=AsyncMock(return_value=respond_from_peer)
-        )),
+        _create_mse_handshake=MagicMock(
+            return_value=SimpleNamespace(
+                respond_as_receiver_with_initial_data=AsyncMock(
+                    return_value=respond_from_peer
+                )
+            )
+        ),
         accept_incoming_encrypted=accept_from_one,
     )
     peer_manager_two = SimpleNamespace(
@@ -204,6 +269,7 @@ async def test_inbound_mse_connection_routes_to_resolved_session_for_multi_hash(
     )
 
     server = IncomingPeerServer(session_manager, config=config)
+    server._running = True
     server._allow_inbound_admission = lambda *args, **kwargs: True
     reader = _ReplayableStreamReader(_build_stream_reader(b"payload"))
     writer = MagicMock()
@@ -251,15 +317,6 @@ async def test_inbound_mse_connection_closes_when_session_ambiguous() -> None:
 
     writer.close.assert_called_once()
     writer.wait_closed.assert_awaited_once()
-
-
-def _build_bittorrent_handshake(payload_info_hash: bytes, peer_id: bytes) -> bytes:
-    return (
-        b"\x13BitTorrent protocol"
-        + b"\x00" * 8
-        + payload_info_hash
-        + peer_id
-    )
 
 
 @pytest.mark.asyncio
@@ -321,7 +378,6 @@ async def test_await_session_for_inbound_peer_rejects_on_admission_denial() -> N
         config=SimpleNamespace(network=SimpleNamespace(handshake_timeout=0.2)),
     )
     writer = MagicMock()
-    writer.close = AsyncMock()
     writer.wait_closed = AsyncMock()
     reader = _build_stream_reader(b"")
 
@@ -340,3 +396,72 @@ async def test_await_session_for_inbound_peer_rejects_on_admission_denial() -> N
     accept_incoming.assert_not_awaited()
     writer.close.assert_called_once()
     writer.wait_closed.assert_awaited_once()
+
+
+def test_should_abort_inbound_when_session_manager_shutting_down() -> None:
+    """Manager.stop() sets is_shutting_down before TCP stop; inbound waits must abort."""
+    from ccbt.utils.shutdown import clear_shutdown
+
+    clear_shutdown()
+    sm = MagicMock()
+    sm.is_shutting_down = MagicMock(return_value=True)
+    sm.lock = asyncio.Lock()
+    srv = IncomingPeerServer(sm, config=MagicMock())
+    srv._running = True
+    assert srv._should_abort_inbound_registration_wait() is True
+
+
+def test_should_abort_inbound_when_global_shutdown() -> None:
+    from ccbt.utils.shutdown import clear_shutdown, set_shutdown
+
+    set_shutdown()
+    try:
+        sm = MagicMock()
+        sm.is_shutting_down = MagicMock(return_value=False)
+        sm.lock = asyncio.Lock()
+        srv = IncomingPeerServer(sm, config=MagicMock())
+        srv._running = True
+        assert srv._should_abort_inbound_registration_wait() is True
+    finally:
+        clear_shutdown()
+
+
+@pytest.mark.asyncio
+async def test_await_session_for_inbound_peer_aborts_when_manager_shutting_down() -> (
+    None
+):
+    from ccbt.utils.shutdown import clear_shutdown
+
+    clear_shutdown()
+    info_hash = b"\x66" * 20
+    parsed_handshake = SimpleNamespace(
+        info_hash_v1=info_hash,
+        peer_id=b"\x77" * 20,
+        reserved_bytes=b"\x00" * 8,
+    )
+    sm = MagicMock()
+    sm.is_shutting_down = MagicMock(return_value=True)
+    sm.get_session_for_info_hash = AsyncMock(return_value=None)
+    sm.lock = asyncio.Lock()
+    server = IncomingPeerServer(
+        sm,
+        config=SimpleNamespace(network=SimpleNamespace(handshake_timeout=60.0)),
+    )
+    server._running = True
+    writer = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    reader = _build_stream_reader(b"")
+
+    t0 = asyncio.get_event_loop().time()
+    await server._await_session_for_inbound_peer(
+        reader,
+        writer,
+        parsed_handshake,
+        "127.0.0.1",
+        6881,
+        t0,
+        InboundProtocolKind.BITTORRENT_PLAINTEXT,
+    )
+    assert asyncio.get_event_loop().time() - t0 < 1.0
+    sm.get_session_for_info_hash.assert_not_awaited()

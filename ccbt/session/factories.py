@@ -133,3 +133,24 @@ class ComponentFactory:
         except Exception:
             self.logger.exception("Failed to create TCP server")
             return None
+
+    def create_udp_tracker_client(self) -> Any:
+        """Return UDP tracker client (singleton) with DI fallback.
+
+        Returns:
+            AsyncUDPTrackerClient instance from DI provider or module singleton.
+
+        """
+        if self._di and self._di.udp_tracker_client_provider:
+            try:
+                client = self._di.udp_tracker_client_provider()
+                if client is not None:
+                    return client
+            except Exception:
+                self.logger.debug(
+                    "DI udp_tracker_client_provider failed, falling back",
+                    exc_info=True,
+                )
+        from ccbt.discovery.tracker_udp_client import get_udp_tracker_client
+
+        return get_udp_tracker_client()

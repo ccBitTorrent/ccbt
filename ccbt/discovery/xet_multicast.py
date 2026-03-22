@@ -14,6 +14,8 @@ import struct
 import time
 from typing import Any, Callable, Optional, cast
 
+from ccbt.discovery.errors import SockRecvfromUnsupportedError
+
 logger = logging.getLogger(__name__)
 
 
@@ -230,8 +232,8 @@ class XetMulticastBroadcaster:
                 # Wait for data
                 sock_recvfrom = getattr(loop, "sock_recvfrom", None)
                 if sock_recvfrom is None:
-                    raise RuntimeError("Event loop does not support sock_recvfrom")
-                data, addr = await cast(Any, sock_recvfrom)(self._socket, 4096)
+                    raise SockRecvfromUnsupportedError
+                data, addr = await cast("Any", sock_recvfrom)(self._socket, 4096)
 
                 # Parse message
                 try:

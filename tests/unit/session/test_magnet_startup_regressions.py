@@ -204,6 +204,66 @@ async def test_peer_connection_helper_records_recovery_snapshot(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_peer_connection_helper_ranks_using_reputation_success_rate() -> None:
+    """Peer ranking should use reputation-derived success rate instead of flat defaults."""
+    from ccbt.session.peers import PeerConnectionHelper
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "quality-ranking-test",
+        "info_hash": b"\x08" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.config.network.peer_quality_performance_weight = 0.4
+    session.config.network.peer_quality_success_rate_weight = 0.4
+    session.config.network.peer_quality_source_weight = 0.0
+    session.config.network.peer_quality_proximity_weight = 0.0
+
+    def get_peer_reputation(peer_id: str, _ip: str) -> SimpleNamespace | None:
+        if peer_id == "198.51.100.10:6881":
+            return SimpleNamespace(
+                reputation_score=0.9,
+                successful_connections=9,
+                connection_count=10,
+                failed_connections=1,
+                is_blacklisted=False,
+            )
+        if peer_id == "198.51.100.11:6881":
+            return SimpleNamespace(
+                reputation_score=0.1,
+                successful_connections=1,
+                connection_count=10,
+                failed_connections=9,
+                is_blacklisted=False,
+            )
+        return None
+
+    session.download_manager.security_manager = SimpleNamespace(
+        get_peer_reputation=get_peer_reputation
+    )
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+
+    helper = PeerConnectionHelper(session)
+    ranked = helper._rank_peers_by_quality(
+        [
+            {"ip": "198.51.100.11", "port": 6881, "peer_source": "tracker"},
+            {"ip": "198.51.100.10", "port": 6881, "peer_source": "tracker"},
+        ]
+    )
+
+    assert ranked[0]["ip"] == "198.51.100.10"
+    assert ranked[1]["ip"] == "198.51.100.11"
+
+
+@pytest.mark.asyncio
 async def test_tracker_metadata_status_tracks_starvation_seconds() -> None:
     """Metadata status should track starvation duration when swarm is not usable."""
     from ccbt.session.announce import AnnounceLoop
@@ -389,6 +449,62 @@ async def test_immediate_tracker_connection_schedules_metadata_fallback(
             break
 
     session.handle_magnet_metadata_exchange.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_immediate_tracker_defers_metadata_fallback_while_batches_in_progress(
+    monkeypatch,
+) -> None:
+    """Do not stack tracker metadata fallback while connect batches run and no sockets yet."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "magnet-defer-fallback",
+        "info_hash": b"5" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "_metadata_incomplete": True,
+        "pieces_info": None,
+        "file_info": None,
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.handle_magnet_metadata_exchange = AsyncMock(return_value=False)
+    session.download_manager.peer_manager = SimpleNamespace(
+        connections={},
+        _connection_batches_in_progress=True,
+    )
+    session.piece_manager._metadata_incomplete = True
+
+    async def fake_connect_to_peers(
+        self: object, peers: list[dict[str, object]]
+    ) -> None:
+        _ = self, peers
+
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(seconds: float) -> None:
+        await original_sleep(min(seconds, 0.01))
+
+    monkeypatch.setattr(
+        "ccbt.session.session.asyncio.sleep",
+        fast_sleep,
+    )
+    monkeypatch.setattr(
+        "ccbt.session.peers.PeerConnectionHelper.connect_peers_to_download",
+        fake_connect_to_peers,
+    )
+
+    session._register_immediate_connection_callback()
+    callback = session.tracker.on_peers_received
+    assert callback is not None
+
+    await callback(
+        [{"ip": "192.0.2.1", "port": 6881, "peer_source": "tracker"}],
+        "udp://tracker.example:1337",
+    )
+    for _ in range(40):
+        await original_sleep(0.01)
+
+    session.handle_magnet_metadata_exchange.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -155,7 +155,7 @@ def test_parse_magnet_exception_returns_none(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.timeout_fast
 async def test_start_logs_transport_security_posture(tmp_path, mock_network_components):
-    """Startup should emit a single transport security posture line."""
+    """Startup should emit a single security posture line (MSE / TLS summary)."""
     import io
     import logging
     from unittest.mock import AsyncMock, MagicMock
@@ -180,6 +180,7 @@ async def test_start_logs_transport_security_posture(tmp_path, mock_network_comp
     manager.config.security.enable_encryption = True
     manager.config.security.encryption_mode = "required"
     manager.config.security.encryption_dh_key_size = 1024
+    manager.config.security.encryption_allow_plain_fallback = True
     manager.config.security.ssl.enable_ssl_trackers = False
     manager.config.security.ssl.ssl_verify_certificates = False
     manager.config.security.ssl.enable_ssl_peers = True
@@ -194,20 +195,21 @@ async def test_start_logs_transport_security_posture(tmp_path, mock_network_comp
     await manager.start()
     try:
         posture_lines = [
-            line for line in log_stream.getvalue().splitlines() if "Transport security posture" in line
+            line
+            for line in log_stream.getvalue().splitlines()
+            if "Startup security posture:" in line
         ]
         assert len(posture_lines) == 1
-        assert any(
-            "peer_mse_pe enabled=True" in line
-            and "mode=required" in line
-            and "dh_bits=1024" in line
-            and "https_tracker_tls enabled=False" in line
-            and "verify_certs=False" in line
-            and "experimental_peer_tls enabled=True" in line
-            and "extension=False" in line
-            and "allow_insecure_peers=True" in line
-            for line in posture_lines
-        )
+        line = posture_lines[0]
+        assert "mse_enabled=True" in line
+        assert "mse_mode=required" in line
+        assert "mse_dh_bits=1024" in line
+        assert "mse_plain_fallback=True" in line
+        assert "tracker_tls_enabled=False" in line
+        assert "tracker_verify=False" in line
+        assert "peer_tls_enabled=True" in line
+        assert "peer_tls_extension=False" in line
+        assert "peer_tls_allow_insecure=True" in line
     finally:
         manager.logger.removeHandler(stream_handler)
         await manager.stop()

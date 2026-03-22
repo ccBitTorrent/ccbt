@@ -1,8 +1,10 @@
 """Adaptive timeout calculator for DHT queries and peer handshakes.
 
-This module provides adaptive timeout calculation based on peer health metrics,
-allowing longer timeouts in desperation mode (few peers) and adjusting timeouts
-based on swarm health.
+Health for handshake/DHT adaptive timeouts uses effective peer count:
+``max(transport_live_count, active_post_handshake_count)`` when the peer manager exposes
+:class:`ccbt.models.SwarmTimeoutSignals`, unless ``network.adaptive_timeout_health_peer_source``
+is ``active_only`` (legacy: post-handshake active peers only). ``requestable_count`` is logged
+for diagnostics only and does not drive the health band.
 """
 
 from __future__ import annotations
@@ -10,7 +12,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ccbt.models import AdaptiveTimeoutHealthPeerSource, SwarmTimeoutSignals
+from ccbt.utils.shutdown import is_shutting_down
+
 logger = logging.getLogger(__name__)
+
+_SHUTDOWN_DHT_QUERY_CAP_S = 1.0
 
 
 class AdaptiveTimeoutCalculator:
@@ -32,28 +39,50 @@ class AdaptiveTimeoutCalculator:
         self.peer_manager = peer_manager
         self.logger = logging.getLogger(__name__)
 
-    def _get_active_peer_count(self) -> int:
-        """Get current active peer count.
+    def _health_source_is_active_only(self) -> bool:
+        src = getattr(
+            self.config.network,
+            "adaptive_timeout_health_peer_source",
+            AdaptiveTimeoutHealthPeerSource.EFFECTIVE,
+        )
+        if isinstance(src, AdaptiveTimeoutHealthPeerSource):
+            return src == AdaptiveTimeoutHealthPeerSource.ACTIVE_ONLY
+        if isinstance(src, str):
+            return (
+                src.strip().lower() == AdaptiveTimeoutHealthPeerSource.ACTIVE_ONLY.value
+            )
+        return False
 
-        Returns:
-            Number of active peers, or 0 if unavailable
-
-        """
+    def _get_timeout_health_signals(self) -> tuple[int, Optional[SwarmTimeoutSignals]]:
+        """Return (effective_count_for_health_bands, signals_or_none)."""
         if self.peer_manager is None:
-            return 0
+            return 0, None
 
         try:
+            if hasattr(self.peer_manager, "get_swarm_timeout_signals"):
+                raw = self.peer_manager.get_swarm_timeout_signals()
+                if not isinstance(raw, SwarmTimeoutSignals):
+                    return 0, None
+                if self._health_source_is_active_only():
+                    effective = raw.active_post_handshake_count
+                else:
+                    effective = max(
+                        raw.transport_live_count,
+                        raw.active_post_handshake_count,
+                    )
+                return effective, raw
+
             if hasattr(self.peer_manager, "get_active_peers"):
                 active_peers = self.peer_manager.get_active_peers()
                 if active_peers is not None:
-                    return len(active_peers)
-            elif hasattr(self.peer_manager, "connections"):
-                # Fallback: count connections that are not disconnected
+                    return len(active_peers), None
+
+            if hasattr(self.peer_manager, "connections"):
                 connections = self.peer_manager.connections
                 if hasattr(connections, "values"):
                     from ccbt.peer.async_peer_connection import ConnectionState
 
-                    return sum(
+                    n = sum(
                         1
                         for conn in connections.values()
                         if hasattr(conn, "state")
@@ -63,26 +92,47 @@ class AdaptiveTimeoutCalculator:
                         and hasattr(conn, "writer")
                         and conn.writer is not None
                     )
+                    return n, None
         except Exception as e:
-            self.logger.debug("Failed to get active peer count: %s", e)
+            self.logger.debug("Failed to get peer health for adaptive timeouts: %s", e)
 
-        return 0
+        return 0, None
 
-    def _get_peer_health_mode(self, active_peer_count: int) -> str:
-        """Determine peer health mode based on active peer count.
+    def _get_peer_health_mode(self, effective_peer_count: int) -> str:
+        """Determine peer health mode based on effective peer count.
 
         Args:
-            active_peer_count: Number of active peers
+            effective_peer_count: Peers after configured health source policy
 
         Returns:
             Mode string: "desperation", "normal", or "healthy"
 
         """
-        if active_peer_count < 5:
+        desperation_max = int(
+            getattr(self.config.network, "adaptive_timeout_desperation_max_peers", 5),
+        )
+        normal_max = int(
+            getattr(self.config.network, "adaptive_timeout_normal_max_peers", 20),
+        )
+        if effective_peer_count < desperation_max:
             return "desperation"
-        if active_peer_count < 20:
+        if effective_peer_count < normal_max:
             return "normal"
         return "healthy"
+
+    def _normal_mode_peer_ratio(
+        self,
+        effective_peer_count: int,
+    ) -> float:
+        desperation_max = int(
+            getattr(self.config.network, "adaptive_timeout_desperation_max_peers", 5),
+        )
+        normal_max = int(
+            getattr(self.config.network, "adaptive_timeout_normal_max_peers", 20),
+        )
+        span = max(1, normal_max - desperation_max)
+        ratio = (effective_peer_count - desperation_max) / float(span)
+        return max(0.0, min(1.0, ratio))
 
     def calculate_dht_timeout(self) -> float:
         """Calculate adaptive DHT query timeout based on peer health.
@@ -98,10 +148,13 @@ class AdaptiveTimeoutCalculator:
             False,
         ):
             # Use base timeout from config
-            return self.config.network.dht_timeout
+            base = self.config.network.dht_timeout
+            if is_shutting_down():
+                return min(float(base), _SHUTDOWN_DHT_QUERY_CAP_S)
+            return base
 
-        active_peer_count = self._get_active_peer_count()
-        mode = self._get_peer_health_mode(active_peer_count)
+        effective_count, signals = self._get_timeout_health_signals()
+        mode = self._get_peer_health_mode(effective_count)
 
         # Get timeout range for current mode
         if mode == "desperation":
@@ -142,11 +195,7 @@ class AdaptiveTimeoutCalculator:
         if mode == "desperation":
             timeout = max_timeout
         elif mode == "normal":
-            # Scale based on peer count (more peers = slightly longer timeout)
-            # Linear interpolation between min and max based on peer count (5-20 range)
-            peer_ratio = (
-                active_peer_count - 5
-            ) / 15.0  # 0.0 at 5 peers, 1.0 at 20 peers
+            peer_ratio = self._normal_mode_peer_ratio(effective_count)
             timeout = min_timeout + (max_timeout - min_timeout) * peer_ratio
         else:  # healthy
             # Use longer timeout for healthy swarms
@@ -155,13 +204,27 @@ class AdaptiveTimeoutCalculator:
         # Clamp to config bounds
         timeout = max(min_timeout, min(max_timeout, timeout))
 
-        self.logger.debug(
-            "DHT timeout calculated: %.1fs (mode=%s, active_peers=%d)",
-            timeout,
-            mode,
-            active_peer_count,
-        )
+        if signals is not None:
+            self.logger.debug(
+                "DHT timeout calculated: %.1fs (mode=%s, transport_live=%d "
+                "active_post_handshake=%d requestable=%d effective=%d)",
+                timeout,
+                mode,
+                signals.transport_live_count,
+                signals.active_post_handshake_count,
+                signals.requestable_count,
+                effective_count,
+            )
+        else:
+            self.logger.debug(
+                "DHT timeout calculated: %.1fs (mode=%s, effective=%d, no swarm signals)",
+                timeout,
+                mode,
+                effective_count,
+            )
 
+        if is_shutting_down():
+            return min(float(timeout), _SHUTDOWN_DHT_QUERY_CAP_S)
         return timeout
 
     def calculate_handshake_timeout(self) -> float:
@@ -180,8 +243,8 @@ class AdaptiveTimeoutCalculator:
             # Use base timeout from config, but ensure minimum 15.0s for better peer acceptance
             return max(15.0, self.config.network.handshake_timeout)
 
-        active_peer_count = self._get_active_peer_count()
-        mode = self._get_peer_health_mode(active_peer_count)
+        effective_count, signals = self._get_timeout_health_signals()
+        mode = self._get_peer_health_mode(effective_count)
 
         # Get timeout range for current mode
         if mode == "desperation":
@@ -228,11 +291,7 @@ class AdaptiveTimeoutCalculator:
         if mode == "desperation":
             timeout = max_timeout
         elif mode == "normal":
-            # Scale based on peer count (more peers = slightly longer timeout)
-            # Linear interpolation between min and max based on peer count (5-20 range)
-            peer_ratio = (
-                active_peer_count - 5
-            ) / 15.0  # 0.0 at 5 peers, 1.0 at 20 peers
+            peer_ratio = self._normal_mode_peer_ratio(effective_count)
             timeout = min_timeout + (max_timeout - min_timeout) * peer_ratio
         else:  # healthy
             # Use longer timeout for healthy swarms
@@ -242,19 +301,44 @@ class AdaptiveTimeoutCalculator:
         timeout = max(min_timeout, min(max_timeout, timeout))
 
         # Note: Log at INFO level in desperation mode to help diagnose handshake issues
-        if mode == "desperation":
+        if signals is not None:
+            if mode == "desperation":
+                self.logger.info(
+                    "Handshake timeout calculated: %.1fs (mode=%s, transport_live=%d "
+                    "active_post_handshake=%d requestable=%d effective=%d) - using longer "
+                    "timeout for better connection success",
+                    timeout,
+                    mode,
+                    signals.transport_live_count,
+                    signals.active_post_handshake_count,
+                    signals.requestable_count,
+                    effective_count,
+                )
+            else:
+                self.logger.debug(
+                    "Handshake timeout calculated: %.1fs (mode=%s, transport_live=%d "
+                    "active_post_handshake=%d requestable=%d effective=%d)",
+                    timeout,
+                    mode,
+                    signals.transport_live_count,
+                    signals.active_post_handshake_count,
+                    signals.requestable_count,
+                    effective_count,
+                )
+        elif mode == "desperation":
             self.logger.info(
-                "Handshake timeout calculated: %.1fs (mode=%s, active_peers=%d) - using longer timeout for better connection success",
+                "Handshake timeout calculated: %.1fs (mode=%s, effective=%d, no swarm "
+                "signals - using longer timeout for better connection success",
                 timeout,
                 mode,
-                active_peer_count,
+                effective_count,
             )
         else:
             self.logger.debug(
-                "Handshake timeout calculated: %.1fs (mode=%s, active_peers=%d)",
+                "Handshake timeout calculated: %.1fs (mode=%s, effective=%d, no swarm signals)",
                 timeout,
                 mode,
-                active_peer_count,
+                effective_count,
             )
 
         return timeout

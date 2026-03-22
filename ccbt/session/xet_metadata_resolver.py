@@ -55,7 +55,9 @@ async def _fetch_tonic_bytes_from_url(
             import urllib.request
 
             req = urllib.request.Request(url_stripped, method="GET")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(  # nosec B310 — http(s) only after scheme check; aiohttp preferred path
+                req, timeout=timeout
+            ) as resp:
                 if resp.status != 200:
                     msg = (
                         "HTTP "

@@ -132,6 +132,71 @@ def test_evaluate_inbound_policy_opportunistic_missing_schema_is_permitted(
     assert decision.reason_code == "missing_schema"
 
 
+def test_evaluate_inbound_policy_mode_is_case_normalized_for_session_attr() -> None:
+    peer_id = b"n" * 20
+    info_hash = b"\x44" * 20
+    session = _session(auth_mode="off", include_key_manager=False)
+    session.auth_mode = "STRICT"
+    session.config.security.authenticated_swarms.mode = "off"
+
+    decision = evaluate_inbound_admission(
+        peer_socket=_peer_socket(),
+        parsed_handshake=_handshake(peer_id, info_hash),
+        session=session,
+        transport_hint="plain",
+    )
+
+    assert decision.allowed is False
+    assert decision.mode == "strict"
+    assert decision.reason_code == "missing_trust_material"
+
+
+def test_evaluate_inbound_policy_parse_mismatch_reason_when_swarm_auth_shape_is_invalid(
+    key_manager: Ed25519KeyManager,
+) -> None:
+    peer_id = b"z" * 20
+    info_hash = b"\x35" * 20
+    fallback_swarm = canonicalize_swarm_id("12345678-9abc-def0-1234-56789abcdef0")
+    session = _session(
+        auth_mode="strict",
+        trusted=[fallback_swarm],
+        include_key_manager=True,
+    )
+    session.key_manager = key_manager
+
+    decision = evaluate_inbound_admission(
+        peer_socket=_peer_socket(),
+        parsed_handshake=_handshake(
+            peer_id=peer_id,
+            info_hash=info_hash,
+            swarm_auth="not-a-dict",
+        ),
+        session=session,
+        transport_hint="plain",
+    )
+
+    assert decision.allowed is False
+    assert decision.mode == "strict"
+    assert decision.reason_code == "swarm_auth_parse_mismatch"
+
+
+def test_evaluate_inbound_policy_strict_missing_peer_id_reason_is_specific() -> None:
+    info_hash = b"\x36" * 20
+    session = _session(auth_mode="strict", include_key_manager=False)
+    session.config.security.authenticated_swarms.mode = "strict"
+
+    decision = evaluate_inbound_admission(
+        peer_socket=_peer_socket(),
+        parsed_handshake=_handshake(peer_id=b"short", info_hash=info_hash),
+        session=session,
+        transport_hint="plain",
+    )
+
+    assert decision.allowed is False
+    assert decision.mode == "strict"
+    assert decision.reason_code == "missing_peer_id"
+
+
 def test_evaluate_inbound_policy_opportunistic_invalid_signature_is_permitted_with_metric(
     key_manager: Ed25519KeyManager,
     monkeypatch: pytest.MonkeyPatch,

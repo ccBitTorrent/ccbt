@@ -217,10 +217,11 @@ async def _quick_disk_benchmark() -> dict:
 
 
 @click.command("performance")
-@click.option("--analyze", is_flag=True, help="Analyze current performance")
-@click.option("--optimize", is_flag=True, help="Apply performance optimizations")
+@click.option("--analyze", "-a", is_flag=True, help="Analyze current performance")
+@click.option("--optimize", "-o", is_flag=True, help="Apply performance optimizations")
 @click.option(
     "--preset",
+    "-p",
     type=click.Choice(
         [
             OptimizationPreset.PERFORMANCE,
@@ -233,17 +234,19 @@ async def _quick_disk_benchmark() -> dict:
 )
 @click.option(
     "--save",
+    "-s",
     is_flag=True,
     help="Save optimizations to config file (requires --optimize)",
 )
 @click.option(
     "--config-file",
+    "-c",
     type=click.Path(),
     default=None,
     help="Config file path (defaults to ccbt.toml)",
 )
-@click.option("--benchmark", is_flag=True, help="Run performance benchmarks")
-@click.option("--profile", is_flag=True, help="Enable performance profiling")
+@click.option("--benchmark", "-b", is_flag=True, help="Run performance benchmarks")
+@click.option("--profile", "-P", is_flag=True, help="Enable performance profiling")
 def performance(
     analyze: bool,
     optimize: bool,
@@ -384,11 +387,13 @@ def performance(
 
 
 @click.command("security")
-@click.option("--scan", is_flag=True, help="Scan for security issues")
-@click.option("--validate", is_flag=True, help="Validate peer connections")
-@click.option("--encrypt", is_flag=True, help="Enable encryption")
-@click.option("--rate-limit", is_flag=True, help="Enable rate limiting")
-@click.option("--swarm-auth", is_flag=True, help="Show authenticated swarms settings")
+@click.option("--scan", "-s", is_flag=True, help="Scan for security issues")
+@click.option("--validate", "-v", is_flag=True, help="Validate peer connections")
+@click.option("--encrypt", "-e", is_flag=True, help="Enable encryption")
+@click.option("--rate-limit", "-r", is_flag=True, help="Enable rate limiting")
+@click.option(
+    "--swarm-auth", "-w", is_flag=True, help="Show authenticated swarms settings"
+)
 def security(
     scan: bool, validate: bool, encrypt: bool, rate_limit: bool, swarm_auth: bool
 ) -> None:
@@ -461,10 +466,10 @@ def security(
 
 @click.command("recover")
 @click.argument("info_hash")
-@click.option("--repair", is_flag=True, help="Attempt to repair corrupted data")
-@click.option("--verify", is_flag=True, help="Verify data integrity")
-@click.option("--rehash", is_flag=True, help="Rehash all pieces")
-@click.option("--force", is_flag=True, help="Force recovery even if risky")
+@click.option("--repair", "-r", is_flag=True, help="Attempt to repair corrupted data")
+@click.option("--verify", "-v", is_flag=True, help="Verify data integrity")
+@click.option("--rehash", "-H", is_flag=True, help="Rehash all pieces")
+@click.option("--force", "-f", is_flag=True, help="Force recovery even if risky")
 def recover(
     info_hash: str,
     repair: bool,
@@ -683,16 +688,23 @@ async def disk_stats(ctx):  # noqa: ARG001
 
 
 @click.command("test")
-@click.option("--unit", is_flag=True, help="Run unit tests")
-@click.option("--integration", is_flag=True, help="Run integration tests")
+@click.option("--unit", "-u", is_flag=True, help="Run unit tests")
+@click.option("--integration", "-i", is_flag=True, help="Run integration tests")
 @click.option(
     "--performance",
+    "-p",
     "performance_test",
     is_flag=True,
     help="Run performance tests",
 )
-@click.option("--security", "security_test", is_flag=True, help="Run security tests")
-@click.option("--coverage", is_flag=True, help="Generate coverage report")
+@click.option(
+    "--security",
+    "-s",
+    "security_test",
+    is_flag=True,
+    help="Run security tests",
+)
+@click.option("--coverage", "-c", is_flag=True, help="Generate coverage report")
 def test(
     unit: bool,
     integration: bool,

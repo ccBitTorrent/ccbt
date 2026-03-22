@@ -723,6 +723,12 @@ class EventBus:
             all_handlers = handlers + wildcard_handlers
 
             if not all_handlers:
+                # Internal monitoring signals are optional for subscribers; avoid log spam
+                if event.event_type in (
+                    EventType.MONITORING_STOPPED.value,
+                    EventType.MONITORING_HEARTBEAT.value,
+                ):
+                    return
                 # Only log at DEBUG for unhandled events to reduce noise
                 self.logger.debug(
                     "No handlers registered for event: %s (id=%s)",

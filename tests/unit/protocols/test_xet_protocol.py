@@ -432,16 +432,16 @@ class TestXetProtocol:
             pieces=[b"T" * 20],
         )
 
-        # Mock AsyncUDPTrackerClient (imported inside method)
-        with patch("ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient") as mock_tracker_class:
-            mock_tracker = AsyncMock()
-            mock_tracker.start = AsyncMock()
-            mock_tracker.stop = AsyncMock()
-            mock_tracker.scrape = AsyncMock(
-                return_value={"seeders": 8, "leechers": 3, "completed": 80}
-            )
-            mock_tracker_class.return_value = mock_tracker
-
+        mock_tracker = AsyncMock()
+        mock_tracker.start = AsyncMock()
+        mock_tracker.stop = AsyncMock()
+        mock_tracker.scrape = AsyncMock(
+            return_value={"seeders": 8, "leechers": 3, "completed": 80}
+        )
+        with patch(
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
+            return_value=mock_tracker,
+        ):
             stats = await protocol._scrape_from_trackers(torrent_info)
 
             assert stats["seeders"] == 8

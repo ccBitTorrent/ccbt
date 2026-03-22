@@ -41,6 +41,9 @@ jobs:
       - name: Update translation files
         run: uv run python -m ccbt.i18n.scripts.update_translations
 
+      - name: Fill English catalog (msgstr = msgid for new entries)
+        run: uv run python -m ccbt.i18n.scripts.fill_english
+
       - name: Check string coverage
         run: uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --fail-on-gap
 

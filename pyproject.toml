@@ -109,7 +109,12 @@ ccbt = ["py.typed", "i18n/locales/**/*.mo"]
 [tool.ruff]
 target-version = "py38"
 line-length = 88
-exclude = ["tests/", "benchmarks/"]
+exclude = [
+    "tests/",
+    "benchmarks/",
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
+]
 select = [
     "E4",   # pycodestyle errors
     "E7",   # pycodestyle errors
@@ -266,6 +271,8 @@ exclude_dirs = [
     ".ruff_cache",
     ".venv",
     "benchmarks",
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
     "dev",
     "dist",
     "docs",
@@ -312,6 +319,7 @@ dev = [
     "mkdocs-static-i18n>=1.0.0",
     "mkdocs-blog-plugin>=0.25.0",
     "types-pyyaml>=6.0.12.20241230",
+    "deep-translator>=1.11.4",
 ]
 
  

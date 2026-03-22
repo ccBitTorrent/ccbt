@@ -273,6 +273,133 @@ class TestAsyncMetadataExchange:
         invalid_handshake = handshake[:28] + wrong_hash + handshake[48:]
         assert exchange._validate_handshake(invalid_handshake) is False
 
+    def test_handshake_requires_extension_bit(self, exchange):
+        """Metadata path requires BEP 10 advertisement in reserved bytes."""
+        handshake = bytearray(exchange._create_handshake())
+        handshake[25] = 0  # clear extension protocol flag (byte index 1+19+5)
+        assert exchange._validate_handshake(bytes(handshake)) is False
+
+    @pytest.mark.asyncio
+    async def test_read_peer_handshake_staged_v1(self, exchange):
+        """Staged handshake read accepts a standard 68-byte v1 payload."""
+        hs = exchange._create_handshake()
+        reader = asyncio.StreamReader()
+        reader.feed_data(hs)
+        reader.feed_eof()
+        out = await exchange._read_peer_handshake_for_metadata(
+            reader, ("127.0.0.1", 6882), 5.0
+        )
+        assert out == hs
+
+    @pytest.mark.asyncio
+    async def test_read_peer_handshake_staged_hybrid(self, exchange):
+        """Staged handshake read accepts a 100-byte hybrid v1/v2 payload."""
+        protocol = b"\x13BitTorrent protocol"
+        reserved = bytearray(8)
+        reserved[0] = 0x01  # BEP 52 support
+        reserved[5] = 0x10  # BEP 10 extension flag
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        hs = (
+            protocol
+            + bytes(reserved)
+            + exchange.info_hash
+            + info_hash_v2
+            + exchange.our_peer_id
+        )
+        reader = asyncio.StreamReader()
+        reader.feed_data(hs)
+        reader.feed_eof()
+        out = await exchange._read_peer_handshake_for_metadata(
+            reader, ("127.0.0.1", 6882), 5.0
+        )
+        assert len(out) == 100
+        assert out == hs
+
+    def test_validate_handshake_hybrid_with_protocol_v2_off(
+        self, exchange, monkeypatch
+    ):
+        """Non-68 handshake fails when protocol_v2 is disabled."""
+        monkeypatch.setattr(
+            exchange.config.network.protocol_v2, "enable_protocol_v2", False
+        )
+        protocol = b"\x13BitTorrent protocol"
+        reserved = bytearray(8)
+        reserved[0] = 0x01  # BEP 52 support
+        reserved[5] = 0x10  # BEP 10 extension flag
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        hs = (
+            protocol
+            + bytes(reserved)
+            + exchange.info_hash
+            + info_hash_v2
+            + exchange.our_peer_id
+        )
+        assert exchange._validate_handshake(hs) is False
+
+    def test_validate_handshake_hybrid_with_protocol_v2_on(
+        self, exchange, monkeypatch
+    ):
+        """Hybrid handshake is accepted when protocol_v2 is enabled."""
+        monkeypatch.setattr(
+            exchange.config.network.protocol_v2, "enable_protocol_v2", True
+        )
+        protocol = b"\x13BitTorrent protocol"
+        reserved = bytearray(8)
+        reserved[0] = 0x01  # BEP 52 support
+        reserved[5] = 0x10  # BEP 10 extension flag
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        hs = (
+            protocol
+            + bytes(reserved)
+            + exchange.info_hash
+            + info_hash_v2
+            + exchange.our_peer_id
+        )
+        assert exchange._validate_handshake(hs) is True
+
+    def test_log_metadata_peer_outcome_includes_failure_stage(self, exchange):
+        """Structured failure metadata is included in METADATA_PEER_OUTCOME logs."""
+        logger = Mock()
+        exchange.logger = logger
+
+        exchange._log_metadata_peer_outcome(
+            ("127.0.0.1", 6881),
+            connect_ok=False,
+            bt_handshake_ok=False,
+            extended_handshake_ok=False,
+            ut_metadata_supported=False,
+            piece_count_received=0,
+            metadata_validated=False,
+            failure_stage="handshake_timeout",
+            failure_reason="timeout",
+        )
+
+        logger.info.assert_called_once()
+        message = logger.info.call_args.args[0]
+        args = logger.info.call_args.args[1:]
+        assert "failure_stage=%s failure_reason=%s" in message
+        assert args[-2:] == ("handshake_timeout", "timeout")
+
+    def test_log_metadata_peer_outcome_default_failure_fields(self, exchange):
+        """Default failure fields are stable when reason is omitted."""
+        logger = Mock()
+        exchange.logger = logger
+
+        exchange._log_metadata_peer_outcome(
+            ("127.0.0.1", 6881),
+            connect_ok=True,
+            bt_handshake_ok=True,
+            extended_handshake_ok=False,
+            ut_metadata_supported=False,
+            piece_count_received=0,
+            metadata_validated=False,
+        )
+
+        logger.info.assert_called_once()
+        args = logger.info.call_args.args[1:]
+        assert args[-2:] == ("unknown", "n/a")
+
+
     @pytest.mark.asyncio
     async def test_send_extended_handshake_no_writer(self, exchange):
         """Test _send_extended_handshake without writer."""

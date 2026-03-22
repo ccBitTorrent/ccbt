@@ -38,6 +38,9 @@ exclude = [
     "tests",
     "benchmarks",
     "ccbt/interface",
+    # Offline translation tooling and generated locale payloads (not runtime i18n)
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
 ]
 
 # Line length

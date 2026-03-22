@@ -15,7 +15,7 @@ listen_interface = "0.0.0.0"
 enable_ipv6 = true
 enable_tcp = true
 enable_utp = false
-enable_encryption = false
+enable_encryption = true
 socket_rcvbuf_kib = 256
 socket_sndbuf_kib = 256
 tcp_nodelay = true
@@ -25,6 +25,7 @@ connection_timeout = 30.0
 handshake_timeout = 10.0
 keep_alive_interval = 120.0
 peer_timeout = 60.0
+peer_quality_probation_timeout = 60.0
 dht_timeout = 2.0
 handshake_adaptive_timeout_enabled = true
 handshake_timeout_desperation_min = 30.0
@@ -59,8 +60,25 @@ global_up_kib = 0
 per_peer_down_kib = 0
 per_peer_up_kib = 0
 max_upload_slots = 4
+reciprocation_choked_peer_score_boost = 0.12
+reciprocation_remote_not_interested_boost = 0.06
+low_download_diversity_threshold = 1
+low_download_diversity_full_unchoke = true
+low_download_diversity_use_hysteresis = false
+low_download_diversity_exit_margin = 1
+low_download_diversity_max_peers = 0
+leech_heavy_swarm_total_upload_bps_threshold = 2048.0
+inbound_unknown_hash_warning_sample_interval = 32
+reciprocation_max_combined_boost = 0.25
+optimistic_unchoke_top_candidates = 3
+optimistic_unchoke_use_jitter = true
 optimistic_unchoke_interval = 30.0
 unchoke_interval = 10.0
+# Remote UNCHOKE stall recovery (see docs/en/network-troubleshooting.md)
+peer_choked_hard_timeout_seconds = 30.0
+peer_choked_anchor_timeout_seconds = 75.0
+peer_choked_solo_grace_seconds = 180.0
+peer_choked_solo_grace_zero_bytes_cap_seconds = 0.0
 choking_upload_rate_weight = 0.6
 choking_download_rate_weight = 0.4
 choking_performance_score_weight = 0.2
@@ -76,8 +94,13 @@ dns_cache_ttl = 300
 tracker_keepalive_timeout = 300.0
 tracker_enable_dns_cache = true
 tracker_dns_cache_ttl = 300
+tracker_network_failure_quarantine_seconds = 90.0
+tracker_payload_failure_quarantine_seconds = 120.0
+tracker_dns_refused_escalation_streak = 5
+tracker_zero_active_batches_before_dht_short_circuit = 3
 connection_pool_max_connections = 150
 connection_pool_max_idle_time = 300.0
+# On Windows the client may force warmup off at runtime to avoid WinError 121; this is the default intent.
 connection_pool_warmup_enabled = true
 connection_pool_warmup_count = 10
 connection_pool_health_check_interval = 60.0
@@ -292,7 +315,7 @@ scheduler_slice_ms = 100
 
 [security]
 peer_quality_threshold = 0.3
-enable_encryption = false
+enable_encryption = true
 encryption_mode = "preferred"
 encryption_dh_key_size = 768
 encryption_prefer_rc4 = true
@@ -508,7 +531,6 @@ strict_ltep_handshake_timeout_s = 30.0
 fail_closed_on_parse_errors = false
 trust_store_refresh_interval_s = 60.0
 revocation_refresh_interval_s = 300.0
-
 
 [queue.priority_weights]
 maximum = 5.0

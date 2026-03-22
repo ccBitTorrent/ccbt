@@ -691,6 +691,10 @@ class DHTDiscoverySetup:
 
         seeds = self._build_bootstrap_seed_candidates(dht_client)
         if not seeds:
+            with contextlib.suppress(Exception):
+                dht_client.last_bootstrap_failure_reason = (
+                    f"{reason}:no_seed_candidates"
+                )
             self._record_bootstrap_recovery_attempt(
                 reason=f"{reason}:rebootstrap_failed",
                 source="rebootstrap",
@@ -795,6 +799,12 @@ class DHTDiscoverySetup:
             source="seed_replay",
         )
         self._advance_seed_replay_offset(len(seeds))
+        with contextlib.suppress(Exception):
+            fr = getattr(dht_client, "last_bootstrap_failure_reason", "")
+            if not (isinstance(fr, str) and fr.strip()):
+                dht_client.last_bootstrap_failure_reason = (
+                    f"{reason}:seed_replay_exhausted"
+                )
         return False
 
     async def _maybe_rebootstrap(self, dht_client: Any, reason: str) -> bool:
@@ -887,6 +897,16 @@ class DHTDiscoverySetup:
         routing_table_size = len(
             getattr(getattr(dht_client, "routing_table", None), "nodes", [])
         )
+        _session_fr = getattr(dht_client, "last_bootstrap_failure_reason", "")
+        if (
+            routing_table_size < min_nodes
+            and not bootstrap_succeeded
+            and not (isinstance(_session_fr, str) and _session_fr.strip())
+        ):
+            with contextlib.suppress(Exception):
+                dht_client.last_bootstrap_failure_reason = (
+                    "ensure_bootstrap:session_fallback_incomplete"
+                )
         query_metrics = self._dht_query_metrics
         query_metrics["bootstrap_success_count"] = int(
             getattr(dht_client, "bootstrap_success_count", 0) or 0
@@ -913,12 +933,19 @@ class DHTDiscoverySetup:
             )
         else:
             self._set_health_state("stalled")
+            _fail_reason = getattr(dht_client, "last_bootstrap_failure_reason", None)
+            _fail_disp = (
+                _fail_reason
+                if isinstance(_fail_reason, str) and _fail_reason.strip()
+                else "unset"
+            )
             self.logger.warning(
-                "DHT bootstrap did not yield enough routing nodes for %s (routing table: %d nodes, success=%s, failure_reason=%s)",
+                "DHT bootstrap did not yield enough routing nodes for %s "
+                "(routing table: %d nodes, success=%s, failure_reason=%s)",
                 reason,
                 routing_table_size,
                 bootstrap_succeeded,
-                getattr(dht_client, "last_bootstrap_failure_reason", "unknown"),
+                _fail_disp,
             )
             if routing_table_size == 0:
                 self._dht_query_metrics["bootstrap_zero_state_count"] = (
@@ -2391,9 +2418,9 @@ class DHTDiscoverySetup:
                                     "⏸️ DHT DISCOVERY: Tracker progress remains low after window (%.1fs); clearing tracker delay so DHT can continue.",
                                     min(wait_time, 1.0),
                                 )
-                                self.session.__dict__["_tracker_peers_connecting_until"] = (
-                                    time_module.time()
-                                )
+                                self.session.__dict__[
+                                    "_tracker_peers_connecting_until"
+                                ] = time_module.time()
 
                 # Note: Wait until we have minimum peers before starting DHT
                 # This prevents aggressive DHT queries that can cause blacklisting
