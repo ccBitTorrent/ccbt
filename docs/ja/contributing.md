@@ -84,19 +84,25 @@ uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html --cov-report
 - カバレッジ付き Pytest
 - ベンチマークスモークテスト
 - MkDocs ビルド検証: `uv run mkdocs build -f dev/mkdocs.yml`
-- 翻訳検証: `uv run python -m ccbt.i18n.scripts.validate_po`
-- 翻訳カバレッジチェック: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+- 翻訳検証: `uv run python -m ccbt.i18n.scripts.validate_po`（`ccbt/i18n/locales/` 配下の `.po` を変更したとき）
 
 手動で実行:
 ```bash
 uv run pre-commit run --all-files -c dev/pre-commit-config.yaml
 ```
 
-!!! note "翻訳検証"
-    翻訳可能な文字列に影響する変更をコミットする前に:
-    1. `.pot` テンプレートを再生成: `uv run python -m ccbt.i18n.scripts.extract`
-    2. PO ファイルを検証: `uv run python -m ccbt.i18n.scripts.validate_po`
-    3. 翻訳カバレッジをチェック: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+!!! note "翻訳 (i18n) ワークフロー"
+    **ローカル（任意）:** ユーザー向け文字列を変更するとき:
+    1. コードで `_()` / `_n()` / `_p()` で囲む。
+    2. 抽出: `uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`
+    3. マージ: GNU **msgmerge**、または `uv run python -m ccbt.i18n.scripts.translation_workflow --step update`（gettext が必要）。
+    4. 英語埋め: `uv run python -m ccbt.i18n.scripts.fill_english`
+    5. PO 検証: `uv run python -m ccbt.i18n.scripts.validate_po`
+    6. 完全性（任意）: `uv run python -m ccbt.i18n.scripts.check_completeness`
+
+    **CI（承認が必要）:** `.github/workflows/ci.yml` の `i18n` ジョブは extract、`validate_po`、`check_completeness` を実行します。フルパイプラインは Actions から `i18n-manual.yml` を実行してください。
+
+    詳細は [ccbt/i18n/scripts/README.md](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/i18n/scripts/README.md) を参照。
 
 ## 開発設定
 

@@ -36,13 +36,13 @@ def _extract_env_mappings() -> dict[str, str]:
     out: dict[str, str] = {}
     # Single-line: "CCBT_X": "section.field"
     for env_name, path in re.findall(
-        r'[\"\'](CCBT_[A-Z0-9_]+)[\"\']\s*:\s*[\"\']([a-z0-9_\\.]+)[\"\']',
+        r"[\"\'](CCBT_[A-Z0-9_]+)[\"\']\s*:\s*[\"\']([a-z0-9_\\.]+)[\"\']",
         block,
     ):
         out[env_name] = path
     # Multi-line: "CCBT_X": (\n                "section.field"\n            ),
     for env_name, path in re.findall(
-        r'[\"\'](CCBT_[A-Z0-9_]+)[\"\']\s*:\s*\(\s*\n\s*[\"\']([a-z0-9_\\.]+)[\"\']',
+        r"[\"\'](CCBT_[A-Z0-9_]+)[\"\']\s*:\s*\(\s*\n\s*[\"\']([a-z0-9_\\.]+)[\"\']",
         block,
     ):
         out[env_name] = path
@@ -70,9 +70,7 @@ def _parse_env_example(path: Path) -> dict[str, str]:
 
 def _load_env_example_comments(path: Path) -> dict[str, str]:
     entries: dict[str, str] = {}
-    comment_pattern = re.compile(
-        r"^(CCBT_[A-Z0-9_]+)=(.*?)(?:\s+#\s*(.*))?$"
-    )
+    comment_pattern = re.compile(r"^(CCBT_[A-Z0-9_]+)=(.*?)(?:\s+#\s*(.*))?$")
 
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -190,7 +188,9 @@ def test_ccbt_toml_matches_model_section_inventory() -> None:
     assert mapped_sections.issubset(expected_sections)
 
     assert fixture["mapped_env_count"] == len(env_mappings)
-    assert fixture["env_example_count"] == len(_parse_env_example(REPO_ROOT / "env.example"))
+    assert fixture["env_example_count"] == len(
+        _parse_env_example(REPO_ROOT / "env.example")
+    )
 
 
 @pytest.mark.unit
@@ -218,8 +218,15 @@ def test_config_manager_parses_env_types_and_paths() -> None:
     assert env_values["discovery"]["enable_dht"] is False
     assert env_values["network"]["max_global_peers"] == 321
     assert env_values["discovery"]["tracker_base_announce_interval"] == 88.5
-    assert env_values["security"]["ip_filter"]["filter_files"] == ["alpha.txt", "beta.txt"]
-    assert env_values["security"]["encryption_allowed_ciphers"] == ["rc4", "aes", "chacha20"]
+    assert env_values["security"]["ip_filter"]["filter_files"] == [
+        "alpha.txt",
+        "beta.txt",
+    ]
+    assert env_values["security"]["encryption_allowed_ciphers"] == [
+        "rc4",
+        "aes",
+        "chacha20",
+    ]
     assert env_values["observability"]["log_level"] == "TRACE"
     assert env_values["observability"]["log_correlation_id"] is False
     assert env_values["observability"]["structured_logging"] is True
@@ -401,3 +408,32 @@ def test_config_encryption_mirror_prefers_canonical_security_field() -> None:
     )
     assert cfg.security.enable_encryption is True
     assert cfg.network.enable_encryption is True
+
+
+def test_env_mapping_includes_dht_bootstrap_nodes() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    with pytest.MonkeyPatch.context() as monkey:
+        monkey.setenv(
+            "CCBT_DHT_BOOTSTRAP_NODES",
+            "router.bittorrent.com:6881,dht.transmissionbt.com:6881",
+        )
+        manager = ConfigManager()
+        env_values = manager._get_env_config()
+
+    assert env_values["discovery"]["dht_bootstrap_nodes"] == [
+        "router.bittorrent.com:6881",
+        "dht.transmissionbt.com:6881",
+    ]
+
+
+def test_apply_profile_sets_max_peers_per_torrent_key() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    manager = ConfigManager()
+    manager.config.network.max_peers_per_torrent = 999
+    manager.apply_profile("low_resource")
+
+    assert manager.config.network.max_peers_per_torrent == 10

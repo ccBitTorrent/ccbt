@@ -546,6 +546,7 @@ class AsyncDHTClient:
         self._max_empty_table_rebootstrap_attempts = 3
         self._last_empty_table_rebootstrap_at = 0.0
         self._empty_table_rebootstrap_backoff = 1.0
+        self._zero_node_rebootstrap_task: Optional[asyncio.Task[None]] = None
 
         # Pending queries
         self.pending_queries: dict[bytes, asyncio.Future] = {}
@@ -566,6 +567,11 @@ class AsyncDHTClient:
         self._refresh_task: Optional[asyncio.Task] = None
         self._cleanup_task: Optional[asyncio.Task] = None
         self._bootstrap_task: Optional[asyncio.Task] = None
+        self._bootstrap_lock = asyncio.Lock()
+        # Wall-clock deadline (time.time()) for in-flight bootstrap; used to clamp
+        # per-query and DNS timeouts so desperation-mode DHT timeouts cannot exhaust
+        # the whole bootstrap budget on a single operation.
+        self._bootstrap_query_deadline: Optional[float] = None
 
         # Callbacks with info_hash filtering
         # Maps info_hash -> list of callbacks, or None for global callbacks
@@ -718,6 +724,14 @@ class AsyncDHTClient:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._bootstrap_task
             self._bootstrap_task = None
+        if (
+            self._zero_node_rebootstrap_task
+            and not self._zero_node_rebootstrap_task.done()
+        ):
+            self._zero_node_rebootstrap_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._zero_node_rebootstrap_task
+        self._zero_node_rebootstrap_task = None
 
         # Proper cleanup order: close transport first, then handle socket
         if self.transport:
@@ -765,11 +779,19 @@ class AsyncDHTClient:
 
         self.logger.info("DHT client stopped")
 
-    async def wait_for_bootstrap(self, timeout: float = 10.0) -> bool:
+    async def wait_for_bootstrap(
+        self,
+        timeout: float = 10.0,
+        *,
+        min_nodes: int = 8,
+        allow_partial: bool = False,
+    ) -> bool:
         """Wait for DHT bootstrap to complete.
 
         Args:
             timeout: Maximum time to wait for bootstrap in seconds
+            min_nodes: Minimum routing nodes required for operational readiness
+            allow_partial: If True, return success when any routing node exists
 
         Returns:
             True if bootstrap completed, False if timeout
@@ -779,17 +801,24 @@ class AsyncDHTClient:
         import time
 
         start_time = time.time()
+        min_nodes = max(1, int(min_nodes))
         # Check if we have enough nodes in routing table (bootstrap is complete)
         while time.time() - start_time < timeout:
-            if len(self.routing_table.nodes) >= 8:
+            if len(self.routing_table.nodes) >= min_nodes:
                 return True
             await asyncio.sleep(0.1)
 
-        # Return True if we have any nodes (partial bootstrap), False otherwise
-        return len(self.routing_table.nodes) > 0
+        if allow_partial:
+            # Return True if we have any nodes (partial bootstrap), False otherwise
+            return len(self.routing_table.nodes) > 0
+        return len(self.routing_table.nodes) >= min_nodes
 
     async def _bootstrap(self, reason: str = "bootstrap") -> None:
         """Bootstrap the DHT by finding initial nodes."""
+        async with self._bootstrap_lock:
+            await self._bootstrap_core(reason)
+
+    async def _bootstrap_core(self, reason: str = "bootstrap") -> None:
         self.last_bootstrap_reason = reason
         self.last_bootstrap_failure_reason = ""
         self.last_bootstrap_state = f"starting:{reason}"
@@ -800,6 +829,7 @@ class AsyncDHTClient:
 
         # Overall bootstrap wall clock (config: discovery.dht_bootstrap_timeout_s)
         bootstrap_timeout = self._dht_bootstrap_timeout_s
+        self._bootstrap_query_deadline = start_time + bootstrap_timeout
 
         try:
             # Try to find nodes from bootstrap servers
@@ -859,6 +889,8 @@ class AsyncDHTClient:
             if not self.last_bootstrap_failure_reason:
                 self.last_bootstrap_failure_reason = "bootstrap_cancelled_or_timeout"
             raise
+        finally:
+            self._bootstrap_query_deadline = None
 
         self.logger.info(
             "Bootstrap completed with %d nodes", len(self.routing_table.nodes)
@@ -988,25 +1020,62 @@ class AsyncDHTClient:
         """Schedule a bounded rebootstrap when routing table is empty."""
         now = time.monotonic()
         if (
+            self._zero_node_rebootstrap_task is not None
+            and not self._zero_node_rebootstrap_task.done()
+        ):
+            with contextlib.suppress(Exception):
+                from ccbt.monitoring import get_metrics_collector
+
+                get_metrics_collector().increment_counter(
+                    "dht_zero_node_rebootstrap_suppressed_total"
+                )
+            self.logger.debug(
+                "DHT empty routing rebootstrap already in flight, suppressing duplicate (%s)",
+                reason,
+            )
+            self.last_bootstrap_state = "suppressed:rebootstrap_inflight"
+            self.last_bootstrap_failure_reason = (
+                f"empty_table_rebootstrap_suppressed:inflight:{reason}"
+            )
+            return False
+        if (
             self._empty_table_rebootstrap_attempts
             >= self._max_empty_table_rebootstrap_attempts
         ):
+            with contextlib.suppress(Exception):
+                from ccbt.monitoring import get_metrics_collector
+
+                get_metrics_collector().increment_counter(
+                    "dht_zero_node_rebootstrap_suppressed_total"
+                )
             self.logger.debug(
                 "DHT empty routing rebootstrap suppressed after %d attempts: %s",
                 self._empty_table_rebootstrap_attempts,
                 reason,
             )
             self.last_bootstrap_state = "suppressed:rebootstrap_limit_reached"
+            self.last_bootstrap_failure_reason = (
+                f"empty_table_rebootstrap_suppressed:limit:{reason}"
+            )
             return False
 
         cooldown = self._empty_table_rebootstrap_backoff
         if now - self._last_empty_table_rebootstrap_at < cooldown:
+            with contextlib.suppress(Exception):
+                from ccbt.monitoring import get_metrics_collector
+
+                get_metrics_collector().increment_counter(
+                    "dht_zero_node_rebootstrap_suppressed_total"
+                )
             self.logger.debug(
                 "DHT empty routing rebootstrap skipped due cooldown %.1fs (%s)",
                 cooldown - (now - self._last_empty_table_rebootstrap_at),
                 reason,
             )
             self.last_bootstrap_state = "suppressed:empty_table_cooldown"
+            self.last_bootstrap_failure_reason = (
+                f"empty_table_rebootstrap_suppressed:cooldown:{reason}"
+            )
             return False
 
         self._last_empty_table_rebootstrap_at = now
@@ -1015,12 +1084,19 @@ class AsyncDHTClient:
             self._empty_table_rebootstrap_backoff * 2.0, 60.0
         )
         self.last_bootstrap_state = "scheduled:empty_table_rebootstrap"
+        self.last_bootstrap_failure_reason = (
+            f"empty_table_rebootstrap_scheduled:{reason}"
+        )
         self.logger.warning(
             "DHT bootstrap retries: scheduling bounded rebootstrap %d/%d for %s",
             self._empty_table_rebootstrap_attempts,
             self._max_empty_table_rebootstrap_attempts,
             reason,
         )
+        with contextlib.suppress(Exception):
+            from ccbt.monitoring import get_metrics_collector
+
+            get_metrics_collector().increment_counter("dht_zero_node_rebootstrap_total")
 
         async def _run() -> None:
             try:
@@ -1028,9 +1104,13 @@ class AsyncDHTClient:
             except Exception as exc:  # pragma: no cover - defensive logging
                 self.logger.debug("DHT scheduled rebootstrap failed: %s", exc)
                 self.last_bootstrap_state = f"failed:{type(exc).__name__}"
+            finally:
+                self._zero_node_rebootstrap_task = None
 
-        bootstrap_task = asyncio.create_task(_run())
-        _ = bootstrap_task
+        self._zero_node_rebootstrap_task = asyncio.create_task(
+            _run(),
+            name=f"dht-zero-node-rebootstrap:{reason}",
+        )
         return True
 
     async def _bootstrap_step(self, host: str, port: int) -> bool:
@@ -1060,6 +1140,21 @@ class AsyncDHTClient:
             )
             return False
         start_time = time.time()
+        dns_cap = 5.0
+        b_deadline = self._bootstrap_query_deadline
+        if b_deadline is not None:
+            rem = b_deadline - time.time()
+            if rem <= 0:
+                self.last_bootstrap_failure_reason = (
+                    "bootstrap_wall_exhausted:before_dns"
+                )
+                self.logger.debug(
+                    "Skipping bootstrap DNS for %s:%s: bootstrap wall clock exhausted",
+                    host,
+                    port,
+                )
+                return False
+            dns_cap = min(5.0, max(0.5, rem))
 
         try:
             # Note: Use async DNS resolution with timeout to prevent hanging
@@ -1077,7 +1172,7 @@ class AsyncDHTClient:
                             family=socket.AF_INET,
                             type=socket.SOCK_DGRAM,
                         ),
-                        timeout=5.0,
+                        timeout=dns_cap,
                     )
                 else:
                     # Python 3.7-3.8: use run_in_executor
@@ -1091,7 +1186,7 @@ class AsyncDHTClient:
                             socket.AF_INET,
                             socket.SOCK_DGRAM,
                         ),
-                        timeout=5.0,
+                        timeout=dns_cap,
                     )
                 # Extract IPv4 address from first result
                 addr = (addr_info[0][4][0], port)
@@ -1733,9 +1828,18 @@ class AsyncDHTClient:
         if not closest_set:
             self.last_lookup_state = "empty_routing_table"
             self.last_zero_node_lookup_at = time.time()
+            with contextlib.suppress(Exception):
+                from ccbt.monitoring import get_metrics_collector
+
+                get_metrics_collector().increment_counter(
+                    "dht_empty_routing_lookups_total"
+                )
             self._log_empty_routing_warning(
                 f"DHT lookup for {info_hash.hex()[:8]} cannot start because the routing table "
                 f"is empty (queried 0 nodes). Bootstrap is missing, blocked, or has not completed yet."
+            )
+            retry_scheduled = self._schedule_zero_node_rebootstrap(
+                reason=f"get_peers:{info_hash.hex()[:8]}"
             )
             self._last_query_metrics = {
                 "duration": 0.0,
@@ -1746,10 +1850,12 @@ class AsyncDHTClient:
                 "k": k,
                 "max_depth": max_depth if max_depth is not None else 10,
                 "empty_result_reason": "empty_routing_table",
+                "empty_result_reason_code": "bootstrap_not_operational",
                 "zero_node_lookup": True,
                 "lookup_state": self.last_lookup_state,
-                "empty_table_retry_scheduled": self._schedule_zero_node_rebootstrap(
-                    reason=f"get_peers:{info_hash.hex()[:8]}"
+                "empty_table_retry_scheduled": retry_scheduled,
+                "empty_table_retry_reason_code": (
+                    "scheduled" if retry_scheduled else "suppressed"
                 ),
             }
             return []
@@ -2535,6 +2641,14 @@ class AsyncDHTClient:
         query_timeout = self._calculate_adaptive_query_timeout()
         if is_shutting_down():
             query_timeout = min(query_timeout, 1.0)
+
+        b_deadline = self._bootstrap_query_deadline
+        if b_deadline is not None:
+            wall_remaining = b_deadline - time.time()
+            if wall_remaining <= 0:
+                query_timeout = min(query_timeout, 0.25)
+            else:
+                query_timeout = min(query_timeout, max(0.25, wall_remaining))
 
         # Generate transaction ID
         tid = os.urandom(2)

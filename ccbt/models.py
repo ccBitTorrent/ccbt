@@ -1191,6 +1191,120 @@ class NetworkConfig(BaseModel):
             "others log at DEBUG only."
         ),
     )
+    inbound_max_probation_inflight_per_hash: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        description="Max concurrent inbound registration probations per info-hash prefix.",
+    )
+    inbound_registration_wait_cap_no_sessions_s: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=900.0,
+        description="Session lookup cap when no torrents are registered yet.",
+    )
+    inbound_registration_wait_cap_default_s: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=300.0,
+        description="Default session lookup cap when other torrents exist.",
+    )
+    inbound_registration_wait_cap_storm_s: float = Field(
+        default=8.0,
+        ge=1.0,
+        le=120.0,
+        description="Shorter lookup cap when unknown-hash prefix count exceeds storm threshold.",
+    )
+    inbound_registration_wait_cap_metadata_pending_s: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=900.0,
+        description="Lookup cap when a magnet session is registered but metadata is still pending.",
+    )
+    inbound_grace_poll_seconds_no_sessions_s: float = Field(
+        default=8.0,
+        ge=0.5,
+        le=120.0,
+        description="Grace poll after probation cap when no sessions exist.",
+    )
+    inbound_grace_poll_seconds_storm_s: float = Field(
+        default=1.5,
+        ge=0.1,
+        le=60.0,
+        description="Grace poll after probation cap under unknown-hash storm.",
+    )
+    inbound_grace_poll_seconds_default_s: float = Field(
+        default=2.5,
+        ge=0.1,
+        le=60.0,
+        description="Default grace poll after probation cap.",
+    )
+    inbound_probation_window_s: float = Field(
+        default=8.0,
+        ge=0.5,
+        le=300.0,
+        description="Inbound registration probation window (no other sessions).",
+    )
+    inbound_probation_window_storm_s: float = Field(
+        default=4.0,
+        ge=0.5,
+        le=120.0,
+        description="Probation window when unknown-hash prefix is in storm territory.",
+    )
+    inbound_probation_retry_interval_s: float = Field(
+        default=0.5,
+        ge=0.05,
+        le=5.0,
+        description="Sleep between inbound probation session polls.",
+    )
+    inbound_unknown_hash_storm_threshold: int = Field(
+        default=12,
+        ge=1,
+        le=256,
+        description="Unknown-hash occurrences per prefix before storm caps apply.",
+    )
+    inbound_probation_wait_queue_max_total: int = Field(
+        default=256,
+        ge=0,
+        le=8192,
+        description=(
+            "Global cap on inbound peers waiting for a per-hash probation slot when "
+            "inbound_max_probation_inflight_per_hash is saturated; 0 disables the queue "
+            "(legacy grace-poll-only behavior)."
+        ),
+    )
+
+    choke_only_slot_replacement_enabled: bool = Field(
+        default=False,
+        description=(
+            "When True, disconnect oldest remote-choked interested peers to free slots "
+            "if no peer is requestable and the swarm is near max_peers_per_torrent."
+        ),
+    )
+    choke_only_slot_replacement_min_active_peers: int = Field(
+        default=4,
+        ge=2,
+        le=256,
+        description="Minimum active peers before choke-only slot replacement may run.",
+    )
+    choke_only_slot_replacement_min_choke_ratio: float = Field(
+        default=0.85,
+        ge=0.5,
+        le=1.0,
+        description="Minimum decayed choke-state ratio to treat a peer as persistently choked.",
+    )
+    choke_only_slot_replacement_max_disconnect_fraction: float = Field(
+        default=0.15,
+        ge=0.01,
+        le=0.5,
+        description="Upper bound on fraction of active peers to disconnect per evaluation tick.",
+    )
+    choke_only_slot_replacement_at_limit_fraction: float = Field(
+        default=0.95,
+        ge=0.5,
+        le=1.0,
+        description="Only run when active connections are at least this fraction of max_peers_per_torrent.",
+    )
 
     # Choking strategy
     optimistic_unchoke_interval: float = Field(
@@ -2153,6 +2267,15 @@ class StrategyConfig(BaseModel):
         le=50,
         description="Number of pieces to analyze for phase detection in adaptive hybrid mode",
     )
+    peer_selector_ml_ranking_weight: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "Blend weight for ccbt.ml.peer_selector.PeerSelector scores in outbound peer "
+            "ranking; 0 disables (default). Experimental — heuristics dominate below ~0.2."
+        ),
+    )
 
 
 class OptimizationConfig(BaseModel):
@@ -2313,6 +2436,51 @@ class DiscoveryConfig(BaseModel):
         ge=0.0,
         le=600.0,
         description="Window to suppress repeated low-peer recovery actions",
+    )
+    peer_count_low_skip_dht_requires_usable_path: bool = Field(
+        default=True,
+        description=(
+            "When True, skip DHT after tracker handoff only if the swarm has a usable "
+            "download/metadata path (has_usable_download_path), not merely more TCP actives."
+        ),
+    )
+    requestable_driven_discovery_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable periodic requestable-peer-driven discovery (bootstrap pressure, "
+            "DHT interval compression, pending connect resume)."
+        ),
+    )
+    target_requestable_peers: int = Field(
+        default=12,
+        ge=0,
+        le=200,
+        description=(
+            "Target count of requestable peers (can_request); sub-target ticks drive "
+            "extra discovery coordination."
+        ),
+    )
+    requestable_tick_interval_s: float = Field(
+        default=15.0,
+        ge=2.0,
+        le=600.0,
+        description="Minimum seconds between requestable-driven discovery ticks per torrent.",
+    )
+    requestable_force_dht_when_zero: bool = Field(
+        default=True,
+        description=(
+            "When active peers exist but none are requestable, prioritize DHT bootstrap "
+            "readiness and compress inter-query delays."
+        ),
+    )
+    max_connect_burst_per_tick: int = Field(
+        default=16,
+        ge=1,
+        le=256,
+        description=(
+            "Reserved cap for connect-batch pressure per requestable-driven tick "
+            "(metrics and future tuning)."
+        ),
     )
 
     # DHT adaptive interval settings

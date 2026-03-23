@@ -1294,14 +1294,28 @@ class AsyncTorrentSession:
                         )
                 elif peer_manager and hasattr(peer_manager, "get_active_peers"):
                     current_active = len(peer_manager.get_active_peers())
+                swarm_state_post = await self._get_swarm_recovery_state()
+                usable_path = bool(
+                    swarm_state_post.get("has_usable_download_path", False)
+                )
+                strict_skip = bool(
+                    getattr(
+                        self.config.discovery,
+                        "peer_count_low_skip_dht_requires_usable_path",
+                        True,
+                    )
+                )
+                skip_ok = (
+                    current_requestable > 0
+                    or current_productive > 0
+                    or current_piece_info > 0
+                )
+                if strict_skip:
+                    skip_ok = skip_ok and usable_path
                 if (
                     current_active > active_peer_count
                     and not metadata_incomplete
-                    and (
-                        current_requestable > 0
-                        or current_productive > 0
-                        or current_piece_info > 0
-                    )
+                    and skip_ok
                 ):
                     self.logger.debug(
                         "✅ DHT SKIP: Swarm became more usable after tracker connections (active=%d->%d, requestable=%d, productive=%d, piece_info=%d). Skipping DHT for now.",
@@ -1661,6 +1675,39 @@ class AsyncTorrentSession:
                             self._low_peer_recovery_suppressed_until = (
                                 time.monotonic() + low_peer_window
                             )
+
+                        bootstrap_guard_timeout = max(
+                            5.0,
+                            min(float(dht_query_timeout_s), 20.0),
+                        )
+                        routing_nodes = await self._dht_setup._ensure_bootstrap_ready(
+                            dht_client,
+                            reason=f"peer_count_low_immediate:{self.info.name}",
+                            timeout=bootstrap_guard_timeout,
+                            min_nodes=1,
+                        )
+                        if routing_nodes <= 0:
+                            self.logger.warning(
+                                "Skipping immediate DHT query for %s: bootstrap still has no routing nodes after %.1fs guard",
+                                self.info.name,
+                                bootstrap_guard_timeout,
+                            )
+                            recovery_summary["dht_outcome"] = (
+                                "skipped_bootstrap_unready"
+                            )
+                            _emit_recovery_cycle_summary(
+                                final_active=active_peer_count,
+                                final_productive=productive_peers,
+                                final_requestable=requestable_peers,
+                                final_piece_info=peers_with_piece_info,
+                                final_metadata_incomplete=metadata_incomplete,
+                                decision="skip_dht_bootstrap_unready",
+                                retry_plan="wait_bootstrap_recovery",
+                                retry_in_s=bootstrap_guard_timeout,
+                                fail_fast_triggered=bool(fail_fast_triggered),
+                                fail_fast_reason=fail_fast_reason,
+                            )
+                            return
 
                         # Note: Use very conservative parameters to prevent
                         # blacklisting while still recovering quickly.
@@ -6839,32 +6886,26 @@ class AsyncSessionManager:
             info_hash.hex(),
         )
 
-        # Check if already exists
         async with self.lock:
             if info_hash in self.torrents:
                 error_msg = f"Torrent already exists: {info_hash.hex()}"
                 self.logger.warning(error_msg)
                 raise ValueError(error_msg)
 
-            # Build minimal torrent data from magnet
             torrent_data = build_minimal_torrent_data(
                 magnet_info.info_hash,
                 magnet_info.display_name or "Unknown",
                 magnet_info.trackers or [],
                 magnet_info.web_seeds or [],
             )
+            torrent_data["magnet_uri"] = magnet_uri
+            torrent_data["magnet_info"] = magnet_info
 
-        # Store magnet info in torrent_data for later use
-        torrent_data["magnet_uri"] = magnet_uri
-        torrent_data["magnet_info"] = magnet_info
+            session_output_dir = output_dir or self.output_dir
+            session = AsyncTorrentSession(torrent_data, session_output_dir, self)
+            session.magnet_uri = magnet_uri
+            self.torrents[info_hash] = session
 
-        # Create session
-        session_output_dir = output_dir or self.output_dir
-        session = AsyncTorrentSession(torrent_data, session_output_dir, self)
-        session.magnet_uri = magnet_uri
-        self.torrents[info_hash] = session
-
-        # Get torrent name for callback
         torrent_name = magnet_info.display_name or "Unknown"
 
         # Invoke callback if set
@@ -9088,6 +9129,32 @@ class AsyncSessionManager:
                 ):
                     return session
             return None
+
+    async def metadata_pending_for_info_hash(
+        self,
+        info_hash: Union[bytes, Any],
+    ) -> bool:
+        """True if a registered session for this hash still lacks complete torrent metadata.
+
+        Used by inbound connection policy (e.g. longer registration wait for magnet
+        metadata resolution). Lock-safe; only reads ``torrents`` under the manager lock.
+
+        """
+        async with self.lock:
+            candidates = self._extract_inbound_info_hash_candidates(info_hash)
+            if not candidates:
+                return False
+            for candidate in candidates:
+                session = self.torrents.get(candidate)
+                if session is not None:
+                    return session._metadata_is_incomplete()
+            for session in self.torrents.values():
+                if self._session_matches_inbound_info_hash_candidates(
+                    session,
+                    candidates,
+                ):
+                    return session._metadata_is_incomplete()
+            return False
 
     @staticmethod
     def _extract_inbound_info_hash_candidates(

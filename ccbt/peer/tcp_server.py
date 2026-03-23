@@ -10,10 +10,12 @@ import asyncio
 import contextlib
 import logging
 import socket
-from collections import defaultdict
+from collections import defaultdict, deque
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 from ccbt.config.config import get_config
+from ccbt.monitoring import get_metrics_collector
 from ccbt.peer.inbound_protocol_classifier import (
     InboundProtocolKind,
     classify_prefix,
@@ -38,6 +40,21 @@ if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _InboundProbationWaitEntry:
+    """Pending inbound connection waiting for a per-hash probation slot."""
+
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+    parsed_handshake: ParsedInboundPlainHandshake
+    peer_ip: str
+    peer_port: int
+    start_time: float
+    protocol_kind: InboundProtocolKind
+    has_any_sessions: bool
+    enqueued_at: float
 
 
 class _ReplayableStreamReader:
@@ -138,6 +155,7 @@ class _MSEInboundSessionResolver:
             return []
         candidates: list[tuple[Any, bytes]] = []
         for session in sessions:
+            info_hash: Optional[bytes] = None
             try:
                 info_hash = session.info.info_hash
             except Exception as err:
@@ -147,7 +165,12 @@ class _MSEInboundSessionResolver:
                         "Skipping session while resolving MSE inbound candidates: %s",
                         err,
                     )
-                continue
+            if info_hash is None or not isinstance(info_hash, (bytes, bytearray)):
+                td = getattr(session, "torrent_data", None)
+                if isinstance(td, dict):
+                    raw_ih = td.get("info_hash")
+                    if isinstance(raw_ih, (bytes, bytearray)) and len(raw_ih) == 20:
+                        info_hash = bytes(raw_ih)
             if not isinstance(info_hash, (bytes, bytearray)) or len(info_hash) != 20:
                 continue
             candidates.append((session, bytes(info_hash)))
@@ -222,17 +245,34 @@ class IncomingPeerServer:
         self._running = False
         self.logger = logging.getLogger(__name__)
         self._inbound_registration_probation: dict[str, int] = {}
-        self._inbound_registration_probation_window = 8.0
-        self._inbound_registration_probation_retry_interval = 0.5
+        _net = getattr(self.config, "network", None)
+        self._inbound_registration_probation_window = (
+            float(getattr(_net, "inbound_probation_window_s", 8.0) or 8.0)
+            if _net is not None
+            else 8.0
+        )
+        self._inbound_registration_probation_retry_interval = (
+            float(getattr(_net, "inbound_probation_retry_interval_s", 0.5) or 0.5)
+            if _net is not None
+            else 0.5
+        )
         self._probation_tasks: set[asyncio.Task[None]] = set()
         # Unknown-info-hash observability and bounded probation fan-out (wrong swarm / scanners).
         self._inbound_unknown_hash_counts: defaultdict[str, int] = defaultdict(int)
         self._probation_inflight_by_hash: dict[str, int] = {}
         # Allow more concurrent registration waits per hash so magnet/slow-start
         # torrents do not discard viable inbound peers during session registration races.
-        self._max_probation_inflight_per_hash = 8
+        self._max_probation_inflight_per_hash = (
+            int(getattr(_net, "inbound_max_probation_inflight_per_hash", 8) or 8)
+            if _net is not None
+            else 8
+        )
+        self._inbound_unknown_hash_storm_threshold = (
+            int(getattr(_net, "inbound_unknown_hash_storm_threshold", 12) or 12)
+            if _net is not None
+            else 12
+        )
         # WARNING log sampling when sessions exist but this info_hash is unknown (storm control).
-        _net = getattr(self.config, "network", None)
         _warn_n = 32
         if _net is not None:
             raw_iv = getattr(_net, "inbound_unknown_hash_warning_sample_interval", 32)
@@ -241,6 +281,174 @@ class IncomingPeerServer:
             except (TypeError, ValueError):
                 _warn_n = 32
         self._unknown_inbound_hash_warning_every_n = max(2, min(10_000, _warn_n))
+        self._probation_wait_queues: dict[str, deque[_InboundProbationWaitEntry]] = (
+            defaultdict(deque)
+        )
+        self._probation_queue_lock = asyncio.Lock()
+        self._probation_wait_queue_max_total = (
+            int(getattr(_net, "inbound_probation_wait_queue_max_total", 256) or 256)
+            if _net is not None
+            else 256
+        )
+
+    def _probation_wait_queue_total(self) -> int:
+        return sum(len(dq) for dq in self._probation_wait_queues.values())
+
+    async def _evict_oldest_probation_waiter_unlocked(self) -> None:
+        """Drop the longest-waiting queued inbound peer (global LRU by enqueue time)."""
+        best_hk: Optional[str] = None
+        best_t = float("inf")
+        for hk, dq in self._probation_wait_queues.items():
+            if dq and dq[0].enqueued_at < best_t:
+                best_t = dq[0].enqueued_at
+                best_hk = hk
+        if best_hk is None:
+            return
+        victim_dq = self._probation_wait_queues[best_hk]
+        entry = victim_dq.popleft()
+        if not victim_dq:
+            self._probation_wait_queues.pop(best_hk, None)
+        ih = self._extract_probation_info_hash(entry.parsed_handshake)
+        await self._release_inbound_probation(ih, entry.peer_ip, entry.peer_port)
+        await self._close_writer_safely(entry.writer)
+        with contextlib.suppress(Exception):
+            get_metrics_collector().increment_counter(
+                "inbound_probation_wait_queue_evicted_total",
+            )
+
+    async def _enqueue_inbound_probation_wait(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        peer_ip: str,
+        peer_port: int,
+        start_time: float,
+        protocol_kind: InboundProtocolKind,
+        has_any_sessions: bool,
+    ) -> bool:
+        """Queue this peer until a probation slot frees. Returns False if queue disabled."""
+        if self._probation_wait_queue_max_total <= 0:
+            return False
+        loop = asyncio.get_event_loop()
+        enqueued_at = loop.time()
+        ih = self._extract_probation_info_hash(parsed_handshake)
+        hk = self._probation_hash_slot_key(ih)
+        entry = _InboundProbationWaitEntry(
+            reader=reader,
+            writer=writer,
+            parsed_handshake=parsed_handshake,
+            peer_ip=peer_ip,
+            peer_port=peer_port,
+            start_time=start_time,
+            protocol_kind=protocol_kind,
+            has_any_sessions=has_any_sessions,
+            enqueued_at=enqueued_at,
+        )
+        async with self._probation_queue_lock:
+            while (
+                self._probation_wait_queue_total()
+                >= self._probation_wait_queue_max_total
+            ):
+                before = self._probation_wait_queue_total()
+                await self._evict_oldest_probation_waiter_unlocked()
+                if self._probation_wait_queue_total() >= before:
+                    break
+            self._probation_wait_queues[hk].append(entry)
+        with contextlib.suppress(Exception):
+            get_metrics_collector().increment_counter("inbound_probation_queued_total")
+        self.logger.debug(
+            "Queued inbound probation wait for info_hash=%s from %s:%d (global queue size ~%d)",
+            self._format_handshake_info_hash(parsed_handshake),
+            peer_ip,
+            peer_port,
+            self._probation_wait_queue_total(),
+        )
+        return True
+
+    async def _drain_next_probation_wait_after_release(self, info_hash: bytes) -> None:
+        """Start the next queued probation for this hash after a slot was released."""
+        if self._probation_wait_queue_max_total <= 0:
+            return
+        hk = self._probation_hash_slot_key(info_hash)
+        async with self._probation_queue_lock:
+            wait_dq = self._probation_wait_queues.get(hk)
+            if not wait_dq:
+                return
+            if not self._reserve_probation_slot_for_hash(info_hash):
+                return
+            entry = wait_dq.popleft()
+            if not wait_dq:
+                self._probation_wait_queues.pop(hk, None)
+        if self._should_abort_inbound_registration_wait():
+            ih2 = self._extract_probation_info_hash(entry.parsed_handshake)
+            await self._release_inbound_probation(
+                ih2,
+                entry.peer_ip,
+                entry.peer_port,
+            )
+            self._release_probation_slot_for_hash(ih2)
+            await self._close_writer_safely(entry.writer)
+            await self._drain_next_probation_wait_after_release(ih2)
+            return
+        self._register_inbound_probation_task(
+            cast("asyncio.StreamReader", entry.reader),
+            entry.writer,
+            entry.parsed_handshake,
+            entry.peer_ip,
+            entry.peer_port,
+            entry.start_time,
+            entry.protocol_kind,
+            probation_window_s=self._probation_window_s_for_inbound(
+                entry.parsed_handshake,
+                entry.has_any_sessions,
+            ),
+        )
+
+    def _register_inbound_probation_task(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        parsed_handshake: ParsedInboundPlainHandshake,
+        peer_ip: str,
+        peer_port: int,
+        start_time: float,
+        protocol_kind: InboundProtocolKind,
+        *,
+        probation_window_s: float,
+    ) -> None:
+        with contextlib.suppress(Exception):
+            get_metrics_collector().increment_counter("inbound_probation_started_total")
+        probation_task = asyncio.create_task(
+            self._await_session_for_inbound_peer(
+                reader,
+                writer,
+                parsed_handshake,
+                peer_ip,
+                peer_port,
+                start_time,
+                protocol_kind,
+                probation_window_s=probation_window_s,
+            ),
+        )
+        self._register_probation_task(probation_task)
+
+    async def _close_all_probation_wait_queues(self) -> None:
+        """Drain wait queues on shutdown (writers closed, probation keys released)."""
+        async with self._probation_queue_lock:
+            entries: list[_InboundProbationWaitEntry] = []
+            for dq in self._probation_wait_queues.values():
+                entries.extend(list(dq))
+            self._probation_wait_queues.clear()
+        for entry in entries:
+            ih = self._extract_probation_info_hash(entry.parsed_handshake)
+            with contextlib.suppress(Exception):
+                await self._release_inbound_probation(
+                    ih,
+                    entry.peer_ip,
+                    entry.peer_port,
+                )
+            await self._close_writer_safely(entry.writer)
 
     def _should_abort_inbound_registration_wait(self) -> bool:
         """True when inbound session lookup / probation should end immediately.
@@ -492,9 +700,12 @@ class IncomingPeerServer:
                     task.cancel()
                     with contextlib.suppress(Exception):
                         await asyncio.wait_for(task, timeout=0.5)
+            await self._close_all_probation_wait_queues()
             return
 
         self._running = False
+
+        await self._close_all_probation_wait_queues()
 
         probation_tasks = set(self._probation_tasks)
         self._probation_tasks.clear()
@@ -663,15 +874,51 @@ class IncomingPeerServer:
         self,
         parsed_handshake: ParsedInboundPlainHandshake,
         has_any_sessions: bool,
+        *,
+        metadata_pending: bool = False,
     ) -> float:
         """Max poll time for session lookup before probation / reject (wrong-swarm aware)."""
+        net = getattr(self.config, "network", None)
+        no_sess = (
+            float(
+                getattr(net, "inbound_registration_wait_cap_no_sessions_s", 60.0)
+                or 60.0
+            )
+            if net is not None
+            else 60.0
+        )
+        default_cap = (
+            float(getattr(net, "inbound_registration_wait_cap_default_s", 15.0) or 15.0)
+            if net is not None
+            else 15.0
+        )
+        storm_cap = (
+            float(getattr(net, "inbound_registration_wait_cap_storm_s", 8.0) or 8.0)
+            if net is not None
+            else 8.0
+        )
+        meta_cap = (
+            float(
+                getattr(
+                    net,
+                    "inbound_registration_wait_cap_metadata_pending_s",
+                    60.0,
+                )
+                or 60.0
+            )
+            if net is not None
+            else 60.0
+        )
+        if metadata_pending:
+            return meta_cap
         if not has_any_sessions:
-            return 60.0
+            return no_sess
         prefix = self._inbound_unknown_hash_metric_key(parsed_handshake)
         prior = self._inbound_unknown_hash_counts.get(prefix, 0)
-        if prior >= 12:
-            return 8.0
-        return 15.0
+        storm_th = max(1, int(self._inbound_unknown_hash_storm_threshold))
+        if prior >= storm_th:
+            return storm_cap
+        return default_cap
 
     def _grace_poll_seconds_after_probation_cap(
         self,
@@ -679,12 +926,29 @@ class IncomingPeerServer:
         has_any_sessions: bool,
     ) -> float:
         """Extra session poll when probation slots are saturated."""
+        net = getattr(self.config, "network", None)
+        no_sess = (
+            float(getattr(net, "inbound_grace_poll_seconds_no_sessions_s", 8.0) or 8.0)
+            if net is not None
+            else 8.0
+        )
+        storm_gp = (
+            float(getattr(net, "inbound_grace_poll_seconds_storm_s", 1.5) or 1.5)
+            if net is not None
+            else 1.5
+        )
+        default_gp = (
+            float(getattr(net, "inbound_grace_poll_seconds_default_s", 2.5) or 2.5)
+            if net is not None
+            else 2.5
+        )
         if not has_any_sessions:
-            return 8.0
+            return no_sess
         prefix = self._inbound_unknown_hash_metric_key(parsed_handshake)
-        if self._inbound_unknown_hash_counts.get(prefix, 0) >= 12:
-            return 1.5
-        return 2.5
+        storm_th = max(1, int(self._inbound_unknown_hash_storm_threshold))
+        if self._inbound_unknown_hash_counts.get(prefix, 0) >= storm_th:
+            return storm_gp
+        return default_gp
 
     def _probation_window_s_for_inbound(
         self,
@@ -692,11 +956,18 @@ class IncomingPeerServer:
         has_any_sessions: bool,
     ) -> float:
         """Bounded probation retry window; shorter under unknown-hash storms."""
+        net = getattr(self.config, "network", None)
+        storm_win = (
+            float(getattr(net, "inbound_probation_window_storm_s", 4.0) or 4.0)
+            if net is not None
+            else 4.0
+        )
         if not has_any_sessions:
             return float(self._inbound_registration_probation_window)
         prefix = self._inbound_unknown_hash_metric_key(parsed_handshake)
-        if self._inbound_unknown_hash_counts.get(prefix, 0) >= 12:
-            return 4.0
+        storm_th = max(1, int(self._inbound_unknown_hash_storm_threshold))
+        if self._inbound_unknown_hash_counts.get(prefix, 0) >= storm_th:
+            return storm_win
         return float(self._inbound_registration_probation_window)
 
     def _should_probation_inbound(
@@ -840,6 +1111,10 @@ class IncomingPeerServer:
                 peer_port,
                 protocol_classification=protocol_classification,
             )
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "inbound_probation_resolved_total",
+                )
         except Exception:
             self.logger.exception(
                 "Error during inbound probation resolution for %s:%d",
@@ -851,6 +1126,7 @@ class IncomingPeerServer:
             ih = self._extract_probation_info_hash(parsed_handshake)
             await self._release_inbound_probation(ih, peer_ip, peer_port)
             self._release_probation_slot_for_hash(ih)
+            await self._drain_next_probation_wait_after_release(ih)
 
     async def _handle_inbound_mse_connection(
         self,
@@ -1135,11 +1411,20 @@ class IncomingPeerServer:
             if self.session_manager:
                 async with self.session_manager.lock:
                     has_any_sessions = len(self.session_manager.torrents) > 0
+            metadata_pending = False
+            if self.session_manager is not None:
+                with contextlib.suppress(Exception):
+                    metadata_pending = (
+                        await self.session_manager.metadata_pending_for_info_hash(
+                            parsed_handshake
+                        )
+                    )
             # When other torrents are active, long waits mostly burn resources on wrong-swarm
             # inbound; use a shorter cap (further reduced if this prefix is already noisy).
             max_wait_time = self._inbound_session_registration_wait_cap_s(
                 parsed_handshake,
                 has_any_sessions,
+                metadata_pending=metadata_pending,
             )
             check_interval = 0.2  # Check every 200ms
             start_time = asyncio.get_event_loop().time()
@@ -1175,23 +1460,36 @@ class IncomingPeerServer:
                             peer_port,
                             elapsed,
                         )
-                        probation_task = asyncio.create_task(
-                            self._await_session_for_inbound_peer(
-                                cast("asyncio.StreamReader", replayable_reader),
-                                writer,
+                        self._register_inbound_probation_task(
+                            cast("asyncio.StreamReader", replayable_reader),
+                            writer,
+                            parsed_handshake,
+                            peer_ip,
+                            peer_port,
+                            start_time,
+                            protocol_kind,
+                            probation_window_s=self._probation_window_s_for_inbound(
                                 parsed_handshake,
-                                peer_ip,
-                                peer_port,
-                                start_time,
-                                protocol_kind,
-                                probation_window_s=self._probation_window_s_for_inbound(
-                                    parsed_handshake,
-                                    has_any_sessions,
-                                ),
-                            )
+                                has_any_sessions,
+                            ),
                         )
-                        self._register_probation_task(probation_task)
                         return
+                    queued = await self._enqueue_inbound_probation_wait(
+                        cast("asyncio.StreamReader", replayable_reader),
+                        writer,
+                        parsed_handshake,
+                        peer_ip,
+                        peer_port,
+                        start_time,
+                        protocol_kind,
+                        has_any_sessions,
+                    )
+                    if queued:
+                        return
+                    with contextlib.suppress(Exception):
+                        get_metrics_collector().increment_counter(
+                            "inbound_probation_cap_skipped_total",
+                        )
                     self.logger.debug(
                         "No active torrent for info_hash %s from %s:%d — skipping probation "
                         "(max %d concurrent probation wait(s) for this hash already in flight); "
@@ -1208,6 +1506,11 @@ class IncomingPeerServer:
                             has_any_sessions,
                         ),
                     )
+                    if session is None:
+                        with contextlib.suppress(Exception):
+                            get_metrics_collector().increment_counter(
+                                "inbound_grace_poll_miss_total",
+                            )
                 if session is None:
                     self._record_inbound_unknown_info_hash(parsed_handshake)
                     # Note: Check if any sessions exist at all

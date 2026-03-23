@@ -945,11 +945,12 @@ async def test_request_piece(peer_manager, peer_info):
     with patch.object(
         peer_manager, "_send_message", new_callable=AsyncMock
     ) as mock_send:
-        await peer_manager.request_piece(
+        sent = await peer_manager.request_piece(
             connection, piece_index=0, begin=0, length=16384
         )
 
         # Should have sent a request message
+        assert sent is True
         assert mock_send.called
         call_args = mock_send.call_args[0]
         assert call_args[0] == connection
@@ -2672,6 +2673,70 @@ async def test_rank_peers_penalizes_terminal_failures_more_than_transient(peer_m
     assert len(ranked) == 2
     assert ranked[0] == transient_peer
     assert ranked[1] == terminal_peer
+
+
+@pytest.mark.asyncio
+async def test_rank_peers_ml_blend_uses_peer_selector_scores(peer_manager):
+    """High ``peer_selector_ml_ranking_weight`` should reorder by ML scores."""
+    p_a = PeerInfo(ip="10.8.0.1", port=7001, peer_source="tracker")
+    p_b = PeerInfo(ip="10.8.0.2", port=7002, peer_source="tracker")
+    peer_manager.config.strategy.peer_selector_ml_ranking_weight = 0.99
+
+    class _FakeSel:
+        async def rank_peers(self, peers: list[PeerInfo]) -> list[tuple[PeerInfo, float]]:
+            scored = [(p, 0.99 if p.port == 7002 else 0.01) for p in peers]
+            scored.sort(key=lambda x: -x[1])
+            return scored
+
+    peer_manager._ml_peer_selector = _FakeSel()
+    ranked = await peer_manager._rank_peers_for_connection([p_a, p_b])
+    assert ranked[0] == p_b
+    assert ranked[1] == p_a
+
+
+@pytest.mark.asyncio
+async def test_maybe_choke_only_slot_replacement_disconnects_oldest(
+    peer_manager,
+    monkeypatch,
+):
+    """When enabled, disconnect the oldest persistently choked interested peer."""
+    net = peer_manager.config.network
+    net.choke_only_slot_replacement_enabled = True
+    net.choke_only_slot_replacement_min_active_peers = 3
+    net.choke_only_slot_replacement_min_choke_ratio = 0.5
+    net.choke_only_slot_replacement_max_disconnect_fraction = 0.5
+    net.choke_only_slot_replacement_at_limit_fraction = 0.6
+    peer_manager.max_peers_per_torrent = 5
+    peer_manager.torrent_data["private"] = False
+
+    disconnects: list[AsyncPeerConnection] = []
+
+    async def capture_disc(conn: AsyncPeerConnection) -> None:
+        disconnects.append(conn)
+
+    monkeypatch.setattr(peer_manager, "_disconnect_peer", capture_disc)
+
+    base = time.time()
+    for i in range(5):
+        pi = PeerInfo(ip=f"192.168.99.{10 + i}", port=6881)
+        c = AsyncPeerConnection(pi, peer_manager.torrent_data)
+        c.state = ConnectionState.ACTIVE
+        c.peer_choking = True
+        c.am_interested = True
+        c.stats.choke_state_ratio = 0.95
+        c.connection_start_time = base - 100 * (5 - i)
+        peer_manager.connections[str(pi)] = c
+
+    await peer_manager._maybe_choke_only_slot_replacement()
+    assert len(disconnects) == 1
+    assert disconnects[0].connection_start_time == base - 500
+
+
+@pytest.mark.asyncio
+async def test_maybe_choke_only_slot_replacement_skips_private_torrent(peer_manager):
+    peer_manager.torrent_data["private"] = True
+    peer_manager.config.network.choke_only_slot_replacement_enabled = True
+    await peer_manager._maybe_choke_only_slot_replacement()
 
 
 def test_keepalive_interval_uses_state_aware_timeouts(peer_manager):

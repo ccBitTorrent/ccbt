@@ -156,8 +156,10 @@ class TestP2PCASClient:
         # This is a complex integration that requires full protocol stack
         # For unit tests, we just verify the method signature and error handling
         
-        # Test with missing required parameters
-        with pytest.raises((TypeError, ValueError, AttributeError)):
+        # Without extension_manager injection, download raises NotImplementedError
+        with pytest.raises(
+            (TypeError, ValueError, AttributeError, NotImplementedError),
+        ):
             await cas_client.download_chunk(chunk_hash, peer)
 
     @pytest.mark.asyncio

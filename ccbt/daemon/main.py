@@ -1,8 +1,8 @@
 """Daemon main entry point.
 
-from __future__ import annotations
-
-Main entry point for background daemon process.
+IPC add-torrent / add-magnet handlers await ``AsyncSessionManager.add_*`` before
+reporting success so registration is visible to inbound TCP and
+``get_session_for_info_hash`` immediately after the call returns.
 """
 
 from __future__ import annotations
@@ -111,7 +111,6 @@ class DaemonMain:
 
         """
         self.foreground = foreground
-        maybe_load_dotenv_from_env()
         self.config_manager = init_config(config_file)
         self.config = self.config_manager.config
 

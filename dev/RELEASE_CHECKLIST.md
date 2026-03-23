@@ -24,9 +24,9 @@ Use this checklist when preparing a new release of ccBitTorrent.
 - [ ] `.github/README.md` is updated if needed
 - [ ] `docs/README_PyPI.md` is updated if needed
 - [ ] Examples are tested and working
-- [ ] Translation template regenerated: `uv run python -m ccbt.i18n.scripts.extract`
+- [ ] Translation template regenerated: `uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`
 - [ ] Translation validation passes: `uv run python -m ccbt.i18n.scripts.validate_po`
-- [ ] Translation coverage check: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+- [ ] Translation completeness reviewed: `uv run python -m ccbt.i18n.scripts.check_completeness` (or run the `i18n (manual)` workflow in Actions)
 
 ### Testing
 - [ ] Unit tests pass on all supported Python versions (3.8-3.12)

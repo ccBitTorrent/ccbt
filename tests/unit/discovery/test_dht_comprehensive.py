@@ -1163,7 +1163,7 @@ class TestAsyncDHTClientGetPeersPaths:
         )
         assert client.last_zero_node_lookup_at > 0
         assert any(
-            "cannot start because the routing table is empty" in str(call.args[0])
+            "cannot start because the routing table is empty" in str(call)
             for call in client.logger.warning.call_args_list
         )
 

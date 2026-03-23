@@ -1,7 +1,5 @@
 """Configuration management for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides centralized configuration with TOML support, validation, hot-reload,
 and hierarchical loading from defaults → config file → environment → CLI → per-torrent.
 """
@@ -11,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import math
 import os
 import sys
 from pathlib import Path
@@ -88,6 +87,89 @@ IS_MACOS = sys.platform == "darwin"
 _config_manager: Optional[ConfigManager] = None
 
 
+def _strip_inline_comment_suffix(text: str) -> str:
+    """Remove a trailing inline comment after whitespace+``#``.
+
+    TOML treats ``#`` inside double-quoted strings as literal. If a line like
+    ``max_global_peers = 10000  # cap`` is mistakenly pasted as a single
+    quoted string, the whole fragment becomes the value and Pydantic cannot
+    coerce it. This keeps the payload before the first whitespace-``#``.
+    """
+    s = text
+    i = 0
+    while True:
+        idx = s.find("#", i)
+        if idx == -1:
+            return s
+        if idx > 0 and s[idx - 1].isspace():
+            return s[: idx - 1].rstrip()
+        i = idx + 1
+
+
+def _strip_inline_comments_deep(obj: Any) -> Any:
+    """Apply :func:`_strip_inline_comment_suffix` to all strings in nested dict/list."""
+    if isinstance(obj, dict):
+        for key, val in list(obj.items()):
+            obj[key] = _strip_inline_comments_deep(val)
+        return obj
+    if isinstance(obj, list):
+        for i, item in enumerate(obj):
+            obj[i] = _strip_inline_comments_deep(item)
+        return obj
+    if isinstance(obj, str):
+        return _strip_inline_comment_suffix(obj)
+    return obj
+
+
+def _prune_empty_string_config_values(obj: Any) -> None:
+    r"""Drop dict keys whose value is empty or whitespace-only.
+
+    ``.env`` lines like ``VAR=  # note`` and bare ``VAR=`` become ``""`` in
+    ``os.environ``; TOML can also set ``key = \"\"``. Removing the key lets
+    Pydantic use sub-model defaults (e.g. optional ports, ``daemon.ipc_port``).
+    """
+    if isinstance(obj, dict):
+        empty_keys = [
+            k for k, v in obj.items() if isinstance(v, str) and v.strip() == ""
+        ]
+        for k in empty_keys:
+            del obj[k]
+        for v in obj.values():
+            _prune_empty_string_config_values(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            _prune_empty_string_config_values(item)
+
+
+def _try_coerce_network_int(value: Any) -> Optional[int]:
+    """Parse an int for Windows network clamp comparisons only.
+
+    Returns ``None`` for missing values, booleans, and non-numeric strings so we
+    skip clamping and let Pydantic report invalid ``network.*`` integers.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        return int(value)
+    if isinstance(value, str):
+        text = _strip_inline_comment_suffix(value.strip())
+        if not text:
+            return None
+        try:
+            if any(c in text for c in ".eE"):
+                return int(float(text))
+            return int(text, 10)
+        except ValueError:
+            return None
+    return None
+
+
 class ConfigManager:
     """Manages configuration loading, validation, and hot-reload."""
 
@@ -133,6 +215,7 @@ class ConfigManager:
 
     def _normalize_loaded_config_data(self, config_data: dict[str, Any]) -> None:
         """Normalize file-derived config in place (comma-lists, proxy password)."""
+        _strip_inline_comments_deep(config_data)
         security = config_data.get("security")
         if isinstance(security, dict):
 
@@ -222,7 +305,7 @@ class ConfigManager:
                 raw_items = [str(value)]
 
             for item in raw_items:
-                token = str(item).strip()
+                token = _strip_inline_comment_suffix(str(item).strip())
                 if token:
                     normalized.append(token)
 
@@ -252,23 +335,48 @@ class ConfigManager:
         """Merge env, apply Windows network caps, and construct ``Config``."""
         env_config = self._get_env_config()
         config_data = self._merge_config(config_data, env_config)
+        _strip_inline_comments_deep(config_data)
+        _prune_empty_string_config_values(config_data)
 
         if IS_WINDOWS and "network" in config_data:
             network_config = config_data.get("network", {})
-            if network_config.get("max_global_peers", 600) > 200:
-                network_config["max_global_peers"] = 200
-                logging.debug(
-                    "Reduced max_global_peers to 200 for Windows compatibility"
-                )
-            if network_config.get("connection_pool_max_connections", 400) > 150:
-                network_config["connection_pool_max_connections"] = 150
-                logging.debug(
-                    "Reduced connection_pool_max_connections to 150 for Windows compatibility"
-                )
-            if network_config.get("max_peers_per_torrent", 200) > 100:
-                network_config["max_peers_per_torrent"] = 100
-                logging.debug(
-                    "Reduced max_peers_per_torrent to 100 for Windows compatibility"
+            strict_raw = os.environ.get("CCBT_WINDOWS_NETWORK_COMPAT_STRICT", "true")
+            win_strict = str(strict_raw).strip().lower() not in (
+                "0",
+                "false",
+                "no",
+                "off",
+            )
+            if win_strict:
+                mgp_raw = network_config.get("max_global_peers", 600)
+                mgp = _try_coerce_network_int(mgp_raw)
+                if mgp is not None and mgp > 200:
+                    network_config["max_global_peers"] = 200
+                    logging.info(
+                        "Clamped network.max_global_peers from %s to 200 on Windows compatibility path",
+                        mgp_raw,
+                    )
+                pool_raw = network_config.get("connection_pool_max_connections", 400)
+                pool = _try_coerce_network_int(pool_raw)
+                if pool is not None and pool > 150:
+                    network_config["connection_pool_max_connections"] = 150
+                    logging.info(
+                        "Clamped network.connection_pool_max_connections from %s to 150 on Windows compatibility path",
+                        pool_raw,
+                    )
+                mpt_raw = network_config.get("max_peers_per_torrent", 200)
+                mpt = _try_coerce_network_int(mpt_raw)
+                if mpt is not None and mpt > 100:
+                    network_config["max_peers_per_torrent"] = 100
+                    logging.info(
+                        "Clamped network.max_peers_per_torrent from %s to 100 on Windows compatibility path",
+                        mpt_raw,
+                    )
+            else:
+                logging.warning(
+                    "Windows peer-limit clamps skipped (CCBT_WINDOWS_NETWORK_COMPAT_STRICT=%r). "
+                    "Higher limits can be unstable on some Windows stacks.",
+                    strict_raw,
                 )
             config_data["network"] = network_config
 
@@ -395,6 +503,58 @@ class ConfigManager:
             "CCBT_INBOUND_UNKNOWN_HASH_WARNING_SAMPLE_INTERVAL": (
                 "network.inbound_unknown_hash_warning_sample_interval"
             ),
+            "CCBT_INBOUND_MAX_PROBATION_INFLIGHT_PER_HASH": (
+                "network.inbound_max_probation_inflight_per_hash"
+            ),
+            "CCBT_INBOUND_REGISTRATION_WAIT_CAP_NO_SESSIONS_S": (
+                "network.inbound_registration_wait_cap_no_sessions_s"
+            ),
+            "CCBT_INBOUND_REGISTRATION_WAIT_CAP_DEFAULT_S": (
+                "network.inbound_registration_wait_cap_default_s"
+            ),
+            "CCBT_INBOUND_REGISTRATION_WAIT_CAP_STORM_S": (
+                "network.inbound_registration_wait_cap_storm_s"
+            ),
+            "CCBT_INBOUND_REGISTRATION_WAIT_CAP_METADATA_PENDING_S": (
+                "network.inbound_registration_wait_cap_metadata_pending_s"
+            ),
+            "CCBT_INBOUND_GRACE_POLL_SECONDS_NO_SESSIONS_S": (
+                "network.inbound_grace_poll_seconds_no_sessions_s"
+            ),
+            "CCBT_INBOUND_GRACE_POLL_SECONDS_STORM_S": (
+                "network.inbound_grace_poll_seconds_storm_s"
+            ),
+            "CCBT_INBOUND_GRACE_POLL_SECONDS_DEFAULT_S": (
+                "network.inbound_grace_poll_seconds_default_s"
+            ),
+            "CCBT_INBOUND_PROBATION_WINDOW_S": "network.inbound_probation_window_s",
+            "CCBT_INBOUND_PROBATION_WINDOW_STORM_S": (
+                "network.inbound_probation_window_storm_s"
+            ),
+            "CCBT_INBOUND_PROBATION_RETRY_INTERVAL_S": (
+                "network.inbound_probation_retry_interval_s"
+            ),
+            "CCBT_INBOUND_UNKNOWN_HASH_STORM_THRESHOLD": (
+                "network.inbound_unknown_hash_storm_threshold"
+            ),
+            "CCBT_INBOUND_PROBATION_WAIT_QUEUE_MAX_TOTAL": (
+                "network.inbound_probation_wait_queue_max_total"
+            ),
+            "CCBT_CHOKE_ONLY_SLOT_REPLACEMENT_ENABLED": (
+                "network.choke_only_slot_replacement_enabled"
+            ),
+            "CCBT_CHOKE_ONLY_SLOT_REPLACEMENT_MIN_ACTIVE_PEERS": (
+                "network.choke_only_slot_replacement_min_active_peers"
+            ),
+            "CCBT_CHOKE_ONLY_SLOT_REPLACEMENT_MIN_CHOKE_RATIO": (
+                "network.choke_only_slot_replacement_min_choke_ratio"
+            ),
+            "CCBT_CHOKE_ONLY_SLOT_REPLACEMENT_MAX_DISCONNECT_FRACTION": (
+                "network.choke_only_slot_replacement_max_disconnect_fraction"
+            ),
+            "CCBT_CHOKE_ONLY_SLOT_REPLACEMENT_AT_LIMIT_FRACTION": (
+                "network.choke_only_slot_replacement_at_limit_fraction"
+            ),
             "CCBT_RECIPROCATION_MAX_COMBINED_BOOST": (
                 "network.reciprocation_max_combined_boost"
             ),
@@ -495,6 +655,9 @@ class ConfigManager:
             "CCBT_BANDWIDTH_WEIGHTED_RAREST_WEIGHT": "strategy.bandwidth_weighted_rarest_weight",
             "CCBT_PROGRESSIVE_RAREST_TRANSITION_THRESHOLD": "strategy.progressive_rarest_transition_threshold",
             "CCBT_ADAPTIVE_HYBRID_PHASE_DETECTION_WINDOW": "strategy.adaptive_hybrid_phase_detection_window",
+            "CCBT_PEER_SELECTOR_ML_RANKING_WEIGHT": (
+                "strategy.peer_selector_ml_ranking_weight"
+            ),
             # Disk
             "CCBT_PREALLOCATE": "disk.preallocate",
             "CCBT_USE_MMAP": "disk.use_mmap",
@@ -599,6 +762,7 @@ class ConfigManager:
             "CCBT_DHT_AGGRESSIVE_ALPHA": "discovery.dht_aggressive_alpha",
             "CCBT_DHT_AGGRESSIVE_K": "discovery.dht_aggressive_k",
             "CCBT_DHT_AGGRESSIVE_MAX_DEPTH": "discovery.dht_aggressive_max_depth",
+            "CCBT_DHT_BOOTSTRAP_NODES": "discovery.dht_bootstrap_nodes",
             "CCBT_BOOTSTRAP_SEED_REPLAY_LIMIT": "discovery.bootstrap_seed_replay_limit",
             "CCBT_DHT_BOOTSTRAP_RETRIES_MAX": "discovery.dht_bootstrap_retries_max",
             "CCBT_BOOTSTRAP_RETRY_MEMO_TTL_S": "discovery.bootstrap_retry_memo_ttl_s",
@@ -616,6 +780,18 @@ class ConfigManager:
             "CCBT_DHT_BOOTSTRAP_TIMEOUT_S": "discovery.dht_bootstrap_timeout_s",
             "CCBT_LOW_PEER_THRESHOLD": "discovery.low_peer_threshold",
             "CCBT_LOW_PEER_SUPPRESSION_WINDOW_S": "discovery.low_peer_suppression_window_s",
+            "CCBT_PEER_COUNT_LOW_SKIP_DHT_REQUIRES_USABLE_PATH": (
+                "discovery.peer_count_low_skip_dht_requires_usable_path"
+            ),
+            "CCBT_REQUESTABLE_DRIVEN_DISCOVERY_ENABLED": (
+                "discovery.requestable_driven_discovery_enabled"
+            ),
+            "CCBT_TARGET_REQUESTABLE_PEERS": "discovery.target_requestable_peers",
+            "CCBT_REQUESTABLE_TICK_INTERVAL_S": "discovery.requestable_tick_interval_s",
+            "CCBT_REQUESTABLE_FORCE_DHT_WHEN_ZERO": (
+                "discovery.requestable_force_dht_when_zero"
+            ),
+            "CCBT_MAX_CONNECT_BURST_PER_TICK": "discovery.max_connect_burst_per_tick",
             # XET chunk discovery
             "CCBT_XET_CHUNK_QUERY_BATCH_SIZE": "discovery.xet_chunk_query_batch_size",
             "CCBT_XET_CHUNK_QUERY_MAX_CONCURRENT": "discovery.xet_chunk_query_max_concurrent",
@@ -1260,7 +1436,7 @@ class ConfigManager:
                     "endgame_duplicates": 2,
                 },
                 "network": {
-                    "max_connections_per_torrent": 50,
+                    "max_peers_per_torrent": 50,
                     "max_global_peers": 200,
                 },
                 "discovery": {
@@ -1279,7 +1455,7 @@ class ConfigManager:
                     "endgame_duplicates": 3,
                 },
                 "network": {
-                    "max_connections_per_torrent": 100,
+                    "max_peers_per_torrent": 100,
                     "max_global_peers": 500,
                 },
                 "discovery": {
@@ -1299,7 +1475,7 @@ class ConfigManager:
                     "endgame_duplicates": 2,
                 },
                 "network": {
-                    "max_connections_per_torrent": 30,
+                    "max_peers_per_torrent": 30,
                     "max_global_peers": 150,
                 },
                 "discovery": {
@@ -1319,7 +1495,7 @@ class ConfigManager:
                     "endgame_duplicates": 1,
                 },
                 "network": {
-                    "max_connections_per_torrent": 10,
+                    "max_peers_per_torrent": 10,
                     "max_global_peers": 50,
                 },
                 "discovery": {
@@ -1355,8 +1531,13 @@ class ConfigManager:
                         setattr(self.config.strategy, key, value)
             elif section == "network":
                 for key, value in settings.items():
-                    if hasattr(self.config.network, key):
-                        setattr(self.config.network, key, value)
+                    if not hasattr(self.config.network, key):
+                        msg = (
+                            f"Optimization profile {profile.value} contains unknown "
+                            f"network key '{key}'"
+                        )
+                        raise ConfigurationError(msg)
+                    setattr(self.config.network, key, value)
             elif section == "discovery":
                 for key, value in settings.items():
                     if hasattr(self.config.discovery, key):

@@ -88,6 +88,10 @@ Additionally, this project is subject to additional use restrictions under the *
 
 **Important**: Both licenses apply to this software. You must comply with all terms and restrictions in both licenses.
 
+## Contributing and translations
+
+Contributor setup and hooks are described in the repository docs (for example `docs/en/contributing.md`). Translation maintenance uses GNU gettext (`msgmerge`, `msgfmt`), `python -m ccbt.i18n.extract`, and the scripts under `ccbt/i18n/scripts/` (see `ccbt/i18n/scripts/README.md` in the source tree). Optional local steps; stricter checks run in CI workflows on the main repository.
+
 ## Support
 
 - **Documentation**: https://ccbittorrent.readthedocs.io/

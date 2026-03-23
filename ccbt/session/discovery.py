@@ -2,6 +2,11 @@
 
 This module coordinates peer discovery across multiple sources including
 trackers, DHT, PEX, and other discovery mechanisms.
+
+Requestable-peer-driven orchestration (Project 7-E) lives in
+`ccbt.session.dht_setup.DHTDiscoverySetup.tick_requestable_driven`, invoked from
+the per-torrent DHT discovery loop so scheduling stays next to bootstrap and
+get_peers rate limits.
 """
 
 from __future__ import annotations

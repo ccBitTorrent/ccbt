@@ -153,6 +153,8 @@ class DHTDiscoverySetup:
         self._batch_wait_force_count = 0
         self._bootstrap_retry_attempts: dict[str, int] = {}
         self._bootstrap_retry_last_attempt: dict[str, float] = {}
+        self._last_requestable_driven_tick = 0.0
+        self._requestable_driven_compress_until = 0.0
 
     def _record_rebootstrap_outcome(
         self,
@@ -556,6 +558,16 @@ class DHTDiscoverySetup:
                 )
                 get_metrics_collector().increment_counter("bootstrap_zero_state_count")
 
+    def _bootstrap_outer_wait_budget_s(self, dht_client: Any, timeout: float) -> float:
+        """Outer asyncio.wait_for budget: never shorter than client bootstrap wall clock."""
+        client_wall = float(
+            getattr(
+                dht_client, "_dht_bootstrap_timeout_s", self._dht_bootstrap_timeout_s
+            )
+            or self._dht_bootstrap_timeout_s
+        )
+        return max(float(timeout or 0.0), client_wall + 2.0)
+
     async def _run_bootstrap_with_fallback(
         self,
         dht_client: Any,
@@ -580,19 +592,32 @@ class DHTDiscoverySetup:
 
         if hasattr(dht_client, "rebootstrap"):
             used_bootstrap_probe = True
+            outer_rebootstrap_s = self._bootstrap_outer_wait_budget_s(
+                dht_client, timeout
+            )
             try:
                 fallback_result = dht_client.rebootstrap()
                 if asyncio.iscoroutine(fallback_result):
                     rebootstrap_ok = await asyncio.wait_for(
                         fallback_result,
-                        timeout=min(timeout, 45.0),
+                        timeout=outer_rebootstrap_s,
                     )
                 else:
                     rebootstrap_ok = bool(fallback_result)
                 bootstrap_attempts += 1
             except asyncio.TimeoutError:
+                fr = ""
+                with contextlib.suppress(Exception):
+                    fr = str(
+                        getattr(dht_client, "last_bootstrap_failure_reason", "") or ""
+                    )
                 self.logger.warning(
-                    "DHT bootstrap rebootstrap timed out while recovering for %s (%s)",
+                    "DHT rebootstrap hit outer asyncio.wait_for timeout "
+                    "(limit=%.1fs; inner last_bootstrap_failure_reason=%r) for %s (%s). "
+                    "If reason is bootstrap_cancelled_or_timeout, an overlapping bootstrap "
+                    "or cancellation likely exhausted the budget before this waiter.",
+                    outer_rebootstrap_s,
+                    fr,
                     self.session.info.name,
                     reason,
                 )
@@ -644,7 +669,11 @@ class DHTDiscoverySetup:
         elif hasattr(dht_client, "wait_for_bootstrap"):
             used_bootstrap_probe = True
             try:
-                bootstrap_result = dht_client.wait_for_bootstrap(timeout=timeout)
+                bootstrap_result = dht_client.wait_for_bootstrap(
+                    timeout=timeout,
+                    min_nodes=min_nodes,
+                    allow_partial=min_nodes <= 1,
+                )
                 if asyncio.iscoroutine(bootstrap_result):
                     rebootstrap_ok = await asyncio.wait_for(
                         bootstrap_result,
@@ -712,13 +741,30 @@ class DHTDiscoverySetup:
         bootstrap_method = getattr(dht_client, "_bootstrap", None)
         bootstrap_step = getattr(dht_client, "_bootstrap_step", None)
         start_time = time.monotonic()
+        seed_outer_s = self._bootstrap_outer_wait_budget_s(dht_client, timeout)
         original_bootstrap_nodes = getattr(dht_client, "bootstrap_nodes", None)
         if callable(bootstrap_method):
             try:
                 dht_client.bootstrap_nodes = seeds
                 bootstrap_result = bootstrap_method(reason=f"{reason}:seed_replay")
                 if asyncio.iscoroutine(bootstrap_result):
-                    await asyncio.wait_for(bootstrap_result, timeout=timeout)
+                    try:
+                        await asyncio.wait_for(bootstrap_result, timeout=seed_outer_s)
+                    except asyncio.TimeoutError:
+                        fr = ""
+                        with contextlib.suppress(Exception):
+                            fr = str(
+                                getattr(dht_client, "last_bootstrap_failure_reason", "")
+                                or ""
+                            )
+                        self.logger.warning(
+                            "DHT seed-replay bootstrap hit outer wait_for timeout "
+                            "(limit=%.1fs; inner last_bootstrap_failure_reason=%r) for %s (%s)",
+                            seed_outer_s,
+                            fr,
+                            self.session.info.name,
+                            reason,
+                        )
                 bootstrap_attempts += 1
                 bootstrap_ok = (
                     len(
@@ -739,9 +785,9 @@ class DHTDiscoverySetup:
 
         elif callable(bootstrap_step):
             for host, port in seeds:
-                if time.monotonic() - start_time > timeout:
+                if time.monotonic() - start_time > seed_outer_s:
                     break
-                step_timeout = max(1.0, timeout - (time.monotonic() - start_time))
+                step_timeout = max(1.0, seed_outer_s - (time.monotonic() - start_time))
                 with contextlib.suppress(Exception):
                     step_result = bootstrap_step(host, port)
                     if asyncio.iscoroutine(step_result):
@@ -976,6 +1022,65 @@ class DHTDiscoverySetup:
                         )
                     )
         return routing_table_size
+
+    async def tick_requestable_driven(self, dht_client: Any, reason: str) -> None:
+        """When requestable peers lag target, compress DHT timing and resume connects (Project 7-E)."""
+        disc = getattr(self.session.config, "discovery", None)
+        if not disc or not bool(
+            getattr(disc, "requestable_driven_discovery_enabled", True)
+        ):
+            return
+        if not bool(getattr(disc, "enable_dht", True)):
+            return
+        if bool(getattr(self.session, "is_private", False)):
+            return
+
+        swarm = await self._get_swarm_recovery_state()
+        requestable_n = int(swarm.get("requestable_peers", 0) or 0)
+        active_n = int(swarm.get("active_peers", 0) or 0)
+        target = int(getattr(disc, "target_requestable_peers", 12) or 0)
+
+        metrics = get_metrics_collector()
+        metrics.increment_counter("requestable_driven_ticks_total")
+        if target > 0 and requestable_n >= target:
+            return
+
+        metrics.increment_counter("requestable_driven_shortfall_total")
+        tick_iv = float(getattr(disc, "requestable_tick_interval_s", 15.0) or 15.0)
+        self._requestable_driven_compress_until = max(
+            self._requestable_driven_compress_until,
+            time.monotonic() + min(tick_iv, 60.0),
+        )
+
+        rt_nodes = getattr(getattr(dht_client, "routing_table", None), "nodes", None)
+        rt_size = len(rt_nodes) if rt_nodes is not None else 0
+        force_zero = bool(getattr(disc, "requestable_force_dht_when_zero", True))
+
+        if force_zero and requestable_n == 0 and active_n >= 1:
+            metrics.increment_counter("requestable_driven_zero_active_total")
+            if rt_size < 1:
+                metrics.increment_counter("requestable_driven_bootstrap_attempts_total")
+                with contextlib.suppress(Exception):
+                    await self._ensure_bootstrap_ready(
+                        dht_client,
+                        reason=f"requestable_zero:{reason}",
+                        timeout=float(self._dht_bootstrap_timeout_s),
+                        min_nodes=1,
+                    )
+            else:
+                metrics.increment_counter("requestable_driven_dht_pressure_total")
+
+        burst_cap = int(getattr(disc, "max_connect_burst_per_tick", 16) or 16)
+        _ = burst_cap
+        pm = getattr(
+            getattr(self.session, "download_manager", None), "peer_manager", None
+        )
+        if pm is not None:
+            resume = getattr(pm, "_resume_pending_batches", None)
+            if callable(resume):
+                metrics.increment_counter("requestable_driven_connect_resume_total")
+                with contextlib.suppress(Exception):
+                    await resume(f"requestable_driven:{reason}")
 
     async def _get_swarm_recovery_state(self) -> dict[str, Any]:
         """Return swarm recovery state, even for lightweight session stubs used in tests."""
@@ -2148,7 +2253,9 @@ class DHTDiscoverySetup:
             self._run_discovery_loop(dht_client)
         )
         self.logger.debug(
-            "✅ DHT DISCOVERY: Discovery task started for %s (task=%s, callbacks=%d, initial interval: 15s, aggressive mode: enabled when peers < 5 or < 50%% of max)",
+            "✅ DHT DISCOVERY: Discovery task started for %s (task=%s, callbacks=%d, "
+            "initial interval: 15s; aggressive DHT when (peers≥50 or download>1KB/s) "
+            "and below 70%% of max, or when requestable_force_dht detects active-but-not-requestable peers",
             self.session.info.name,
             self.session.dht_discovery_task,
             len(dht_client.peer_callbacks),
@@ -2188,10 +2295,21 @@ class DHTDiscoverySetup:
             bootstrap_timeout,
         )
 
-        # Use the new wait_for_bootstrap() method for proper status checking
-        bootstrap_complete = await dht_client.wait_for_bootstrap(
-            timeout=bootstrap_timeout
-        )
+        # Use wait_for_bootstrap() with explicit operational-node threshold.
+        bootstrap_complete = False
+        try:
+            bootstrap_complete = await dht_client.wait_for_bootstrap(
+                timeout=bootstrap_timeout,
+                min_nodes=8,
+                allow_partial=False,
+            )
+        except Exception as bootstrap_error:
+            self.logger.warning(
+                "DHT bootstrap readiness check failed for %s: %s",
+                self.session.info.name,
+                bootstrap_error,
+            )
+            bootstrap_complete = False
 
         if bootstrap_complete:
             routing_table_size = len(dht_client.routing_table.nodes)
@@ -2216,6 +2334,21 @@ class DHTDiscoverySetup:
                     "Continuing DHT discovery with %d nodes in routing table (degraded mode)",
                     routing_table_size,
                 )
+        outcome = "complete" if bootstrap_complete else "timeout_or_partial"
+        self.logger.info(
+            "DHT_BOOTSTRAP_OUTCOME torrent=%s outcome=%s routing_nodes=%d timeout=%.1fs",
+            self.session.info.name,
+            outcome,
+            routing_table_size,
+            bootstrap_timeout,
+        )
+        self.logger.debug(
+            "DHT bootstrap readiness outcome for %s: complete=%s, routing_nodes=%d, state=%s",
+            self.session.info.name,
+            bootstrap_complete,
+            len(getattr(getattr(dht_client, "routing_table", None), "nodes", [])),
+            self._health_state,
+        )
 
         # Use configurable minimum; DHT can start earlier as fallback with conservative intervals
         min_peers_before_dht = getattr(
@@ -2494,6 +2627,21 @@ class DHTDiscoverySetup:
                     self._set_health_state("healthy")
 
                 swarm_state = await self._get_swarm_recovery_state()
+                now_rq_tick = time.monotonic()
+                rq_tick_iv = float(
+                    getattr(
+                        self.session.config.discovery,
+                        "requestable_tick_interval_s",
+                        15.0,
+                    )
+                    or 15.0
+                )
+                if now_rq_tick - self._last_requestable_driven_tick >= rq_tick_iv:
+                    self._last_requestable_driven_tick = now_rq_tick
+                    await self.tick_requestable_driven(
+                        dht_client, reason="discovery_loop"
+                    )
+                    swarm_state = await self._get_swarm_recovery_state()
                 current_peer_count = int(swarm_state["active_peers"])
                 current_requestable_peers = int(swarm_state["requestable_peers"])
                 current_productive_peers = int(swarm_state["productive_peers"])
@@ -2644,9 +2792,24 @@ class DHTDiscoverySetup:
                     else current_peer_count < 3
                 )  # <10% of max or <3 peers = ultra low
 
-                # Note: Use conservative aggressive mode - only for popular/active torrents
-                # Don't enable aggressive mode for low peer counts to avoid blacklisting
-                new_aggressive_mode = (is_popular or is_active) and is_below_limit
+                # Aggressive mode: popular/active (below connection cap) or
+                # active peers that cannot accept requests (choke/metadata stall).
+                force_rq = bool(
+                    getattr(
+                        self.session.config.discovery,
+                        "requestable_force_dht_when_zero",
+                        True,
+                    )
+                )
+                requestable_stall = (
+                    force_rq
+                    and current_requestable_peers == 0
+                    and current_peer_count >= 1
+                    and not metadata_incomplete
+                )
+                new_aggressive_mode = (
+                    (is_popular or is_active) and is_below_limit
+                ) or requestable_stall
 
                 # Note: Use conservative DHT query intervals to avoid blacklisting
                 # Minimum 60 seconds between queries (standard DHT interval)
@@ -2685,11 +2848,14 @@ class DHTDiscoverySetup:
                     try:
                         from ccbt.utils.events import Event, EventType, emit_event
 
-                        reason = (
-                            "popular"
-                            if is_popular
-                            else ("active" if is_active else "normal")
-                        )
+                        if requestable_stall and not is_popular and not is_active:
+                            reason = "requestable_stall"
+                        else:
+                            reason = (
+                                "popular"
+                                if is_popular
+                                else ("active" if is_active else "normal")
+                            )
                         if aggressive_mode:
                             await emit_event(
                                 Event(
@@ -2740,8 +2906,9 @@ class DHTDiscoverySetup:
                 if aggressive_mode:
                     # More frequent queries for popular/active torrents (but still reasonable to prevent blacklisting)
                     if is_critically_low:
-                        # CRITICAL: Reasonable interval for low peer count (30s minimum to prevent blacklisting)
-                        base_interval = 30.0  # 30 seconds for critically low peer count (was 3s - too aggressive)
+                        # Emergency zero-peer cadence is intentionally faster than the
+                        # anti-blacklisting steady-state interval.
+                        base_interval = 12.0
                         max_peers_per_query = 100  # Reasonable peer query limit
                         self.logger.debug(
                             "Critically low peer count (%d/%d): using aggressive DHT discovery (interval: %.1fs, max_peers: %d)",
@@ -2842,9 +3009,42 @@ class DHTDiscoverySetup:
                     current_time = time_module.time()
                     time_since_last_query = current_time - self._last_dht_query_time
                     effective_min_interval = self._min_dht_query_interval
+                    emergency_zero_peer = (
+                        current_peer_count == 0 and not metadata_incomplete
+                    )
+                    if emergency_zero_peer:
+                        effective_min_interval = min(effective_min_interval, 6.0)
                     if metadata_incomplete and current_peer_count == 0:
                         # Magnet metadata starvation path: allow quicker retries.
                         effective_min_interval = min(effective_min_interval, 5.0)
+                    target_rq = int(
+                        getattr(
+                            self.session.config.discovery,
+                            "target_requestable_peers",
+                            12,
+                        )
+                        or 0
+                    )
+                    rq_force = bool(
+                        getattr(
+                            self.session.config.discovery,
+                            "requestable_force_dht_when_zero",
+                            True,
+                        )
+                    )
+                    if (
+                        rq_force
+                        and current_requestable_peers == 0
+                        and current_peer_count >= 1
+                        and not metadata_incomplete
+                    ):
+                        effective_min_interval = min(effective_min_interval, 8.0)
+                    if (
+                        target_rq > 0
+                        and current_requestable_peers < target_rq
+                        and time.monotonic() < self._requestable_driven_compress_until
+                    ):
+                        effective_min_interval = min(effective_min_interval, 8.0)
                     if time_since_last_query < effective_min_interval:
                         wait_time = effective_min_interval - time_since_last_query
                         self.logger.debug(

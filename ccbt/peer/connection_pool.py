@@ -403,6 +403,15 @@ class PeerConnectionPool:
         # Note: Increase timeout for Windows semaphore acquisition
         # WinError 121 can occur if semaphore acquisition times out
         semaphore_timeout = 10.0  # Increased from 5.0 for Windows compatibility
+        if self.config is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                configured_connect_timeout = float(
+                    getattr(self.config, "connection_timeout", semaphore_timeout)
+                )
+                semaphore_timeout = min(
+                    20.0,
+                    max(2.0, configured_connect_timeout * 0.5),
+                )
         try:
             await asyncio.wait_for(self.semaphore.acquire(), timeout=semaphore_timeout)
         except asyncio.TimeoutError:
@@ -468,8 +477,21 @@ class PeerConnectionPool:
                 recycle_reason = f"usage_count={metrics.usage_count}"
 
             # Performance-based recycling (if enabled)
-            if self.config and getattr(
-                self.config, "connection_pool_performance_recycling_enabled", True
+            pool_grace = 60.0
+            if self.config is not None:
+                pool_grace = float(
+                    getattr(self.config, "connection_pool_grace_period", 60.0) or 60.0
+                )
+            conn_age = time.time() - metrics.created_at
+            skip_perf_recycle = (
+                conn_age < pool_grace and int(metrics.bytes_received) < 1
+            )
+            if (
+                self.config
+                and not skip_perf_recycle
+                and getattr(
+                    self.config, "connection_pool_performance_recycling_enabled", True
+                )
             ):
                 performance_score = self._evaluate_connection_performance(metrics)
                 performance_threshold = getattr(

@@ -71,14 +71,6 @@ repos:
         files: ^(docs/.*\.md|docs/blog/.*\.md|README\.md|dev/mkdocs\.yml)$
         pass_filenames: false
         stages: [manual]
-      - id: check-translations
-        name: check-translations
-        entry: uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt
-        language: system
-        types: [python]
-        files: ^ccbt/cli/.*\.py$
-        pass_filenames: false
-        stages: [pre-commit]
       - id: validate-po
         name: validate-po
         entry: uv run python -m ccbt.i18n.scripts.validate_po

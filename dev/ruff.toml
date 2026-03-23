@@ -155,6 +155,16 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "E402",     # module-level import not at top - common pattern with pytestmark
     "S324",     # SHA-1 usage - required for BEP 47 file SHA-1 verification tests
 ]
+"tests/unit/discovery/test_dht_bootstrap_readiness.py" = [
+    "SLF001",
+    "D103",
+    "ARG005",
+    "PLR2004",
+]
+"tests/unit/session/test_requestable_driven_tick.py" = [
+    "SLF001",
+    "D103",
+]
 "tests/performance/bench_*.py" = [
     "T201",     # print statements - required for CLI output
     "PLR2004",  # magic-value-comparison - benchmark scripts use many constants

@@ -51,6 +51,7 @@ dependencies = [
     "ipfshttpclient>=0.8.0a2",
     "multiaddr>=0.0.9",
     "multiformats>=0.3.1.post4",
+    "av>=14.0.0,<14.3.0; python_full_version == '3.9.*'",
     "blake3>=1.0.8",
     "lz4>=4.3.3",
     "watchdog>=4.0.2",

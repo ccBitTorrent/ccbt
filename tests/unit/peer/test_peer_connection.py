@@ -660,7 +660,8 @@ class TestPeerConnectionManager:
         connection.am_interested = True  # Should be interested before requesting
 
         # Request piece
-        await self.manager.request_piece(connection, 5, 1000, 16384)
+        sent = await self.manager.request_piece(connection, 5, 1000, 16384)
+        assert sent is True
 
         # Verify write was called
         assert mock_writer.write.call_count >= 1
@@ -763,7 +764,8 @@ class TestPeerConnectionManager:
         initial_write_count = mock_writer.write.call_count
 
         # Request piece (should not send because can_request() returns False)
-        await self.manager.request_piece(connection, 5, 1000, 16384)
+        sent = await self.manager.request_piece(connection, 5, 1000, 16384)
+        assert sent is False
 
         # Should not send any additional messages when choked
         # request_piece checks can_request() which returns False when peer_choking=True

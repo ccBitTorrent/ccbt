@@ -747,6 +747,7 @@ class AsyncPeerConnectionManager:
             max_connections=self.config.network.connection_pool_max_connections,
             max_idle_time=self.config.network.connection_pool_max_idle_time,
             health_check_interval=self.config.network.connection_pool_health_check_interval,
+            config=self.config.network,
         )
 
         # Per-peer upload rate limit from config (KiB/s, 0 = unlimited)
@@ -784,9 +785,13 @@ class AsyncPeerConnectionManager:
         self._pending_peer_keys: set[str] = set()
         self._pending_peer_queue_lock: asyncio.Lock = asyncio.Lock()
         self._pending_resume_in_progress: bool = False
+        self._pending_resume_retry_task: Optional[asyncio.Task[None]] = None
+        self._connection_batch_sequence: int = 0
+        self._connection_timeout_log_counter: int = 0
         self._inflight_peer_connects: set[str] = set()
         self.extension_manager: Optional[Any] = None
         self.utp_socket_manager: Optional[Any] = None
+        self._ml_peer_selector: Optional[Any] = None
 
         # Connection quality tracking (probation vs verified peers)
         self._quality_verified_peers: set[str] = set()
@@ -806,6 +811,13 @@ class AsyncPeerConnectionManager:
         self._mse_plain_fallback_until: dict[str, float] = {}
         self._mse_plain_fallback_ttl_s = float(
             getattr(self.config.network, "mse_plain_fallback_ttl_s", 120.0)
+        )
+        self._mse_plain_fallback_history: dict[str, list[float]] = {}
+        self._mse_plain_fallback_window_s = float(
+            getattr(self.config.network, "mse_plain_fallback_window_s", 300.0)
+        )
+        self._mse_plain_fallback_max_per_window = int(
+            getattr(self.config.network, "mse_plain_fallback_max_per_window", 3)
         )
 
         # Adaptive timeout calculator (lazy initialization)
@@ -1181,6 +1193,39 @@ class AsyncPeerConnectionManager:
         task = loop.create_task(self._resume_pending_batches(reason=reason))
         self.add_background_task(task)
 
+    def _next_connection_batch_id(self) -> str:
+        """Return monotonic connection batch correlation id."""
+        self._connection_batch_sequence += 1
+        return f"cb-{int(time.time() * 1000)}-{self._connection_batch_sequence}"
+
+    def _schedule_pending_resume_retry(self, *, delay_s: float, reason: str) -> None:
+        """Schedule a delayed pending-queue retry when no slots are available."""
+        if not self._running:
+            return
+        if (
+            self._pending_resume_retry_task is not None
+            and not self._pending_resume_retry_task.done()
+        ):
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        async def _retry() -> None:
+            try:
+                await asyncio.sleep(max(0.2, delay_s))
+                if self._running:
+                    await self._resume_pending_batches(reason=reason)
+            finally:
+                self._pending_resume_retry_task = None
+
+        self._pending_resume_retry_task = loop.create_task(
+            _retry(),
+            name=f"pending_resume_retry:{reason}",
+        )
+        self.add_background_task(self._pending_resume_retry_task)
+
     async def _clear_pending_peer_queue(self, reason: str) -> None:
         """Clear any pending peers that are considered stale."""
         self._ensure_pending_queue_initialized()
@@ -1435,6 +1480,10 @@ class AsyncPeerConnectionManager:
             active_count = len([c for c in self.connections.values() if c.is_active()])
 
         if active_count >= self.max_peers_per_torrent:
+            self._schedule_pending_resume_retry(
+                delay_s=2.5,
+                reason=f"{reason}:awaiting_slot",
+            )
             return
 
         self._pending_resume_in_progress = True
@@ -1471,6 +1520,8 @@ class AsyncPeerConnectionManager:
             self._pending_peer_queue_lock = asyncio.Lock()
         if not hasattr(self, "_pending_resume_in_progress"):
             self._pending_resume_in_progress = False
+        if not hasattr(self, "_pending_resume_retry_task"):
+            self._pending_resume_retry_task = None
 
     def _get_peer_key(self, peer: Any) -> str:
         """Return canonical peer key (ip:port) for PeerInfo or connection."""
@@ -4062,12 +4113,19 @@ class AsyncPeerConnectionManager:
         self._running = False
         self._connection_batches_in_progress = False
         self._pending_resume_in_progress = False
+        if (
+            self._pending_resume_retry_task is not None
+            and not self._pending_resume_retry_task.done()
+        ):
+            self._pending_resume_retry_task.cancel()
+            tasks_to_cancel = [self._pending_resume_retry_task]
+        else:
+            tasks_to_cancel = []
 
         # LOGGING OPTIMIZATION: Keep as INFO - important lifecycle event
         self.logger.debug("Stopping async peer connection manager...")
 
         # Collect all tasks to cancel
-        tasks_to_cancel: list[asyncio.Task] = []
         tracked_tasks = set(
             self._piece_selection_trigger_tasks
             if hasattr(self, "_piece_selection_trigger_tasks")
@@ -4339,6 +4397,7 @@ class AsyncPeerConnectionManager:
         # Set AFTER validation checks to avoid setting flag unnecessarily
         self._connection_batches_in_progress = True
         batch_start_time = time.time()
+        batch_id = self._next_connection_batch_id()
 
         try:
             # Contract note: peer_list is the upstream candidate list from source-specific
@@ -4366,13 +4425,20 @@ class AsyncPeerConnectionManager:
                         info_hash_display = str(info_hash)[:16] + "..."
 
             self.logger.debug(
-                "Starting connection attempts to %d upstream peer(s) (sources: %s, info_hash: %s, "
-                "runtime max_connections=%d)",
+                "Starting connection attempts to %d upstream peer(s) (batch_id=%s, sources: %s, info_hash: %s, "
+                "runtime max_connections=%d, from_pending=%s)",
                 upstream_peer_count,
+                batch_id,
                 source_summary,
                 info_hash_display,
                 self.max_peers_per_torrent,
+                _from_pending_queue,
             )
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "peer_funnel_discovered",
+                    upstream_peer_count,
+                )
             # Remember discovery candidates for reconnection when _failed_peers is empty.
             await self._remember_discovered_peers_for_retry(peer_list)
             config = self.config.network
@@ -4563,9 +4629,7 @@ class AsyncPeerConnectionManager:
                 # Convert to PeerInfo list and filter out recently failed peers
                 peer_info_list = []
                 skipped_failed = 0
-                for idx, peer_data in enumerate(
-                    peer_list_sorted[: max_connections * 2]
-                ):  # Check more peers to account for filtering
+                for idx, peer_data in enumerate(peer_list_sorted):
                     # Validation: peer_data must be a dict before accessing
                     if not isinstance(peer_data, dict):
                         error_msg = (
@@ -4610,6 +4674,9 @@ class AsyncPeerConnectionManager:
                             peer_info,
                             "_peer_pex_flags",
                             peer_data.get("_peer_pex_flags"),
+                        )
+                        self._set_runtime_attr(
+                            peer_info, "_discovery_batch_id", batch_id
                         )
                     except (KeyError, TypeError) as e:
                         error_msg = (
@@ -5021,6 +5088,7 @@ class AsyncPeerConnectionManager:
                         # This prevents the flag from blocking DHT discovery indefinitely
                         batch_elapsed = time.time() - batch_start_time
                         if batch_elapsed > max_batch_duration:
+                            remaining_for_queue = all_peers_to_process[batch_start:]
                             self.logger.warning(
                                 "Connection batch processing exceeded maximum duration (%.1fs > %.1fs). "
                                 "Clearing flag to allow DHT discovery. Processed %d/%d peers.",
@@ -5029,6 +5097,15 @@ class AsyncPeerConnectionManager:
                                 batch_start,
                                 len(all_peers_to_process),
                             )
+                            if remaining_for_queue and self._running:
+                                await self._queue_pending_peers(
+                                    remaining_for_queue,
+                                    reason="max_batch_duration_exceeded",
+                                )
+                                self._schedule_pending_resume_retry(
+                                    delay_s=2.0,
+                                    reason="batch_duration_exceeded",
+                                )
                             # Clear flag and break to allow DHT discovery
                             self._connection_batches_in_progress = False
                             break
@@ -5182,11 +5259,20 @@ class AsyncPeerConnectionManager:
                                         timeout=timeout,
                                     )
                                 except asyncio.TimeoutError:
-                                    self.logger.debug(
-                                        "Connection to %s timed out after %.1fs (TCP connect or handshake hung)",
-                                        peer,
-                                        timeout,
+                                    self._connection_timeout_log_counter += 1
+                                    timeout_log_count = (
+                                        self._connection_timeout_log_counter
                                     )
+                                    if (
+                                        timeout_log_count <= 3
+                                        or timeout_log_count % 20 == 0
+                                    ):
+                                        self.logger.debug(
+                                            "Connection to %s timed out after %.1fs (TCP connect or handshake hung, timeout_count=%d)",
+                                            peer,
+                                            timeout,
+                                            timeout_log_count,
+                                        )
                                     # Clean up any partial connection state
                                     peer_key = str(peer)
                                     async with self.connection_lock:
@@ -5256,9 +5342,10 @@ class AsyncPeerConnectionManager:
                                 if low_peer_recovery_mode
                                 else (15.0 if active_peer_count < 3 else 25.0)
                             )
-                            batch_timeout = min(
+                            batch_timeout = max(
+                                1.0,
+                                recommended_batch_timeout,
                                 connection_timeout,
-                                max(1.0, recommended_batch_timeout),
                             )
 
                             # Process results as they complete for real-time logging
@@ -5345,29 +5432,29 @@ class AsyncPeerConnectionManager:
                                                         remaining_task.get_name(),
                                                     )
                                                     remaining_task.cancel()
-                                        for (
-                                            batch_idx,
-                                            remaining_task,
-                                        ) in enumerate(task_list):
-                                            if results_list[batch_idx] is not None:
-                                                continue
-                                            register_aborted_batch_peer(
-                                                batch_peer_list[batch_idx]
-                                            )
-                                            if not remaining_task.done():
-                                                self.logger.debug(
-                                                    "Cancelling task %s (reason=early_batch_success_exit)",
-                                                    remaining_task.get_name(),
+                                            for (
+                                                batch_idx,
+                                                remaining_task,
+                                            ) in enumerate(task_list):
+                                                if results_list[batch_idx] is not None:
+                                                    continue
+                                                register_aborted_batch_peer(
+                                                    batch_peer_list[batch_idx]
                                                 )
-                                                remaining_task.cancel()
-                                            with contextlib.suppress(Exception):
-                                                await remaining_task
-                                            async with self.connection_lock:
-                                                self._inflight_peer_connects.discard(
-                                                    self._get_peer_key(
-                                                        batch_peer_list[batch_idx]
+                                                if not remaining_task.done():
+                                                    self.logger.debug(
+                                                        "Cancelling task %s (reason=early_batch_success_exit)",
+                                                        remaining_task.get_name(),
                                                     )
-                                                )
+                                                    remaining_task.cancel()
+                                                with contextlib.suppress(Exception):
+                                                    await remaining_task
+                                                async with self.connection_lock:
+                                                    self._inflight_peer_connects.discard(
+                                                        self._get_peer_key(
+                                                            batch_peer_list[batch_idx]
+                                                        )
+                                                    )
                                             batch_counts["completed"] = completed
                                             batch_counts["successful"] = successful
                                             batch_counts["batch_successful"] = (
@@ -5879,11 +5966,7 @@ class AsyncPeerConnectionManager:
                                         )
                                         connection_stats["failed"] += 1
 
-                        if (
-                            aborted_batch_peers
-                            and not _from_pending_queue
-                            and self._running
-                        ):
+                        if aborted_batch_peers and self._running:
                             await self._queue_pending_peers(
                                 aborted_batch_peers,
                                 reason="batch_control_aborted",
@@ -6100,6 +6183,8 @@ class AsyncPeerConnectionManager:
                 batch_connection_summary = await self.get_connection_summary()
             self._last_connect_batch_summary = {
                 "captured_at": time.time(),
+                "batch_id": batch_id,
+                "upstream_peer_count": int(upstream_peer_count),
                 "from_pending_queue": bool(_from_pending_queue),
                 "total_attempts": int(total_attempts),
                 "successful": int(successful),
@@ -6124,6 +6209,46 @@ class AsyncPeerConnectionManager:
                     and self._metadata_is_incomplete()
                 ),
             }
+            funnel_attempted = int(total_attempts)
+            funnel_connected = int(successful)
+            funnel_requestable = int(
+                batch_connection_summary.get("requestable_connections", 0)
+            )
+            funnel_productive = int(
+                batch_connection_summary.get("productive_connections", 0)
+            )
+            with contextlib.suppress(Exception):
+                metrics = get_metrics_collector()
+                metrics.increment_counter("peer_funnel_attempted", funnel_attempted)
+                metrics.increment_counter("peer_funnel_tcp_connected", funnel_connected)
+                metrics.increment_counter("peer_funnel_requestable", funnel_requestable)
+                metrics.increment_counter("peer_funnel_productive", funnel_productive)
+                queue_depth = len(getattr(self, "_pending_peer_queue", []))
+                if queue_depth > 0:
+                    metrics.increment_counter("peer_funnel_pending_queue_nonzero")
+            self.logger.debug(
+                "Peer funnel batch %s: discovered=%d attempted=%d connected=%d requestable=%d productive=%d",
+                batch_id,
+                upstream_peer_count,
+                funnel_attempted,
+                funnel_connected,
+                funnel_requestable,
+                funnel_productive,
+            )
+            if funnel_attempted >= 20 and funnel_connected == 0:
+                self.logger.warning(
+                    "ACCEPTANCE_GATE_FAIL peer_funnel_zero_connect: batch=%s discovered=%d attempted=%d",
+                    batch_id,
+                    upstream_peer_count,
+                    funnel_attempted,
+                )
+            if funnel_connected >= 8 and funnel_requestable == 0:
+                self.logger.warning(
+                    "ACCEPTANCE_GATE_FAIL peer_funnel_zero_requestable: batch=%s connected=%d requestable=%d",
+                    batch_id,
+                    funnel_connected,
+                    funnel_requestable,
+                )
 
             if not _from_pending_queue:
                 async with self._pending_peer_queue_lock:
@@ -6399,17 +6524,73 @@ class AsyncPeerConnectionManager:
                 self._mse_plain_fallback_until.pop(peer_key, None)
         return effective_mode
 
+    def _should_attempt_plain_fallback(self, peer_info: PeerInfo, reason: str) -> bool:
+        """Return whether plaintext fallback should be attempted for this peer now."""
+        now = time.time()
+        peer_key = self._get_peer_key(peer_info)
+        window = max(30.0, float(self._mse_plain_fallback_window_s))
+        max_attempts = max(1, int(self._mse_plain_fallback_max_per_window))
+        history = [
+            ts
+            for ts in self._mse_plain_fallback_history.get(peer_key, [])
+            if now - ts <= window
+        ]
+        self._mse_plain_fallback_history[peer_key] = history
+        if len(history) >= max_attempts:
+            cooldown = max(float(self._mse_plain_fallback_ttl_s), window * 0.5)
+            self._mse_plain_fallback_until[peer_key] = max(
+                self._mse_plain_fallback_until.get(peer_key, 0.0),
+                now + cooldown,
+            )
+            self._record_connection_stage("mse_fallback_plain_suppressed")
+            self.logger.debug(
+                "Suppressing plaintext fallback for %s after %d fallback(s) in %.1fs window (reason=%s, cooldown=%.1fs)",
+                peer_info,
+                len(history),
+                window,
+                reason,
+                cooldown,
+            )
+            return False
+        return True
+
     def _record_mse_plain_fallback(self, peer_info: PeerInfo, reason: str) -> None:
         """Remember peers where MSE failed so preferred mode can cool down."""
-        ttl = max(5.0, self._mse_plain_fallback_ttl_s)
+        reason_class = self._classify_mse_fallback_reason(reason)
+        reason_ttl_multiplier = {
+            "mse_timeout": 0.75,
+            "mse_read_failure": 1.0,
+            "mse_negotiation_failed": 1.25,
+            "mse_protocol_mismatch": 1.5,
+            "mse_invalid_crypto": 2.0,
+            "mse_disallowed_cipher": 2.5,
+        }
+        ttl = max(5.0, self._mse_plain_fallback_ttl_s) * reason_ttl_multiplier.get(
+            reason_class,
+            1.0,
+        )
         peer_key = self._get_peer_key(peer_info)
-        self._mse_plain_fallback_until[peer_key] = time.time() + ttl
+        now = time.time()
+        window = max(30.0, float(self._mse_plain_fallback_window_s))
+        max_attempts = max(1, int(self._mse_plain_fallback_max_per_window))
+        history = [
+            ts
+            for ts in self._mse_plain_fallback_history.get(peer_key, [])
+            if now - ts <= window
+        ]
+        history.append(now)
+        self._mse_plain_fallback_history[peer_key] = history
+        if len(history) >= max_attempts:
+            ttl = max(ttl, window * 0.5)
+        self._mse_plain_fallback_until[peer_key] = now + ttl
         self._record_connection_stage("mse_fallback_plain")
         self.logger.debug(
-            "Caching plaintext preference after MSE fallback for %s (reason=%s, ttl=%.1fs)",
+            "Caching plaintext preference after MSE fallback for %s (reason=%s class=%s, ttl=%.1fs, attempts_in_window=%d)",
             peer_info,
             reason,
+            reason_class,
             ttl,
+            len(history),
         )
 
     @staticmethod
@@ -6432,7 +6613,9 @@ class AsyncPeerConnectionManager:
 
     def _clear_mse_plain_fallback(self, peer_info: PeerInfo) -> None:
         """Clear MSE fallback cache after a successful encrypted handshake."""
-        self._mse_plain_fallback_until.pop(self._get_peer_key(peer_info), None)
+        peer_key = self._get_peer_key(peer_info)
+        self._mse_plain_fallback_until.pop(peer_key, None)
+        self._mse_plain_fallback_history.pop(peer_key, None)
 
     def _get_outbound_extension_encryption_preference(self) -> str:
         """Return this side's advertised encryption preference for BEP 10 extension `e`."""
@@ -7235,6 +7418,8 @@ class AsyncPeerConnectionManager:
                     and reader is not None
                     and writer is not None
                 )
+                # MSE may set True when IA carries the BT handshake; pooled/TCP paths share this flag.
+                sent_initial_handshake_payload = False
                 if not has_pooled_connection:
                     # Create standard TCP connection (fallback or default)
                     if connection is None:
@@ -7631,7 +7816,6 @@ class AsyncPeerConnectionManager:
                     )
                 else:
                     mse_timeout = self._calculate_adaptive_handshake_timeout()
-                    sent_initial_handshake_payload = False
                     if (
                         outbound_encryption_mode != EncryptionMode.DISABLED
                         and isinstance(reader, asyncio.StreamReader)
@@ -7740,6 +7924,18 @@ class AsyncPeerConnectionManager:
                                 raise PeerConnectionError(err_text)
                             else:  # pragma: no cover - Encryption PREFERRED mode fallback, tested via success/REQUIRED paths
                                 # PREFERRED mode - fallback to plain connection
+                                fallback_reason = self._classify_mse_fallback_reason(
+                                    result.error
+                                )
+                                if not self._should_attempt_plain_fallback(
+                                    peer_info,
+                                    fallback_reason,
+                                ):
+                                    err_text = (
+                                        "Encryption preferred fallback suppressed due to repeated MSE failures "
+                                        f"for {peer_info} (reason={fallback_reason})"
+                                    )
+                                    raise PeerConnectionError(err_text)
                                 self.logger.debug(
                                     "Encryption preferred but handshake failed, "
                                     "falling back to plain connection with %s",
@@ -7747,7 +7943,7 @@ class AsyncPeerConnectionManager:
                                 )
                                 self._record_mse_plain_fallback(
                                     peer_info,
-                                    self._classify_mse_fallback_reason(result.error),
+                                    fallback_reason,
                                 )
                                 try:
                                     (
@@ -7775,6 +7971,16 @@ class AsyncPeerConnectionManager:
                                 err_text = f"Encryption required but failed: {e}"
                                 raise PeerConnectionError(err_text) from e
                             # PREFERRED mode - fallback to plain connection
+                            fallback_reason = f"{self._classify_mse_fallback_reason(str(e))}:{type(e).__name__}"
+                            if not self._should_attempt_plain_fallback(
+                                peer_info,
+                                fallback_reason,
+                            ):
+                                err_text = (
+                                    "Encryption preferred exception fallback suppressed due to repeated MSE failures "
+                                    f"for {peer_info} (reason={fallback_reason})"
+                                )
+                                raise PeerConnectionError(err_text) from e
                             self.logger.debug(  # pragma: no cover - Encryption PREFERRED exception fallback, tested via success path
                                 "Encryption handshake error (preferred mode), "
                                 "falling back to plain: %s",
@@ -7782,7 +7988,7 @@ class AsyncPeerConnectionManager:
                             )
                             self._record_mse_plain_fallback(
                                 peer_info,
-                                f"{self._classify_mse_fallback_reason(str(e))}:{type(e).__name__}",
+                                fallback_reason,
                             )
                             try:
                                 (
@@ -8069,7 +8275,6 @@ class AsyncPeerConnectionManager:
                     ConnectionState.HANDSHAKE_SENT
                 )  # pragma: no cover - Same context
                 self._record_connection_stage("handshake_sent")
-                sent_initial_handshake_payload = False
 
                 # Outbound authenticated-swarm policy decision: fail-fast in strict mode.
                 outbound_decision = evaluate_outbound_admission(
@@ -14824,24 +15029,57 @@ class AsyncPeerConnectionManager:
         # We'll use a sync lock or just read the count directly (connections dict is thread-safe for reads)
 
         try:
-            # Try to get active peer count synchronously
-
-            active_peer_count = sum(
-                1 for conn in self.connections.values() if conn.is_active()
-            )
-
+            active_connections = [
+                conn for conn in self.connections.values() if conn.is_active()
+            ]
         except Exception:
-            # If that fails, default to allowing recycling (conservative)
+            active_connections = []
 
-            active_peer_count = 0
+        active_peer_count = len(active_connections)
+        requestable_count = 0
+        productive_count = 0
+        with contextlib.suppress(Exception):
+            for conn in active_connections:
+                if conn.can_request():
+                    requestable_count += 1
+                delivered = int(getattr(conn.stats, "blocks_delivered", 0) or 0)
+                if delivered > 0:
+                    productive_count += 1
 
-        # Note: If we have few peers, don't recycle anyone (maximize connections first)
+        configured_target = max(1, int(self.max_peers_per_torrent))
+        # Adaptive threshold:
+        # - when we have no requestable peers, allow selective replacement sooner
+        # - when swarm is healthy, be more conservative
+        min_peers_before_recycling = max(
+            4,
+            int(
+                configured_target * (0.12 if requestable_count == 0 else 0.25),
+            ),
+        )
 
-        min_peers_before_recycling = 100  # Only recycle if we have 100+ peers
+        # Keep rare seeder anchors unless the swarm has enough seeder redundancy.
+        seed_anchor_count = sum(
+            1
+            for conn in active_connections
+            if bool(getattr(conn.peer_info, "_is_seeder_hint", False))
+        )
+        if bool(getattr(connection.peer_info, "_is_seeder_hint", False)):
+            protected_seed_anchor_limit = 2 if requestable_count == 0 else 1
+            if seed_anchor_count <= protected_seed_anchor_limit:
+                return False
 
-        if active_peer_count < min_peers_before_recycling:
-            # Keep all peers - maximize connections first
-
+        # In low-peer regimes, only recycle when there is a replacement candidate
+        # or when a connection is clearly unhealthy.
+        severe_failure = int(
+            getattr(connection.stats, "consecutive_failures", 0)
+        ) > max(
+            8, int(getattr(self.config.network, "peer_max_consecutive_failures", 10))
+        )
+        if (
+            active_peer_count < min_peers_before_recycling
+            and not severe_failure
+            and not new_peer_available
+        ):
             return False
 
         # Get configuration thresholds (but only apply if we have enough peers)
@@ -14986,6 +15224,78 @@ class AsyncPeerConnectionManager:
 
         return False
 
+    async def _maybe_choke_only_slot_replacement(self) -> None:
+        """Optionally disconnect oldest persistently choked peers to free slots (config-gated)."""
+        net = self.config.network
+        if not bool(getattr(net, "choke_only_slot_replacement_enabled", False)):
+            return
+        if bool(self.torrent_data.get("private")):
+            return
+        min_active = int(
+            getattr(net, "choke_only_slot_replacement_min_active_peers", 4) or 4,
+        )
+        min_ratio = float(
+            getattr(net, "choke_only_slot_replacement_min_choke_ratio", 0.85) or 0.85,
+        )
+        max_frac = float(
+            getattr(
+                net,
+                "choke_only_slot_replacement_max_disconnect_fraction",
+                0.15,
+            )
+            or 0.15,
+        )
+        at_lim = float(
+            getattr(
+                net,
+                "choke_only_slot_replacement_at_limit_fraction",
+                0.95,
+            )
+            or 0.95,
+        )
+
+        async with self.connection_lock:
+            conns = [c for c in self.connections.values() if c.is_active()]
+            active_peer_count = len(conns)
+            requestable_n = sum(1 for c in conns if c.can_request())
+            current_connections = len(self.connections)
+            max_connections = self.max_peers_per_torrent
+
+        if requestable_n > 0 or active_peer_count < min_active:
+            return
+        limit_floor = max(1, int(max_connections * at_lim))
+        if current_connections < limit_floor:
+            return
+
+        min_peers_for_dht_pex = (
+            1 if active_peer_count <= 1 else min(50, max(1, active_peer_count - 1))
+        )
+        max_disconnect = max(1, int(active_peer_count * max_frac))
+        candidates: list[tuple[AsyncPeerConnection, float]] = []
+        for conn in conns:
+            if not conn.peer_choking or not conn.am_interested:
+                continue
+            conn.decay_and_record_choke_ratio(conn.peer_choking)
+            ratio = float(getattr(conn.stats, "choke_state_ratio", 0.0))
+            if ratio < min_ratio:
+                continue
+            raw_start = getattr(conn, "connection_start_time", None)
+            if not isinstance(raw_start, (int, float)):
+                continue
+            candidates.append((conn, float(raw_start)))
+        candidates.sort(key=lambda x: x[1])
+
+        for disconnected, (conn, _) in enumerate(candidates):
+            if disconnected >= max_disconnect:
+                break
+            if active_peer_count - disconnected <= min_peers_for_dht_pex:
+                break
+            await self._disconnect_peer(conn)
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "choke_only_slot_replacement_disconnect_total",
+                )
+
     async def _peer_evaluation_loop(self) -> None:
         """Periodically evaluate peer performance and recycle low-performing connections.
 
@@ -15011,6 +15321,8 @@ class AsyncPeerConnectionManager:
                 self.logger.debug("Running peer evaluation loop...")
 
                 await self._prune_probation_peers("evaluation_loop")
+
+                await self._maybe_choke_only_slot_replacement()
 
                 # Note: Check if we need to maintain minimum peer count
 
@@ -15188,11 +15500,12 @@ class AsyncPeerConnectionManager:
                                     have_messages_count,
                                 )
 
-                    # Note: Keep minimum peers for DHT/PEX to work
-
-                    # DHT and PEX need at least 50 active connections to exchange peer information effectively
-
-                    min_peers_for_dht_pex = 50  # Minimum peers to keep for DHT/PEX functionality (increased to prevent aggressive discovery)
+                    # Scale DHT/PEX retention floor with swarm size so tiny swarms are not
+                    # held to a fixed 50-peer minimum (plan: min(50, max(1, active - 1))).
+                    if active_peer_count <= 1:
+                        min_peers_for_dht_pex = 1
+                    else:
+                        min_peers_for_dht_pex = min(50, max(1, active_peer_count - 1))
 
                     # Disconnect peers without bitfields, but keep minimum for DHT/PEX
 
@@ -15383,7 +15696,10 @@ class AsyncPeerConnectionManager:
 
                     # Maximize connections first - only cycle if we have many peers
 
-                    min_peers_for_dht_pex = 50  # Minimum peers to keep for DHT/PEX functionality (increased to maximize connections)
+                    if active_peer_count <= 1:
+                        min_peers_for_dht_pex = 1
+                    else:
+                        min_peers_for_dht_pex = min(50, max(1, active_peer_count - 1))
 
                     # Cycle successfully used peers, but keep minimum for DHT/PEX
 
@@ -15906,11 +16222,42 @@ class AsyncPeerConnectionManager:
         # Calculate scores for each peer
 
         peer_scores: list[tuple[PeerInfo, float]] = []
+        active_count = 0
+        requestable_count = 0
+        with contextlib.suppress(Exception):
+            active_count = sum(
+                1 for conn in self.connections.values() if conn.is_active()
+            )
+            requestable_count = sum(
+                1
+                for conn in self.connections.values()
+                if conn.is_active() and conn.can_request()
+            )
+        zero_requestable_recovery = active_count > 0 and requestable_count == 0
+
+        ml_weight = float(
+            getattr(self.config.strategy, "peer_selector_ml_ranking_weight", 0.0)
+            or 0.0,
+        )
+        ml_weight = max(0.0, min(0.5, ml_weight))
+        ml_by_key: dict[str, float] = {}
+        if ml_weight > 0.0 and peer_list:
+            try:
+                from ccbt.ml.peer_selector import PeerSelector
+
+                if self._ml_peer_selector is None:
+                    self._ml_peer_selector = PeerSelector()
+                ml_ranked = await self._ml_peer_selector.rank_peers(list(peer_list))
+                for pinfo, mscore in ml_ranked:
+                    ml_by_key[str(pinfo)] = float(mscore)
+            except Exception as e:
+                self.logger.debug("ML peer ranking blend skipped: %s", e)
 
         for peer_info in peer_list:
             peer_key = str(peer_info)
 
             score = 0.0
+            penalty_reasons: list[str] = []
 
             # Note: Prioritize seeders (peers with 100% of pieces) and near-seeders (90%+ complete)
 
@@ -16255,6 +16602,7 @@ class AsyncPeerConnectionManager:
                     already_connected_communication_bonus = (
                         -0.2
                     )  # Penalty for peers that don't communicate
+                    penalty_reasons.append("communication_silent")
 
                     self.logger.debug(
                         "Peer %s already connected for %.1fs but no bitfield OR HAVE messages - applying -%.1f penalty",
@@ -16294,11 +16642,17 @@ class AsyncPeerConnectionManager:
                         # Terminal failures should be deprioritized strongly.
 
                         failure_penalty = min(0.9, 0.5 + min(fail_count, 8) * 0.05)
+                        penalty_reasons.append("terminal_failure")
 
                     else:
                         # Transient failures: modest penalty that increases with retries.
 
-                        failure_penalty = min(0.45, fail_count * 0.1)
+                        transient_cap = 0.45
+                        if zero_requestable_recovery:
+                            transient_cap = 0.25
+                        failure_penalty = min(transient_cap, fail_count * 0.1)
+                        if fail_count > 0:
+                            penalty_reasons.append("transient_failure")
 
                     if fail_reason in {
                         "protocol_error",
@@ -16308,12 +16662,30 @@ class AsyncPeerConnectionManager:
                         # Additional penalty for quality/compatibility failures.
 
                         failure_penalty = min(1.0, failure_penalty + 0.15)
+                        penalty_reasons.append("protocol_quality_failure")
 
             score -= failure_penalty
 
             # Ensure score is in valid range
 
             score = max(0.0, min(1.0, score))
+            if penalty_reasons:
+                self._set_runtime_attr(
+                    peer_info,
+                    "_ranking_penalty_reasons",
+                    sorted(set(penalty_reasons)),
+                )
+
+            if ml_weight > 0.0:
+                mk = str(peer_info)
+                if mk in ml_by_key:
+                    score = max(
+                        0.0,
+                        min(
+                            1.0,
+                            score * (1.0 - ml_weight) + ml_by_key[mk] * ml_weight,
+                        ),
+                    )
 
             peer_scores.append((peer_info, score))
 
@@ -16324,6 +16696,26 @@ class AsyncPeerConnectionManager:
         # Return ranked peer list
 
         ranked_peers = [peer_info for peer_info, _ in peer_scores]
+        if zero_requestable_recovery and len(ranked_peers) >= 6:
+            source_order = ("tracker", "dht", "pex", "unknown")
+            buckets: dict[str, list[PeerInfo]] = {source: [] for source in source_order}
+            for peer_info in ranked_peers:
+                source = (peer_info.peer_source or "unknown").lower()
+                bucket_key = source if source in buckets else "unknown"
+                buckets[bucket_key].append(peer_info)
+            interleaved: list[PeerInfo] = []
+            while len(interleaved) < len(ranked_peers):
+                made_progress = False
+                for source in source_order:
+                    bucket = buckets[source]
+                    if not bucket:
+                        continue
+                    interleaved.append(bucket.pop(0))
+                    made_progress = True
+                if not made_progress:
+                    break
+            if len(interleaved) == len(ranked_peers):
+                ranked_peers = interleaved
 
         self.logger.debug(
             "Ranked %d peers (top 5 scores: %s)",
@@ -16421,7 +16813,8 @@ class AsyncPeerConnectionManager:
 
         # Stagger cancels so we do not dump an entire full pipeline in one tick (some peers
         # respond badly to a burst of CANCEL messages). Oldest overdue first.
-        max_cancels_this_pass = 6
+        swarm_n = max(1, len(getattr(self, "connections", {})))
+        max_cancels_this_pass = max(6, min(32, 4 + swarm_n // 4))
         if len(timed_out_requests) > max_cancels_this_pass:
             timed_out_requests.sort(
                 key=lambda item: current_time - item[1].timestamp,
@@ -16894,8 +17287,16 @@ class AsyncPeerConnectionManager:
         piece_index: int,
         begin: int,
         length: int,
-    ) -> None:
-        """Request a block from a peer."""
+    ) -> bool:
+        """Request a block from a peer.
+
+        Returns:
+            True if at least one BitTorrent REQUEST was sent for this call, including
+            any requests flushed from this connection's queue while processing it.
+            False if the peer cannot accept requests, state changed after interested,
+            or queue processing sent zero messages.
+
+        """
         if not connection.can_request():
             self.logger.debug(
                 "Cannot request piece %d:%d:%d from %s (choking=%s, active=%s, pipeline=%d/%d)",
@@ -16909,7 +17310,7 @@ class AsyncPeerConnectionManager:
                 connection.max_pipeline_depth,
             )
 
-            return
+            return False
 
         # Note: Ensure "interested" message is sent before requesting pieces
 
@@ -16947,71 +17348,79 @@ class AsyncPeerConnectionManager:
             connection.can_request(),
         )
 
-        if connection.can_request():  # pragma: no cover - Piece request logic requires active connection with unchoked peer, complex to test
-            # Calculate priority for this request
+        if not connection.can_request():  # pragma: no cover - Piece request logic requires active connection with unchoked peer, complex to test
+            self.logger.debug(
+                "Skipping piece %d:%d:%d for %s after interested: can_request=False",
+                piece_index,
+                begin,
+                length,
+                connection.peer_info,
+            )
+            return False
 
-            priority, bandwidth_estimate = await self._calculate_request_priority(
-                piece_index, self.piece_manager, connection
+        # Calculate priority for this request
+
+        priority, bandwidth_estimate = await self._calculate_request_priority(
+            piece_index, self.piece_manager, connection
+        )
+
+        request_info = RequestInfo(
+            piece_index, begin, length, time.time()
+        )  # pragma: no cover - Same context
+
+        request_info.bandwidth_estimate = bandwidth_estimate
+
+        # Use priority queue if prioritization is enabled
+
+        enable_prioritization = getattr(
+            self.config.network, "pipeline_enable_prioritization", True
+        )
+
+        if enable_prioritization:
+            # Initialize priority queue if not exists
+
+            if connection._priority_queue is None:  # noqa: SLF001 - Internal queue state
+                connection._priority_queue = []  # noqa: SLF001 - Internal queue state
+
+            # Add to priority queue (negative priority for max-heap via min-heap)
+
+            heappush(
+                connection._priority_queue,  # noqa: SLF001 - Internal queue state
+                (-priority, time.time(), request_info),
             )
 
-            request_info = RequestInfo(
-                piece_index, begin, length, time.time()
-            )  # pragma: no cover - Same context
+        else:
+            # Use regular queue
 
-            request_info.bandwidth_estimate = bandwidth_estimate
+            connection.request_queue.append(request_info)
 
-            # Use priority queue if prioritization is enabled
+        # Process queued requests with coalescing
 
-            enable_prioritization = getattr(
-                self.config.network, "pipeline_enable_prioritization", True
+        requests_sent = await self._process_request_queue(connection)
+
+        if requests_sent > 0:
+            self.logger.debug(
+                "Sent %d REQUEST message(s) to %s for piece %d:%d:%d (priority=%.2f, outstanding=%d/%d)",
+                requests_sent,
+                connection.peer_info,
+                piece_index,
+                begin,
+                length,
+                priority,
+                len(connection.outstanding_requests),
+                connection.max_pipeline_depth,
             )
+            return True
 
-            if enable_prioritization:
-                # Initialize priority queue if not exists
-
-                if connection._priority_queue is None:  # noqa: SLF001 - Internal queue state
-                    connection._priority_queue = []  # noqa: SLF001 - Internal queue state
-
-                # Add to priority queue (negative priority for max-heap via min-heap)
-
-                heappush(
-                    connection._priority_queue,  # noqa: SLF001 - Internal queue state
-                    (-priority, time.time(), request_info),
-                )
-
-            else:
-                # Use regular queue
-
-                connection.request_queue.append(request_info)
-
-            # Process queued requests with coalescing
-
-            requests_sent = await self._process_request_queue(connection)
-
-            if requests_sent > 0:
-                # Log at INFO level when requests are actually sent
-
-                self.logger.debug(
-                    "Sent %d REQUEST message(s) to %s for piece %d:%d:%d (priority=%.2f, outstanding=%d/%d)",
-                    requests_sent,
-                    connection.peer_info,
-                    piece_index,
-                    begin,
-                    length,
-                    priority,
-                    len(connection.outstanding_requests),
-                    connection.max_pipeline_depth,
-                )
-
-            else:
-                self.logger.debug(
-                    "Queued block %s:%s:%s from %s (priority=%.2f, not sent yet - queue processing)",
-                    piece_index,
-                    begin,
-                    length,
-                    connection.peer_info,
-                    priority,
-                )  # pragma: no cover - Same context
+        self.logger.debug(
+            "Queued block %s:%s:%s from %s (priority=%.2f, not sent yet - queue processing)",
+            piece_index,
+            begin,
+            length,
+            connection.peer_info,
+            priority,
+        )  # pragma: no cover - Same context
+        return False
 
     async def _process_request_queue(self, connection: AsyncPeerConnection) -> int:
         """Process queued requests with prioritization and coalescing.

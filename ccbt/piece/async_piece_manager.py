@@ -3200,6 +3200,10 @@ class AsyncPieceManager:
             if active_peers
             else False
         )
+        # Magnets / pre-metadata: avoid treating HAVE/bitfield timestamps as stale —
+        # unchoke-driven refresh is not meaningful until piece maps exist.
+        if getattr(self, "_metadata_incomplete", False):
+            enforce_piece_availability_confidence = False
         peers_with_availability_count = 0
         known_piece_peer_count_for_selection = 0
         for peer in active_peers:
@@ -3989,6 +3993,14 @@ class AsyncPieceManager:
                     optimistic_candidate_count,
                 )
                 return 0
+            if available_peers and any(
+                getattr(p, "peer_choking", False) for p in available_peers
+            ):
+                self.logger.debug(
+                    "Keeping piece %d in REQUESTED: peers exist but remote choked (transient)",
+                    piece_index,
+                )
+                return 0
             # Reset piece state if no peers available
             async with self.lock:
                 piece = self.pieces[piece_index]
@@ -4035,6 +4047,7 @@ class AsyncPieceManager:
             # Note: Get active peer count for throttling
             active_peer_count = 0
             peers_with_availability = 0
+            requestable_peer_count = 0
             if peer_manager and hasattr(peer_manager, "get_active_peers"):
                 active_peers_result = peer_manager.get_active_peers()
                 # Note: Handle case where mock returns coroutine
@@ -4057,6 +4070,11 @@ class AsyncPieceManager:
                     )
                     if has_bitfield or has_have_messages:
                         peers_with_availability += 1
+                    can_rq = getattr(peer, "can_request", None)
+                    if callable(can_rq):
+                        with contextlib.suppress(Exception):
+                            if bool(can_rq()):
+                                requestable_peer_count += 1
 
             # Note: Throttle requests when peer count is low (<10) to avoid overwhelming peers
             # This prevents peers from disconnecting due to too many requests
@@ -4065,6 +4083,10 @@ class AsyncPieceManager:
             # Single supplier with confirmed availability: do not throttle — one peer is the whole swarm.
             single_supplier_with_data = (
                 active_peer_count == 1 and peers_with_availability >= 1
+            ) or (
+                active_peer_count > 1
+                and requestable_peer_count == 1
+                and peers_with_availability >= 1
             )
             throttle_requests = (
                 active_peer_count > 0
@@ -4293,13 +4315,15 @@ class AsyncPieceManager:
                                 continue
 
                         try:
-                            await peer_manager.request_piece(
+                            sent = await peer_manager.request_piece(
                                 peer_connection,
                                 request_info.piece_index,
                                 request_info.begin,
                                 request_info.length,
                             )
-                            # Track active request
+                            if not sent:
+                                continue
+                            # Track active request only when wire REQUEST was sent
                             request_time = time.time()
                             if (
                                 request_info.piece_index
@@ -4324,9 +4348,6 @@ class AsyncPieceManager:
                             )
                             self._piece_selection_metrics["active_block_requests"] += 1
                             self._piece_selection_metrics["total_piece_requests"] += 1
-                            # Note: Tracking already updated atomically before sending
-                            # Just mark block as requested
-                            # Find corresponding block and mark as requested
                             for block in missing_blocks:
                                 if (
                                     block.begin == request_info.begin
@@ -4436,15 +4457,15 @@ class AsyncPieceManager:
                         continue
 
                     try:
-                        await peer_manager.request_piece(
+                        sent = await peer_manager.request_piece(
                             peer_connection,
                             piece_index,
                             block.begin,
                             block.length,
                         )
+                        if not sent:
+                            continue
                         outstanding += 1
-                        # Note: Tracking already updated atomically before sending
-                        # Just mark block as requested
                         block.requested_from.add(peer_key)
                     except Exception as req_error:
                         # Track failed requests - peer might be refusing
@@ -4536,13 +4557,14 @@ class AsyncPieceManager:
                             continue
 
                         try:
-                            await peer_manager.request_piece(
+                            sent = await peer_manager.request_piece(
                                 peer_connection,
                                 piece_index,
                                 block.begin,
                                 block.length,
                             )
-                            # Track active request
+                            if not sent:
+                                continue
                             request_time = time.time()  # type: ignore[unresolved-reference]  # time is imported at module level
                             if piece_index not in self._active_block_requests:
                                 self._active_block_requests[piece_index] = {}
@@ -4554,8 +4576,6 @@ class AsyncPieceManager:
                             self._piece_selection_metrics["active_block_requests"] += 1
                             self._piece_selection_metrics["total_piece_requests"] += 1
                             outstanding += 1
-                            # Note: Tracking already updated atomically before sending
-                            # Just mark block as requested
                             block.requested_from.add(peer_key)
                         except Exception as req_error:
                             # Track failed requests - peer might be refusing
@@ -4685,13 +4705,14 @@ class AsyncPieceManager:
                         )
                         continue
                     try:
-                        await peer_manager.request_piece(
+                        sent = await peer_manager.request_piece(
                             peer_connection,
                             piece_index,
                             block.begin,
                             block.length,
                         )
-                        # Track active request
+                        if not sent:
+                            continue
                         request_time = time.time()
                         if piece_index not in self._active_block_requests:
                             self._active_block_requests[piece_index] = {}
@@ -4702,7 +4723,6 @@ class AsyncPieceManager:
                         )
                         self._piece_selection_metrics["active_block_requests"] += 1
                         self._piece_selection_metrics["total_piece_requests"] += 1
-                        # Track requested piece per peer
                         async with self.lock:
                             self._requested_piece_map_add(peer_key, piece_index)
                         block.requested_from.add(peer_key)

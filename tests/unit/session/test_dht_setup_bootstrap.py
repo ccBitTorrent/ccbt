@@ -183,8 +183,15 @@ async def test_dht_bootstrap_zero_node_fallback_records_failure() -> None:
             self.bootstrap_calls: list[str] = []
             self.wait_for_bootstrap_calls = 0
 
-        async def wait_for_bootstrap(self, timeout: float) -> bool:
+        async def wait_for_bootstrap(
+            self,
+            timeout: float,
+            *,
+            min_nodes: int = 8,
+            allow_partial: bool = False,
+        ) -> bool:
             self.wait_for_bootstrap_calls += 1
+            _ = (timeout, min_nodes, allow_partial)
             return False
 
         async def _bootstrap(self, reason: str) -> None:
@@ -238,8 +245,15 @@ async def test_dht_bootstrap_delayed_seed_replay_eventually_succeeds() -> None:
             self.bootstrap_calls: list[str] = []
             self.wait_for_bootstrap_calls = 0
 
-        async def wait_for_bootstrap(self, timeout: float) -> bool:
+        async def wait_for_bootstrap(
+            self,
+            timeout: float,
+            *,
+            min_nodes: int = 8,
+            allow_partial: bool = False,
+        ) -> bool:
             self.wait_for_bootstrap_calls += 1
+            _ = (timeout, min_nodes, allow_partial)
             return False
 
         async def _bootstrap(self, reason: str) -> None:
@@ -281,4 +295,3 @@ async def test_dht_bootstrap_delayed_seed_replay_eventually_succeeds() -> None:
     assert summary["rebootstrap_last_reason"].endswith(":seed_replay")
     assert summary["rebootstrap_last_after_nodes"] == 1
     assert summary["routing_table_size"] == 1
-

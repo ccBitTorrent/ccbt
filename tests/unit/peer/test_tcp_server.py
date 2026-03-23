@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -465,3 +467,96 @@ async def test_await_session_for_inbound_peer_aborts_when_manager_shutting_down(
     )
     assert asyncio.get_event_loop().time() - t0 < 1.0
     sm.get_session_for_info_hash.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_probation_wait_queue_enqueue_then_drains_on_slot_release() -> None:
+    """Saturated probation slots defer work to a bounded queue; draining starts probation."""
+    ih = b"\xab" * 20
+    ph = _sample_parsed_handshake(ih)
+    sm = SimpleNamespace(torrents={}, lock=asyncio.Lock())
+    net = SimpleNamespace(inbound_probation_wait_queue_max_total=16)
+    cfg = MagicMock()
+    cfg.network = net
+    srv = IncomingPeerServer(sm, config=cfg)
+    started: list[int] = []
+
+    def _reserve(_b: bytes) -> bool:
+        return True
+
+    def _register(*_a: Any, **_kw: Any) -> None:
+        started.append(1)
+
+    srv._reserve_probation_slot_for_hash = _reserve  # type: ignore[method-assign]
+    srv._register_inbound_probation_task = _register  # type: ignore[method-assign]
+    srv._running = True
+
+    reader = _build_stream_reader(b"")
+    writer = MagicMock()
+    writer.close = MagicMock()
+    writer.wait_closed = AsyncMock()
+    await srv._enqueue_inbound_probation_wait(
+        reader,
+        writer,
+        ph,
+        "1.1.1.1",
+        1,
+        0.0,
+        InboundProtocolKind.BITTORRENT_PLAINTEXT,
+        False,
+    )
+    assert srv._probation_wait_queue_total() == 1
+    await srv._drain_next_probation_wait_after_release(ih)
+    assert srv._probation_wait_queue_total() == 0
+    assert started == [1]
+
+
+@pytest.mark.asyncio
+async def test_probation_wait_queue_evicts_oldest_when_full() -> None:
+    ih = b"\xcd" * 20
+    ph = _sample_parsed_handshake(ih)
+    sm = SimpleNamespace(torrents={}, lock=asyncio.Lock())
+    net = SimpleNamespace(inbound_probation_wait_queue_max_total=1)
+    cfg = MagicMock()
+    cfg.network = net
+    srv = IncomingPeerServer(sm, config=cfg)
+
+    async def _noop_release(
+        _ih: bytes, _ip: str, _port: int
+    ) -> None:  # pragma: no cover - trivial
+        return None
+
+    srv._release_inbound_probation = _noop_release  # type: ignore[method-assign]
+
+    w1 = MagicMock()
+    w1.close = MagicMock()
+    w1.wait_closed = AsyncMock()
+    w2 = MagicMock()
+    w2.close = MagicMock()
+    w2.wait_closed = AsyncMock()
+
+    t0 = time.time()
+    await srv._enqueue_inbound_probation_wait(
+        _build_stream_reader(b""),
+        w1,
+        ph,
+        "1.1.1.1",
+        1,
+        t0,
+        InboundProtocolKind.BITTORRENT_PLAINTEXT,
+        False,
+    )
+    await asyncio.sleep(0.01)
+    await srv._enqueue_inbound_probation_wait(
+        _build_stream_reader(b""),
+        w2,
+        ph,
+        "1.1.1.2",
+        2,
+        t0,
+        InboundProtocolKind.BITTORRENT_PLAINTEXT,
+        False,
+    )
+    assert srv._probation_wait_queue_total() == 1
+    w1.close.assert_called()
+    w2.close.assert_not_called()

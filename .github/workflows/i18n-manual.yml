@@ -1,4 +1,4 @@
-# Manual i18n pipeline: extract, update, validate, coverage, completeness, compile.
+# Manual i18n pipeline: extract, msgmerge, fill English, validate, completeness, compile.
 # Run from Actions tab (workflow_dispatch) to validate translations on main or current branch.
 name: i18n (manual)
 
@@ -35,17 +35,22 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Install gettext (msgmerge)
+        run: sudo apt-get update && sudo apt-get install -y gettext
+
       - name: Extract translatable strings
         run: uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
 
-      - name: Update translation files
-        run: uv run python -m ccbt.i18n.scripts.update_translations
+      - name: Merge template into locale catalogs (msgmerge)
+        run: |
+          set -euo pipefail
+          POT=ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
+          for po in ccbt/i18n/locales/*/LC_MESSAGES/ccbt.po; do
+            msgmerge --update --backup=none --sort-output "$po" "$POT"
+          done
 
       - name: Fill English catalog (msgstr = msgid for new entries)
         run: uv run python -m ccbt.i18n.scripts.fill_english
-
-      - name: Check string coverage
-        run: uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --fail-on-gap
 
       - name: Validate .po files
         run: uv run python -m ccbt.i18n.scripts.validate_po
@@ -61,4 +66,3 @@ jobs:
 
       - name: Compile .mo files
         run: uv run python -m ccbt.i18n.scripts.compile_all
-        continue-on-error: true

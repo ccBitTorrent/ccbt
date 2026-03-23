@@ -12,7 +12,6 @@
     "CCBT_DAEMON_WEBSOCKET_ENABLED",
     "CCBT_DAEMON_WEBSOCKET_HEARTBEAT_INTERVAL",
     "CCBT_DEBUG",
-    "CCBT_DHT_BOOTSTRAP_NODES",
     "CCBT_DHT_TIMEOUT",
     "CCBT_DISK_QUEUE_SIZE",
     "CCBT_DOTENV_PATH",
@@ -65,9 +64,10 @@
     "CCBT_WEBTORRENT_CONNECTION_TIMEOUT",
     "CCBT_WEBTORRENT_HOST",
     "CCBT_WEBTORRENT_MAX_CONNECTIONS",
-    "CCBT_WRITE_BUFFER_KIB"
+    "CCBT_WRITE_BUFFER_KIB",
+    "CCBT_WINDOWS_NETWORK_COMPAT_STRICT"
   ],
-  "env_example_count": 451,
+  "env_example_count": 477,
   "expected_model_sections": [
     "daemon",
     "dashboard",
@@ -92,7 +92,7 @@
     "xet_sync"
   ],
   "legacy_env_count": 66,
-  "mapped_env_count": 385,
+  "mapped_env_count": 411,
   "mapped_env_missing_tolerant_allowlist": [],
   "min_nested_discovery_paths": 480,
   "surface_cli_override_path_allowlist": [

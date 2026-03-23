@@ -36,6 +36,44 @@ def _strip_quotes(value: str) -> str:
     return v
 
 
+def _strip_inline_comment_suffix(text: str) -> str:
+    """Drop trailing comment after whitespace+``#`` (same rule as shell / python-dotenv)."""
+    s = text
+    i = 0
+    while True:
+        idx = s.find("#", i)
+        if idx == -1:
+            return s
+        if idx > 0 and s[idx - 1].isspace():
+            return s[: idx - 1].rstrip()
+        i = idx + 1
+
+
+def _parse_dotenv_value(rest: str) -> str:
+    """Parse the RHS of ``KEY=...``: quotes, then strip trailing `` # comment``."""
+    s = rest.strip()
+    if not s:
+        return ""
+    if s.startswith("#"):
+        return ""
+    q = s[0]
+    if q in "\"'":
+        i = 1
+        while i < len(s):
+            if s[i] == "\\" and i + 1 < len(s):
+                i += 2
+                continue
+            if s[i] == q:
+                inner = s[1:i]
+                tail = s[i + 1 :].strip()
+                if not tail or tail.startswith("#"):
+                    return inner
+                return inner
+            i += 1
+        # Unclosed quote: best-effort like unquoted
+    return _strip_quotes(_strip_inline_comment_suffix(s))
+
+
 def _parse_dotenv_line(line: str) -> Optional[tuple[str, str]]:
     s = line.strip()
     if not s or s.startswith("#"):
@@ -48,7 +86,7 @@ def _parse_dotenv_line(line: str) -> Optional[tuple[str, str]]:
     key = key.strip()
     if not key or not all(c.isalnum() or c == "_" for c in key):
         return None
-    return key, _strip_quotes(rest)
+    return key, _parse_dotenv_value(rest)
 
 
 def load_dotenv_file(path: Path) -> int:
@@ -83,7 +121,13 @@ def load_dotenv_file(path: Path) -> int:
 
 def maybe_load_dotenv_from_env() -> None:
     """If ``CCBT_LOAD_DOTENV`` is truthy, merge ``.env`` into the process environment."""
-    if not _truthy_env(os.getenv(_LOAD_DOTENV_FLAG)):
+    raw_flag = os.getenv(_LOAD_DOTENV_FLAG)
+    if not _truthy_env(raw_flag):
+        logger.debug(
+            "Skipping dotenv load: %s is not truthy (value=%r)",
+            _LOAD_DOTENV_FLAG,
+            raw_flag,
+        )
         return
 
     raw_path = os.getenv(_DOTENV_PATH_VAR)

@@ -140,8 +140,7 @@ All quality checks run automatically via pre-commit hooks configured in [dev/pre
 - Version validation: Ensures version consistency between `pyproject.toml` and `ccbt/__init__.py`
 - Changelog validation: Ensures `dev/CHANGELOG.md` is updated for code changes
 - MkDocs build validation: `uv run mkdocs build -f dev/mkdocs.yml`
-- Translation validation: `uv run python -m ccbt.i18n.scripts.validate_po`
-- Translation coverage check: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+- Translation validation: `uv run python -m ccbt.i18n.scripts.validate_po` (when `.po` files under `ccbt/i18n/locales/` change)
 
 Run manually:
 ```bash
@@ -149,14 +148,19 @@ uv run pre-commit run --all-files -c dev/pre-commit-config.yaml
 ```
 
 !!! note "Translation (i18n) workflow"
-    When adding or changing user-facing strings:
+    **Local (optional, fast feedback):** When adding or changing user-facing strings, regenerate templates and catalogs as needed:
     1. **Wrap strings** in code with `_()`, `_n()`, or `_p()` (see [.cursor/rules/i18n-patterns.mdc](https://github.com/ccBittorrent/ccbt/blob/main/.cursor/rules/i18n-patterns.mdc)).
-    2. **Extract** strings: `uv run python -m ccbt.i18n.extract ccbt` (writes `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`).
-    3. **Merge** into locales: `uv run python -m ccbt.i18n.scripts.update_translations` (includes **English** `ccbt.po`; new entries start with empty `msgstr`).
+    2. **Extract** strings: `uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`
+    3. **Merge** into each locale `.po` with GNU **msgmerge** (or `uv run python -m ccbt.i18n.scripts.translation_workflow --step update` after extract). Requires `msgmerge` on `PATH` (gettext).
     4. **Fill English**: `uv run python -m ccbt.i18n.scripts.fill_english` (sets `msgstr` = `msgid` for `en`).
-    5. **Check coverage**: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt` (pre-commit runs this on `ccbt/cli/*.py`).
-    6. **Validate** .po files: `uv run python -m ccbt.i18n.scripts.validate_po`
+    5. **Validate** .po files: `uv run python -m ccbt.i18n.scripts.validate_po`
+    6. **Completeness report** (optional): `uv run python -m ccbt.i18n.scripts.check_completeness`
     7. **Compile** .mo (optional): `uv run python -m ccbt.i18n.scripts.compile_all`
+
+    **CI (approval-required):** The `i18n` job in `.github/workflows/ci.yml` runs extract, `validate_po`, and `check_completeness`. It does **not** enforce that every new `_()` in source is already in the committed `.pot`; keep templates in sync when you change strings.
+
+    **Maintainers:** Run the manual workflow `.github/workflows/i18n-manual.yml` from the Actions tab for a full gettext pipeline (extract, msgmerge, fill_english, validate, completeness artifact, compile).
+
     Full script reference: [ccbt/i18n/scripts/README.md](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/i18n/scripts/README.md).
 
 ## Development Configuration

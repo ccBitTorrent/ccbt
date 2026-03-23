@@ -84,19 +84,25 @@ uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html --cov-report
 - 带覆盖率的 Pytest
 - 基准测试冒烟测试
 - MkDocs 构建验证: `uv run mkdocs build -f dev/mkdocs.yml`
-- 翻译验证: `uv run python -m ccbt.i18n.scripts.validate_po`
-- 翻译覆盖率检查: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+- 翻译验证: `uv run python -m ccbt.i18n.scripts.validate_po`（当 `ccbt/i18n/locales/` 下的 `.po` 变更时）
 
 手动运行:
 ```bash
 uv run pre-commit run --all-files -c dev/pre-commit-config.yaml
 ```
 
-!!! note "翻译验证"
-    在提交影响可翻译字符串的更改之前:
-    1. 重新生成 `.pot` 模板: `uv run python -m ccbt.i18n.scripts.extract`
-    2. 验证 PO 文件: `uv run python -m ccbt.i18n.scripts.validate_po`
-    3. 检查翻译覆盖率: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+!!! note "翻译 (i18n) 流程"
+    **本地（可选）:** 更改面向用户的字符串时:
+    1. 在代码中使用 `_()` / `_n()` / `_p()` 包裹字符串。
+    2. 提取: `uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`
+    3. 合并: 使用 GNU **msgmerge** 或 `uv run python -m ccbt.i18n.scripts.translation_workflow --step update`（需 gettext）。
+    4. 填充英文: `uv run python -m ccbt.i18n.scripts.fill_english`
+    5. 验证 PO: `uv run python -m ccbt.i18n.scripts.validate_po`
+    6. 完整性（可选）: `uv run python -m ccbt.i18n.scripts.check_completeness`
+
+    **CI（需审批）:** `.github/workflows/ci.yml` 中的 `i18n` 任务会运行 extract、`validate_po` 和 `check_completeness`。维护者可从 Actions 运行 `i18n-manual.yml` 完整流水线。
+
+    详见 [ccbt/i18n/scripts/README.md](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/i18n/scripts/README.md)。
 
 ## 开发配置
 
