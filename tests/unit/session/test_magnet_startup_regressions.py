@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import time
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ccbt.models import DownloadStats, PieceState as CheckpointPieceState, TorrentCheckpoint
 from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
@@ -261,6 +260,157 @@ async def test_peer_connection_helper_ranks_using_reputation_success_rate() -> N
 
     assert ranked[0]["ip"] == "198.51.100.10"
     assert ranked[1]["ip"] == "198.51.100.11"
+
+
+@pytest.mark.asyncio
+async def test_peer_connection_helper_prioritizes_requestable_transition_signals() -> None:
+    """Ranking should prefer peers likely to become requestable/productive quickly."""
+    from ccbt.session.peers import PeerConnectionHelper
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "transition-ranking-test",
+        "info_hash": b"\x07" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.config.network.peer_quality_performance_weight = 0.0
+    session.config.network.peer_quality_success_rate_weight = 0.0
+    session.config.network.peer_quality_source_weight = 0.0
+    session.config.network.peer_quality_proximity_weight = 0.0
+    session.download_manager.security_manager = SimpleNamespace(
+        get_peer_reputation=lambda *_args, **_kwargs: None
+    )
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+
+    helper = PeerConnectionHelper(session)
+    ranked = helper._rank_peers_by_quality(
+        [
+            {
+                "ip": "198.51.100.50",
+                "port": 6881,
+                "peer_source": "dht",
+                "has_piece_info": False,
+                "_recent_failure_count": 2,
+            },
+            {
+                "ip": "198.51.100.51",
+                "port": 6881,
+                "peer_source": "dht",
+                "has_piece_info": True,
+                "_avg_unchoke_latency_ms": 180.0,
+                "_block_yield_rate": 0.9,
+                "_recent_failure_count": 0,
+            },
+        ]
+    )
+
+    assert ranked[0]["ip"] == "198.51.100.51"
+    assert ranked[1]["ip"] == "198.51.100.50"
+
+
+@pytest.mark.asyncio
+async def test_peer_ranking_diagnostics_use_per_ranking_normalized_metrics() -> None:
+    """Quality diagnostics should remain comparable regardless of batch size."""
+    from ccbt.session.peers import PeerConnectionHelper
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "ranking-diagnostics-test",
+        "info_hash": b"\x06" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.download_manager.security_manager = SimpleNamespace(
+        get_peer_reputation=lambda *_args, **_kwargs: None
+    )
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+
+    helper = PeerConnectionHelper(session)
+    helper._rank_peers_by_quality(  # noqa: SLF001
+        [{"ip": "198.51.100.60", "port": 6881, "peer_source": "tracker"}]
+    )
+    helper._rank_peers_by_quality(  # noqa: SLF001
+        [
+            {"ip": "198.51.100.61", "port": 6881, "peer_source": "tracker"},
+            {"ip": "198.51.100.62", "port": 6881, "peer_source": "tracker"},
+            {"ip": "198.51.100.63", "port": 6881, "peer_source": "tracker"},
+            {"ip": "198.51.100.64", "port": 6881, "peer_source": "tracker"},
+        ]
+    )
+    metrics = helper._peer_quality_metrics  # noqa: SLF001
+    assert metrics["rolling_rankings_considered"] == 2
+    assert 0.0 <= metrics["rolling_average_score"] <= 1.5
+    last = metrics["last_ranking"]
+    ratio_sum = (
+        float(last["high_quality_ratio"])
+        + float(last["medium_quality_ratio"])
+        + float(last["low_quality_ratio"])
+    )
+    assert abs(ratio_sum - 1.0) < 1e-6
+
+
+@pytest.mark.asyncio
+async def test_peer_ranking_cold_peer_tiebreakers_prefer_fresher_corroborated_peer() -> None:
+    from ccbt.session.peers import PeerConnectionHelper
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "ranking-tiebreak-test",
+        "info_hash": b"\x07" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.download_manager.security_manager = SimpleNamespace(
+        get_peer_reputation=lambda *_args, **_kwargs: None
+    )
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+    helper = PeerConnectionHelper(session)
+
+    stale = {
+        "ip": "198.51.100.70",
+        "port": 6881,
+        "peer_source": "dht",
+        "_first_seen_monotonic": 1.0,
+        "_recent_failure_count": 0,
+        "_recent_success_count": 0,
+        "_dht_candidate_score": 0.2,
+        "_dht_candidate_sightings": 1,
+    }
+    fresh_and_corroborated = {
+        "ip": "198.51.100.71",
+        "port": 6881,
+        "peer_source": "dht",
+        "_first_seen_monotonic": time.time(),
+        "_recent_failure_count": 0,
+        "_recent_success_count": 2,
+        "_dht_candidate_score": 0.9,
+        "_dht_candidate_sightings": 4,
+    }
+
+    ranked = helper._rank_peers_by_quality([stale, fresh_and_corroborated])  # noqa: SLF001
+    assert ranked[0]["ip"] == "198.51.100.71"
 
 
 @pytest.mark.asyncio
@@ -531,6 +681,8 @@ async def test_immediate_tracker_connection_enforces_batch_caps(monkeypatch) -> 
     session.download_manager.peer_manager = SimpleNamespace(
         connections={"already:1": object(), "already:2": object()},
         _connection_batches_in_progress=False,
+        enqueue_peer_dicts_pending=AsyncMock(return_value=0),
+        request_pending_resume=MagicMock(),
     )
     connect_to_download = AsyncMock(return_value=None)
 
@@ -590,6 +742,8 @@ async def test_immediate_tracker_connection_from_single_udp_announce_can_exceed_
     session.download_manager.peer_manager = SimpleNamespace(
         connections={},
         _connection_batches_in_progress=False,
+        enqueue_peer_dicts_pending=AsyncMock(return_value=0),
+        request_pending_resume=MagicMock(),
     )
     connect_to_download = AsyncMock(return_value=None)
 
@@ -910,8 +1064,6 @@ def test_new_session_defaults_to_stopped() -> None:
 @pytest.mark.asyncio
 async def test_magnet_bitfield_does_not_promote_incomplete_metadata() -> None:
     """Bitfield parsing may infer an upper bound, but must not start full piece mode before metadata arrives."""
-    from ccbt.piece.async_piece_manager import AsyncPieceManager
-
     torrent_data = {
         "info_hash": b"4" * 20,
         "name": "metadata-incomplete-test",
@@ -938,7 +1090,6 @@ async def test_selector_premarked_piece_still_issues_initial_request(
     """Selector pre-marking must not suppress the first real piece request."""
     import time
 
-    from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceState
 
     torrent_data = {
         "info_hash": b"5" * 20,
@@ -965,7 +1116,7 @@ async def test_selector_premarked_piece_still_issues_initial_request(
         pieces={0}
     )
 
-    peer_manager = SimpleNamespace(get_active_peers=lambda: [], connections={})
+    peer_manager = SimpleNamespace(get_active_peers=list, connections={})
     request_calls: list[tuple[int, int]] = []
 
     async def fake_get_peers_for_piece(piece_index: int, _peer_manager: object):

@@ -186,6 +186,7 @@ class TestDownloadsFunctionUniqueness:
     def test_no_duplicate_start_interactive_magnet_download(self):
         """Verify there's only one definition of start_interactive_magnet_download."""
         import inspect
+
         import ccbt.cli.downloads as downloads_module
 
         # Get all functions in the module

@@ -234,8 +234,6 @@ class TestManagerBackgroundTasks:
     @pytest.mark.asyncio
     async def test_metrics_loop_handles_exceptions(self, background_tasks, mock_manager):
         """Test metrics loop handles exceptions gracefully."""
-        import time
-
         mock_manager.torrents = {}
         mock_manager._rate_history = []
         mock_manager._metrics_heartbeat_counter = 0

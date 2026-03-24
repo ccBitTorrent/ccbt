@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.daemon]
 @pytest_asyncio.fixture(scope="function")
 async def mock_session_manager(monkeypatch):
     """Create a mock session manager with lightweight initialization."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import patch
 
     # Disable NAT auto port mapping to prevent 60s wait
     monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
@@ -72,7 +72,6 @@ async def ipc_server(mock_session_manager):
 @pytest.fixture
 async def test_torrent(mock_session_manager):
     """Create a test torrent in the session manager."""
-    from pathlib import Path
     from ccbt.session.session import AsyncTorrentSession
 
     torrent_data = {

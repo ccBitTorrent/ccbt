@@ -4,7 +4,6 @@ Target: 95%+ coverage for ccbt/__main__.py.
 """
 
 import argparse
-import sys
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -69,7 +68,7 @@ class TestMainEntry:
                             mock_dht_instance.stop = AsyncMock(return_value=None)
                             mock_dht_instance.get_peers = AsyncMock(return_value=[])
                             mock_dht_class.return_value = mock_dht_instance
-                            
+
                             with patch("time.sleep"):
                                 result = main_module.main()
 
@@ -124,17 +123,17 @@ class TestMainEntry:
                         mock_dht_instance.start = mock_start
                         mock_dht_instance.stop = AsyncMock(return_value=None)
                         mock_dht_instance.get_peers = AsyncMock(return_value=[])
-                        
+
                         # Patch DHTClient class
                         with patch("ccbt.discovery.dht.DHTClient") as mock_dht_class:
                             mock_dht_class.return_value = mock_dht_instance
-                            
+
                             # Also patch asyncio.run to ensure any background tasks are cleaned up
                             original_run = None
                             try:
                                 import asyncio as asyncio_mod
                                 original_run = asyncio_mod.run
-                                
+
                                 async def safe_run(coro, timeout=5.0):
                                     """Run coroutine with timeout to prevent hanging."""
                                     try:
@@ -151,7 +150,7 @@ class TestMainEntry:
                                         if tasks:
                                             await asyncio_mod.wait(tasks, timeout=1.0)
                                         return []
-                                
+
                                 def patched_run(coro, *, debug=False):
                                     """Patched asyncio.run with timeout protection."""
                                     loop = asyncio_mod.new_event_loop()
@@ -169,7 +168,7 @@ class TestMainEntry:
                                             loop.run_until_complete(asyncio_mod.wait(tasks, timeout=1.0))
                                         loop.close()
                                         asyncio_mod.set_event_loop(None)
-                                
+
                                 with patch("asyncio.run", patched_run):
                                     with patch("ccbt.storage.file_assembler.DownloadManager") as mock_dm_class:
                                         mock_dm_instance = Mock()

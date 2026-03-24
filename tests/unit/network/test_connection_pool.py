@@ -8,8 +8,8 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 
-from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 from ccbt.models import PeerInfo
+from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 
 
 @pytest.fixture

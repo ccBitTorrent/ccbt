@@ -37,7 +37,7 @@ repos:
         pass_filenames: false
       - id: pytest-fast
         name: pytest-fast
-        entry: uv run python tests/scripts/run_pytest_selective.py --coverage --full-suite
+        entry: uv run python tests/scripts/run_pytest_selective.py --mode pre-commit
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
@@ -46,7 +46,7 @@ repos:
         stages: [pre-commit]
       - id: pytest-coverage
         name: pytest-coverage
-        entry: uv run python tests/scripts/run_pytest_selective.py --coverage --full-suite
+        entry: uv run python tests/scripts/run_pytest_selective.py --mode pre-push --coverage --full-suite
         language: system
         types: [python]
         files: ^ccbt/.*\.py$

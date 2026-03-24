@@ -6,13 +6,11 @@ Tests batch chunk operations, aggregation, and parallel processing.
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 
 import pytest
 
 from ccbt.storage.xet_data_aggregator import XetDataAggregator
 from ccbt.storage.xet_deduplication import XetDeduplication
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 

@@ -1,11 +1,15 @@
 """Unit tests for uTP passive connection handling."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 from ccbt.transport.utp_socket import UTPSocketManager
 
 
@@ -20,7 +24,7 @@ class TestPassiveConnectionHandling:
         manager.transport = MagicMock()
         manager.transport.sendto = MagicMock()
         manager._initialized = True
-        yield manager
+        return manager
         # Cleanup - no need to await stop() for mock
 
     @pytest.fixture
@@ -175,7 +179,7 @@ class TestPassiveConnectionHandling:
 
         # Verify connection is now CONNECTED
         assert conn.state == UTPConnectionState.CONNECTED
-        
+
         # Cleanup
         await conn.close()
 
@@ -211,7 +215,7 @@ class TestPassiveConnectionHandling:
         # Verify state transition
         assert conn.state == UTPConnectionState.CONNECTED
         assert conn.seq_nr == 1  # Next packet seq_nr
-        
+
         # Cleanup background tasks
         await conn.close()
 

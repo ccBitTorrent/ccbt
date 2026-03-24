@@ -15,16 +15,16 @@ from ccbt.discovery.tracker import AsyncTrackerClient
 def test_get_session_stats_empty():
     """Test get_session_stats with no metrics."""
     client = AsyncTrackerClient()
-    
+
     stats = client.get_session_stats()
-    
+
     assert stats == {}
 
 
 def test_get_session_stats_with_metrics():
     """Test get_session_stats with various metrics."""
     client = AsyncTrackerClient()
-    
+
     # Add session metrics
     client._session_metrics = {
         "http://tracker1.example.com/announce": {
@@ -49,15 +49,15 @@ def test_get_session_stats_with_metrics():
             "error_count": 0
         }
     }
-    
+
     stats = client.get_session_stats()
-    
+
     # Should include all trackers (implementation includes all)
     assert "http://tracker1.example.com/announce" in stats
     assert "http://tracker2.example.com/announce" in stats
     # tracker3 may or may not be included depending on implementation
     # Just verify the main stats are correct
-    
+
     # Verify stats calculations
     tracker1_stats = stats["http://tracker1.example.com/announce"]
     assert tracker1_stats["request_count"] == 10
@@ -70,7 +70,7 @@ def test_get_session_stats_with_metrics():
 def test_get_session_stats_with_missing_keys():
     """Test get_session_stats handles missing metric keys."""
     client = AsyncTrackerClient()
-    
+
     # Add metrics with missing keys
     client._session_metrics = {
         "http://tracker.example.com/announce": {
@@ -78,9 +78,9 @@ def test_get_session_stats_with_missing_keys():
             # Missing other keys
         }
     }
-    
+
     stats = client.get_session_stats()
-    
+
     # Should handle missing keys gracefully
     assert "http://tracker.example.com/announce" in stats
     tracker_stats = stats["http://tracker.example.com/announce"]

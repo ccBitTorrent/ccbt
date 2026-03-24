@@ -507,7 +507,7 @@ class TestFileTreeNode:
         node = FileTreeNode(name="test.txt", length=100, pieces_root=None, children=None)
         # When pieces_root is None, is_file() returns False, so validation doesn't apply
         assert not node.is_file()
-        
+
         # Test with invalid pieces_root length to trigger validation
         with pytest.raises(ValueError, match="must be 32 bytes"):
             FileTreeNode(name="test.txt", length=100, pieces_root=b"x" * 31, children=None)
@@ -903,8 +903,6 @@ class TestTorrentV2Parser:
 
     def test_parse_hybrid_torrent(self):
         """Test parsing hybrid torrent."""
-        from ccbt.core.bencode import encode
-
         pieces_root = b"x" * 32
         info_dict = {
             b"meta version": 3,  # Hybrid
@@ -1143,8 +1141,6 @@ class TestTorrentV2Info:
 
     def test_parse_v2_optional_fields(self):
         """Test parsing v2 torrent with optional fields."""
-        from ccbt.core.bencode import encode
-
         pieces_root = b"x" * 32
         info_dict = {
             b"meta version": 2,
@@ -2237,8 +2233,6 @@ class TestTorrentGeneration:
 
     def test_parse_hybrid_fallback_logic(self, monkeypatch):
         """Test parse_hybrid fallback when v1 parser fails."""
-        from ccbt.core.bencode import encode
-
         pieces_root = b"x" * 32
         # Need a valid file tree structure - use single file format
         info_dict = {
@@ -2279,8 +2273,6 @@ class TestTorrentGeneration:
 
     def test_parse_hybrid_fallback_missing_v1_hash(self, monkeypatch):
         """Test parse_hybrid fallback when v1 hash calculation fails."""
-        from ccbt.core.bencode import encode
-
         pieces_root = b"x" * 32
         info_dict = {
             b"meta version": 3,
@@ -2407,8 +2399,6 @@ class TestTorrentGeneration:
 
     def test_parse_v2_announce_list_decoding(self):
         """Test parsing v2 torrent with announce list requiring decoding."""
-        from ccbt.core.bencode import encode
-
         pieces_root = b"x" * 32
         info_dict = {
             b"meta version": 2,
@@ -2560,11 +2550,10 @@ class TestTorrentGeneration:
         # 5. But all child_node calls return None (line 926 if check)
         # 6. So children dict ends up empty (line 937 if check fails)
         # This requires mocking _build_file_tree_node to return None for children
-        
+
         # Actually, this is very hard to test without deep mocking
         # Line 947 is a safety return that shouldn't normally happen
         # Let's focus on other missing lines instead
-        pass
 
     def test_build_piece_layers_relative_path_not_absolute(self, tmp_path: Path):
         """Test build_piece_layers with relative path that's not absolute (line 1106)."""

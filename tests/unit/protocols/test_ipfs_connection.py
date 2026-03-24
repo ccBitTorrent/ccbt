@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -62,9 +61,8 @@ async def test_connect_to_ipfs_network_connection_error(ipfs_protocol):
     with patch(
         "ccbt.protocols.ipfs.ipfshttpclient.connect",
         side_effect=ipfshttpclient.exceptions.ConnectionError("Connection failed"),
-    ):
-        with pytest.raises(ConnectionError):
-            await ipfs_protocol._connect_to_ipfs_network()
+    ), pytest.raises(ConnectionError):
+        await ipfs_protocol._connect_to_ipfs_network()
 
     assert ipfs_protocol._ipfs_connected is False
     assert ipfs_protocol._connection_retries == 1
@@ -78,9 +76,8 @@ async def test_connect_to_ipfs_network_timeout_error(ipfs_protocol):
     with patch(
         "ccbt.protocols.ipfs.ipfshttpclient.connect",
         side_effect=ipfshttpclient.exceptions.TimeoutError("Timeout"),
-    ):
-        with pytest.raises(TimeoutError):
-            await ipfs_protocol._connect_to_ipfs_network()
+    ), pytest.raises(TimeoutError):
+        await ipfs_protocol._connect_to_ipfs_network()
 
     assert ipfs_protocol._ipfs_connected is False
     assert ipfs_protocol._connection_retries == 1

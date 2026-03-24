@@ -28,8 +28,8 @@ import platform
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
 try:
@@ -292,7 +292,7 @@ def run_key_derivation_benchmark(iterations: int) -> DHResult:
         _ = dh.derive_encryption_key(
             shared_secret, info_hash, direction="outbound"
         )
- 
+
         latencies.append((time.perf_counter() - t0) * 1000)  # Convert to ms
     elapsed = time.perf_counter() - start
 
@@ -1408,7 +1408,7 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     ensure_artifacts_dir(output_dir)
     config_name = derive_config_name(args.config_file)
-    
+
     # Aggregate all results for recording
     all_results = (
         cipher_results
@@ -1419,7 +1419,7 @@ def main() -> int:
         + transfer_results
         + memory_results
     )
-    
+
     # Record benchmark results using new system
     per_run_path, timeseries_path = record_benchmark_results(
         "encryption",
@@ -1428,7 +1428,7 @@ def main() -> int:
         args.record_mode,
         json_out=args.json_out,
     )
-    
+
     # Backward compatibility
     out_path = write_json(
         output_dir,
@@ -1443,13 +1443,13 @@ def main() -> int:
         memory_results,
     )
     print(f"\nWrote (legacy): {out_path}")
-    
+
     # Print recording results
     if per_run_path:
         print(f"Recorded per-run: {per_run_path}")
     if timeseries_path:
         print(f"Updated timeseries: {timeseries_path}")
-    
+
     return 0
 
 

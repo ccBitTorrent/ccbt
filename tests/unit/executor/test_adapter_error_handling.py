@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import aiohttp
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 
 from ccbt.daemon.ipc_protocol import GlobalStatsResponse, PeerInfo, PeerListResponse
@@ -24,9 +24,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 OSError("Connection refused"),
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         with pytest.raises(RuntimeError, match="Cannot connect to daemon"):
             await adapter.set_rate_limits("test_hash", 100, 50)
 
@@ -42,9 +42,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 message="Not Found",
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         result = await adapter.set_rate_limits("test_hash", 100, 50)
         assert result is False
 
@@ -60,9 +60,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 message="Internal Server Error",
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         with pytest.raises(RuntimeError, match="Daemon error"):
             await adapter.set_rate_limits("test_hash", 100, 50)
 
@@ -76,9 +76,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 OSError("Connection refused"),
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         with pytest.raises(RuntimeError, match="Cannot connect to daemon"):
             await adapter.force_announce("test_hash")
 
@@ -92,9 +92,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 OSError("Connection refused"),
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         with pytest.raises(RuntimeError, match="Cannot connect to daemon"):
             await adapter.get_global_stats()
 
@@ -108,9 +108,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 OSError("Connection refused"),
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         with pytest.raises(RuntimeError, match="Cannot connect to daemon"):
             await adapter.get_scrape_result("test_hash")
 
@@ -126,9 +126,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 message="Not Found",
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         result = await adapter.get_scrape_result("test_hash")
         assert result is None
 
@@ -142,9 +142,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 OSError("Connection refused"),
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         with pytest.raises(RuntimeError, match="Cannot connect to daemon"):
             await adapter.get_peers_for_torrent("test_hash")
 
@@ -160,9 +160,9 @@ class TestDaemonSessionAdapterErrorHandling:
                 message="Not Found",
             )
         )
-        
+
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         result = await adapter.get_peers_for_torrent("test_hash")
         assert result == []
 
@@ -194,12 +194,12 @@ class TestResponseConversionHelpers:
             ],
             count=2,
         )
-        
+
         mock_ipc_client = AsyncMock()
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         peers = adapter._convert_peer_list_response(peer_list_response)
-        
+
         assert len(peers) == 2
         assert peers[0]["ip"] == "192.168.1.1"
         assert peers[0]["port"] == 6881
@@ -207,7 +207,7 @@ class TestResponseConversionHelpers:
         assert peers[0]["upload_rate"] == 500.0
         assert peers[0]["choked"] is False
         assert peers[0]["client"] == "TestClient"
-        
+
         assert peers[1]["ip"] == "192.168.1.2"
         assert peers[1]["port"] == 6882
         assert peers[1]["download_rate"] == 2000.0
@@ -230,12 +230,12 @@ class TestResponseConversionHelpers:
                 "another_field": 123,
             },
         )
-        
+
         mock_ipc_client = AsyncMock()
         adapter = DaemonSessionAdapter(mock_ipc_client)
-        
+
         stats = adapter._convert_global_stats_response(stats_response)
-        
+
         assert stats["num_torrents"] == 10
         assert stats["num_active"] == 7
         assert stats["num_paused"] == 3

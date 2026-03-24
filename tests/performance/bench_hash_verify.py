@@ -21,7 +21,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from ccbt.piece.piece_manager import PieceData, PieceManager  # type: ignore
 
@@ -56,7 +56,7 @@ def parse_size(size_str: str) -> int:
     return int(s)
 
 
-def format_bytes(n: Union[int, float]) -> str:
+def format_bytes(n: float) -> str:
     value: float = float(n)
     for unit in ("B", "KiB", "MiB", "GiB"):
         if value < 1024.0 or unit == "GiB":  # type: ignore[comparison-overlap]

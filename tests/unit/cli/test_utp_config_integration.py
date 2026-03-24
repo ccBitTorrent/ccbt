@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from ccbt.cli.overrides import _apply_utp_overrides
-from ccbt.config.config import Config, ConfigManager, get_config
+from ccbt.config.config import ConfigManager, get_config
 
 
 class TestUTPConfigOverrides:
@@ -18,12 +16,12 @@ class TestUTPConfigOverrides:
         """Test applying prefer_over_tcp override."""
         config = get_config()
         original_value = config.network.utp.prefer_over_tcp
-        
+
         try:
             options = {"utp_prefer_over_tcp": True}
             _apply_utp_overrides(config, options)
             assert config.network.utp.prefer_over_tcp is True
-            
+
             options = {"utp_prefer_over_tcp": False}
             _apply_utp_overrides(config, options)
             assert config.network.utp.prefer_over_tcp is False
@@ -34,7 +32,7 @@ class TestUTPConfigOverrides:
         """Test applying connection_timeout override."""
         config = get_config()
         original_value = config.network.utp.connection_timeout
-        
+
         try:
             options = {"utp_connection_timeout": 45.0}
             _apply_utp_overrides(config, options)
@@ -46,7 +44,7 @@ class TestUTPConfigOverrides:
         """Test applying max_window_size override."""
         config = get_config()
         original_value = config.network.utp.max_window_size
-        
+
         try:
             options = {"utp_max_window_size": 32768}
             _apply_utp_overrides(config, options)
@@ -58,7 +56,7 @@ class TestUTPConfigOverrides:
         """Test applying MTU override."""
         config = get_config()
         original_value = config.network.utp.mtu
-        
+
         try:
             options = {"utp_mtu": 1500}
             _apply_utp_overrides(config, options)
@@ -74,7 +72,7 @@ class TestUTPConfigOverrides:
             "min_rate": config.network.utp.min_rate,
             "max_rate": config.network.utp.max_rate,
         }
-        
+
         try:
             options = {
                 "utp_initial_rate": 2000,
@@ -93,7 +91,7 @@ class TestUTPConfigOverrides:
         """Test applying ACK interval override."""
         config = get_config()
         original_value = config.network.utp.ack_interval
-        
+
         try:
             options = {"utp_ack_interval": 0.2}
             _apply_utp_overrides(config, options)
@@ -105,7 +103,7 @@ class TestUTPConfigOverrides:
         """Test applying retransmit timeout factor override."""
         config = get_config()
         original_value = config.network.utp.retransmit_timeout_factor
-        
+
         try:
             options = {"utp_retransmit_timeout_factor": 5.0}
             _apply_utp_overrides(config, options)
@@ -117,7 +115,7 @@ class TestUTPConfigOverrides:
         """Test applying max_retransmits override."""
         config = get_config()
         original_value = config.network.utp.max_retransmits
-        
+
         try:
             options = {"utp_max_retransmits": 15}
             _apply_utp_overrides(config, options)
@@ -133,10 +131,10 @@ class TestUTPConfigOverrides:
             "mtu": config.network.utp.mtu,
             "connection_timeout": config.network.utp.connection_timeout,
         }
-        
+
         options = {}
         _apply_utp_overrides(config, options)
-        
+
         assert config.network.utp.prefer_over_tcp == original_values["prefer_over_tcp"]
         assert config.network.utp.mtu == original_values["mtu"]
         assert config.network.utp.connection_timeout == original_values["connection_timeout"]
@@ -177,7 +175,7 @@ class TestUTPEnvironmentVariables:
             "CCBT_UTP_RETRANSMIT_TIMEOUT_FACTOR": "5.0",
             "CCBT_UTP_MAX_RETRANSMITS": "15",
         }
-        
+
         with patch.dict(os.environ, env_vars):
             config_manager = ConfigManager()
             assert config_manager.config.network.utp.prefer_over_tcp is False

@@ -5,8 +5,8 @@ import pytest
 from ccbt.transport.utp import UTPPacket, UTPPacketType
 from ccbt.transport.utp_extensions import (
     ECNExtension,
-    SACKExtension,
     SACKBlock,
+    SACKExtension,
     WindowScalingExtension,
 )
 

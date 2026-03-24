@@ -6,7 +6,6 @@ loaded from checkpoints.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
@@ -123,7 +122,7 @@ async def test_checkpoint_save_rate_limits(tmp_path: Path):
             self._per_torrent_limits = {
                 info_hash: {"down_kib": 100, "up_kib": 50}
             }
-        
+
         def get_per_torrent_limits(self, info_hash: bytes) -> dict[str, int] | None:
             """Get per-torrent rate limits."""
             return self._per_torrent_limits.get(info_hash)

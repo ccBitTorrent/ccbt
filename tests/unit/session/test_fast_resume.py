@@ -16,7 +16,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
-from ccbt.models import DiskConfig, DownloadStats
+from ccbt.models import DiskConfig
 from ccbt.session.fast_resume import FastResumeLoader
 from ccbt.storage.resume_data import FastResumeData
 
@@ -356,8 +356,9 @@ class TestHandleCorruptedResume:
     @pytest.mark.asyncio
     async def test_handle_corrupted_with_checkpoint(self, loader):
         """Test handling corrupted resume with checkpoint fallback."""
-        from ccbt.models import TorrentCheckpoint
         import time
+
+        from ccbt.models import TorrentCheckpoint
 
         error = ValueError("Corrupted resume data")
         checkpoint = TorrentCheckpoint(
@@ -826,22 +827,22 @@ class TestTorrentInfoModelPath:
         # manipulating the validation to decode with wrong total, OR
         # by using a bitmap that was encoded for more pieces
         resume_data = FastResumeData(info_hash=b"\x00" * 20)
-        
+
         # Create bitmap encoded for 10 pieces
         resume_data.piece_completion_bitmap = FastResumeData.encode_piece_bitmap(set(range(10)), 10)
-        
+
         # Create torrent with only 3 pieces
         torrent_info = {"info_hash": b"\x00" * 20, "pieces": b"x" * (3 * 20)}
-        
+
         # Validation will decode with total_pieces=3, which will filter pieces 3-9
         # To trigger the error, we need decoded pieces count > 3
         # Since decode filters, we need to mock or patch decode_piece_bitmap
         from unittest.mock import patch
-        
+
         # Mock decode to return more pieces than total
-        with patch('ccbt.session.fast_resume.FastResumeData.decode_piece_bitmap', return_value=set(range(5))):
+        with patch("ccbt.session.fast_resume.FastResumeData.decode_piece_bitmap", return_value=set(range(5))):
             is_valid, errors = loader.validate_resume_data(resume_data, torrent_info)
-            
+
             # Should trigger the error since 5 > 3
             assert is_valid is False
             assert any("Verified pieces (5) > total (3)" in str(e) for e in errors)
@@ -850,17 +851,17 @@ class TestTorrentInfoModelPath:
         """Test validation that triggers 'invalid piece indices' error."""
         resume_data = FastResumeData(info_hash=b"\x00" * 20)
         resume_data.piece_completion_bitmap = FastResumeData.encode_piece_bitmap({0, 5, 9}, 10)
-        
+
         # Create torrent with only 5 pieces
         torrent_info = {"info_hash": b"\x00" * 20, "pieces": b"x" * (5 * 20)}
-        
+
         # Mock decode_piece_bitmap to return set with invalid piece indices
         from unittest.mock import patch
-        
+
         # Mock to return pieces including invalid ones (piece 9 >= 5)
-        with patch('ccbt.session.fast_resume.FastResumeData.decode_piece_bitmap', return_value={0, 3, 9}):
+        with patch("ccbt.session.fast_resume.FastResumeData.decode_piece_bitmap", return_value={0, 3, 9}):
             is_valid, errors = loader.validate_resume_data(resume_data, torrent_info)
-            
+
             # Should trigger error since piece 9 >= 5 (total_pieces)
             assert is_valid is False
             assert any("Invalid piece indices" in str(e) for e in errors)

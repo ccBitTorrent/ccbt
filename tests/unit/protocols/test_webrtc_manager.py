@@ -8,19 +8,19 @@ Target: 95%+ code coverage.
 
 from __future__ import annotations
 
-import asyncio
-import pytest
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Try to import aiortc, skip tests if not available
 try:
     from aiortc import (
-        RTCPeerConnection,
         RTCConfiguration,
-        RTCIceServer,
         RTCDataChannel,
         RTCIceCandidate,
+        RTCIceServer,
+        RTCPeerConnection,
     )
 
     HAS_AIORTC = True

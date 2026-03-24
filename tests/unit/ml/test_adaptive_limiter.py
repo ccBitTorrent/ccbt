@@ -1,13 +1,13 @@
 """Tests for ML adaptive limiter."""
 
-import pytest
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from ccbt.ml.adaptive_limiter import (
     AdaptiveLimiter,
     BandwidthEstimate,
-    CongestionControl,
     CongestionState,
     LimiterType,
     RateLimit,
@@ -26,7 +26,7 @@ class TestAdaptiveLimiter:
     async def test_estimate_bandwidth_empty_samples(self, limiter):
         """Test bandwidth estimation with empty samples."""
         result = await limiter.estimate_bandwidth("peer1", [])
-        
+
         assert result.estimated_bandwidth == 0.0
         assert result.confidence == 0.0
         assert result.sample_count == 0
@@ -37,7 +37,7 @@ class TestAdaptiveLimiter:
         """Test bandwidth estimation with single sample."""
         samples = [(time.time(), 1000)]
         result = await limiter.estimate_bandwidth("peer1", samples)
-        
+
         assert result.estimated_bandwidth == 0.0
         assert result.confidence == 0.0
         assert result.sample_count == 0
@@ -51,10 +51,10 @@ class TestAdaptiveLimiter:
             (current_time + 1.0, 1024),  # 1KB in 1 second = 1KB/s
             (current_time + 2.0, 2048),  # 1KB in 1 second = 1KB/s
         ]
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             result = await limiter.estimate_bandwidth("peer1", samples)
-        
+
         assert result.estimated_bandwidth == 1024.0  # 1KB/s
         assert result.confidence > 0.0
         assert result.sample_count == 2
@@ -70,10 +70,10 @@ class TestAdaptiveLimiter:
             (current_time + 2.0, 3000),  # 2KB/s
             (current_time + 3.0, 6000),  # 3KB/s
         ]
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             result = await limiter.estimate_bandwidth("peer1", samples)
-        
+
         assert result.estimated_bandwidth == 2000.0  # Average of 1KB/s and 2KB/s
         assert result.confidence > 0.0
         assert result.sample_count == 3
@@ -83,12 +83,12 @@ class TestAdaptiveLimiter:
     async def test_adjust_rate_limit_new_peer(self, limiter):
         """Test rate limit adjustment for new peer."""
         performance = {"error_rate": 0.1, "latency": 0.05, "throughput": 1000}
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             new_rate = await limiter.adjust_rate_limit(
                 "peer1", LimiterType.PER_PEER, performance
             )
-        
+
         # Should return default rate since no bandwidth estimate exists
         assert new_rate == 1024 * 1024  # 1MB/s default
 
@@ -101,15 +101,15 @@ class TestAdaptiveLimiter:
             (current_time, 0),
             (current_time + 1.0, 2048),  # 2KB/s
         ]
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             await limiter.estimate_bandwidth("peer1", samples)
-            
+
             performance = {"error_rate": 0.1, "latency": 0.05, "throughput": 1000}
             new_rate = await limiter.adjust_rate_limit(
                 "peer1", LimiterType.PER_PEER, performance
             )
-        
+
         assert new_rate > 0
         assert new_rate <= 1024 * 1024  # Should not exceed max rate
 
@@ -121,10 +121,10 @@ class TestAdaptiveLimiter:
             "packet_loss": 0.05,
             "congestion_event": "packet_loss"
         }
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             await limiter.update_congestion_control("peer1", congestion_data)
-        
+
         state = limiter.get_congestion_state("peer1")
         assert state is not None
         assert state.rtt == 0.1
@@ -137,17 +137,17 @@ class TestAdaptiveLimiter:
         # Create initial state
         congestion_data = {"rtt": 0.1, "packet_loss": 0.05}
         await limiter.update_congestion_control("peer1", congestion_data)
-        
+
         # Update with new data
         new_congestion_data = {
             "rtt": 0.2,
             "packet_loss": 0.1,
             "congestion_event": "timeout"
         }
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             await limiter.update_congestion_control("peer1", new_congestion_data)
-        
+
         state = limiter.get_congestion_state("peer1")
         assert state.rtt == 0.2
         assert state.packet_loss_rate == 0.1
@@ -170,9 +170,9 @@ class TestAdaptiveLimiter:
         """Test fair queuing with multiple peers."""
         peers = ["peer1", "peer2", "peer3"]
         total_bandwidth = 3000
-        
+
         result = await limiter.implement_fair_queuing(peers, total_bandwidth)
-        
+
         assert len(result) == 3
         assert sum(result.values()) == total_bandwidth
         # Each peer should get equal share initially
@@ -186,12 +186,12 @@ class TestAdaptiveLimiter:
         # Add performance history for peer1
         limiter.performance_history["peer1"] = [500, 600, 700]  # Good performance
         limiter.performance_history["peer2"] = [100, 150, 200]  # Poor performance
-        
+
         peers = ["peer1", "peer2"]
         total_bandwidth = 2000
-        
+
         result = await limiter.implement_fair_queuing(peers, total_bandwidth)
-        
+
         assert len(result) == 2
         assert sum(result.values()) == total_bandwidth
         # peer1 should get more bandwidth due to better performance
@@ -205,7 +205,7 @@ class TestAdaptiveLimiter:
             max_rate=1024 * 1024,
             current_rate=512 * 1024
         )
-        
+
         result = limiter.get_rate_limit("peer1", LimiterType.PER_PEER)
         assert result is not None
         assert result.current_rate == 512 * 1024
@@ -225,7 +225,7 @@ class TestAdaptiveLimiter:
             variance=0.1
         )
         limiter.bandwidth_estimates["peer1"] = estimate
-        
+
         result = limiter.get_bandwidth_estimate("peer1")
         assert result is not None
         assert result.estimated_bandwidth == 1024.0
@@ -247,7 +247,7 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time()
         )
         limiter.congestion_states["peer1"] = state
-        
+
         result = limiter.get_congestion_state("peer1")
         assert result is not None
         assert result.cwnd == 10.0
@@ -271,9 +271,9 @@ class TestAdaptiveLimiter:
             limiter_type=LimiterType.PER_PEER,
             max_rate=1024 * 1024
         )
-        
+
         stats = limiter.get_ml_statistics()
-        
+
         assert "total_adjustments" in stats
         assert "successful_adjustments" in stats
         assert "bandwidth_estimates" in stats
@@ -287,7 +287,7 @@ class TestAdaptiveLimiter:
         """Test cleanup of old data."""
         current_time = time.time()
         old_time = current_time - 4000  # 4000 seconds ago
-        
+
         # Add old bandwidth estimate
         old_estimate = BandwidthEstimate(
             estimated_bandwidth=1024.0,
@@ -297,7 +297,7 @@ class TestAdaptiveLimiter:
             variance=0.1
         )
         limiter.bandwidth_estimates["old_peer"] = old_estimate
-        
+
         # Add recent bandwidth estimate
         recent_estimate = BandwidthEstimate(
             estimated_bandwidth=2048.0,
@@ -307,17 +307,17 @@ class TestAdaptiveLimiter:
             variance=0.05
         )
         limiter.bandwidth_estimates["recent_peer"] = recent_estimate
-        
+
         # Add performance history for old peer
         limiter.performance_history["old_peer"] = [100, 200, 300]
-        
+
         # Cleanup data older than 1 hour
         limiter.cleanup_old_data(max_age_seconds=3600)
-        
+
         # Old peer should be removed
         assert "old_peer" not in limiter.bandwidth_estimates
         assert "old_peer" not in limiter.performance_history
-        
+
         # Recent peer should remain
         assert "recent_peer" in limiter.bandwidth_estimates
 
@@ -329,7 +329,7 @@ class TestAdaptiveLimiter:
             max_rate=1024 * 1024,
             current_rate=512 * 1024
         )
-        
+
         bandwidth_estimate = BandwidthEstimate(
             estimated_bandwidth=1024.0,
             confidence=0.8,
@@ -337,7 +337,7 @@ class TestAdaptiveLimiter:
             sample_count=10,
             variance=0.1
         )
-        
+
         congestion_state = CongestionState(
             cwnd=10.0,
             ssthresh=64.0,
@@ -348,13 +348,13 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time(),
             in_recovery=False
         )
-        
+
         performance = {"error_rate": 0.1, "latency": 0.05, "throughput": 1000}
-        
+
         new_rate = await limiter._calculate_adaptive_rate(
             rate_limit, bandwidth_estimate, congestion_state, performance
         )
-        
+
         assert new_rate > 0
         assert new_rate <= rate_limit.max_rate
         assert new_rate >= 1024  # Minimum rate
@@ -371,7 +371,7 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time(),
             in_recovery=True
         )
-        
+
         factor = limiter._calculate_congestion_factor(state)
         assert factor == 0.5
 
@@ -387,7 +387,7 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time(),
             in_recovery=False
         )
-        
+
         factor = limiter._calculate_congestion_factor(state)
         assert factor < 1.0
         assert factor > 0.0
@@ -404,7 +404,7 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time(),
             in_recovery=False
         )
-        
+
         factor = limiter._calculate_congestion_factor(state)
         assert factor == 0.8
 
@@ -415,7 +415,7 @@ class TestAdaptiveLimiter:
             "latency": 0.05,
             "throughput": 1000
         }
-        
+
         factor = limiter._calculate_performance_factor(performance)
         assert factor > 0.0
         assert factor <= 2.0
@@ -427,7 +427,7 @@ class TestAdaptiveLimiter:
             max_rate=1000,
             current_rate=900  # 90% utilization
         )
-        
+
         factor = limiter._calculate_fairness_factor(rate_limit)
         assert factor < 1.0
 
@@ -438,7 +438,7 @@ class TestAdaptiveLimiter:
             max_rate=1000,
             current_rate=100  # 10% utilization
         )
-        
+
         factor = limiter._calculate_fairness_factor(rate_limit)
         assert factor > 1.0
 
@@ -455,9 +455,9 @@ class TestAdaptiveLimiter:
             recovery_start_time=0.0,
             in_recovery=False
         )
-        
+
         await limiter._handle_congestion_event("peer1", state, "packet_loss")
-        
+
         assert state.cwnd == 10.0  # Should be halved
         assert state.ssthresh == 10.0  # Should be set to cwnd
         assert state.in_recovery is True
@@ -477,9 +477,9 @@ class TestAdaptiveLimiter:
             recovery_start_time=0.0,
             in_recovery=False
         )
-        
+
         await limiter._handle_congestion_event("peer1", state, "timeout")
-        
+
         assert state.cwnd == 1.0  # Should be reset
         assert state.ssthresh == 2.0  # Should be max(2.0, cwnd * 0.5) = max(2.0, 1.0 * 0.5) = 2.0
         assert state.in_recovery is True
@@ -498,9 +498,9 @@ class TestAdaptiveLimiter:
             recovery_start_time=0.0,
             in_recovery=False
         )
-        
+
         await limiter._handle_congestion_event("peer1", state, "duplicate_ack")
-        
+
         assert state.cwnd == 10.0  # Should be halved
         assert state.in_recovery is True
         assert state.recovery_start_time > 0
@@ -518,9 +518,9 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time(),
             in_recovery=False
         )
-        
+
         await limiter._update_congestion_window("peer1", state, {})
-        
+
         assert state.cwnd == 20.0  # Should double in slow start
 
     @pytest.mark.asyncio
@@ -536,9 +536,9 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time(),
             in_recovery=False
         )
-        
+
         await limiter._update_congestion_window("peer1", state, {})
-        
+
         assert state.cwnd == 100.01  # Should increase by 1/cwnd = 1/100 = 0.01
 
     @pytest.mark.asyncio
@@ -554,8 +554,8 @@ class TestAdaptiveLimiter:
             recovery_start_time=time.time() - 0.5,  # Recovery started 0.5s ago
             in_recovery=True
         )
-        
+
         await limiter._update_congestion_window("peer1", state, {})
-        
+
         # Should exit recovery after 3 RTTs (0.3s)
         assert state.in_recovery is False

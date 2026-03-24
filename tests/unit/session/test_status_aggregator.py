@@ -8,7 +8,6 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
-from ccbt.session.models import SessionContext
 from ccbt.session.status_aggregation import StatusAggregator
 
 

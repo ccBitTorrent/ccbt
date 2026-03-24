@@ -5,7 +5,6 @@ Tests CLI commands and flags for v2 torrent creation and protocol configuration.
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

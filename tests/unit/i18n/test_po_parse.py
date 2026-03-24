@@ -72,10 +72,10 @@ def test_quote_po_lines() -> None:
 
 def test_render_po_entry_uses_continuation_lines_without_repeating_prefixes() -> None:
     assert render_po_entry("line\nvalue", "line\nvalue") == [
-        "msgid \"\"",
+        'msgid ""',
         '"line\\n"',
         '"value"',
-        "msgstr \"\"",
+        'msgstr ""',
         '"line\\n"',
         '"value"',
     ]

@@ -11,7 +11,10 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.peer, pytest.mark.connection]
 
 from ccbt.models import PeerInfo
-from ccbt.peer.connection_pool import ConnectionMetrics, PooledConnection, PeerConnectionPool
+from ccbt.peer.connection_pool import (
+    PeerConnectionPool,
+    PooledConnection,
+)
 
 
 class TestPooledConnection:
@@ -370,12 +373,12 @@ class TestPeerConnectionPoolIntegration:
             connection1 = await self.pool.acquire(self.peer_info)
             assert connection1 is not None
             initial_call_count = mock_open_connection.call_count
-            
+
             # Acquire again - pool should return the same connection if it's still valid
             # The pool stores one connection per peer_id, so this should return the existing one
             connection2 = await self.pool.acquire(self.peer_info)
             assert connection2 is not None
-            
+
             # Verify that we got a connection (either reused or newly created)
             # The key is that _create_peer_connection is working correctly
             assert connection1["connection"] is not None

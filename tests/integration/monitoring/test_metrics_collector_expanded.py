@@ -10,18 +10,16 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from ccbt.monitoring.metrics_collector import (
     AggregationType,
-    AlertRule,
     MetricLabel,
-    MetricType,
     MetricsCollector,
+    MetricType,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.monitoring]
@@ -39,9 +37,9 @@ async def test_get_metric_value_min_aggregation(metrics_collector):
     metrics_collector.record_metric("test_min", 10.0)
     metrics_collector.record_metric("test_min", 5.0)
     metrics_collector.record_metric("test_min", 15.0)
-    
+
     value = metrics_collector.get_metric_value("test_min", AggregationType.MIN)
-    
+
     assert value == 5.0
 
 
@@ -51,9 +49,9 @@ async def test_get_metric_value_max_aggregation(metrics_collector):
     metrics_collector.record_metric("test_max", 10.0)
     metrics_collector.record_metric("test_max", 5.0)
     metrics_collector.record_metric("test_max", 15.0)
-    
+
     value = metrics_collector.get_metric_value("test_max", AggregationType.MAX)
-    
+
     assert value == 15.0
 
 
@@ -63,9 +61,9 @@ async def test_get_metric_value_count_aggregation(metrics_collector):
     metrics_collector.record_metric("test_count", 10.0)
     metrics_collector.record_metric("test_count", 20.0)
     metrics_collector.record_metric("test_count", 30.0)
-    
+
     value = metrics_collector.get_metric_value("test_count", AggregationType.COUNT)
-    
+
     assert value == 3
 
 
@@ -74,9 +72,9 @@ async def test_get_metric_value_avg_empty_values(metrics_collector):
     """Test get_metric_value AVG with empty values (line 357)."""
     metrics_collector.register_metric("empty_avg", MetricType.GAUGE, "Empty")
     # Don't record any values
-    
+
     value = metrics_collector.get_metric_value("empty_avg", AggregationType.AVG)
-    
+
     # When no values, should return None (not 0)
     assert value is None or value == 0
 
@@ -85,9 +83,9 @@ async def test_get_metric_value_avg_empty_values(metrics_collector):
 async def test_get_metric_value_min_empty_values(metrics_collector):
     """Test get_metric_value MIN with empty values (line 362)."""
     metrics_collector.register_metric("empty_min", MetricType.GAUGE, "Empty")
-    
+
     value = metrics_collector.get_metric_value("empty_min", AggregationType.MIN)
-    
+
     # When no numeric values, returns None or 0
     assert value is None or value == 0
 
@@ -96,9 +94,9 @@ async def test_get_metric_value_min_empty_values(metrics_collector):
 async def test_get_metric_value_max_empty_values(metrics_collector):
     """Test get_metric_value MAX with empty values (line 367)."""
     metrics_collector.register_metric("empty_max", MetricType.GAUGE, "Empty")
-    
+
     value = metrics_collector.get_metric_value("empty_max", AggregationType.MAX)
-    
+
     # When no numeric values, returns None or 0
     assert value is None or value == 0
 
@@ -109,15 +107,15 @@ async def test_get_metric_value_filters_non_numeric(metrics_collector):
     metrics_collector.record_metric("mixed", 10.0)
     metrics_collector.record_metric("mixed", "string_value")  # Non-numeric
     metrics_collector.record_metric("mixed", 20.0)
-    
+
     # SUM should only sum numeric values
     sum_value = metrics_collector.get_metric_value("mixed", AggregationType.SUM)
     assert sum_value == 30.0
-    
+
     # AVG should only average numeric values
     avg_value = metrics_collector.get_metric_value("mixed", AggregationType.AVG)
     assert avg_value == 15.0
-    
+
     # MIN/MAX should only consider numeric values
     min_value = metrics_collector.get_metric_value("mixed", AggregationType.MIN)
     assert min_value == 10.0
@@ -131,17 +129,17 @@ async def test_get_metric_value_latest_value(metrics_collector):
     metrics_collector.record_metric("latest", 10.0)
     metrics_collector.record_metric("latest", 20.0)
     metrics_collector.record_metric("latest", 30.0)
-    
+
     # Use metric's default aggregation (SUM) but test latest fallback
     metric = metrics_collector.metrics["latest"]
     original_agg = metric.aggregation
-    
+
     # Set to an unrecognized aggregation to trigger latest value fallback
     # Actually, the code uses the latest value if aggregation doesn't match any case
     # Let's test with a string value to ensure it returns the latest
     metrics_collector.record_metric("latest_str", "value1")
     metrics_collector.record_metric("latest_str", "value2")
-    
+
     latest = metrics_collector.get_metric_value("latest_str")
     # For string values, SUM aggregation would fail, so it falls back to latest
     assert latest == "value2" or latest is not None
@@ -151,7 +149,7 @@ async def test_get_metric_value_latest_value(metrics_collector):
 async def test_export_metrics_invalid_format(metrics_collector):
     """Test export_metrics with invalid format (line 427)."""
     metrics_collector.record_metric("test", 10.0)
-    
+
     with pytest.raises(ValueError, match="Unsupported format"):
         metrics_collector.export_metrics("invalid_format")
 
@@ -162,22 +160,22 @@ async def test_export_prometheus_format_with_labels(metrics_collector):
     labels = [MetricLabel(name="env", value="test"), MetricLabel(name="region", value="us-east")]
     metrics_collector.register_metric("labeled_metric", MetricType.GAUGE, "Test metric")
     metrics_collector.record_metric("labeled_metric", 42.0, labels=labels)
-    
+
     export = metrics_collector._export_prometheus_format()
-    
+
     assert "labeled_metric" in export
     assert 'env="test"' in export
     assert 'region="us-east"' in export
-    assert "{env=\"test\",region=\"us-east\"}" in export or 'env="test"' in export
+    assert '{env="test",region="us-east"}' in export or 'env="test"' in export
 
 
 @pytest.mark.asyncio
 async def test_export_prometheus_format_without_labels(metrics_collector):
     """Test _export_prometheus_format without labels (lines 693-702)."""
     metrics_collector.record_metric("unlabeled_metric", 42.0)
-    
+
     export = metrics_collector._export_prometheus_format()
-    
+
     assert "unlabeled_metric" in export
     assert "# HELP unlabeled_metric" in export
     assert "# TYPE unlabeled_metric" in export
@@ -196,11 +194,11 @@ async def test_evaluate_condition_complex_comparisons(metrics_collector):
     assert metrics_collector._evaluate_condition("value >= 50", 100.0) is True
     assert metrics_collector._evaluate_condition("value >= 50", 50.0) is True
     assert metrics_collector._evaluate_condition("value >= 50", 10.0) is False
-    
+
     assert metrics_collector._evaluate_condition("value <= 50", 10.0) is True
     assert metrics_collector._evaluate_condition("value <= 50", 50.0) is True
     assert metrics_collector._evaluate_condition("value <= 50", 100.0) is False
-    
+
     assert metrics_collector._evaluate_condition("value != 50", 51.0) is True
     assert metrics_collector._evaluate_condition("value != 50", 50.0) is False
 
@@ -221,7 +219,7 @@ async def test_evaluate_condition_unsafe_operations_fail(metrics_collector):
     # These should return False due to ValueError
     result = metrics_collector._evaluate_condition("value.__class__", 10.0)
     assert result is False
-    
+
     # Invalid syntax
     result = metrics_collector._evaluate_condition("value >>> 10", 10.0)
     assert result is False
@@ -248,15 +246,15 @@ async def test_evaluate_condition_invalid_variable(metrics_collector):
 async def test_collect_custom_metrics_async_collector(metrics_collector):
     """Test _collect_custom_metrics with async collector (lines 526-528)."""
     call_count = {"n": 0}
-    
+
     async def async_collector():
         call_count["n"] += 1
         return 42.0
-    
+
     metrics_collector.register_custom_collector("async_collector", async_collector)
-    
+
     await metrics_collector._collect_custom_metrics()
-    
+
     assert call_count["n"] >= 1
     # Should have recorded the metric
     assert "custom_async_collector" in metrics_collector.metrics
@@ -266,15 +264,15 @@ async def test_collect_custom_metrics_async_collector(metrics_collector):
 async def test_collect_custom_metrics_sync_collector(metrics_collector):
     """Test _collect_custom_metrics with sync collector (lines 529-531)."""
     call_count = {"n": 0}
-    
+
     def sync_collector():
         call_count["n"] += 1
         return 24.0
-    
+
     metrics_collector.register_custom_collector("sync_collector", sync_collector)
-    
+
     await metrics_collector._collect_custom_metrics()
-    
+
     assert call_count["n"] >= 1
     assert "custom_sync_collector" in metrics_collector.metrics
 
@@ -284,13 +282,13 @@ async def test_collect_custom_metrics_collector_exception(metrics_collector):
     """Test _collect_custom_metrics handles collector exceptions (lines 533-543)."""
     def failing_collector():
         raise RuntimeError("Collector failed")
-    
+
     metrics_collector.register_custom_collector("failing", failing_collector)
-    
+
     # Should not raise, but handle error gracefully
     with patch("ccbt.monitoring.metrics_collector.emit_event", new_callable=AsyncMock):
         await metrics_collector._collect_custom_metrics()
-    
+
     # Error should be handled without crashing
     assert True  # Test passes if no exception raised
 
@@ -299,20 +297,20 @@ async def test_collect_custom_metrics_collector_exception(metrics_collector):
 async def test_collect_custom_metrics_multiple_collectors(metrics_collector):
     """Test _collect_custom_metrics calls all registered collectors."""
     collectors_called = []
-    
+
     def collector1():
         collectors_called.append("collector1")
         return 1.0
-    
+
     def collector2():
         collectors_called.append("collector2")
         return 2.0
-    
+
     metrics_collector.register_custom_collector("collector1", collector1)
     metrics_collector.register_custom_collector("collector2", collector2)
-    
+
     await metrics_collector._collect_custom_metrics()
-    
+
     assert len(collectors_called) == 2
     assert "collector1" in collectors_called
     assert "collector2" in collectors_called
@@ -327,11 +325,11 @@ async def test_check_alert_rules_condition_evaluation_exception(metrics_collecto
         condition="value @ invalid_op 50",  # Invalid syntax
         severity="warning",
     )
-    
+
     # Should handle exception gracefully
     with patch("ccbt.monitoring.metrics_collector.emit_event", new_callable=AsyncMock):
         metrics_collector._check_alert_rules("test_metric", 100.0)
-    
+
     # Should not crash
     assert True
 
@@ -345,14 +343,14 @@ async def test_check_alert_rules_async_task_creation(metrics_collector):
         condition="value > 50",
         severity="critical",
     )
-    
+
     with patch("asyncio.create_task") as mock_create_task:
         mock_task = MagicMock()
         mock_create_task.return_value = mock_task
-        
+
         with patch("ccbt.monitoring.metrics_collector.emit_event", new_callable=AsyncMock):
             metrics_collector._check_alert_rules("test_metric", 100.0)
-        
+
         # Should create task for alert event
         assert mock_create_task.called
 
@@ -363,7 +361,7 @@ async def test_cleanup_old_metrics_multiple_old_values(metrics_collector):
     # Register metric and add old values
     metrics_collector.register_metric("old_metric", MetricType.GAUGE, "Old metric")
     old_time = time.time() - 7200  # 2 hours ago
-    
+
     # Add multiple old values
     for i in range(5):
         value = metrics_collector.metrics["old_metric"].values[0] if metrics_collector.metrics["old_metric"].values else None
@@ -372,14 +370,14 @@ async def test_cleanup_old_metrics_multiple_old_values(metrics_collector):
             metrics_collector.metrics["old_metric"].values.append(
                 MetricValue(value=float(i), timestamp=old_time)
             )
-    
+
     # Add a new value
     metrics_collector.record_metric("old_metric", 100.0)
     initial_count = len(metrics_collector.metrics["old_metric"].values)
-    
+
     # Cleanup metrics older than 1 hour
     metrics_collector.cleanup_old_metrics(max_age_seconds=3600)
-    
+
     # Old values should be removed
     final_count = len(metrics_collector.metrics["old_metric"].values)
     assert final_count < initial_count or final_count == 1  # Should have at least the new value
@@ -397,9 +395,9 @@ async def test_get_all_metrics_includes_all_fields(metrics_collector):
         retention_seconds=7200,
     )
     metrics_collector.record_metric("complete_metric", 42.0)
-    
+
     all_metrics = metrics_collector.get_all_metrics()
-    
+
     assert "complete_metric" in all_metrics
     metric_info = all_metrics["complete_metric"]
     assert "type" in metric_info
@@ -416,7 +414,7 @@ async def test_get_all_metrics_includes_all_fields(metrics_collector):
 async def test_record_histogram_creates_histogram_metric(metrics_collector):
     """Test record_histogram creates histogram type (line 307)."""
     metrics_collector.record_histogram("hist_test", 50.0)
-    
+
     metric = metrics_collector.metrics["hist_test"]
     assert metric.metric_type == MetricType.HISTOGRAM
 
@@ -426,10 +424,10 @@ async def test_unregister_custom_collector(metrics_collector):
     """Test unregister_custom_collector removes collector (lines 710-713)."""
     def test_collector():
         return 1.0
-    
+
     metrics_collector.register_custom_collector("test", test_collector)
     assert "test" in metrics_collector.collectors
-    
+
     metrics_collector.unregister_custom_collector("test")
     assert "test" not in metrics_collector.collectors
 

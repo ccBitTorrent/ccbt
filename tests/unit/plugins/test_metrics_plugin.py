@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from ccbt.utils.events import Event, EventType, get_event_bus
-from ccbt.plugins.metrics_plugin import Metric, MetricAggregate, MetricsCollector, MetricsPlugin
+from ccbt.plugins.metrics_plugin import (
+    Metric,
+    MetricsCollector,
+    MetricsPlugin,
+)
+from ccbt.utils.events import Event, EventType
 
 
 class TestMetricsCollector:
@@ -189,7 +193,7 @@ class TestMetricsPlugin:
 
         # Directly call the collector handler to test event handling
         assert plugin.collector is not None
-        
+
         event = Event(
             event_type=EventType.PERFORMANCE_METRIC.value,
             data={

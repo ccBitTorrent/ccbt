@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ccbt.security.swarm_certificate_binding import (
     CertificateBindingDecision,
     evaluate_certificate_binding,
 )
 from ccbt.security.swarm_trust_store import SwarmTrustAnchor
-
-import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 

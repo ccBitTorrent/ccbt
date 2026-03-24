@@ -60,7 +60,7 @@ def test_check_completeness_reports_untranslated_and_outputs_files(tmp_path: Pat
             "--output-untranslated",
             str(out_dir),
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         cwd=tmp_path,
     )
@@ -84,7 +84,7 @@ def test_check_completeness_lang_filter_only_outputs_target_locale(tmp_path: Pat
             "--lang",
             "es",
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         cwd=tmp_path,
     )

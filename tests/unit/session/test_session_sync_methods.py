@@ -1,7 +1,7 @@
 """Tests for SessionManager synchronous compatibility methods."""
 
+
 import pytest
-import asyncio
 
 
 def test_session_manager_init_sets_session_started():
@@ -17,7 +17,7 @@ def test_session_manager_has_sync_methods():
     from ccbt.session.session import SessionManager
 
     mgr = SessionManager(".")
-    
+
     # Verify sync methods exist
     assert hasattr(mgr, "add_torrent")
     assert hasattr(mgr, "add_magnet")

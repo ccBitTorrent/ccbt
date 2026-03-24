@@ -9,7 +9,7 @@ from ccbt.protocols.hybrid import HybridProtocol, HybridStrategy
 
 # Check if WebTorrent is available - use same check as hybrid.py
 try:
-    from ccbt.protocols import WebTorrentProtocol  # noqa: F401
+    from ccbt.protocols import WebTorrentProtocol
 
     HAS_WEBTORRENT = WebTorrentProtocol is not None
 except (ImportError, AttributeError):

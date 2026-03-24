@@ -205,7 +205,12 @@ class AsyncDownloadManager:
             await self.piece_manager.start_download(self.peer_manager)
             self._download_started = True
             if peers:
-                await self.peer_manager.connect_to_peers(peers)
+                submit = await self.peer_manager.connect_to_peers(peers)
+                if getattr(submit, "status", None) == "queued_reentrant":
+                    self.logger.debug(
+                        "Reused peer manager queued_reentrant (queue_depth=%s)",
+                        getattr(submit, "queue_depth_after", None),
+                    )
             self.logger.debug(
                 "Download started successfully (reused existing peer manager)"
             )
@@ -294,7 +299,12 @@ class AsyncDownloadManager:
 
         # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see peer connection details
         self.logger.debug("Connecting to %s peers...", len(peers))
-        await self.peer_manager.connect_to_peers(peers)
+        submit = await self.peer_manager.connect_to_peers(peers)
+        if getattr(submit, "status", None) == "queued_reentrant":
+            self.logger.debug(
+                "Initial connect queued_reentrant (queue_depth=%s)",
+                getattr(submit, "queue_depth_after", None),
+            )
         # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see piece download start
         self.logger.debug("Starting piece download...")
         await self.piece_manager.start_download(self.peer_manager)

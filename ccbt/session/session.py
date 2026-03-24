@@ -13,7 +13,7 @@ import hashlib
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import (
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from ccbt.session.types import PieceManagerProtocol, TrackerClientProtocol
     from ccbt.utils.di import DIContainer
 
-from ccbt.config.config import get_config
+from ccbt.config.config import get_config, get_max_peers_per_torrent_provenance
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
 from ccbt.core.torrent import TorrentParser as _TorrentParser
 from ccbt.discovery.flooding import ControlledFlooding
@@ -94,6 +94,7 @@ class _TrackerHandoffOutcome(Enum):
     TRACKER_HANDOFF_SUCCESS = "tracker_handoff_success"
     TRACKER_HANDOFF_QUEUED = "tracker_handoff_queued"
     TRACKER_HANDOFF_FAILED = "tracker_handoff_failed"
+    TRACKER_HANDOFF_SUBMIT_REENTRANT = "tracker_handoff_submit_reentrant"
 
 
 # Constants
@@ -187,11 +188,54 @@ class AsyncTorrentSession:
         # Use timestamp instead of boolean to handle multiple concurrent callbacks
         self._tracker_peers_connecting_until: Optional[float] = None  # type: ignore[attr-defined]
         self._tracker_immediate_connection_cooldown_until: Optional[float] = None
-        self._tracker_immediate_connect_burst_per_source = 24
-        self._tracker_immediate_connect_burst_total = 24
-        self._tracker_immediate_connect_window_s = 20.0
-        self._tracker_immediate_connect_window_cap = 6
+        _disc = getattr(self.config, "discovery", None)
+        _burst_total = 24
+        _burst_per_src = 24
+        if _disc is not None:
+            _burst_total = int(
+                getattr(_disc, "tracker_immediate_connect_burst_total", 24) or 24
+            )
+            _burst_per_src = int(
+                getattr(_disc, "tracker_immediate_connect_burst_per_source", 24) or 24
+            )
+        self._tracker_immediate_connect_burst_per_source = max(
+            1, min(512, _burst_per_src)
+        )
+        self._tracker_immediate_connect_burst_total = max(1, min(512, _burst_total))
+        _win_s = 20.0
+        _win_cap = 6
+        if _disc is not None:
+            _win_s = float(
+                getattr(_disc, "tracker_immediate_connect_window_s", 20.0) or 20.0
+            )
+            _win_cap = int(
+                getattr(_disc, "tracker_immediate_connect_window_cap", 6) or 6
+            )
+        self._tracker_immediate_connect_window_s = float(max(1.0, min(300.0, _win_s)))
+        self._tracker_immediate_connect_window_cap = int(max(1, min(64, _win_cap)))
         self._tracker_immediate_connect_timestamps: deque[float] = deque(maxlen=64)
+        coalesce_window = 0.2
+        if _disc is not None:
+            coalesce_window = float(
+                getattr(_disc, "tracker_discovery_coalesce_window_s", 0.2) or 0.2
+            )
+        self._tracker_discovery_coalesce_window_s = float(
+            max(0.15, min(0.3, coalesce_window))
+        )
+        self._tracker_discovery_ingress_lock = asyncio.Lock()
+        self._tracker_discovery_ingress_pending: dict[
+            tuple[str, int], dict[str, Any]
+        ] = {}
+        self._tracker_discovery_ingress_task: Optional[asyncio.Task[None]] = None
+        self._tracker_discovery_last_submit_monotonic: float = 0.0
+        self._tracker_discovery_last_submit_status: Optional[str] = None
+        self._tracker_discovery_last_queue_depth: Optional[int] = None
+        self._tracker_discovery_pending_growth: int = 0
+        self._dht_candidate_cache: dict[str, dict[str, Any]] = {}
+        self._dht_candidate_cache_ttl_s: float = 180.0
+        self._dht_candidate_promotion_cap: int = 12
+        self._dht_candidate_promotion_cap_dht_only: int = 4
+        self._dht_candidate_penalty_decay_s: float = 300.0
         self._last_immediate_zero_streak_log = 0
         self._last_tracker_metadata_fallback_at: float = 0.0
         self._tracker_metadata_fallback_in_progress: bool = False
@@ -209,6 +253,37 @@ class AsyncTorrentSession:
             str, asyncio.Task[None]
         ] = {}
         self._peer_count_low_recovery_started_monotonic: dict[str, float] = {}
+        self._recovery_batch_wait_force_count: int = 0
+        self._recovery_dht_batch_defer_cycles: int = max(
+            1,
+            int(
+                getattr(
+                    self.config.network,
+                    "recovery_dht_batch_defer_cycles",
+                    4,
+                )
+                or 4
+            ),
+        )
+        self._swarm_requestable_deficit_since: Optional[float] = None
+        self._recovery_dht_escalation_last_monotonic: float = 0.0
+        self._recovery_requestable_deficit_window_s: float = float(
+            getattr(
+                self.config.network,
+                "recovery_requestable_deficit_window_s",
+                12.0,
+            )
+            or 12.0,
+        )
+        self._recovery_dht_escalation_cooldown_s: float = float(
+            getattr(
+                self.config.network,
+                "recovery_dht_escalation_cooldown_s",
+                10.0,
+            )
+            or 10.0,
+        )
+        self._swarm_connect_phase_started_monotonic: Optional[float] = None
         # Task tracking for piece verification and download completion
         # These are sets to track asyncio tasks and prevent garbage collection
         self._piece_verified_tasks: set[asyncio.Task[None]] = set()
@@ -395,6 +470,23 @@ class AsyncTorrentSession:
             "fail_fast_last_reason": "",
             "fail_fast_reason_counts": {},
             "zero_active_batch_streak": 0,
+            # Phase 9 peer discovery telemetry (see peer_discovery_telemetry.py).
+            "connect_submit_total_by_status": {},
+            "connect_reentrant_queued_total": 0,
+            "batch_owner_state_transition_total": {},
+            "dht_deferral_state_transition_total": {},
+            "pending_resume_edge_trigger_total": {},
+            "pending_resume_suppressed_inflight_only_total": 0,
+            "pending_connect_queue_depth_gauge": 0,
+            "pending_connect_queue_oldest_age_s_gauge": 0.0,
+            "pending_connect_queue_depth_observations": [],
+            "pending_connect_queue_age_observations_s": [],
+            "time_to_first_requestable_s": None,
+            "time_to_first_productive_s": None,
+            "dht_candidate_cache_new_entry_total": 0,
+            "dht_candidate_cache_refresh_total": 0,
+            "dht_candidate_promotion_selected_total": 0,
+            "deprecated_private_pending_resume_reason_total": {},
         }
 
         # Discovery controller is initialized lazily by DHT setup.
@@ -854,23 +946,58 @@ class AsyncTorrentSession:
                 self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
             else:
                 age_s = time.monotonic() - started
-                if age_s < stale_recovery_s:
-                    self.logger.debug(
-                        "Peer-count-low recovery already in progress for %s; skipping redundant scheduling",
-                        info_hash_key,
+                # If we are stuck in an active-but-non-requestable deficit window, allow
+                # urgent retrigger instead of suppressing all peer_count_low events.
+                deficit_since = self._swarm_requestable_deficit_since
+                deficit_window_s = float(
+                    getattr(
+                        self.config.discovery,
+                        "recovery_requestable_deficit_window_s",
+                        20.0,
                     )
-                    return
-                self.logger.warning(
-                    "Replacing stale peer_count_low recovery for %s (age %.1fs >= %.1fs)",
-                    info_hash_key,
-                    age_s,
-                    stale_recovery_s,
+                    or 20.0
                 )
-                existing_task.cancel()
-                self._peer_count_low_recovery_tasks_by_info_hash.pop(
-                    info_hash_key, None
+                urgent_deficit = bool(
+                    deficit_since is not None
+                    and (time.monotonic() - deficit_since)
+                    >= max(2.0, deficit_window_s * 0.5)
                 )
-                self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
+                if age_s < stale_recovery_s:
+                    if urgent_deficit:
+                        self.logger.warning(
+                            "Replacing in-flight peer_count_low recovery for %s due to persistent requestable deficit "
+                            "(age %.1fs, deficit_window %.1fs)",
+                            info_hash_key,
+                            age_s,
+                            deficit_window_s,
+                        )
+                        existing_task.cancel()
+                        self._peer_count_low_recovery_tasks_by_info_hash.pop(
+                            info_hash_key, None
+                        )
+                        self._peer_count_low_recovery_started_monotonic.pop(
+                            info_hash_key, None
+                        )
+                    else:
+                        self.logger.debug(
+                            "Peer-count-low recovery already in progress for %s; skipping redundant scheduling",
+                            info_hash_key,
+                        )
+                        return
+                else:
+                    self.logger.warning(
+                        "Replacing stale peer_count_low recovery for %s (age %.1fs >= %.1fs)",
+                        info_hash_key,
+                        age_s,
+                        stale_recovery_s,
+                    )
+                    existing_task.cancel()
+                    self._peer_count_low_recovery_tasks_by_info_hash.pop(
+                        info_hash_key, None
+                    )
+                    self._peer_count_low_recovery_started_monotonic.pop(
+                        info_hash_key, None
+                    )
         elif existing_task is not None and existing_task.done():
             self._peer_count_low_recovery_tasks_by_info_hash.pop(info_hash_key, None)
             self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
@@ -928,6 +1055,67 @@ class AsyncTorrentSession:
         if self._peer_count_low_recovery_task is task:
             self._peer_count_low_recovery_task = None
         self._peer_count_low_recovery_started_monotonic.pop(info_hash_key, None)
+
+    def _touch_swarm_usefulness_latency_metrics(
+        self, requestable_peers: int, productive_peers: int
+    ) -> None:
+        """Record once-per-torrent time-to-first-requestable/productive (Phase 9)."""
+        if not isinstance(self._peer_discovery_metrics, dict):
+            return
+        start = self._swarm_connect_phase_started_monotonic
+        if start is None:
+            return
+        now = time.monotonic()
+        elapsed = now - float(start)
+        m = self._peer_discovery_metrics
+        if requestable_peers > 0 and m.get("time_to_first_requestable_s") is None:
+            m["time_to_first_requestable_s"] = elapsed
+            with contextlib.suppress(Exception):
+                get_metrics_collector().record_histogram(
+                    "peer_discovery_time_to_first_requestable_s",
+                    float(elapsed),
+                )
+        if productive_peers > 0 and m.get("time_to_first_productive_s") is None:
+            m["time_to_first_productive_s"] = elapsed
+            with contextlib.suppress(Exception):
+                get_metrics_collector().record_histogram(
+                    "peer_discovery_time_to_first_productive_s",
+                    float(elapsed),
+                )
+
+    def _touch_requestable_deficit_clock(
+        self, swarm_state: dict[str, Any], metadata_incomplete: bool
+    ) -> None:
+        """Track how long the swarm has been active-but-non-requestable for Phase 8 gating."""
+        if metadata_incomplete:
+            self._swarm_requestable_deficit_since = None
+            return
+        active = int(swarm_state.get("active_peers", 0) or 0)
+        rq = int(swarm_state.get("requestable_peers", 0) or 0)
+        prod = int(swarm_state.get("productive_peers", 0) or 0)
+        min_peers = int(
+            getattr(self.config.discovery, "min_peers_before_dht", 10) or 10
+        )
+        if active >= min_peers and rq == 0 and prod == 0:
+            if self._swarm_requestable_deficit_since is None:
+                self._swarm_requestable_deficit_since = time.monotonic()
+        else:
+            self._swarm_requestable_deficit_since = None
+
+    @staticmethod
+    def _recovery_should_bypass_escalation_gates(
+        fail_fast_triggered: bool, fail_fast_reason: str
+    ) -> bool:
+        """Fast paths (zero peers, stalls) may skip deficit persistence / cooldown."""
+        if not fail_fast_triggered:
+            return False
+        if fail_fast_reason in {
+            "zero_peers",
+            "piece_info_stall",
+            "metadata_incomplete",
+        }:
+            return True
+        return fail_fast_reason.startswith("low_peer_threshold_timeout")
 
     async def _recover_from_peer_count_low(self, event_data: dict[str, Any]) -> None:
         """Run the full peer_count_low recovery flow in a background task."""
@@ -1090,6 +1278,7 @@ class AsyncTorrentSession:
                 active_block_requests,
                 metadata_incomplete,
             )
+            self._touch_requestable_deficit_clock(swarm_state, metadata_incomplete)
             tracker_handoff_timeout_s = max(
                 6.0,
                 min(float(self.config.network.tracker_timeout), 18.0),
@@ -1170,7 +1359,7 @@ class AsyncTorrentSession:
                 if peer_manager:
                     connection_batches_in_progress = getattr(
                         peer_manager,
-                        "_connection_batches_in_progress",
+                        "_dht_connect_deferral_active",
                         False,
                     )
                     if connection_batches_in_progress:
@@ -1189,7 +1378,7 @@ class AsyncTorrentSession:
                             waited += check_interval
                             connection_batches_in_progress = getattr(
                                 peer_manager,
-                                "_connection_batches_in_progress",
+                                "_dht_connect_deferral_active",
                                 False,
                             )
                             active_peer_count_during_wait = active_peer_count
@@ -1210,6 +1399,7 @@ class AsyncTorrentSession:
                                     "⏸️ DHT DELAY: Connection batches are still marked in progress but no active peers remain after %.1fs. Proceeding with DHT recovery now.",
                                     waited,
                                 )
+                                self._recovery_batch_wait_force_count = 0
                                 break
                             if connection_batches_in_progress and fast_recovery:
                                 self.logger.warning(
@@ -1220,18 +1410,48 @@ class AsyncTorrentSession:
                                     int(swarm_state.get("requestable_peers", 0)),
                                     int(swarm_state.get("peers_with_piece_info", 0)),
                                 )
+                                self._recovery_batch_wait_force_count = 0
                                 break
                             if not connection_batches_in_progress:
                                 self.logger.debug(
                                     "✅ DHT DELAY: Connection batches completed after %.1fs. Proceeding with DHT discovery...",
                                     waited,
                                 )
+                                self._recovery_batch_wait_force_count = 0
                                 break
                         else:
                             self.logger.warning(
-                                "⏸️ DHT DELAY: Connection batches still in progress after %.1fs wait. Proceeding anyway...",
+                                "⏸️ DHT DELAY: Connection batches still in progress after %.1fs wait.",
                                 max_wait,
                             )
+                            self._recovery_batch_wait_force_count += 1
+                            if (
+                                self._recovery_batch_wait_force_count
+                                < self._recovery_dht_batch_defer_cycles
+                            ):
+                                _emit_recovery_cycle_summary(
+                                    final_active=active_peer_count,
+                                    final_productive=productive_peers,
+                                    final_requestable=requestable_peers,
+                                    final_piece_info=peers_with_piece_info,
+                                    final_metadata_incomplete=metadata_incomplete,
+                                    decision="deferred_batch_owner_wait",
+                                    retry_plan="batch_wait_retry",
+                                    retry_in_s=float(check_interval),
+                                    fail_fast_triggered=bool(fail_fast_triggered),
+                                    fail_fast_reason=fail_fast_reason,
+                                )
+                                return
+                            self.logger.warning(
+                                "⏸️ DHT DELAY: batch-wait defer cap (%d/%d) reached; continuing recovery.",
+                                self._recovery_batch_wait_force_count,
+                                self._recovery_dht_batch_defer_cycles,
+                            )
+                            self._recovery_batch_wait_force_count = 0
+                    else:
+                        self._recovery_batch_wait_force_count = 0
+                else:
+                    self._recovery_batch_wait_force_count = 0
 
             # Note: Also check tracker peer connection timestamp (secondary check)
             # This ensures we wait for tracker responses to be processed
@@ -1312,17 +1532,34 @@ class AsyncTorrentSession:
                 )
                 if strict_skip:
                     skip_ok = skip_ok and usable_path
+                had_usable_before = (
+                    requestable_peers > 0
+                    or productive_peers > 0
+                    or peers_with_piece_info > 0
+                )
+                became_more_usable = (
+                    current_requestable > requestable_peers
+                    or current_productive > productive_peers
+                    or current_piece_info > peers_with_piece_info
+                )
                 if (
-                    current_active > active_peer_count
+                    (
+                        current_active > active_peer_count
+                        or (not had_usable_before and skip_ok)
+                        or became_more_usable
+                    )
                     and not metadata_incomplete
                     and skip_ok
                 ):
                     self.logger.debug(
-                        "✅ DHT SKIP: Swarm became more usable after tracker connections (active=%d->%d, requestable=%d, productive=%d, piece_info=%d). Skipping DHT for now.",
+                        "✅ DHT SKIP: Swarm became more usable after tracker connections (active=%d->%d, requestable=%d->%d, productive=%d->%d, piece_info=%d->%d). Skipping DHT for now.",
                         active_peer_count,
                         current_active,
+                        requestable_peers,
                         current_requestable,
+                        productive_peers,
                         current_productive,
+                        peers_with_piece_info,
                         current_piece_info,
                     )
                     recovery_summary["tracker_outcome"] = (
@@ -1544,14 +1781,30 @@ class AsyncTorrentSession:
                         ]
                         if peer_list:
                             helper = PeerConnectionHelper(self)
-                            await helper.connect_peers_to_download(peer_list)
+                            submit = await helper.connect_peers_to_download(peer_list)
+                            submit_status = getattr(submit, "status", "owner_started")
+                            if submit_status == "owner_started":
+                                self.logger.debug(
+                                    "Immediate tracker handoff returned %d peer(s) across %d successful tracker response(s) for %s (submit=owner_started)",
+                                    len(peer_list),
+                                    len(responses),
+                                    self.info.name,
+                                )
+                                return _TrackerHandoffOutcome.TRACKER_HANDOFF_SUCCESS
+                            if submit_status == "queued_reentrant":
+                                self.logger.info(
+                                    "peer_count_low tracker handoff: submit queued_reentrant for %s (%d peers); continuing recovery tiers (no false batch-complete)",
+                                    self.info.name,
+                                    len(peer_list),
+                                )
+                                return _TrackerHandoffOutcome.TRACKER_HANDOFF_SUBMIT_REENTRANT
                             self.logger.debug(
-                                "Immediate tracker handoff returned %d peer(s) across %d successful tracker response(s) for %s",
-                                len(peer_list),
-                                len(responses),
+                                "Immediate tracker handoff connect submit status=%s for %s (%d peers); not treating as owner success",
+                                submit_status,
                                 self.info.name,
+                                len(peer_list),
                             )
-                            return _TrackerHandoffOutcome.TRACKER_HANDOFF_SUCCESS
+                            return _TrackerHandoffOutcome.TRACKER_HANDOFF_FAILED
                         self.logger.debug(
                             "Immediate tracker handoff had no valid peers to connect for %s",
                             self.info.name,
@@ -1709,6 +1962,96 @@ class AsyncTorrentSession:
                             )
                             return
 
+                        swarm_state_pre_dht = await self._get_swarm_recovery_state()
+                        md_pre = bool(
+                            swarm_state_pre_dht.get("metadata_incomplete", False)
+                        )
+                        self._touch_requestable_deficit_clock(
+                            swarm_state_pre_dht,
+                            md_pre,
+                        )
+                        bypass_gates = self._recovery_should_bypass_escalation_gates(
+                            bool(fail_fast_triggered),
+                            str(fail_fast_reason),
+                        )
+                        if not bypass_gates:
+                            persist_ok = False
+                            if self._swarm_requestable_deficit_since is not None:
+                                persist_ok = (
+                                    time.monotonic()
+                                    - self._swarm_requestable_deficit_since
+                                ) >= self._recovery_requestable_deficit_window_s
+                            if not persist_ok:
+                                recovery_summary["dht_outcome"] = (
+                                    "skipped_requestable_deficit_window"
+                                )
+                                deficit_remain = 0.0
+                                if self._swarm_requestable_deficit_since is not None:
+                                    deficit_remain = max(
+                                        0.0,
+                                        self._recovery_requestable_deficit_window_s
+                                        - (
+                                            time.monotonic()
+                                            - self._swarm_requestable_deficit_since
+                                        ),
+                                    )
+                                _emit_recovery_cycle_summary(
+                                    final_active=int(
+                                        swarm_state_pre_dht.get("active_peers", 0)
+                                    ),
+                                    final_productive=int(
+                                        swarm_state_pre_dht.get("productive_peers", 0)
+                                    ),
+                                    final_requestable=int(
+                                        swarm_state_pre_dht.get("requestable_peers", 0)
+                                    ),
+                                    final_piece_info=int(
+                                        swarm_state_pre_dht.get(
+                                            "peers_with_piece_info", 0
+                                        )
+                                    ),
+                                    final_metadata_incomplete=md_pre,
+                                    decision="skip_dht_deficit_not_persistent",
+                                    retry_plan="requestable_deficit_window",
+                                    retry_in_s=deficit_remain,
+                                    fail_fast_triggered=bool(fail_fast_triggered),
+                                    fail_fast_reason=fail_fast_reason,
+                                )
+                                return
+                            now_mono = time.monotonic()
+                            cd = self._recovery_dht_escalation_cooldown_s
+                            last_es = self._recovery_dht_escalation_last_monotonic
+                            # 0.0 means no escalation yet; do not treat as "just escalated".
+                            if last_es > 0.0 and (now_mono - last_es) < cd:
+                                recovery_summary["dht_outcome"] = (
+                                    "skipped_escalation_cooldown"
+                                )
+                                wait_cd = max(0.0, last_es + cd - now_mono)
+                                _emit_recovery_cycle_summary(
+                                    final_active=int(
+                                        swarm_state_pre_dht.get("active_peers", 0)
+                                    ),
+                                    final_productive=int(
+                                        swarm_state_pre_dht.get("productive_peers", 0)
+                                    ),
+                                    final_requestable=int(
+                                        swarm_state_pre_dht.get("requestable_peers", 0)
+                                    ),
+                                    final_piece_info=int(
+                                        swarm_state_pre_dht.get(
+                                            "peers_with_piece_info", 0
+                                        )
+                                    ),
+                                    final_metadata_incomplete=md_pre,
+                                    decision="skip_dht_escalation_cooldown",
+                                    retry_plan="escalation_cooldown",
+                                    retry_in_s=wait_cd,
+                                    fail_fast_triggered=bool(fail_fast_triggered),
+                                    fail_fast_reason=fail_fast_reason,
+                                )
+                                return
+                        self._recovery_dht_escalation_last_monotonic = time.monotonic()
+
                         # Note: Use very conservative parameters to prevent
                         # blacklisting while still recovering quickly.
                         setattr(
@@ -1756,10 +2099,30 @@ class AsyncTorrentSession:
                                         len(discovered_peers),
                                         len(peer_list),
                                     )
-                                recovery_summary["dht_outcome"] = "triggered"
-                                recovery_summary["queued_peer_count"] = len(
-                                    discovered_peers
+                            else:
+                                queued_count = _queue_tracker_peers_for_later(
+                                    self,
+                                    [
+                                        {
+                                            "ip": ip,
+                                            "port": port,
+                                            "peer_source": "dht_immediate",
+                                        }
+                                        for ip, port in discovered_peers
+                                    ],
+                                    peer_source="dht_immediate",
                                 )
+                                recovery_summary["queued_peer_count"] = int(
+                                    queued_count
+                                )
+                                self.logger.debug(
+                                    "Immediate DHT query queued %d peer(s) for later connection (peer manager unavailable)",
+                                    queued_count,
+                                )
+                                recovery_summary["dht_outcome"] = "triggered"
+                                recovery_summary["queued_peer_count"] = int(
+                                    recovery_summary.get("queued_peer_count", 0)
+                                ) or len(discovered_peers)
                 except asyncio.TimeoutError:
                     self.logger.warning(
                         "Immediate DHT query for %s timed out after %.1fs",
@@ -1870,6 +2233,22 @@ class AsyncTorrentSession:
 
             # Apply per-torrent configuration options (override global config)
             self._apply_per_torrent_options()
+
+            prov = get_max_peers_per_torrent_provenance()
+            if prov is not None:
+                ctx = prov.as_log_context()
+                self.logger.info(
+                    "config_peer_cap_chain torrent=%s %s",
+                    self.info.name,
+                    ctx,
+                )
+            opt_mpt = self.options.get("max_peers_per_torrent")
+            if opt_mpt is not None:
+                self.logger.info(
+                    "config_peer_cap_per_torrent_override torrent=%s max_peers_per_torrent=%s",
+                    self.info.name,
+                    opt_mpt,
+                )
 
             # Start piece manager
             self.logger.debug(
@@ -1990,6 +2369,17 @@ class AsyncTorrentSession:
                     # Note: Set _peer_manager on piece manager immediately
                     # This allows piece selection to work even before peers are connected
                     self.piece_manager._peer_manager = peer_manager  # type: ignore[attr-defined]
+
+                    from ccbt.session.peer_discovery_telemetry import (
+                        attach_peer_discovery_metrics_ref,
+                    )
+
+                    attach_peer_discovery_metrics_ref(
+                        peer_manager,
+                        self._peer_discovery_metrics,
+                    )
+                    if self._swarm_connect_phase_started_monotonic is None:
+                        self._swarm_connect_phase_started_monotonic = time.monotonic()
 
                     # ctx.peer_manager is already set by PeerEventsBinder in init_and_bind
                     self.logger.info(
@@ -2657,6 +3047,27 @@ class AsyncTorrentSession:
         self.info.status = "stopped"
         self.logger.info("Stopped torrent session: %s", self.info.name)
 
+    async def begin_shutdown_quiesce(self) -> None:
+        """Mark session as stopping and cancel hot-loop tasks early.
+
+        This is a lightweight pre-quiesce pass used by AsyncSessionManager.stop()
+        before running expensive per-session shutdown work.
+        """
+        self._stop_event.set()
+        self._stopped = True
+
+        for task_attr in (
+            "_dht_discovery_task",
+            "_status_task",
+            "_checkpoint_task",
+            "_announce_task",
+            "_peer_count_low_recovery_task",
+            "_swarm_auth_material_refresh_task",
+        ):
+            task = getattr(self, task_attr, None)
+            if task is not None and not task.done():
+                task.cancel()
+
     async def pause(self) -> None:
         """Pause the torrent session by stopping background work and saving a checkpoint.
 
@@ -2852,6 +3263,397 @@ class AsyncTorrentSession:
             self.logger.exception("Failed to force start torrent")
             raise
 
+    async def _defer_immediate_tracker_peers_to_pending(
+        self,
+        peers: list[dict[str, Any]],
+        *,
+        reason: str,
+        tracker_url: str,
+    ) -> int:
+        """Enqueue tracker peer dicts when the immediate-connect path defers work."""
+        if not peers:
+            return 0
+        with contextlib.suppress(Exception):
+            self.record_discovered_peers(peers, source="tracker")
+        pm = getattr(self.download_manager, "peer_manager", None)
+        if pm is None:
+            self.logger.debug(
+                "Deferred immediate tracker peers (%d) skipped: no peer_manager (%s, reason=%s)",
+                len(peers),
+                tracker_url,
+                reason,
+            )
+            return 0
+        pm_any: Any = pm
+        try:
+            enq_total = await pm_any.enqueue_peer_dicts_pending(peers, reason=reason)
+        except Exception:
+            self.logger.exception(
+                "enqueue_peer_dicts_pending failed (%s, %s)", reason, tracker_url
+            )
+            return 0
+        if enq_total:
+            request_resume = getattr(pm_any, "request_pending_resume", None)
+            if callable(request_resume):
+                request_resume(reason=reason)
+        self.logger.info(
+            "peer_discovery_immediate: deferred_enqueue torrent=%s tracker=%s reason=%s "
+            "enqueued=%d of %d",
+            self.info.name,
+            tracker_url,
+            reason,
+            enq_total,
+            len(peers),
+        )
+        with contextlib.suppress(Exception):
+            get_metrics_collector().increment_counter(
+                "peer_discovery_immediate_deferred_enqueue_total", enq_total
+            )
+        return enq_total
+
+    async def _ingest_tracker_discovery_peers(
+        self,
+        peers: list[dict[str, Any]],
+        *,
+        tracker_url: str,
+        ingress_source: str,
+    ) -> int:
+        """Coalesce tracker-discovered peers and schedule one submit per window."""
+        if not peers:
+            return 0
+        with contextlib.suppress(Exception):
+            self.record_discovered_peers(peers, source="tracker")
+
+        merged = 0
+        async with self._tracker_discovery_ingress_lock:
+            for peer in peers:
+                ip = peer.get("ip")
+                port_raw = peer.get("port")
+                if not ip or port_raw is None:
+                    continue
+                try:
+                    port = int(port_raw)
+                except (TypeError, ValueError):
+                    continue
+                key = (str(ip), port)
+                existing = self._tracker_discovery_ingress_pending.get(key)
+                source_hint = str(peer.get("peer_source", "tracker") or "tracker")
+                if existing is None:
+                    merged_peer = dict(peer)
+                    merged_peer["ip"] = str(ip)
+                    merged_peer["port"] = port
+                    merged_peer.setdefault("peer_source", source_hint)
+                    merged_peer["_discovery_sources"] = [source_hint, ingress_source]
+                    merged_peer["_discovery_trackers"] = [tracker_url]
+                    self._tracker_discovery_ingress_pending[key] = merged_peer
+                    merged += 1
+                    continue
+
+                # Preserve strongest replacement priority and accumulate provenance.
+                existing["_replacement_priority"] = max(
+                    float(existing.get("_replacement_priority", 0.0)),
+                    float(peer.get("_replacement_priority", 0.0)),
+                )
+                sources = set(existing.get("_discovery_sources", []))
+                sources.add(source_hint)
+                sources.add(ingress_source)
+                existing["_discovery_sources"] = sorted(sources)
+                trackers = set(existing.get("_discovery_trackers", []))
+                trackers.add(tracker_url)
+                existing["_discovery_trackers"] = sorted(trackers)
+
+            if (
+                self._tracker_discovery_ingress_task is None
+                or self._tracker_discovery_ingress_task.done()
+            ):
+                self._tracker_discovery_last_submit_status = "owner_started"
+                self._tracker_discovery_ingress_task = asyncio.create_task(
+                    self._flush_tracker_discovery_ingress(),
+                    name=f"tracker_discovery_ingress:{self.info.name}",
+                )
+                add_bg_task = getattr(self, "add_background_task", None)
+                if callable(add_bg_task):
+                    add_bg_task(self._tracker_discovery_ingress_task)
+                else:
+                    # AsyncTorrentSession tracks long-running tasks via metadata task set.
+                    self.add_metadata_task(self._tracker_discovery_ingress_task)
+                    self._tracker_discovery_ingress_task.add_done_callback(
+                        self.remove_metadata_task
+                    )
+            else:
+                # Existing coalescer window is active; this ingress is a queue merge.
+                self._tracker_discovery_last_submit_status = "queued_reentrant"
+            self._tracker_discovery_pending_growth += max(0, merged)
+
+        return merged
+
+    async def _flush_tracker_discovery_ingress(self) -> None:
+        """Submit coalesced tracker peers once per coalescing window."""
+        try:
+            await asyncio.sleep(self._tracker_discovery_coalesce_window_s)
+            async with self._tracker_discovery_ingress_lock:
+                peer_list = list(self._tracker_discovery_ingress_pending.values())
+                self._tracker_discovery_ingress_pending.clear()
+            if not peer_list or self.is_stopped():
+                return
+            self._tracker_discovery_last_submit_monotonic = time.monotonic()
+            helper = PeerConnectionHelper(self)
+            submit = await helper.connect_peers_to_download(peer_list)
+            submit_status = str(getattr(submit, "status", "owner_started"))
+            self._tracker_discovery_last_submit_status = submit_status
+            self._tracker_discovery_last_queue_depth = getattr(
+                submit, "queue_depth_after", None
+            )
+            self.logger.debug(
+                "tracker_discovery_ingress: submitted %d coalesced peer(s) status=%s queue_depth=%s",
+                len(peer_list),
+                submit_status,
+                self._tracker_discovery_last_queue_depth,
+            )
+        except Exception:
+            self.logger.exception("tracker discovery ingress flush failed")
+        finally:
+            self._tracker_discovery_pending_growth = 0
+            self._tracker_discovery_ingress_task = None
+
+    def record_dht_candidate_intel(
+        self, peers: list[dict[str, Any]], *, source: str = "dht"
+    ) -> None:
+        """Track DHT candidates for deficit-time promotion and corroboration."""
+        if not peers:
+            return
+        now = time.time()
+        for peer in peers:
+            ip = peer.get("ip")
+            port_raw = peer.get("port")
+            if not ip or port_raw is None:
+                continue
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError):
+                continue
+            key = f"{ip}:{port}"
+            entry = self._dht_candidate_cache.get(key)
+            if entry is None:
+                self._peer_discovery_metrics["dht_candidate_cache_new_entry_total"] = (
+                    int(
+                        self._peer_discovery_metrics.get(
+                            "dht_candidate_cache_new_entry_total", 0
+                        )
+                        or 0
+                    )
+                    + 1
+                )
+                with contextlib.suppress(Exception):
+                    get_metrics_collector().increment_counter(
+                        "peer_discovery_dht_candidate_cache_new_total", 1
+                    )
+                entry = {
+                    "ip": str(ip),
+                    "port": port,
+                    "first_seen": now,
+                    "last_seen": now,
+                    "sightings": 0,
+                    "source_counts": {},
+                    "confidence": 0.0,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "last_failure_at": 0.0,
+                    "last_success_at": 0.0,
+                    "penalty": 0.0,
+                    "score": 0.0,
+                }
+                self._dht_candidate_cache[key] = entry
+            else:
+                self._peer_discovery_metrics["dht_candidate_cache_refresh_total"] = (
+                    int(
+                        self._peer_discovery_metrics.get(
+                            "dht_candidate_cache_refresh_total", 0
+                        )
+                        or 0
+                    )
+                    + 1
+                )
+                with contextlib.suppress(Exception):
+                    get_metrics_collector().increment_counter(
+                        "peer_discovery_dht_candidate_cache_refresh_total", 1
+                    )
+            entry["last_seen"] = now
+            entry["sightings"] = int(entry.get("sightings", 0) or 0) + 1
+            source_counts = cast("dict[str, Any]", entry.get("source_counts") or {})
+            source_counts[source] = int(source_counts.get(source, 0) or 0) + 1
+            entry["source_counts"] = source_counts
+            # Confidence grows with sightings and corroboration by additional sources.
+            corroboration = max(0, len(source_counts) - 1)
+            entry["confidence"] = min(
+                1.0,
+                0.25 * min(3, int(entry["sightings"]))
+                + 0.2 * corroboration
+                + (0.15 if "tracker" in source_counts else 0.0),
+            )
+            entry["score"] = self._compute_dht_candidate_score(entry, now=now)
+        self.prune_dht_candidate_intel(now=now)
+
+    def record_dht_candidate_success(self, peers: list[dict[str, Any]]) -> None:
+        """Reward candidates that yielded useful connection outcomes."""
+        if not peers:
+            return
+        now = time.time()
+        for peer in peers:
+            key = f"{peer.get('ip', '')}:{int(peer.get('port', 0) or 0)}"
+            entry = self._dht_candidate_cache.get(key)
+            if entry is None:
+                continue
+            entry["success_count"] = int(entry.get("success_count", 0) or 0) + 1
+            entry["last_success_at"] = now
+            entry["penalty"] = max(0.0, float(entry.get("penalty", 0.0) or 0.0) - 0.15)
+            entry["score"] = self._compute_dht_candidate_score(entry, now=now)
+
+    def record_dht_candidate_failure(
+        self, peers: list[dict[str, Any]], *, reason: str = "unknown"
+    ) -> None:
+        """Penalize repeatedly failing DHT-only one-off candidates."""
+        if not peers:
+            return
+        now = time.time()
+        for peer in peers:
+            key = f"{peer.get('ip', '')}:{int(peer.get('port', 0) or 0)}"
+            entry = self._dht_candidate_cache.get(key)
+            if entry is None:
+                continue
+            entry["failure_count"] = int(entry.get("failure_count", 0) or 0) + 1
+            entry["last_failure_at"] = now
+            source_counts = entry.get("source_counts", {})
+            is_dht_only = len(source_counts) <= 1 and "dht_callback" in source_counts
+            failure_weight = 0.35 if is_dht_only else 0.18
+            # One-off + repeated failures are heavily deprioritized.
+            if is_dht_only and int(entry.get("sightings", 0) or 0) <= 2:
+                failure_weight += 0.2
+            entry["penalty"] = min(
+                1.5,
+                float(entry.get("penalty", 0.0) or 0.0) + failure_weight,
+            )
+            entry["last_failure_reason"] = reason
+            entry["score"] = self._compute_dht_candidate_score(entry, now=now)
+
+    def _compute_dht_candidate_score(
+        self, entry: dict[str, Any], *, now: Optional[float] = None
+    ) -> float:
+        """Compute promotion score from confidence, corroboration, and penalties."""
+        current = now if now is not None else time.time()
+        source_counts = entry.get("source_counts", {})
+        corroboration = max(0, len(source_counts) - 1)
+        confidence = float(entry.get("confidence", 0.0) or 0.0)
+        sightings = int(entry.get("sightings", 0) or 0)
+        success_count = int(entry.get("success_count", 0) or 0)
+        failure_count = int(entry.get("failure_count", 0) or 0)
+        penalty = float(entry.get("penalty", 0.0) or 0.0)
+        last_failure_at = float(entry.get("last_failure_at", 0.0) or 0.0)
+        if last_failure_at > 0.0:
+            age = max(0.0, current - last_failure_at)
+            decay_window = max(30.0, self._dht_candidate_penalty_decay_s)
+            decay = min(1.0, age / decay_window)
+            penalty *= max(0.1, 1.0 - decay)
+        score = (
+            confidence
+            + 0.12 * min(3, corroboration)
+            + 0.06 * min(5, sightings)
+            + 0.1 * min(4, success_count)
+            - 0.08 * min(6, failure_count)
+            - penalty
+        )
+        return float(max(0.0, min(2.0, score)))
+
+    def prune_dht_candidate_intel(self, *, now: Optional[float] = None) -> None:
+        """Drop expired DHT candidate intel entries."""
+        current = now if now is not None else time.time()
+        ttl_s = float(max(30.0, self._dht_candidate_cache_ttl_s))
+        stale_keys = [
+            key
+            for key, entry in self._dht_candidate_cache.items()
+            if current - float(entry.get("last_seen", 0.0) or 0.0) > ttl_s
+        ]
+        for key in stale_keys:
+            self._dht_candidate_cache.pop(key, None)
+
+    async def select_dht_candidate_promotions(
+        self,
+        *,
+        existing_peers: list[dict[str, Any]],
+        limit: Optional[int] = None,
+    ) -> list[dict[str, Any]]:
+        """Return top cached DHT peers when swarm remains requestable-deficient."""
+        self.prune_dht_candidate_intel()
+        if not self._dht_candidate_cache:
+            return []
+        state = await self._get_swarm_recovery_state()
+        requestable = int(state.get("requestable_peers", 0) or 0)
+        productive = int(state.get("productive_peers", 0) or 0)
+        if requestable > 0 and productive > 0:
+            return []
+        existing_keys = {
+            (str(peer.get("ip", "")), int(peer.get("port", 0) or 0))
+            for peer in existing_peers
+        }
+        cap = int(limit or self._dht_candidate_promotion_cap or 12)
+        dht_only_cap = int(max(0, self._dht_candidate_promotion_cap_dht_only))
+        ranked = sorted(
+            self._dht_candidate_cache.values(),
+            key=lambda entry: (
+                float(entry.get("score", self._compute_dht_candidate_score(entry))),
+                int(entry.get("sightings", 0) or 0),
+                float(entry.get("last_seen", 0.0) or 0.0),
+            ),
+            reverse=True,
+        )
+        promotions: list[dict[str, Any]] = []
+        dht_only_promoted = 0
+        for entry in ranked:
+            candidate_key = (str(entry.get("ip", "")), int(entry.get("port", 0) or 0))
+            if candidate_key in existing_keys:
+                continue
+            source_counts = entry.get("source_counts", {})
+            is_dht_only = len(source_counts) <= 1 and "dht_callback" in source_counts
+            if is_dht_only and dht_only_promoted >= dht_only_cap:
+                continue
+            promotions.append(
+                {
+                    "ip": candidate_key[0],
+                    "port": candidate_key[1],
+                    "peer_source": "dht",
+                    "_dht_candidate_confidence": float(
+                        entry.get("confidence", 0.0) or 0.0
+                    ),
+                    "_dht_candidate_sightings": int(entry.get("sightings", 0) or 0),
+                    "_dht_candidate_score": float(
+                        entry.get("score", self._compute_dht_candidate_score(entry))
+                    ),
+                    "_replacement_priority": float(
+                        entry.get("score", self._compute_dht_candidate_score(entry))
+                    ),
+                }
+            )
+            if is_dht_only:
+                dht_only_promoted += 1
+            if len(promotions) >= max(0, cap):
+                break
+        if promotions:
+            self._peer_discovery_metrics["dht_candidate_promotion_selected_total"] = (
+                int(
+                    self._peer_discovery_metrics.get(
+                        "dht_candidate_promotion_selected_total", 0
+                    )
+                    or 0
+                )
+                + len(promotions)
+            )
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "peer_discovery_dht_candidate_promotion_total",
+                    len(promotions),
+                )
+        return promotions
+
     def _register_immediate_connection_callback(self) -> None:
         """Register immediate connection callback for tracker responses.
 
@@ -2873,11 +3675,29 @@ class AsyncTorrentSession:
 
             cooldown_until = self._tracker_immediate_connection_cooldown_until
             if cooldown_until is not None and connection_start_time < cooldown_until:
+                remaining = cooldown_until - connection_start_time
+                self.logger.info(
+                    "peer_discovery_immediate: debounce_cooldown_skip torrent=%s tracker=%s "
+                    "peers=%d cooldown_remaining_s=%.2f",
+                    self.info.name,
+                    tracker_url,
+                    len(peers),
+                    remaining,
+                )
                 self.logger.debug(
                     "⚡ IMMEDIATE CONNECTION: In debounce cooldown until %.1fs; skipping %d peer(s) from %s",
-                    cooldown_until - connection_start_time,
+                    remaining,
                     len(peers),
                     tracker_url,
+                )
+                with contextlib.suppress(Exception):
+                    get_metrics_collector().increment_counter(
+                        "peer_discovery_immediate_debounce_skip_total"
+                    )
+                await self._defer_immediate_tracker_peers_to_pending(
+                    peers,
+                    reason="immediate_debounce_cooldown_skip",
+                    tracker_url=tracker_url,
                 )
                 return
 
@@ -2922,13 +3742,33 @@ class AsyncTorrentSession:
                     connection_start_time + cooldown_seconds
                 )
                 self.logger.info(
-                    "⚡ IMMEDIATE CONNECTION: burst cap engaged (callbacks=%d within %.1fs, streak=%d); "
-                    "skipping %d peer(s) and cooling down %.1fs",
+                    "peer_discovery_immediate: burst_circuit_breaker torrent=%s tracker=%s "
+                    "callbacks_in_window=%d window_s=%.1f streak=%d peers=%d cooldown_s=%.2f",
+                    self.info.name,
+                    tracker_url,
                     len(self._tracker_immediate_connect_timestamps),
                     self._tracker_immediate_connect_window_s,
                     streak,
                     len(peers),
                     cooldown_seconds,
+                )
+                self.logger.info(
+                    "⚡ IMMEDIATE CONNECTION: burst cap engaged (callbacks=%d within %.1fs, streak=%d); "
+                    "deferring %d peer(s) to pending queue and cooling down %.1fs",
+                    len(self._tracker_immediate_connect_timestamps),
+                    self._tracker_immediate_connect_window_s,
+                    streak,
+                    len(peers),
+                    cooldown_seconds,
+                )
+                with contextlib.suppress(Exception):
+                    get_metrics_collector().increment_counter(
+                        "peer_discovery_immediate_burst_cap_total"
+                    )
+                await self._defer_immediate_tracker_peers_to_pending(
+                    peers,
+                    reason="immediate_circuit_breaker_burst",
+                    tracker_url=tracker_url,
                 )
                 return
             self._tracker_immediate_connect_timestamps.append(connection_start_time)
@@ -2961,13 +3801,37 @@ class AsyncTorrentSession:
             # Use tracker + peer_source bucketing to avoid collapsing all responses from one
             # announce into a single bucket. This preserves diversity between tracker URLs
             # while still allowing a larger immediate batch from a single source.
+            cap_mode = "half_max_peers"
+            _disc_cap = getattr(self.config, "discovery", None)
+            if _disc_cap is not None:
+                raw_mode = getattr(
+                    _disc_cap, "tracker_immediate_per_source_cap_mode", "half_max_peers"
+                )
+                cap_mode = (
+                    str(raw_mode or "half_max_peers").strip().lower().replace("-", "_")
+                )
+            if cap_mode == "full_max_peers":
+                per_source_peer_cap = configured_max_peers
+            else:
+                per_source_peer_cap = max(1, configured_max_peers // 2)
             per_source_limit = min(
                 self._tracker_immediate_connect_burst_per_source,
-                max(1, configured_max_peers // 2),
+                per_source_peer_cap,
             )
             per_torrent_limit = min(
                 self._tracker_immediate_connect_burst_total,
                 configured_max_peers,
+            )
+
+            self.logger.debug(
+                "⚡ IMMEDIATE CONNECTION limits for %s: burst_total=%d burst_per_source=%d "
+                "configured_max_peers=%d per_source_limit=%d per_torrent_limit=%d",
+                self.info.name,
+                self._tracker_immediate_connect_burst_total,
+                self._tracker_immediate_connect_burst_per_source,
+                configured_max_peers,
+                per_source_limit,
+                per_torrent_limit,
             )
 
             # If flag is already set, extend it if this callback started later
@@ -3014,36 +3878,63 @@ class AsyncTorrentSession:
                             break
 
                 if has_peer_manager and self.download_manager.peer_manager:
-                    # Deduplicate peers
+                    # Deduplicate peers (full list for overflow / saturation enqueue)
                     seen_peers = set()
-                    unique_peer_list = []
+                    deduped_tracker_peers: list[dict[str, Any]] = []
                     for peer in peers:
                         peer_key = (peer.get("ip"), peer.get("port"))
                         if peer_key not in seen_peers:
                             seen_peers.add(peer_key)
-                            unique_peer_list.append(peer)
+                            deduped_tracker_peers.append(peer)
 
+                    pm = self.download_manager.peer_manager
+                    pm_any: Any = pm
                     peer_connection_capacity = max(
                         0,
-                        configured_max_peers
-                        - len(self.download_manager.peer_manager.connections),
+                        configured_max_peers - len(pm.connections),
+                    )
+                    self.logger.debug(
+                        "⚡ IMMEDIATE CONNECTION capacity for %s: "
+                        "deduped_peers=%d peer_connection_capacity=%d "
+                        "(connected=%d max=%d)",
+                        self.info.name,
+                        len(deduped_tracker_peers),
+                        peer_connection_capacity,
+                        len(pm.connections),
+                        configured_max_peers,
                     )
                     if peer_connection_capacity <= 0:
                         self._tracker_immediate_connection_cooldown_until = (
                             connection_start_time + 1.5
                         )
                         self.logger.debug(
-                            "⚡ IMMEDIATE CONNECTION: Tracker peer queue saturated for %s (connected=%d, max=%d)",
+                            "⚡ IMMEDIATE CONNECTION: per-torrent slots saturated for %s "
+                            "(connected=%d, max=%d); enqueueing %d deduped peer(s) pending",
                             self.info.name,
-                            len(self.download_manager.peer_manager.connections),
+                            len(pm.connections),
                             configured_max_peers,
+                            len(deduped_tracker_peers),
                         )
+                        enq_sat = await pm_any.enqueue_peer_dicts_pending(
+                            deduped_tracker_peers,
+                            reason="tracker_immediate_per_torrent_saturated",
+                        )
+                        if enq_sat:
+                            request_resume = getattr(
+                                pm_any,
+                                "request_pending_resume",
+                                None,
+                            )
+                            if callable(request_resume):
+                                request_resume(
+                                    reason="tracker_immediate_per_torrent_saturated",
+                                )
                         return
 
                     bounded_peer_list: list[dict[str, Any]] = []
                     source_counts: dict[str, int] = {}
                     tracker_source = (tracker_url or "").strip() or "tracker"
-                    for peer in unique_peer_list:
+                    for peer in deduped_tracker_peers:
                         source = str(peer.get("peer_source", "tracker") or "tracker")
                         source_key = f"{tracker_source}|{source}"
                         if source_counts.get(source_key, 0) >= per_source_limit:
@@ -3055,6 +3946,15 @@ class AsyncTorrentSession:
                         source_counts[source_key] = source_counts.get(source_key, 0) + 1
                         bounded_peer_list.append(peer)
 
+                    bounded_keys = {
+                        (p.get("ip"), p.get("port")) for p in bounded_peer_list
+                    }
+                    overflow_peers = [
+                        p
+                        for p in deduped_tracker_peers
+                        if (p.get("ip"), p.get("port")) not in bounded_keys
+                    ]
+
                     unique_peer_list = bounded_peer_list
                     if unique_peer_list:
                         self.logger.info(
@@ -3063,13 +3963,38 @@ class AsyncTorrentSession:
                             self.info.name,
                         )
                         try:
-                            # Use PeerConnectionHelper for consistent peer connection handling
-                            helper = PeerConnectionHelper(self)
-                            await helper.connect_peers_to_download(unique_peer_list)
+                            merged = await self._ingest_tracker_discovery_peers(
+                                unique_peer_list,
+                                tracker_url=tracker_url,
+                                ingress_source="tracker_immediate",
+                            )
+                            submit_status = self._tracker_discovery_last_submit_status
+                            material_queue_growth = merged >= 2
+                            if (
+                                submit_status == "queued_reentrant"
+                                and not material_queue_growth
+                            ):
+                                # Keep tracker->DHT deferral short for reentrant queue merges that do not
+                                # materially increase pending work.
+                                shortened_until = time_module.time() + 0.25
+                                current_until = self._tracker_peers_connecting_until  # type: ignore[attr-defined]
+                                if (
+                                    current_until is None
+                                    or shortened_until < current_until
+                                ):
+                                    self._tracker_peers_connecting_until = (
+                                        shortened_until  # type: ignore[attr-defined]
+                                    )
+                            elif submit_status in {"owner_started", None}:
+                                self._tracker_immediate_connection_cooldown_until = None
                             self.logger.info(
-                                "✅ IMMEDIATE CONNECTION: Started connection attempts for %d peer(s) for %s (connections will continue in background)",
+                                "✅ IMMEDIATE CONNECTION: Coalesced %d peer(s) from %d immediate candidate(s) for %s "
+                                "(submit_status=%s material_queue_growth=%s)",
+                                merged,
                                 len(unique_peer_list),
                                 self.info.name,
+                                submit_status,
+                                material_queue_growth,
                             )
 
                             metadata_incomplete = self._metadata_is_incomplete()
@@ -3105,7 +4030,13 @@ class AsyncTorrentSession:
                                 )
                                 if pm is not None and bool(
                                     getattr(
-                                        pm, "_connection_batches_in_progress", False
+                                        pm,
+                                        "_batch_owner_active",
+                                        getattr(
+                                            pm,
+                                            "_connection_batches_in_progress",
+                                            False,
+                                        ),
                                     )
                                 ):
                                     conns = getattr(pm, "connections", None)
@@ -3224,6 +4155,26 @@ class AsyncTorrentSession:
                                 e,
                                 exc_info=True,
                             )
+
+                    if overflow_peers:
+                        enq_over = await pm_any.enqueue_peer_dicts_pending(
+                            overflow_peers,
+                            reason="tracker_immediate_overflow",
+                        )
+                        if enq_over:
+                            request_resume = getattr(
+                                pm_any,
+                                "request_pending_resume",
+                                None,
+                            )
+                            if callable(request_resume):
+                                request_resume(reason="tracker_immediate_overflow")
+                            self.logger.debug(
+                                "⚡ IMMEDIATE CONNECTION: enqueued %d overflow "
+                                "peer(s) pending for %s",
+                                enq_over,
+                                self.info.name,
+                            )
                 else:
                     self.logger.warning(
                         "⚡ IMMEDIATE CONNECTION: peer_manager still not ready after 5 seconds, peers will be connected via announce loop",
@@ -3246,15 +4197,30 @@ class AsyncTorrentSession:
                         )
                         batches_active = bool(
                             getattr(
-                                peer_manager, "_connection_batches_in_progress", False
+                                peer_manager,
+                                "_batch_owner_active",
+                                getattr(
+                                    peer_manager,
+                                    "_connection_batches_in_progress",
+                                    False,
+                                ),
                             )
                             if peer_manager
                             else False
                         )
                         if not batches_active:
-                            self._tracker_immediate_connection_cooldown_until = (
-                                time_module.time() + 1.0
+                            submit_status = self._tracker_discovery_last_submit_status
+                            pending_growth = int(
+                                getattr(self, "_tracker_discovery_pending_growth", 0)
+                                or 0
                             )
+                            if not (
+                                submit_status == "queued_reentrant"
+                                and pending_growth < 2
+                            ):
+                                self._tracker_immediate_connection_cooldown_until = (
+                                    time_module.time() + 1.0
+                                )
                         self.logger.debug(
                             "⏸️ IMMEDIATE CONNECTION: Other callbacks still active, keeping flag set until %.1fs",
                             self._tracker_peers_connecting_until - time_module.time(),  # type: ignore[attr-defined]
@@ -5029,6 +5995,24 @@ class AsyncTorrentSession:
     ) -> None:
         """Record peer-connection batch metrics for discovery observability."""
         metrics = self._peer_discovery_metrics
+        with contextlib.suppress(Exception):
+            mc = get_metrics_collector()
+            if attempted_peers > 0:
+                mc.increment_counter(
+                    "peer_discovery_attempted_total", int(attempted_peers)
+                )
+            if active_connections > 0:
+                mc.increment_counter(
+                    "peer_discovery_active_total", int(active_connections)
+                )
+            if requestable_connections > 0:
+                mc.increment_counter(
+                    "peer_discovery_requestable_total", int(requestable_connections)
+                )
+            if productive_connections > 0:
+                mc.increment_counter(
+                    "peer_discovery_productive_total", int(productive_connections)
+                )
         metrics["last_peer_connection_batch"] = {
             "sampled_at": time.time(),
             "peer_manager_source": peer_manager_source,
@@ -5064,6 +6048,10 @@ class AsyncTorrentSession:
         self._peer_discovery_metrics["connection_failures"] = int(
             self._peer_discovery_metrics.get("connection_failures", 0) or 0
         ) + int(failures)
+        with contextlib.suppress(Exception):
+            get_metrics_collector().increment_counter(
+                "peer_discovery_connect_failures_total", int(max(0, failures))
+            )
 
     def record_discovered_peers(
         self,
@@ -5085,6 +6073,10 @@ class AsyncTorrentSession:
 
         self._record_peer_source_counts("peers_discovered_by_source", source_counts)
         self._record_peer_source_counts("peers_returned_by_source", source_counts)
+        with contextlib.suppress(Exception):
+            get_metrics_collector().increment_counter(
+                "peer_discovery_discovered_total", len(peers)
+            )
 
     def update_usable_live_peers_by_source(self, connections: dict[str, Any]) -> None:
         """Replace usable-live-peer source snapshot using actual connection state."""
@@ -5565,6 +6557,32 @@ class AsyncTorrentSession:
 
 class AsyncSessionManager:
     """High-performance async session manager for multiple torrents."""
+
+    @staticmethod
+    def _normalize_info_hash_registry_key(info_hash: Union[bytes, str]) -> bytes:
+        """Match ``AsyncTorrentSession`` info_hash normalization for registry keys.
+
+        Ensures ``add_magnet`` uses the same dict key as ``session.info.info_hash`` so
+        ``get_session_for_info_hash`` / ``metadata_pending_for_info_hash`` stay consistent
+        under concurrent registration and for non-20-byte magnet payloads.
+        """
+        if isinstance(info_hash, str):
+            try:
+                ih = bytes.fromhex(info_hash)
+            except ValueError as e:
+                msg = f"Invalid info_hash hex string: {info_hash}"
+                raise ValueError(msg) from e
+        elif isinstance(info_hash, bytes):
+            ih = info_hash
+        else:
+            msg = f"info_hash must be bytes or str, got {type(info_hash)}"
+            raise TypeError(msg)
+        original_length = len(ih)
+        if original_length > INFO_HASH_LENGTH:
+            ih = ih[:INFO_HASH_LENGTH]
+        elif original_length < INFO_HASH_LENGTH:
+            ih = ih + b"\x00" * (INFO_HASH_LENGTH - original_length)
+        return ih
 
     def __init__(self, output_dir: str = ".", key_manager: Optional[Any] = None):
         """Initialize async session manager."""
@@ -6499,6 +7517,23 @@ class AsyncSessionManager:
         """Return True while session manager shutdown is in progress."""
         return self._manager_shutting_down
 
+    def begin_shutdown_quiesce(self) -> None:
+        """Request an early quiesce pass across all torrent sessions.
+
+        This can be called before full stop() to reduce noisy background activity
+        while daemon-level shutdown bookkeeping (for example state save) runs.
+        """
+        self._manager_shutting_down = True
+        # Best-effort snapshot without awaiting the manager lock from a sync API.
+        torrent_items = list(self.torrents.items())
+        for _info_hash, session in torrent_items:
+            with contextlib.suppress(Exception):
+                if hasattr(session, "begin_shutdown_quiesce"):
+                    maybe_coro = session.begin_shutdown_quiesce()
+                    if asyncio.iscoroutine(maybe_coro):
+                        with contextlib.suppress(RuntimeError):
+                            asyncio.get_running_loop().create_task(maybe_coro)
+
     async def stop(self) -> None:
         """Stop the async session manager and all components."""
         self._manager_shutting_down = True
@@ -6582,9 +7617,29 @@ class AsyncSessionManager:
             torrent_items: list[tuple[bytes, Any]] = []
             async with self.lock:
                 torrent_items = list(self.torrents.items())
+
+            # Pre-quiesce all sessions first so recovery/discovery loops stop quickly
+            # before the heavier per-session stop path starts.
+            for _info_hash, session in torrent_items:
+                with contextlib.suppress(Exception):
+                    if hasattr(session, "begin_shutdown_quiesce"):
+                        maybe_coro = session.begin_shutdown_quiesce()
+                        if asyncio.iscoroutine(maybe_coro):
+                            await maybe_coro
+
+            per_session_stop_timeout_s = 12.0
             for info_hash, session in torrent_items:
                 try:
-                    await session.stop()
+                    await asyncio.wait_for(
+                        session.stop(),
+                        timeout=per_session_stop_timeout_s,
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        "Timeout stopping torrent session %s after %.1fs",
+                        info_hash.hex()[:12],
+                        per_session_stop_timeout_s,
+                    )
                 except Exception:
                     self.logger.warning(
                         "Error stopping torrent session %s",
@@ -6808,11 +7863,14 @@ class AsyncSessionManager:
 
         if isinstance(info_hash, str):
             info_hash = bytes.fromhex(info_hash)
+        canonical_ih = self._normalize_info_hash_registry_key(info_hash)
+        if canonical_ih != info_hash and isinstance(torrent_data, dict):
+            torrent_data["info_hash"] = canonical_ih
 
         # Check if already exists
         async with self.lock:
-            if info_hash in self.torrents:
-                error_msg = f"Torrent already exists: {info_hash.hex()}"
+            if canonical_ih in self.torrents:
+                error_msg = f"Torrent already exists: {canonical_ih.hex()}"
                 self.logger.warning(error_msg)
                 raise ValueError(error_msg)
 
@@ -6825,11 +7883,11 @@ class AsyncSessionManager:
                 source_path = torrent_data.get("torrent_file_path")
                 if isinstance(source_path, str):
                     session.torrent_file_path = source_path
-            self.torrents[info_hash] = session
+            self.torrents[canonical_ih] = session
 
         # Add to private_torrents set if torrent is private (BEP 27)
         if session.is_private:
-            self.private_torrents.add(info_hash)
+            self.private_torrents.add(canonical_ih)
 
         # Get torrent name for callback
         if isinstance(torrent_data, dict):
@@ -6841,25 +7899,25 @@ class AsyncSessionManager:
         if self.on_torrent_added:
             try:
                 if asyncio.iscoroutinefunction(self.on_torrent_added):
-                    await self.on_torrent_added(info_hash, torrent_name)
+                    await self.on_torrent_added(canonical_ih, torrent_name)
                 else:
-                    self.on_torrent_added(info_hash, torrent_name)
+                    self.on_torrent_added(canonical_ih, torrent_name)
             except Exception:
                 self.logger.exception("Error in on_torrent_added callback")
 
         # Start session in background
         await self.torrent_addition_handler.add_torrent_background(
-            session, info_hash, resume
+            session, canonical_ih, resume
         )
 
         # Trigger auto-scrape if enabled
         if self.config.discovery.tracker_auto_scrape:
             self._task_supervisor.create_task(
-                self._auto_scrape_torrent(info_hash.hex()),
-                name=f"auto_scrape:{info_hash.hex()[:12]}",
+                self._auto_scrape_torrent(canonical_ih.hex()),
+                name=f"auto_scrape:{canonical_ih.hex()[:12]}",
             )
 
-        return info_hash.hex()
+        return canonical_ih.hex()
 
     async def add_magnet(
         self,
@@ -6878,22 +7936,24 @@ class AsyncSessionManager:
             Info hash as hex string
 
         """
-        # Parse magnet URI
+        # Parse magnet URI (I/O-free); registry insertion stays under self.lock below.
         magnet_info = parse_magnet(magnet_uri)
-        info_hash = magnet_info.info_hash
+        canonical_ih = self._normalize_info_hash_registry_key(magnet_info.info_hash)
+        if canonical_ih != magnet_info.info_hash:
+            magnet_info = replace(magnet_info, info_hash=canonical_ih)
         self.logger.warning(
             "Added magnet %s; download will start after metadata resolution if needed",
-            info_hash.hex(),
+            canonical_ih.hex(),
         )
 
         async with self.lock:
-            if info_hash in self.torrents:
-                error_msg = f"Torrent already exists: {info_hash.hex()}"
+            if canonical_ih in self.torrents:
+                error_msg = f"Torrent already exists: {canonical_ih.hex()}"
                 self.logger.warning(error_msg)
                 raise ValueError(error_msg)
 
             torrent_data = build_minimal_torrent_data(
-                magnet_info.info_hash,
+                canonical_ih,
                 magnet_info.display_name or "Unknown",
                 magnet_info.trackers or [],
                 magnet_info.web_seeds or [],
@@ -6904,7 +7964,7 @@ class AsyncSessionManager:
             session_output_dir = output_dir or self.output_dir
             session = AsyncTorrentSession(torrent_data, session_output_dir, self)
             session.magnet_uri = magnet_uri
-            self.torrents[info_hash] = session
+            self.torrents[canonical_ih] = session
 
         torrent_name = magnet_info.display_name or "Unknown"
 
@@ -6912,25 +7972,25 @@ class AsyncSessionManager:
         if self.on_torrent_added:
             try:
                 if asyncio.iscoroutinefunction(self.on_torrent_added):
-                    await self.on_torrent_added(info_hash, torrent_name)
+                    await self.on_torrent_added(canonical_ih, torrent_name)
                 else:
-                    self.on_torrent_added(info_hash, torrent_name)
+                    self.on_torrent_added(canonical_ih, torrent_name)
             except Exception:
                 self.logger.exception("Error in on_torrent_added callback")
 
         # Start session in background (will handle magnet metadata fetch)
         await self.torrent_addition_handler.add_torrent_background(
-            session, info_hash, resume
+            session, canonical_ih, resume
         )
 
         # Trigger auto-scrape if enabled
         if self.config.discovery.tracker_auto_scrape:
             self._task_supervisor.create_task(
-                self._auto_scrape_torrent(info_hash.hex()),
-                name=f"auto_scrape:{info_hash.hex()[:12]}",
+                self._auto_scrape_torrent(canonical_ih.hex()),
+                name=f"auto_scrape:{canonical_ih.hex()[:12]}",
             )
 
-        return info_hash.hex()
+        return canonical_ih.hex()
 
     async def cleanup_completed_checkpoints(self) -> int:
         """Clean up checkpoints for completed downloads.

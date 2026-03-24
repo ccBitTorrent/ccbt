@@ -6,14 +6,13 @@ Tests the enhanced status command that displays detailed scrape statistics table
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from click.testing import CliRunner
 from rich.console import Console
-
-import importlib
 
 cli_main = importlib.import_module("ccbt.cli.main")
 
@@ -302,8 +301,9 @@ class TestStatusScrapeDisplay:
     @pytest.mark.asyncio
     async def test_show_status_function_with_scrape_cache(self):
         """Test show_status async function directly with scrape cache."""
-        from ccbt.models import ScrapeResult
         from io import StringIO
+
+        from ccbt.models import ScrapeResult
 
         # Use SimpleNamespace instead of MagicMock to avoid attribute access issues
         session = SimpleNamespace()
@@ -325,7 +325,7 @@ class TestStatusScrapeDisplay:
         session.peers = []
         session.torrents = {}
         session.dht = None
-        
+
         # Create lock mock
         lock_enter = AsyncMock(return_value=None)
         lock_exit = AsyncMock(return_value=None)
@@ -351,44 +351,44 @@ class TestStatusScrapeDisplay:
             def __init__(self):
                 self.entered = False
                 self.exited = False
-            
+
             async def __aenter__(self):
                 self.entered = True
                 return self
-            
+
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 self.exited = True
                 return False
-        
+
         lock_mock = AsyncLock()
         session.scrape_cache_lock = lock_mock
 
         console = Console(file=StringIO(), width=120)
-        
+
         # Patch console.print to track calls (for coverage verification)
         print_call_count = 0
         original_print = console.print
-        
+
         def tracked_print(*args, **kwargs):
             nonlocal print_call_count
             print_call_count += 1
             return original_print(*args, **kwargs)
-        
+
         console.print = tracked_print
 
         # Call show_status directly with session (matching actual implementation)
         from ccbt.cli.status import show_status
-        
+
         await show_status(session, console)
 
         # Verify output contains scrape statistics
         output = console.file.getvalue()
         assert "Tracker Scrape Statistics" in output
-        
+
         # Verify lock was used
         assert lock_mock.entered, "scrape_cache_lock should have been entered"
         assert lock_mock.exited, "scrape_cache_lock should have been exited"
-        
+
         # Verify console.print was called for the table (to ensure line 2585 is covered)
         # We expect at least 2 calls: one for the header and one for the table
         assert print_call_count >= 2, f"Expected at least 2 console.print calls, got {print_call_count}"
@@ -420,7 +420,7 @@ class TestStatusScrapeDisplay:
         session.lock = AsyncMock()
         session.lock.__aenter__ = AsyncMock(return_value=None)
         session.lock.__aexit__ = AsyncMock(return_value=None)
-        
+
         # No scrape_cache attribute
         # (don't set session.scrape_cache to test hasattr False branch)
 
@@ -428,7 +428,7 @@ class TestStatusScrapeDisplay:
 
         # Call show_status directly with session (matching actual implementation)
         from ccbt.cli.status import show_status
-        
+
         await show_status(session, console)
 
         # Verify output does not contain scrape statistics

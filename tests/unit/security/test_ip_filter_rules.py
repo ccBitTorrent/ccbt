@@ -69,7 +69,7 @@ class TestIPFilterRules:
         ip_filter.add_rule("10.0.0.0/8")
         ip_filter.add_rule("192.168.0.0/16")
         ip_filter.add_rule("172.16.0.0/12")
-        
+
         # Check that ranges are sorted
         network_addresses = [int(n.network_address) for n in ip_filter.ipv4_ranges]
         assert network_addresses == sorted(network_addresses)
@@ -99,9 +99,9 @@ class TestIPFilterRules:
         ip_filter.add_rule("192.168.1.0/24")
         ip_filter.add_rule("10.0.0.0/8")
         ip_filter.add_rule("2001:db8::/32")
-        
+
         ip_filter.clear()
-        
+
         assert len(ip_filter.rules) == 0
         assert len(ip_filter.ipv4_ranges) == 0
         assert len(ip_filter.ipv6_ranges) == 0
@@ -112,7 +112,7 @@ class TestIPFilterRules:
         """Test getting all rules."""
         ip_filter.add_rule("192.168.1.0/24")
         ip_filter.add_rule("10.0.0.0/8")
-        
+
         rules = ip_filter.get_rules()
         assert len(rules) == 2
         # Should return a copy
@@ -124,7 +124,7 @@ class TestIPFilterRules:
         ip_filter.add_rule("192.168.1.0/24")
         ip_filter.add_rule("2001:db8::/32")
         ip_filter.is_blocked("192.168.1.10")
-        
+
         stats = ip_filter.get_filter_statistics()
         assert stats["total_rules"] == 2
         assert stats["ipv4_ranges"] == 1

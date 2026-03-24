@@ -290,6 +290,18 @@ class IncomingPeerServer:
             if _net is not None
             else 256
         )
+        # Max time a peer may sit in the probation wait queue without a slot (0 = no limit).
+        # Keep defensive fallback for legacy test stubs that inject partial network objects.
+        self._probation_queued_max_wait_s = (
+            float(getattr(_net, "inbound_probation_queued_max_wait_s", 120.0) or 120.0)
+            if _net is not None
+            else 120.0
+        )
+        _pmw = self._probation_queued_max_wait_s
+        self._probation_wait_sweep_interval_s = (
+            min(15.0, max(0.5, _pmw / 4.0)) if _pmw > 0 else 15.0
+        )
+        self._probation_wait_sweeper_task: Optional[asyncio.Task[None]] = None
 
     def _probation_wait_queue_total(self) -> int:
         return sum(len(dq) for dq in self._probation_wait_queues.values())
@@ -315,6 +327,83 @@ class IncomingPeerServer:
             get_metrics_collector().increment_counter(
                 "inbound_probation_wait_queue_evicted_total",
             )
+
+    async def _expire_stale_probation_waiters_unlocked(
+        self, now: float
+    ) -> list[_InboundProbationWaitEntry]:
+        """Remove waiters past queued max-wait; caller must hold _probation_queue_lock."""
+        cap = float(self._probation_queued_max_wait_s)
+        if cap <= 0:
+            return []
+        stale: list[_InboundProbationWaitEntry] = []
+        for hk in list(self._probation_wait_queues.keys()):
+            dq = self._probation_wait_queues.get(hk)
+            if not dq:
+                continue
+            kept: deque[_InboundProbationWaitEntry] = deque()
+            while dq:
+                e = dq.popleft()
+                if now - e.enqueued_at > cap:
+                    stale.append(e)
+                else:
+                    kept.append(e)
+            if kept:
+                self._probation_wait_queues[hk] = kept
+            else:
+                self._probation_wait_queues.pop(hk, None)
+        return stale
+
+    async def _finalize_stale_probation_waiters(
+        self, stale: list[_InboundProbationWaitEntry]
+    ) -> None:
+        for entry in stale:
+            ih = self._extract_probation_info_hash(entry.parsed_handshake)
+            await self._release_inbound_probation(ih, entry.peer_ip, entry.peer_port)
+            await self._close_writer_safely(entry.writer)
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "inbound_probation_wait_queue_expired_total",
+                )
+
+    def _ensure_probation_wait_sweeper_started(self) -> None:
+        """Background sweep so queued peers time out even without new arrivals or slot releases."""
+        if (
+            not self._running
+            or self._probation_wait_queue_max_total <= 0
+            or self._probation_queued_max_wait_s <= 0
+        ):
+            return
+        if (
+            self._probation_wait_sweeper_task
+            and not self._probation_wait_sweeper_task.done()
+        ):
+            return
+        self._probation_wait_sweeper_task = asyncio.create_task(
+            self._probation_wait_sweeper_loop(),
+            name="inbound-probation-wait-sweeper",
+        )
+
+    async def _probation_wait_sweeper_loop(self) -> None:
+        try:
+            while self._running:
+                await asyncio.sleep(self._probation_wait_sweep_interval_s)
+                if not self._running:
+                    break
+                loop = asyncio.get_event_loop()
+                now = loop.time()
+                stale: list[_InboundProbationWaitEntry] = []
+                async with self._probation_queue_lock:
+                    if self._probation_wait_queue_total() == 0:
+                        break
+                    stale = await self._expire_stale_probation_waiters_unlocked(now)
+                if stale:
+                    await self._finalize_stale_probation_waiters(stale)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.logger.debug("Probation wait sweeper error", exc_info=True)
+        finally:
+            self._probation_wait_sweeper_task = None
 
     async def _enqueue_inbound_probation_wait(
         self,
@@ -345,16 +434,37 @@ class IncomingPeerServer:
             has_any_sessions=has_any_sessions,
             enqueued_at=enqueued_at,
         )
+        stale_pre: list[_InboundProbationWaitEntry] = []
+        enqueue_rejected = False
         async with self._probation_queue_lock:
+            stale_pre = await self._expire_stale_probation_waiters_unlocked(enqueued_at)
             while (
                 self._probation_wait_queue_total()
                 >= self._probation_wait_queue_max_total
             ):
                 before = self._probation_wait_queue_total()
                 await self._evict_oldest_probation_waiter_unlocked()
-                if self._probation_wait_queue_total() >= before:
+                after = self._probation_wait_queue_total()
+                if after >= before:
+                    self.logger.warning(
+                        "Probation wait queue eviction did not shrink (before=%d after=%d); "
+                        "dropping new inbound from %s:%d to protect bounds",
+                        before,
+                        after,
+                        peer_ip,
+                        peer_port,
+                    )
+                    with contextlib.suppress(Exception):
+                        get_metrics_collector().increment_counter(
+                            "inbound_probation_wait_queue_enqueue_reject_total",
+                        )
+                    enqueue_rejected = True
                     break
-            self._probation_wait_queues[hk].append(entry)
+            if not enqueue_rejected:
+                self._probation_wait_queues[hk].append(entry)
+        await self._finalize_stale_probation_waiters(stale_pre)
+        if enqueue_rejected:
+            return False
         with contextlib.suppress(Exception):
             get_metrics_collector().increment_counter("inbound_probation_queued_total")
         self.logger.debug(
@@ -364,6 +474,7 @@ class IncomingPeerServer:
             peer_port,
             self._probation_wait_queue_total(),
         )
+        self._ensure_probation_wait_sweeper_started()
         return True
 
     async def _drain_next_probation_wait_after_release(self, info_hash: bytes) -> None:
@@ -371,15 +482,22 @@ class IncomingPeerServer:
         if self._probation_wait_queue_max_total <= 0:
             return
         hk = self._probation_hash_slot_key(info_hash)
+        loop = asyncio.get_event_loop()
+        stale_on_drain: list[_InboundProbationWaitEntry] = []
+        entry: Optional[_InboundProbationWaitEntry] = None
         async with self._probation_queue_lock:
+            stale_on_drain = await self._expire_stale_probation_waiters_unlocked(
+                loop.time()
+            )
             wait_dq = self._probation_wait_queues.get(hk)
-            if not wait_dq:
-                return
-            if not self._reserve_probation_slot_for_hash(info_hash):
-                return
-            entry = wait_dq.popleft()
-            if not wait_dq:
-                self._probation_wait_queues.pop(hk, None)
+            if wait_dq and self._reserve_probation_slot_for_hash(info_hash):
+                entry = wait_dq.popleft()
+                if not wait_dq:
+                    self._probation_wait_queues.pop(hk, None)
+        if stale_on_drain:
+            await self._finalize_stale_probation_waiters(stale_on_drain)
+        if entry is None:
+            return
         if self._should_abort_inbound_registration_wait():
             ih2 = self._extract_probation_info_hash(entry.parsed_handshake)
             await self._release_inbound_probation(
@@ -392,7 +510,7 @@ class IncomingPeerServer:
             await self._drain_next_probation_wait_after_release(ih2)
             return
         self._register_inbound_probation_task(
-            cast("asyncio.StreamReader", entry.reader),
+            entry.reader,
             entry.writer,
             entry.parsed_handshake,
             entry.peer_ip,
@@ -693,6 +811,11 @@ class IncomingPeerServer:
         ENHANCEMENT: Explicitly close all sockets to ensure immediate port release.
         """
         if not self._running:
+            if self._probation_wait_sweeper_task:
+                self._probation_wait_sweeper_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._probation_wait_sweeper_task
+                self._probation_wait_sweeper_task = None
             if self._probation_tasks:
                 probation_tasks = set(self._probation_tasks)
                 self._probation_tasks.clear()
@@ -704,6 +827,12 @@ class IncomingPeerServer:
             return
 
         self._running = False
+
+        if self._probation_wait_sweeper_task:
+            self._probation_wait_sweeper_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._probation_wait_sweeper_task
+            self._probation_wait_sweeper_task = None
 
         await self._close_all_probation_wait_queues()
 
@@ -1128,6 +1257,90 @@ class IncomingPeerServer:
             self._release_probation_slot_for_hash(ih)
             await self._drain_next_probation_wait_after_release(ih)
 
+    def _mse_inbound_pre_handshake_poll_cap_s(self, has_any_sessions: bool) -> float:
+        """Upper bound to wait for routable sessions before MSE (no parsed handshake yet)."""
+        net = getattr(self.config, "network", None)
+        no_sess = (
+            float(
+                getattr(net, "inbound_registration_wait_cap_no_sessions_s", 60.0)
+                or 60.0
+            )
+            if net is not None
+            else 60.0
+        )
+        default_cap = (
+            float(getattr(net, "inbound_registration_wait_cap_default_s", 15.0) or 15.0)
+            if net is not None
+            else 15.0
+        )
+        return no_sess if not has_any_sessions else default_cap
+
+    async def _session_manager_torrent_count(self) -> int:
+        """Active torrent count; uses manager lock when present (tests may omit lock)."""
+        sm = self.session_manager
+        if sm is None:
+            return 0
+        lock = getattr(sm, "lock", None)
+        if lock is not None:
+            async with lock:
+                return len(getattr(sm, "torrents", {}) or {})
+        return len(getattr(sm, "torrents", {}) or {})
+
+    async def _poll_until_mse_session_candidates(
+        self,
+        *,
+        peer_ip: str,
+        peer_port: int,
+    ) -> list[tuple[Any, bytes]]:
+        """Wait briefly for torrents to become visible (startup / registration race)."""
+        if self.session_manager is None:
+            return []
+        has_any_sessions = (await self._session_manager_torrent_count()) > 0
+        cap = self._mse_inbound_pre_handshake_poll_cap_s(has_any_sessions)
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + max(0.0, cap)
+        interval = 0.2
+        candidates: list[tuple[Any, bytes]] = []
+        while (
+            loop.time() < deadline
+            and not self._should_abort_inbound_registration_wait()
+        ):
+            candidates = _MSEInboundSessionResolver.resolve_session_candidates(
+                self.session_manager
+            )
+            if candidates:
+                return candidates
+            await asyncio.sleep(interval)
+        if not candidates:
+            self.logger.debug(
+                "MSE/PE inbound %s:%d no routable session candidates after %.1fs poll "
+                "(has_any_sessions=%s)",
+                peer_ip,
+                peer_port,
+                cap,
+                has_any_sessions,
+            )
+        return candidates
+
+    @staticmethod
+    def _filter_valid_mse_candidate_hashes(
+        candidates: list[tuple[Any, bytes]],
+    ) -> list[bytes]:
+        """Only 20-byte info hashes are valid for MSE key derivation."""
+        return [
+            h
+            for _, h in candidates
+            if isinstance(h, (bytes, bytearray)) and len(h) == 20
+        ]
+
+    def _peer_manager_for_session(self, session: Any) -> Any:
+        peer_manager = getattr(session, "download_manager", None)
+        if peer_manager:
+            peer_manager = getattr(peer_manager, "peer_manager", None)
+        if not peer_manager:
+            peer_manager = getattr(session, "peer_manager", None)
+        return peer_manager
+
     async def _handle_inbound_mse_connection(
         self,
         reader: _ReplayableStreamReader,
@@ -1144,11 +1357,11 @@ class IncomingPeerServer:
                 pass
             return
         try:
-            candidates = _MSEInboundSessionResolver.resolve_session_candidates(
-                self.session_manager
+            candidates = await self._poll_until_mse_session_candidates(
+                peer_ip=peer_ip, peer_port=peer_port
             )
-            info_hash_candidates = [info_hash for _, info_hash in candidates]
-            if not candidates:
+            info_hash_candidates = self._filter_valid_mse_candidate_hashes(candidates)
+            if not candidates or not info_hash_candidates:
                 self.logger.debug(
                     "MSE/PE inbound %s:%d dropped because no active torrents are available",
                     peer_ip,
@@ -1159,11 +1372,7 @@ class IncomingPeerServer:
                 return
 
             session, fallback_info_hash = candidates[0]
-            peer_manager = getattr(session, "download_manager", None)
-            if peer_manager:
-                peer_manager = getattr(peer_manager, "peer_manager", None)
-            if not peer_manager:
-                peer_manager = getattr(session, "peer_manager", None)
+            peer_manager = self._peer_manager_for_session(session)
 
             if not peer_manager or not hasattr(
                 peer_manager, "accept_incoming_encrypted"
@@ -1180,16 +1389,42 @@ class IncomingPeerServer:
             create_mse = getattr(peer_manager, "_create_mse_handshake", None)
             mse = create_mse() if callable(create_mse) else MSEHandshake()  # type: ignore[misc]
 
-            timeout = self.config.network.handshake_timeout
-            result = await mse.respond_as_receiver_with_initial_data(
-                reader=cast("asyncio.StreamReader", reader),
-                writer=writer,
-                info_hash=fallback_info_hash,
-                initial_payload_size=0,
-                initial_payload_timeout=timeout,
-                info_hash_candidates=info_hash_candidates,
-            )
+            timeout = float(self.config.network.handshake_timeout)
+            # Bounded outer wait so a broken/stuck receiver cannot hang the handler indefinitely.
+            outer_deadline = max(timeout + 2.0, timeout * 3.0 + 1.0)
+            try:
+                result = await asyncio.wait_for(
+                    mse.respond_as_receiver_with_initial_data(
+                        reader=cast("asyncio.StreamReader", reader),
+                        writer=writer,
+                        info_hash=fallback_info_hash,
+                        initial_payload_size=0,
+                        initial_payload_timeout=timeout,
+                        info_hash_candidates=info_hash_candidates,
+                    ),
+                    timeout=outer_deadline,
+                )
+            except asyncio.CancelledError:
+                await self._close_writer_safely(writer)
+                raise
+            except asyncio.TimeoutError:
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d receiver handshake exceeded outer timeout %.1fs",
+                    peer_ip,
+                    peer_port,
+                    outer_deadline,
+                )
+                await self._close_writer_safely(writer)
+                return
+
             resolved_info_hash = getattr(result, "resolved_info_hash", None)
+            if isinstance(resolved_info_hash, (bytes, bytearray)):
+                resolved_info_hash = bytes(resolved_info_hash)
+            else:
+                resolved_info_hash = None
+            if len(resolved_info_hash or b"") != 20:
+                resolved_info_hash = None
+
             if result.success and resolved_info_hash is not None:
                 resolved_session = _MSEInboundSessionResolver.resolve_single_session(
                     self.session_manager,
@@ -1197,11 +1432,7 @@ class IncomingPeerServer:
                 )
                 if resolved_session is not None:
                     session, _ = resolved_session
-                    peer_manager = getattr(session, "download_manager", None)
-                    if peer_manager:
-                        peer_manager = getattr(peer_manager, "peer_manager", None)
-                    if not peer_manager:
-                        peer_manager = getattr(session, "peer_manager", None)
+                    peer_manager = self._peer_manager_for_session(session)
                     if not peer_manager or not hasattr(
                         peer_manager, "accept_incoming_encrypted"
                     ):
@@ -1215,8 +1446,7 @@ class IncomingPeerServer:
                     result.success,
                     result.decrypted_initial_data is not None,
                 )
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
 
             try:
@@ -1230,9 +1460,54 @@ class IncomingPeerServer:
                     peer_port,
                     exc,
                 )
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
+
+            v1 = parsed_initial_handshake.info_hash_v1
+            if v1 is None or not isinstance(v1, (bytes, bytearray)) or len(v1) != 20:
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d decrypted handshake missing v1 info hash",
+                    peer_ip,
+                    peer_port,
+                )
+                await self._close_writer_safely(writer)
+                return
+            v1_bytes = bytes(v1)
+
+            if resolved_info_hash is None:
+                recovered = _MSEInboundSessionResolver.resolve_single_session(
+                    self.session_manager,
+                    info_hash=v1_bytes,
+                )
+                if recovered is not None:
+                    session, _ = recovered
+                    peer_manager = self._peer_manager_for_session(session)
+                else:
+                    # Do not route using the provisional first candidate when crypto hash was absent.
+                    session = None
+                    peer_manager = None
+                resolved_info_hash = v1_bytes
+            elif resolved_info_hash != v1_bytes:
+                self.logger.debug(
+                    "MSE/PE inbound %s:%d resolved crypto hash disagrees with plaintext handshake",
+                    peer_ip,
+                    peer_port,
+                )
+                await self._close_writer_safely(writer)
+                return
+
+            if not peer_manager:
+                has_any_sessions = (await self._session_manager_torrent_count()) > 0
+                polled_session = await self._grace_poll_session_for_handshake(
+                    parsed_initial_handshake,
+                    seconds=self._grace_poll_seconds_after_probation_cap(
+                        parsed_initial_handshake,
+                        has_any_sessions,
+                    ),
+                )
+                if polled_session is not None:
+                    session = polled_session
+                    peer_manager = self._peer_manager_for_session(session)
 
             if not peer_manager:
                 self.logger.debug(
@@ -1240,8 +1515,11 @@ class IncomingPeerServer:
                     peer_ip,
                     peer_port,
                 )
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
+                return
+
+            if self._should_abort_inbound_registration_wait():
+                await self._close_writer_safely(writer)
                 return
 
             if not self._allow_inbound_admission(
@@ -1250,8 +1528,7 @@ class IncomingPeerServer:
                 session,
                 InboundProtocolKind.MSE_P2P,
             ):
-                writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
 
             await peer_manager.accept_incoming_encrypted(
@@ -1262,17 +1539,16 @@ class IncomingPeerServer:
                 peer_port,
             )
 
+        except asyncio.CancelledError:
+            await self._close_writer_safely(writer)
+            raise
         except Exception:
             self.logger.exception(
                 "Error while handling inbound MSE/PE connection from %s:%d",
                 peer_ip,
                 peer_port,
             )
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+            await self._close_writer_safely(writer)
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

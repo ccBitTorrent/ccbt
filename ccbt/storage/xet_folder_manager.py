@@ -732,7 +732,11 @@ class XetFolder:
                 self.logger.debug("Error updating git ref: %s", e)
 
         await self._refresh_metadata_snapshot()
-        if file_metadata is not None:
+        latest_metadata = await self._build_file_metadata(entry.file_path)
+        if latest_metadata is not None:
+            self.sync_manager.file_metadata_by_path[entry.file_path] = latest_metadata
+        elif file_metadata is not None:
+            # Fallback to update payload metadata only when local rebuild is unavailable.
             self.sync_manager.file_metadata_by_path[entry.file_path] = file_metadata
         self._bootstrap_pending = False
         self.sync_manager.set_last_error(None)

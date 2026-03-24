@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import struct
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio

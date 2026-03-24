@@ -1115,18 +1115,24 @@ class AnnounceLoop:
                                     len(unique_peer_list),
                                 )
 
+                            raw_peer_len = len(peer_list)
+                            response_peer_len = (
+                                len(response.peers) if response.peers else 0
+                            )
                             self.s.logger.debug(
-                                "🔗 TRACKER PEER CONNECTION: Connecting %d unique peer(s) from tracker to peer manager for %s (response had %d total peers)",
+                                "🔗 TRACKER PEER CONNECTION (announce_loop): raw=%d unique=%d "
+                                "response.peers=%d for %s",
+                                raw_peer_len,
                                 len(unique_peer_list),
+                                response_peer_len,
                                 self.s.info.name,
-                                len(response.peers) if response.peers else 0,
                             )
                             try:
-                                # Use PeerConnectionHelper for consistent peer connection handling
-                                from ccbt.session.peers import PeerConnectionHelper
-
-                                helper = PeerConnectionHelper(self.s)
-                                await helper.connect_peers_to_download(unique_peer_list)
+                                await self.s._ingest_tracker_discovery_peers(  # noqa: SLF001
+                                    unique_peer_list,
+                                    tracker_url=announce_url,
+                                    ingress_source="announce_loop",
+                                )
                                 self.s.logger.debug(
                                     "✅ TRACKER PEER CONNECTION: Successfully initiated connection to %d peer(s) from tracker for %s",
                                     len(unique_peer_list),
@@ -1333,10 +1339,11 @@ class AnnounceLoop:
                             or (isinstance(p, dict) and "ip" in p and "port" in p)
                         ]
                         if peer_list:
-                            from ccbt.session.peers import PeerConnectionHelper
-
-                            helper = PeerConnectionHelper(self.s)
-                            await helper.connect_peers_to_download(peer_list)
+                            await self.s._ingest_tracker_discovery_peers(  # noqa: SLF001
+                                peer_list,
+                                tracker_url=announce_url,
+                                ingress_source="announce_loop_fallback",
+                            )
                     elif hasattr(self.s.download_manager, "add_peers") and callable(
                         self.s.download_manager.add_peers
                     ):

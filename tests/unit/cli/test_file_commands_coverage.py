@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -108,10 +108,10 @@ class TestFileCommandsCoverage:
         mock_executor.adapter = MagicMock()
         mock_executor.adapter.ipc_client = AsyncMock()
         mock_executor.adapter.ipc_client.close = AsyncMock()
-        
+
         async def mock_get_executor():
             return (mock_executor, True)  # (executor, is_daemon)
-        
+
         monkeypatch.setattr(
             cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
@@ -160,10 +160,10 @@ class TestFileCommandsCoverage:
         mock_executor.adapter = MagicMock()
         mock_executor.adapter.ipc_client = AsyncMock()
         mock_executor.adapter.ipc_client.close = AsyncMock()
-        
+
         async def mock_get_executor():
             return (mock_executor, True)  # (executor, is_daemon)
-        
+
         monkeypatch.setattr(
             cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
@@ -214,10 +214,10 @@ class TestFileCommandsCoverage:
         mock_executor.adapter = MagicMock()
         mock_executor.adapter.ipc_client = AsyncMock()
         mock_executor.adapter.ipc_client.close = AsyncMock()
-        
+
         async def mock_get_executor():
             return (mock_executor, True)  # (executor, is_daemon)
-        
+
         monkeypatch.setattr(
             cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
@@ -270,10 +270,10 @@ class TestFileCommandsCoverage:
         mock_executor.adapter = MagicMock()
         mock_executor.adapter.ipc_client = AsyncMock()
         mock_executor.adapter.ipc_client.close = AsyncMock()
-        
+
         async def mock_get_executor():
             return (mock_executor, True)  # (executor, is_daemon)
-        
+
         monkeypatch.setattr(
             cli_file_commands, "_get_executor", lambda: mock_get_executor
         )
@@ -326,10 +326,10 @@ class TestFileCommandsCoverage:
         mock_executor.adapter = MagicMock()
         mock_executor.adapter.ipc_client = AsyncMock()
         mock_executor.adapter.ipc_client.close = AsyncMock()
-        
+
         async def mock_get_executor():
             return (mock_executor, True)  # (executor, is_daemon)
-        
+
         monkeypatch.setattr(
             cli_file_commands, "_get_executor", lambda: mock_get_executor
         )

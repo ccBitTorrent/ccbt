@@ -137,22 +137,22 @@ class TestBasicImports:
         # without syntax errors or missing dependencies
         try:
             import ccbt
-            import ccbt.piece.async_metadata_exchange
-            import ccbt.peer.async_peer_connection
-            import ccbt.piece.async_piece_manager
-            import ccbt.core.bencode
             import ccbt.config.config
-            import ccbt.discovery.dht
-            import ccbt.storage.disk_io
-            import ccbt.storage.file_assembler
+            import ccbt.core.bencode
             import ccbt.core.magnet
-            import ccbt.utils.metrics
-            import ccbt.peer.peer
-            import ccbt.discovery.pex
-            import ccbt.session.session
             import ccbt.core.torrent
+            import ccbt.discovery.dht
+            import ccbt.discovery.pex
             import ccbt.discovery.tracker
             import ccbt.discovery.tracker_udp_client
+            import ccbt.peer.async_peer_connection
+            import ccbt.peer.peer
+            import ccbt.piece.async_metadata_exchange
+            import ccbt.piece.async_piece_manager
+            import ccbt.session.session
+            import ccbt.storage.disk_io
+            import ccbt.storage.file_assembler
+            import ccbt.utils.metrics
 
             # Verify tracker_udp_client is importable
             assert ccbt.discovery.tracker_udp_client is not None

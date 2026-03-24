@@ -36,7 +36,7 @@ class TestBlacklistUpdater:
             mock_resp.text = AsyncMock(return_value=content)
             mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
             mock_resp.__aexit__ = AsyncMock(return_value=None)
-            
+
             # Create mock session with get method that returns async context manager
             mock_session = AsyncMock()
             mock_get = MagicMock(return_value=mock_resp)
@@ -45,7 +45,7 @@ class TestBlacklistUpdater:
             mock_session.get = MagicMock(return_value=mock_get)
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
-            
+
             # Make ClientSession() return the mock session
             mock_session_class.return_value = mock_session
 
@@ -68,7 +68,7 @@ class TestBlacklistUpdater:
             mock_resp.text = AsyncMock(return_value=content)
             mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
             mock_resp.__aexit__ = AsyncMock(return_value=None)
-            
+
             # Create mock session with get method that returns async context manager
             mock_session = AsyncMock()
             mock_get = MagicMock(return_value=mock_resp)
@@ -77,7 +77,7 @@ class TestBlacklistUpdater:
             mock_session.get = MagicMock(return_value=mock_get)
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
-            
+
             # Make ClientSession() return the mock session
             mock_session_class.return_value = mock_session
 
@@ -99,7 +99,7 @@ class TestBlacklistUpdater:
             mock_resp.text = AsyncMock(return_value=content)
             mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
             mock_resp.__aexit__ = AsyncMock(return_value=None)
-            
+
             # Create mock session with get method that returns async context manager
             mock_session = AsyncMock()
             mock_get = MagicMock(return_value=mock_resp)
@@ -108,7 +108,7 @@ class TestBlacklistUpdater:
             mock_session.get = MagicMock(return_value=mock_get)
             mock_session.__aenter__ = AsyncMock(return_value=mock_session)
             mock_session.__aexit__ = AsyncMock(return_value=None)
-            
+
             # Make ClientSession() return the mock session
             mock_session_class.return_value = mock_session
 
@@ -167,7 +167,7 @@ class TestBlacklistUpdater:
         updater._update_task = asyncio.create_task(dummy_task())
 
         updater.stop_auto_update()
-        
+
         # Wait a bit for cancellation to complete
         await asyncio.sleep(0.1)
 

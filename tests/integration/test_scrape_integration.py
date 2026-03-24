@@ -14,10 +14,9 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from ccbt.models import ScrapeResult
-from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
+from ccbt.session.session import AsyncTorrentSession
 from tests.conftest import create_test_torrent_dict
 
 pytestmark = [pytest.mark.integration, pytest.mark.session]

@@ -2560,23 +2560,50 @@ class AsyncPieceManager:
                         piece_index,
                     )
 
-                # Note: If no peers have bitfields, reset stuck pieces immediately
-                # This prevents infinite loops when peers are connected but haven't sent bitfields
+                # Note: If no peers have bitfields, usually reset stuck pieces to avoid
+                # long-lived REQUESTED orphans. However, guard resets during metadata
+                # bootstrap and HAVE-only visibility where bitfield tables are expected
+                # to be temporarily empty.
                 if not self.peer_availability:
-                    self.logger.debug(
-                        "PIECE_MANAGER: Piece %d in REQUESTED state but no peers have bitfields yet - "
-                        "resetting to MISSING",
-                        piece_index,
-                    )
-                    self._reset_piece_to_missing(piece)
-                    self._clear_retry_from_active_state(piece_index)
-                    # Clean up tracking
-                    for peer_key in list(self._requested_pieces_per_peer.keys()):
-                        self._requested_piece_map_discard(peer_key, piece_index)
-                    # Clean up active request tracking
-                    if piece_index in self._active_block_requests:
-                        del self._active_block_requests[piece_index]
-                    return
+                    has_have_only_visibility = False
+                    if peer_manager and hasattr(peer_manager, "get_active_peers"):
+                        with contextlib.suppress(Exception):
+                            active_peers_for_have = (
+                                peer_manager.get_active_peers() or []
+                            )
+                            has_have_only_visibility = any(
+                                hasattr(conn, "peer_state")
+                                and hasattr(conn.peer_state, "pieces_we_have")
+                                and len(conn.peer_state.pieces_we_have) > 0
+                                for conn in active_peers_for_have
+                            )
+
+                    if (
+                        getattr(self, "_metadata_incomplete", False)
+                        or has_have_only_visibility
+                    ):
+                        self.logger.debug(
+                            "PIECE_MANAGER: Piece %d remains REQUESTED while bitfields are empty "
+                            "(metadata_incomplete=%s, have_only_visibility=%s)",
+                            piece_index,
+                            getattr(self, "_metadata_incomplete", False),
+                            has_have_only_visibility,
+                        )
+                    else:
+                        self.logger.debug(
+                            "PIECE_MANAGER: Piece %d in REQUESTED state but no peers have bitfields yet - "
+                            "resetting to MISSING",
+                            piece_index,
+                        )
+                        self._reset_piece_to_missing(piece)
+                        self._clear_retry_from_active_state(piece_index)
+                        # Clean up tracking
+                        for peer_key in list(self._requested_pieces_per_peer.keys()):
+                            self._requested_piece_map_discard(peer_key, piece_index)
+                        # Clean up active request tracking
+                        if piece_index in self._active_block_requests:
+                            del self._active_block_requests[piece_index]
+                        return
 
                 # Check if piece is stuck in REQUESTED state with no active requests
                 has_outstanding = any(
@@ -2834,6 +2861,17 @@ class AsyncPieceManager:
                         len(choked_peers_with_piece),
                         peer_manager is not None,
                     )
+                    if (
+                        peer_manager is not None
+                        and tx_counts["pipeline_blocked"] > 0
+                        and tx_counts["request_ready"] == 0
+                    ):
+                        deficit_fn = getattr(
+                            peer_manager, "notify_requestable_peer_deficit", None
+                        )
+                        if callable(deficit_fn):
+                            with contextlib.suppress(Exception):
+                                deficit_fn()
                 else:
                     # During shutdown, only log at debug level
                     self.logger.debug(
@@ -3971,8 +4009,6 @@ class AsyncPieceManager:
                     pipeline_utilization
                 )
 
-                # Add to tracking BEFORE sending request (prevents race conditions)
-                self._requested_piece_map_add(peer_key, piece_index)
                 capable_peers.append(peer)
                 # Track successful peer selection
                 self._piece_selection_metrics["peer_selection_successes"] += 1
@@ -4088,15 +4124,22 @@ class AsyncPieceManager:
                 and requestable_peer_count == 1
                 and peers_with_availability >= 1
             )
+            throttle_basis_count = (
+                requestable_peer_count
+                if requestable_peer_count > 0
+                else active_peer_count
+            )
             throttle_requests = (
                 active_peer_count > 0
-                and active_peer_count < 10
+                and throttle_basis_count < 10
                 and not single_supplier_with_data
             )
             if throttle_requests:
                 self.logger.debug(
-                    "THROTTLING: Active peers (%d) < 10, throttling piece requests to avoid overwhelming peers (peers with availability: %d)",
+                    "THROTTLING: Basis peers (%d; active=%d requestable=%d) < 10, throttling piece requests to avoid overwhelming peers (peers with availability: %d)",
+                    throttle_basis_count,
                     active_peer_count,
+                    requestable_peer_count,
                     peers_with_availability,
                 )
 
@@ -4324,6 +4367,7 @@ class AsyncPieceManager:
                             if not sent:
                                 continue
                             # Track active request only when wire REQUEST was sent
+                            self._requested_piece_map_add(peer_key, piece_index)
                             request_time = time.time()
                             if (
                                 request_info.piece_index
@@ -4465,8 +4509,20 @@ class AsyncPieceManager:
                         )
                         if not sent:
                             continue
+                        self._requested_piece_map_add(peer_key, piece_index)
+                        request_time = time.time()
+                        if piece_index not in self._active_block_requests:
+                            self._active_block_requests[piece_index] = {}
+                        if peer_key not in self._active_block_requests[piece_index]:
+                            self._active_block_requests[piece_index][peer_key] = []
+                        self._active_block_requests[piece_index][peer_key].append(
+                            (block.begin, block.length, request_time)
+                        )
+                        self._piece_selection_metrics["active_block_requests"] += 1
+                        self._piece_selection_metrics["total_piece_requests"] += 1
                         outstanding += 1
                         block.requested_from.add(peer_key)
+                        requests_sent += 1
                     except Exception as req_error:
                         # Track failed requests - peer might be refusing
                         self.logger.warning(
@@ -4565,6 +4621,7 @@ class AsyncPieceManager:
                             )
                             if not sent:
                                 continue
+                            self._requested_piece_map_add(peer_key, piece_index)
                             request_time = time.time()  # type: ignore[unresolved-reference]  # time is imported at module level
                             if piece_index not in self._active_block_requests:
                                 self._active_block_requests[piece_index] = {}
@@ -4577,6 +4634,7 @@ class AsyncPieceManager:
                             self._piece_selection_metrics["total_piece_requests"] += 1
                             outstanding += 1
                             block.requested_from.add(peer_key)
+                            requests_sent += 1
                         except Exception as req_error:
                             # Track failed requests - peer might be refusing
                             self._piece_selection_metrics["failed_piece_requests"] += 1
@@ -7283,11 +7341,20 @@ class AsyncPieceManager:
                             "PIECE_SELECTOR_DEGRADED: %d active peer(s) but none have advertised bitfield/HAVE availability after metadata completion. Triggering connection recovery.",
                             len(active_peers),
                         )
-                        if hasattr(self._peer_manager, "_schedule_pending_resume"):
+                        pm = self._peer_manager
+                        req = getattr(pm, "request_pending_resume", None)
+                        if callable(req):
                             with contextlib.suppress(Exception):
-                                self._peer_manager._schedule_pending_resume(  # noqa: SLF001
+                                req(reason="piece_selector_no_piece_info")
+                        elif hasattr(pm, "_schedule_pending_resume"):
+                            with contextlib.suppress(Exception):
+                                pm._schedule_pending_resume(  # noqa: SLF001
                                     reason="piece_selector_no_piece_info"
                                 )
+                            self.logger.debug(
+                                "pd_deprecate_private_resume caller=piece_selector "
+                                "reason=piece_selector_no_piece_info msg=use_request_pending_resume"
+                            )
                         if requestable_active_peers:
                             self.logger.debug(
                                 "PIECE_SELECTOR_DEGRADED: continuing with optimistic bootstrap because %d active peer(s) remain requestable even without advertised availability",

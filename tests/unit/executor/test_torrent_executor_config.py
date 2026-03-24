@@ -14,9 +14,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ccbt.executor.base import CommandResult
-from ccbt.executor.torrent_executor import TorrentExecutor
 from ccbt.daemon.ipc_protocol import TorrentStatusResponse
+from ccbt.executor.torrent_executor import TorrentExecutor
 
 pytestmark = [pytest.mark.unit, pytest.mark.executor]
 

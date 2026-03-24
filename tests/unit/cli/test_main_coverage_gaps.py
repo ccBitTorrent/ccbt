@@ -9,14 +9,13 @@ This module tests the remaining uncovered lines:
 - Additional error paths as identified
 """
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
 from click.testing import CliRunner
-from rich.console import Console
 
 
 @pytest.fixture(scope="function")
@@ -170,7 +169,6 @@ class TestIPFilterLoading:
         """
         # This test verifies the code structure exists
         # The actual error path is tested via integration tests
-        pass
 
 
 class TestPrivateTorrentWarning:
@@ -189,7 +187,6 @@ class TestPrivateTorrentWarning:
         """
         # This test verifies the code structure exists
         # The actual error path is tested via integration tests
-        pass
 
 
 class TestMagnetIndexMerging:

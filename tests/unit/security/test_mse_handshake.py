@@ -1296,7 +1296,6 @@ class TestMSEHandshakeFullFlow:
 @pytest.mark.asyncio
 async def test_initiate_and_responder_roundtrip_with_initial_payload() -> None:
     """End-to-end handshake succeeds and carries IA payload as decrypted initial data."""
-
     info_hash = b"\x01" * 20
     initial_payload = (
         b"\x13BitTorrent protocol" + b"\x00" * 43 + b"\x02" * 20
@@ -1355,7 +1354,6 @@ async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
 
     This validates multi-hash probing when multiple torrents are managed.
     """
-
     ignored_info_hash = b"\x11" * 20
     chosen_info_hash = b"\x22" * 20
     initial_payload = b"peer-handshake-placeholder"

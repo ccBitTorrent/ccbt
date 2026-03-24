@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import pytest
-from tests.utils.port_pool import PortPool, get_free_port
+
 from tests.fixtures.network_mocks import (
-    mock_nat_manager,
-    mock_dht_client,
-    mock_tcp_server,
-    mock_network_components,
     apply_network_mocks_to_session,
 )
+from tests.utils.port_pool import PortPool, get_free_port
 
 
 class TestPortPool:
@@ -26,21 +23,21 @@ class TestPortPool:
         """Test that get_free_port returns unique ports."""
         pool = PortPool.get_instance()
         pool.release_all_ports()  # Start fresh
-        
+
         port1 = get_free_port()
         port2 = get_free_port()
         port3 = get_free_port()
-        
+
         assert port1 != port2
         assert port2 != port3
         assert port1 != port3
-        
+
         # Check that ports are tracked
         assert pool.get_allocated_count() == 3
         assert port1 in pool.get_allocated_ports()
         assert port2 in pool.get_allocated_ports()
         assert port3 in pool.get_allocated_ports()
-        
+
         # Cleanup
         pool.release_all_ports()
 
@@ -48,10 +45,10 @@ class TestPortPool:
         """Test releasing a port back to the pool."""
         pool = PortPool.get_instance()
         pool.release_all_ports()
-        
+
         port = get_free_port()
         assert pool.get_allocated_count() == 1
-        
+
         pool.release_port(port)
         assert pool.get_allocated_count() == 0
         assert port not in pool.get_allocated_ports()
@@ -60,23 +57,23 @@ class TestPortPool:
         """Test releasing all ports at once."""
         pool = PortPool.get_instance()
         pool.release_all_ports()
-        
+
         port1 = get_free_port()
         port2 = get_free_port()
         assert pool.get_allocated_count() == 2
-        
+
         pool.release_all_ports()
         assert pool.get_allocated_count() == 0
 
     def test_port_is_actually_available(self):
         """Test that allocated ports are actually available (not in use by OS)."""
         import socket
-        
+
         pool = PortPool.get_instance()
         pool.release_all_ports()
-        
+
         port = get_free_port()
-        
+
         # Try to bind to the port - should succeed since it's available
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -108,7 +105,7 @@ class TestNetworkMocks:
         await mock_nat_manager.stop()
         await mock_nat_manager.map_listen_ports(6881, 6881)
         await mock_nat_manager.wait_for_mapping(6881, "tcp")
-        
+
         # Verify methods were called
         mock_nat_manager.start.assert_called_once()
         mock_nat_manager.stop.assert_called_once()
@@ -128,7 +125,7 @@ class TestNetworkMocks:
         await mock_dht_client.stop()
         await mock_dht_client.bootstrap([("127.0.0.1", 6881)])
         peers = await mock_dht_client.get_peers(b"test_hash")
-        
+
         assert peers == []
         mock_dht_client.start.assert_called_once()
         mock_dht_client.stop.assert_called_once()
@@ -146,7 +143,7 @@ class TestNetworkMocks:
         """Test that mock TCP server async methods work."""
         await mock_tcp_server.start()
         await mock_tcp_server.stop()
-        
+
         mock_tcp_server.start.assert_called_once()
         mock_tcp_server.stop.assert_called_once()
 
@@ -155,7 +152,7 @@ class TestNetworkMocks:
         assert "nat" in mock_network_components
         assert "dht" in mock_network_components
         assert "tcp_server" in mock_network_components
-        
+
         assert mock_network_components["nat"] is not None
         assert mock_network_components["dht"] is not None
         assert mock_network_components["tcp_server"] is not None
@@ -164,18 +161,18 @@ class TestNetworkMocks:
     async def test_apply_network_mocks_to_session(self, mock_network_components):
         """Test applying network mocks to a session."""
         from unittest.mock import MagicMock
-        
+
         # Create a mock session
         session = MagicMock()
         session._make_nat_manager = MagicMock()
         session.dht_client = None
         session.tcp_server = None
-        
+
         # Apply mocks
         from unittest.mock import patch
         with patch.object(session, "_make_nat_manager", return_value=mock_network_components["nat"]):
             apply_network_mocks_to_session(session, mock_network_components)
-            
+
             # Verify mocks were applied
             assert session.dht_client == mock_network_components["dht"]
             assert session.tcp_server == mock_network_components["tcp_server"]

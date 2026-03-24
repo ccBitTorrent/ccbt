@@ -18,17 +18,18 @@ pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
 from ccbt.models import (
     DownloadStats,
-    PieceState as CheckpointPieceState,
     TorrentCheckpoint,
 )
+from ccbt.models import (
+    PieceState as CheckpointPieceState,
+)
+from ccbt.peer.async_peer_connection import RequestInfo
+from ccbt.peer.peer import PeerInfo
 from ccbt.piece.async_piece_manager import (
     AsyncPieceManager,
-    PieceBlock,
     PieceData,
     PieceState,
 )
-from ccbt.peer.peer import PeerInfo
-from ccbt.peer.async_peer_connection import RequestInfo
 from ccbt.utils.shutdown import clear_shutdown, set_shutdown
 
 
@@ -448,7 +449,7 @@ class TestAsyncPieceManagerPieceSelector:
     ):
         """No-progress gate should attribute stalls to no-peers when no active peers are present."""
         piece_manager.is_downloading = True
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._no_progress_stall_threshold = 1
         piece_manager._no_progress_pause_s = 0.01
         piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
@@ -1236,7 +1237,7 @@ class TestAsyncPieceManagerEdgeCases:
         self, piece_manager
     ):
         """Bitfield updates should trigger focused bounded retries when new pieces appear."""
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._retry_requested_pieces = AsyncMock()
         piece_manager.pieces[0].state = PieceState.REQUESTED
 
@@ -1254,7 +1255,7 @@ class TestAsyncPieceManagerEdgeCases:
         self, piece_manager
     ):
         """Piece index updates should trigger focused bounded retries when new availability appears."""
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._retry_requested_pieces = AsyncMock()
         piece_manager.pieces[0].state = PieceState.REQUESTED
         piece_manager.peer_availability["198.51.100.81:6881"] = SimpleNamespace(
@@ -1280,7 +1281,7 @@ class TestAsyncPieceManagerEdgeCases:
         self, piece_manager
     ):
         """Do not trigger retries when the bitfield does not increase peer availability."""
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._retry_requested_pieces = AsyncMock()
         piece_manager.pieces[0].state = PieceState.REQUESTED
         piece_manager.peer_availability["198.51.100.80:6881"] = SimpleNamespace(
@@ -1482,6 +1483,60 @@ class TestAsyncPieceManagerEdgeCases:
         assert requests_sent == 1
         assert peer_manager.request_piece.await_count == 1
         assert piece_manager._piece_selection_metrics["unknown_peer_probes"] == 1
+
+    @pytest.mark.asyncio
+    async def test_request_blocks_normal_does_not_track_piece_when_send_fails(self):
+        """Per-peer requested map should not retain entries when send returns False."""
+        torrent_data = {
+            "info_hash": b"\x0a" * 20,
+            "file_info": {
+                "name": "send-fail.bin",
+                "total_length": 32768,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 32768,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 32768,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        peer = MagicMock()
+        peer.peer_info = PeerInfo(ip="198.51.100.21", port=6881)
+        peer.can_request.return_value = True
+        peer.get_available_pipeline_slots.return_value = 8
+        peer.outstanding_requests = {}
+        peer.max_pipeline_depth = 8
+        peer.peer_choking = False
+        peer.am_interested = True
+        peer.peer_interested = False
+        peer.state = SimpleNamespace(value="active")
+        peer.stats = SimpleNamespace(download_rate=2.0)
+        peer.peer_state = SimpleNamespace(pieces_we_have={0}, bitfield=b"\x80")
+        peer.is_active.return_value = True
+
+        piece = piece_manager.pieces[0]
+        missing_blocks = piece.get_missing_blocks()
+        peer_manager = SimpleNamespace(
+            _balance_requests_across_peers=lambda requests,
+            peers,
+            min_allocation_per_peer=1: {str(peers[0].peer_info): requests[:1]},
+            get_active_peers=lambda: [peer],
+            request_piece=AsyncMock(return_value=False),
+        )
+
+        requests_sent = await piece_manager._request_blocks_normal(
+            0,
+            missing_blocks,
+            [peer],
+            peer_manager,
+        )
+
+        assert requests_sent == 0
+        assert str(peer.peer_info) not in piece_manager._requested_pieces_per_peer
 
     @pytest.mark.asyncio
     async def test_get_peers_for_piece_adds_single_unknown_probe_for_weak_swarm(self):
@@ -2215,7 +2270,6 @@ class TestAsyncPieceManagerEdgeCases:
         self, piece_manager
     ):
         """Peer-key normalization converts peer objects into stable string keys."""
-
         peer_connection = SimpleNamespace(
             peer_info=PeerInfo(ip="198.51.100.70", port=6881)
         )
@@ -2329,7 +2383,7 @@ class TestAsyncPieceManagerEdgeCases:
         piece.last_request_time = time.time() - 120.0
         piece.last_activity_time = 0.0
 
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._active_block_requests[0] = {}
 
         await piece_manager._clear_stale_requested_pieces(timeout=30.0)
@@ -2502,7 +2556,7 @@ class TestAsyncPieceManagerEdgeCases:
             _balance_requests_across_peers=lambda requests,
             peers,
             min_allocation_per_peer=1: {str(peer.peer_info): request_list},
-            get_active_peers=lambda: [],
+            get_active_peers=list,
             request_piece=AsyncMock(),
         )
 
@@ -2570,7 +2624,7 @@ class TestAsyncPieceManagerEdgeCases:
             _balance_requests_across_peers=lambda requests,
             peers,
             min_allocation_per_peer=1: {str(peer.peer_info): request_list},
-            get_active_peers=lambda: [],
+            get_active_peers=list,
             request_piece=AsyncMock(),
         )
 
@@ -2693,7 +2747,7 @@ class TestAsyncPieceManagerEdgeCases:
             "198.51.100.50:6881": SimpleNamespace(pieces={0})
         }
 
-        peer_manager = SimpleNamespace(get_active_peers=lambda: [], connections={})
+        peer_manager = SimpleNamespace(get_active_peers=list, connections={})
         with patch.object(
             piece_manager,
             "_get_peers_for_piece",
@@ -2783,6 +2837,77 @@ class TestAsyncPieceManagerEdgeCases:
 
         assert piece.state == PieceState.REQUESTED
         assert piece_manager._piece_selection_metrics["no_requestable_peers"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_request_piece_from_peers_keeps_requested_for_have_only_visibility(
+        self, piece_manager
+    ):
+        """HAVE-only active peers should not trigger forced REQUESTED->MISSING reset."""
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 1
+        piece.requests_dispatched = 1
+        piece.last_request_time = time.time() - 1.0
+        piece.last_activity_time = 0.0
+        piece_manager.peer_availability.clear()
+
+        peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.71", port=6881),
+            is_active=lambda: True,
+            can_request=lambda: True,
+            peer_state=SimpleNamespace(pieces_we_have={0}),
+        )
+        peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [peer],
+            connections={},
+        )
+        piece_manager._peer_manager = peer_manager
+        piece_manager._retry_from_active_max_attempts = 0
+
+        with patch.object(
+            piece_manager,
+            "_get_peers_for_piece",
+            AsyncMock(return_value=[]),
+        ):
+            await piece_manager.request_piece_from_peers(0, peer_manager)
+
+        assert piece.state == PieceState.REQUESTED
+
+    @pytest.mark.asyncio
+    async def test_request_piece_from_peers_keeps_requested_during_metadata_incomplete_transient(
+        self, piece_manager
+    ):
+        """Metadata-incomplete phase should guard against eager REQUESTED->MISSING resets."""
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.REQUESTED
+        piece.request_count = 1
+        piece.requests_dispatched = 1
+        piece.last_request_time = time.time() - 1.0
+        piece.last_activity_time = 0.0
+        piece_manager.peer_availability.clear()
+        piece_manager._metadata_incomplete = True
+
+        peer = SimpleNamespace(
+            peer_info=PeerInfo(ip="198.51.100.72", port=6881),
+            is_active=lambda: True,
+            can_request=lambda: False,
+            peer_state=SimpleNamespace(pieces_we_have=set()),
+        )
+        peer_manager = SimpleNamespace(
+            get_active_peers=lambda: [peer],
+            connections={},
+        )
+        piece_manager._peer_manager = peer_manager
+        piece_manager._retry_from_active_max_attempts = 0
+
+        with patch.object(
+            piece_manager,
+            "_get_peers_for_piece",
+            AsyncMock(return_value=[]),
+        ):
+            await piece_manager.request_piece_from_peers(0, peer_manager)
+
+        assert piece.state == PieceState.REQUESTED
 
     @pytest.mark.asyncio
     async def test_clear_stale_requested_skips_recent_dispatched_requests_with_active_peers(
@@ -2878,7 +3003,7 @@ class TestAsyncPieceManagerEdgeCases:
         piece.last_activity_time = 0.0
         epoch = piece.last_request_time
 
-        peer_manager = SimpleNamespace(get_active_peers=lambda: [], connections={})
+        peer_manager = SimpleNamespace(get_active_peers=list, connections={})
         with patch.object(
             piece_manager,
             "_get_peers_for_piece",
@@ -2905,7 +3030,7 @@ class TestAsyncPieceManagerEdgeCases:
         """A new HAVE should trigger bounded retry when REQUESTED pieces are pending."""
         piece_manager.pieces[0].state = PieceState.REQUESTED
         peer_key = "198.51.100.80:6881"
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._retry_requested_pieces = AsyncMock()
         piece_manager.peer_availability.clear()
 
@@ -2923,7 +3048,7 @@ class TestAsyncPieceManagerEdgeCases:
         self, piece_manager
     ):
         """No retry should occur when there are no REQUESTED pieces."""
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         piece_manager._retry_requested_pieces = AsyncMock()
         piece_manager.peer_availability.clear()
 
@@ -3005,7 +3130,7 @@ class TestAsyncPieceManagerEdgeCases:
     ):
         """Repeated no-availability warnings for the same piece are rate-limited."""
         piece_manager.logger = MagicMock()
-        piece_manager._peer_manager = SimpleNamespace(get_active_peers=lambda: [])
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
         # Seed availability so we pass the early "no peer data" gate and hit the
         # _warn_piece_manager path (empty active peers alone exits at DEBUG only).
         piece_manager.peer_availability["198.51.100.77:6881"] = SimpleNamespace(

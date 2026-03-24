@@ -9,7 +9,6 @@ import pytest
 
 from ccbt.interface.terminal_dashboard import TerminalDashboard
 
-
 pytestmark = [pytest.mark.unit, pytest.mark.interface]
 
 

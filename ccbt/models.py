@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional, TypedDict, Union
+from typing import Any, Literal, Optional, TypedDict, Union
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
@@ -203,6 +203,41 @@ class PeerInfo(BaseModel):
         return self.ip == other.ip and self.port == other.port
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+ConnectSubmitStatusLiteral = Literal[
+    "owner_started",
+    "queued_reentrant",
+    "noop_empty",
+    "noop_shutdown",
+]
+
+
+class ConnectSubmitResult(BaseModel):
+    """Outcome of :meth:`~ccbt.peer.async_peer_connection.AsyncPeerConnectionManager.connect_to_peers`.
+
+    Non-owner submissions merge into the pending queue and return ``queued_reentrant``.
+    """
+
+    model_config = {"frozen": True, "extra": "forbid"}
+
+    status: ConnectSubmitStatusLiteral = Field(
+        ...,
+        description="owner_started | queued_reentrant | noop_empty | noop_shutdown",
+    )
+    upstream_peer_count: int = Field(
+        0, ge=0, description="Peers in this submit call (input list length)."
+    )
+    queued_peer_count: int = Field(
+        0,
+        ge=0,
+        description="Newly queued PeerInfo rows (reentrant path); 0 for owner/noop.",
+    )
+    queue_depth_after: int = Field(
+        0,
+        ge=0,
+        description="Pending queue depth after this call (reentrant path).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +791,10 @@ class NetworkConfig(BaseModel):
         default=50,
         ge=1,
         le=1000,
-        description="Maximum peers per torrent",
+        description=(
+            "Maximum peers per torrent after static load precedence "
+            "(file → profile → env → platform clamp). Per-torrent options may override at session bind."
+        ),
     )
     pipeline_depth: int = Field(
         default=16,
@@ -1048,6 +1086,15 @@ class NetworkConfig(BaseModel):
         le=100,
         description="Maximum concurrent connection attempts to prevent OS socket exhaustion (BitTorrent spec compliant)",
     )
+    mse_initiator_timeout_scale_zero_active: float = Field(
+        default=1.0,
+        ge=0.25,
+        le=1.0,
+        description=(
+            "Multiply MSE initiator timeout by this factor when this torrent has zero "
+            "active post-handshake peers (encryption preferred mode; 1.0 = unchanged)."
+        ),
+    )
     connection_failure_threshold: int = Field(
         default=3,
         ge=1,
@@ -1273,6 +1320,15 @@ class NetworkConfig(BaseModel):
             "(legacy grace-poll-only behavior)."
         ),
     )
+    inbound_probation_queued_max_wait_s: float = Field(
+        default=120.0,
+        ge=0.0,
+        le=3600.0,
+        description=(
+            "Maximum seconds an inbound peer may wait in the probation queue before "
+            "expiry; 0 disables queued-wait expiry."
+        ),
+    )
 
     choke_only_slot_replacement_enabled: bool = Field(
         default=False,
@@ -1419,6 +1475,31 @@ class NetworkConfig(BaseModel):
         description=(
             "Seconds before disconnecting peers still in quality probation without "
             "bitfield/HAVE/data (slow handshakes need a higher value)."
+        ),
+    )
+    peer_quality_probation_sparse_choke_grace_seconds: float = Field(
+        default=90.0,
+        ge=0.0,
+        le=3600.0,
+        description=(
+            "Grace for sparse swarms before pruning active-but-choking probation peers."
+        ),
+    )
+    peer_recycle_sparse_backoff_cap_seconds: float = Field(
+        default=10.0,
+        ge=0.0,
+        le=300.0,
+        description=(
+            "Cap failure-retry backoff for stale-unchoke recycling in sparse swarms."
+        ),
+    )
+    recycle_pressure_threshold: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Pressure ratio threshold for sparse-swarm recycle heuristics "
+            "(active / capacity)."
         ),
     )
 
@@ -1821,6 +1902,55 @@ class AttributeConfig(BaseModel):
         default=True,
         description="Apply hidden attribute for files with attr='h' (Windows)",
     )
+
+
+class MaxPeersPerTorrentProvenance(BaseModel):
+    """How ``network.max_peers_per_torrent`` was resolved during static config load.
+
+    Per-torrent session options are not represented here; they override at peer-manager bind.
+    """
+
+    optimization_profile: str = Field(
+        description="Optimization profile key after overlay (e.g. balanced, custom).",
+    )
+    value_after_file: Optional[int] = Field(
+        None,
+        description="Explicit or coerced value after TOML normalize, before profile overlay.",
+    )
+    value_after_profile: Optional[int] = Field(
+        None,
+        description="Value after profile overlay, before environment merge.",
+    )
+    value_after_env: Optional[int] = Field(
+        None,
+        description="Value after environment merge, before Windows clamp.",
+    )
+    value_after_platform_clamp: Optional[int] = Field(
+        None,
+        description="Value after Windows strict clamp (same as after_env when not clamped).",
+    )
+    final: int = Field(description="Effective validated value on ``Config.network``.")
+    env_ccbt_max_peers_per_torrent_set: bool = Field(
+        default=False,
+        description="True when ``CCBT_MAX_PEERS_PER_TORRENT`` was set in the environment.",
+    )
+    windows_platform_clamp_applied_to_mpt: bool = Field(
+        default=False,
+        description="True when Windows strict compatibility reduced ``max_peers_per_torrent``.",
+    )
+
+    def as_log_context(self) -> dict[str, Any]:
+        """Structured fields for grep-stable session logs."""
+        return {
+            "optimization_profile": self.optimization_profile,
+            "mpt_after_file": self.value_after_file,
+            "mpt_after_profile": self.value_after_profile,
+            "mpt_after_env": self.value_after_env,
+            "mpt_after_platform_clamp": self.value_after_platform_clamp,
+            "mpt_final": self.final,
+            "env_ccbt_max_peers_per_torrent_set": self.env_ccbt_max_peers_per_torrent_set,
+            "windows_platform_clamp_applied_to_mpt": self.windows_platform_clamp_applied_to_mpt,
+        }
 
 
 class DiskConfig(BaseModel):
@@ -2478,8 +2608,51 @@ class DiscoveryConfig(BaseModel):
         ge=1,
         le=256,
         description=(
-            "Reserved cap for connect-batch pressure per requestable-driven tick "
-            "(metrics and future tuning)."
+            "Cap for DHT / requestable-driven discovery connect pressure per tick "
+            "(see dht_setup burst_cap). Not used for UDP/HTTP immediate tracker callbacks; "
+            "use tracker_immediate_connect_burst_* for those."
+        ),
+    )
+    tracker_immediate_connect_burst_total: int = Field(
+        default=24,
+        ge=1,
+        le=512,
+        description=(
+            "Max peers passed from a single tracker immediate-callback into "
+            "connect_peers_to_download per response (before pending-queue overflow)."
+        ),
+    )
+    tracker_immediate_connect_burst_per_source: int = Field(
+        default=24,
+        ge=1,
+        le=512,
+        description=(
+            "Per tracker_url|peer_source cap within tracker immediate callback batching."
+        ),
+    )
+    tracker_immediate_connect_window_s: float = Field(
+        default=20.0,
+        ge=1.0,
+        le=300.0,
+        description=(
+            "Rolling window (seconds) for immediate tracker callback circuit breaker "
+            "(zero-active streak path)."
+        ),
+    )
+    tracker_immediate_connect_window_cap: int = Field(
+        default=6,
+        ge=1,
+        le=64,
+        description=(
+            "Max immediate tracker callbacks allowed within tracker_immediate_connect_window_s "
+            "before deferring peers to the pending queue."
+        ),
+    )
+    tracker_immediate_per_source_cap_mode: str = Field(
+        default="half_max_peers",
+        description=(
+            "half_max_peers: per-source limit min(burst, max(1, max_peers_per_torrent//2)). "
+            "full_max_peers: min(burst_per_source, max_peers_per_torrent)."
         ),
     )
 
@@ -2826,6 +2999,15 @@ class DiscoveryConfig(BaseModel):
         description="Maximum number of samples per index key (BEP 51). Default 8 samples.",
     )
 
+    @field_validator("tracker_immediate_per_source_cap_mode")
+    @classmethod
+    def _normalize_tracker_immediate_per_source_cap_mode(cls, v: str) -> str:
+        normalized = str(v).strip().lower().replace("-", "_")
+        if normalized in {"half_max_peers", "full_max_peers"}:
+            return normalized
+        msg = "tracker_immediate_per_source_cap_mode must be half_max_peers or full_max_peers"
+        raise ValueError(msg)
+
 
 class ObservabilityConfig(BaseModel):
     """Observability configuration."""
@@ -3162,6 +3344,17 @@ class AuthenticatedSwarmsConfig(BaseModel):
         default=SwarmDiscoveryMode.TRACKERS_ONLY,
         description="Discovery surface for authenticated swarm mode.",
     )
+
+    @field_validator("discovery_mode", mode="before")
+    @classmethod
+    def _normalize_discovery_mode_aliases(cls, value: Any) -> Any:
+        """Accept human-friendly hyphenated aliases (e.g. trackers-only)."""
+        if isinstance(value, SwarmDiscoveryMode):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower().replace("-", "_")
+        return value
+
     discovery_strict_for_strict_mode: bool = Field(
         default=True,
         description="Whether strict mode forces strict discovery behavior.",

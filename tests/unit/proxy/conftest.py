@@ -16,14 +16,14 @@ class AsyncContextManagerMock:
     async def __aenter__(self):
         """Enter async context."""
         # If response is a coroutine, await it
-        if hasattr(self.response, '__await__'):
+        if hasattr(self.response, "__await__"):
             return await self.response
         return self.response
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit async context."""
-        return None
-    
+        return
+
     def __await__(self):
         """Make this awaitable to support direct await."""
         # Not needed for context manager, but helps with compatibility
@@ -58,16 +58,16 @@ def create_async_session_mock(responses: list[AsyncMock] | None = None) -> Async
     """
     if responses is None:
         responses = [create_async_response_mock()]
-    
+
     response_iter = iter(responses)
-    
+
     def get_response(*args, **kwargs):
         try:
             response = next(response_iter)
         except StopIteration:
             response = responses[-1]  # Use last response if exhausted
         return AsyncContextManagerMock(response)
-    
+
     mock_session = AsyncMock()
     mock_session.get = MagicMock(side_effect=get_response)
     mock_session.close = AsyncMock()

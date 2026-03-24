@@ -8,9 +8,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-import pytest_asyncio
 
-from ccbt.models import TorrentInfo, FileInfo
+from ccbt.models import FileInfo, TorrentInfo
 
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 

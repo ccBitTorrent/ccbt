@@ -1,6 +1,5 @@
 """Tests for CLI progress module."""
 
-from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
@@ -228,11 +227,11 @@ class TestProgressManager:
         # Initially empty
         assert len(progress_manager.active_progress) == 0
         assert len(progress_manager.progress_tasks) == 0
-        
+
         # Create some progress bars
         progress1 = progress_manager.create_progress()
         progress2 = progress_manager.create_download_progress(sample_torrent)
-        
+
         # State should still be empty as we're not tracking them
         assert len(progress_manager.active_progress) == 0
         assert len(progress_manager.progress_tasks) == 0
@@ -240,44 +239,44 @@ class TestProgressManager:
     def test_all_progress_types_created(self, progress_manager, sample_torrent):
         """Test that all progress types can be created without errors."""
         progress_methods = [
-            'create_progress',
-            'create_download_progress',
-            'create_upload_progress',
-            'create_piece_progress',
-            'create_speed_progress',
-            'create_peer_progress',
-            'create_verification_progress',
-            'create_metadata_progress',
-            'create_tracker_progress',
-            'create_dht_progress',
-            'create_pex_progress',
-            'create_webseed_progress',
-            'create_encryption_progress',
-            'create_security_progress',
-            'create_ml_progress',
-            'create_monitoring_progress',
-            'create_observability_progress',
-            'create_dashboard_progress',
-            'create_alert_progress',
-            'create_tracing_progress',
-            'create_profiling_progress',
-            'create_debug_progress',
-            'create_completion_progress',
-            'create_cleanup_progress',
-            'create_finalization_progress',
-            'create_verification_final_progress',
-            'create_success_progress',
+            "create_progress",
+            "create_download_progress",
+            "create_upload_progress",
+            "create_piece_progress",
+            "create_speed_progress",
+            "create_peer_progress",
+            "create_verification_progress",
+            "create_metadata_progress",
+            "create_tracker_progress",
+            "create_dht_progress",
+            "create_pex_progress",
+            "create_webseed_progress",
+            "create_encryption_progress",
+            "create_security_progress",
+            "create_ml_progress",
+            "create_monitoring_progress",
+            "create_observability_progress",
+            "create_dashboard_progress",
+            "create_alert_progress",
+            "create_tracing_progress",
+            "create_profiling_progress",
+            "create_debug_progress",
+            "create_completion_progress",
+            "create_cleanup_progress",
+            "create_finalization_progress",
+            "create_verification_final_progress",
+            "create_success_progress",
         ]
-        
+
         for method_name in progress_methods:
             method = getattr(progress_manager, method_name)
-            if method_name == 'create_progress':
+            if method_name == "create_progress":
                 progress = method()
             else:
                 progress = method(sample_torrent)
-            
+
             assert progress is not None
-            assert hasattr(progress, 'columns')
+            assert hasattr(progress, "columns")
             assert len(progress.columns) > 0
 
     def test_create_operation_progress(self, progress_manager):
@@ -346,12 +345,12 @@ class TestProgressManager:
         with progress:
             task_id = progress.add_task("Test task", total=100)
             callback = progress_manager.create_progress_callback(progress, task_id)
-            
+
             # Test callback
             callback(50.0)
             task = progress.tasks[task_id]
             assert task.completed == 50.0
-            
+
             # Test callback with fields
             callback(75.0, {"speed": "1.5 MB/s"})
             task = progress.tasks[task_id]

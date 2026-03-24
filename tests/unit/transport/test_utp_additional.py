@@ -1,7 +1,6 @@
 """Additional tests to improve coverage for uTP transport."""
 
 import asyncio
-import struct
 import time
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 

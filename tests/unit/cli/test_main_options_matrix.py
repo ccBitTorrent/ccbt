@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -189,7 +189,7 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
     class _Mgr:
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
-        
+
         async def start(self):
             pass
 

@@ -221,25 +221,25 @@ class TestRefactoredSessionLifecycle:
         # Note: Add network mocking to prevent timeout
         # Disable NAT auto port mapping to prevent 60s wait
         monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
+        # Disable DHT to prevent network initialization
         monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = Mock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         # Configure manager to disable network services
         manager.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking
         manager.config.network.enable_tcp = False  # Disable TCP server to prevent port conflicts
         manager.config.discovery.enable_dht = False  # Disable DHT to prevent network initialization
-        
+
         # Mock heavy initialization methods to prevent hangs
         manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
         manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
-        
+
         torrent_data = {
             "name": "test_torrent",
             "info_hash": b"x" * 20,
@@ -260,11 +260,10 @@ class TestRefactoredSessionLifecycle:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     # Start manager
                     await manager.start()
 
@@ -283,21 +282,21 @@ class TestRefactoredSessionLifecycle:
         """Test complete session lifecycle sequence."""
         # Disable NAT auto port mapping to prevent 60s wait
         monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-        # Disable DHT to prevent network initialization  
+        # Disable DHT to prevent network initialization
         monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
-        
+
         # Mock AsyncTrackerClient to prevent network calls
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         # Mock heavy initialization methods to prevent hangs
         manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
         manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
-        
+
         torrent_data = {
             "name": "test_torrent",
             "info_hash": b"x" * 20,
@@ -319,11 +318,10 @@ class TestRefactoredSessionLifecycle:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     # Start manager
                     await manager.start()
 

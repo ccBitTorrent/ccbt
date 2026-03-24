@@ -31,6 +31,7 @@ from ccbt.discovery.dht import (
     init_dht,
     shutdown_dht,
 )
+import ccbt.discovery.dht as dht_module
 
 pytestmark = [pytest.mark.unit]
 
@@ -437,7 +438,7 @@ class TestAsyncDHTClientGetPeers:
             queried_nodes = {node.node_id}
             # Actually, queried_nodes is local to get_peers, so each call resets
             # We need to test within the same call
-            pass  # This is tested by having multiple nodes
+            # This is tested by having multiple nodes
 
     @pytest.mark.asyncio
     async def test_get_peers_nodes_data_parsing(self):
@@ -1321,14 +1322,51 @@ class TestDHTGlobalFunctions:
     @pytest.mark.asyncio
     async def test_shutdown_dht(self):
         """Test shutdown_dht (lines 684-686)."""
+        dht_module._dht_client = None
+
         # Initialize first
         with patch.object(AsyncDHTClient, "start", new_callable=AsyncMock):
-            await init_dht()
+            initialized_client = await init_dht()
+            assert dht_module._dht_client is initialized_client
 
         # Test shutdown
-        with patch.object(AsyncDHTClient, "stop", new_callable=AsyncMock) as mock_stop:
+        with patch.object(initialized_client, "stop", new_callable=AsyncMock) as mock_stop:
             await shutdown_dht()
             mock_stop.assert_called_once()
+            assert dht_module._dht_client is None
 
         # Test shutdown when client is None
         await shutdown_dht()  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_init_dht_stops_existing_global_client(self):
+        """init_dht should stop a pre-existing singleton before replacing it."""
+        existing_client = AsyncDHTClient()
+        dht_module._dht_client = existing_client
+
+        with (
+            patch.object(existing_client, "stop", new_callable=AsyncMock) as mock_stop,
+            patch.object(AsyncDHTClient, "start", new_callable=AsyncMock),
+        ):
+            new_client = await init_dht()
+
+        mock_stop.assert_called_once()
+        assert dht_module._dht_client is new_client
+        assert new_client is not existing_client
+
+    @pytest.mark.asyncio
+    async def test_shutdown_dht_clears_global_when_stop_raises(self):
+        """shutdown_dht should clear singleton even when stop raises."""
+        client = AsyncDHTClient()
+        dht_module._dht_client = client
+
+        with patch.object(
+            client,
+            "stop",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("stop failed"),
+        ):
+            with pytest.raises(RuntimeError, match="stop failed"):
+                await shutdown_dht()
+
+        assert dht_module._dht_client is None

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -18,7 +17,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.peer, pytest.mark.security]
 
 def _build_handshake_payload(info_hash: bytes) -> bytes:
     """Build a standard BitTorrent handshake payload for a test peer."""
-
     peer_id = b"-CC0001-" + b"0" * 12
     handshake = Handshake(info_hash=info_hash, peer_id=peer_id)
     return handshake.encode()
@@ -28,7 +26,6 @@ def _build_session_manager(
     sessions: dict[bytes, AsyncMock],
 ) -> SimpleNamespace:
     """Build a simple session manager from a map of info-hash callbacks."""
-
     session_entries: dict[bytes, object] = {}
     for info_hash, accept_incoming_encrypted in sessions.items():
         session_entries[info_hash] = SimpleNamespace(
@@ -48,7 +45,6 @@ async def _run_loopback_mse_handshake(
     port: int,
 ) -> None:
     """Run an outbound MSE handshake against an already-started loopback server."""
-
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
     try:
         mse = MSEHandshake()
@@ -68,7 +64,6 @@ async def _run_loopback_mse_handshake(
 @pytest.mark.asyncio
 async def test_tcp_server_routes_pe_initial_payload_to_single_session() -> None:
     """Incoming PE-first handshake is routed to the single matching session."""
-
     info_hash = b"\x11" * 20
     outbound_payload = _build_handshake_payload(info_hash)
     accept_incoming_encrypted = AsyncMock()
@@ -111,7 +106,6 @@ async def test_tcp_server_routes_pe_initial_payload_to_single_session() -> None:
 @pytest.mark.asyncio
 async def test_tcp_server_resolves_multi_hash_for_pe_first_handshake() -> None:
     """Incoming PE-first handshake resolves to the matching session via candidate hashes."""
-
     target_info_hash = b"\x22" * 20
     ignored_info_hash = b"\x11" * 20
     outbound_payload = _build_handshake_payload(target_info_hash)

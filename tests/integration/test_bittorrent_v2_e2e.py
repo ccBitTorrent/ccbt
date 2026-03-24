@@ -7,9 +7,7 @@ Target: 85%+ e2e test coverage for v2 workflows.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,7 +15,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.core]
 
 from ccbt.core.bencode import decode, encode
 from ccbt.core.torrent_v2 import (
-    FileTreeNode,
     PieceLayer,
     TorrentV2Info,
     TorrentV2Parser,
@@ -555,8 +552,9 @@ class TestHybridTorrentCompatibility:
 
     async def test_hybrid_with_v2_only_peers(self, tmp_path: Path):
         """Test hybrid torrent compatibility with v2-only peers."""
-        from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
         import struct
+
+        from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
 
         # Create hybrid torrent
         test_file = tmp_path / "test.txt"
@@ -592,6 +590,7 @@ class TestHybridTorrentCompatibility:
     async def test_hybrid_mixed_peer_swarm(self, tmp_path: Path):
         """Test hybrid torrent with mixed v1/v2 peer swarm."""
         import struct
+
         from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
 
         # Create hybrid torrent
@@ -641,8 +640,9 @@ class TestHybridTorrentCompatibility:
 
     async def test_protocol_negotiation_in_hybrid_mode(self, tmp_path: Path):
         """Test protocol version negotiation in hybrid mode."""
-        from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
         import struct
+
+        from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
 
         # Create hybrid torrent
         test_file = tmp_path / "test.txt"
@@ -679,8 +679,9 @@ class TestHybridTorrentCompatibility:
 
     async def test_fallback_to_v1_when_v2_unsupported(self, tmp_path: Path):
         """Test fallback to v1 when v2 is not supported."""
-        from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
         import struct
+
+        from ccbt.protocols.bittorrent_v2 import negotiate_protocol_version
 
         # Create hybrid torrent
         test_file = tmp_path / "test.txt"

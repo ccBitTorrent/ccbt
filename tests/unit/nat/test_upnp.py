@@ -11,10 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
-import ipaddress
 from unittest.mock import AsyncMock, MagicMock, patch
-from xml.etree import ElementTree
 
 import pytest
 
@@ -42,7 +39,7 @@ class TestUPnPImportHandling:
 
     def test_et_import_available(self):
         """Test that ET (ElementTree) is imported and available."""
-        from ccbt.nat import upnp  # noqa: F401
+        from ccbt.nat import upnp
 
         # ET should be available (either defusedxml.ElementTree or xml.etree.ElementTree)
         assert upnp.ET is not None
@@ -62,7 +59,6 @@ class TestUPnPDiscovery:
         """
         # This test verifies the check exists, but can't easily test the fallback
         # since aiohttp is imported at module level
-        import ccbt.nat.upnp as upnp_mod
         # Verify the check exists in the code
         assert hasattr(discover_upnp_devices, "__code__")
 
@@ -142,14 +138,12 @@ class TestUPnPDeviceDescription:
     @pytest.mark.asyncio
     async def test_fetch_device_description_http_error(self):
         """Test fetch_device_description HTTP error (lines 163-165)."""
-        import aiohttp
-
         mock_response = MagicMock()
         mock_response.status = 404
         mock_response.text = AsyncMock()  # Won't be called but needs to exist
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
-        
+
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
 
@@ -164,8 +158,6 @@ class TestUPnPDeviceDescription:
     @pytest.mark.asyncio
     async def test_fetch_device_description_no_service(self):
         """Test fetch_device_description no WANIPConnection service (lines 199-201)."""
-        import aiohttp
-
         no_service_xml = """<?xml version="1.0"?>
 <root>
     <device>
@@ -196,9 +188,6 @@ class TestUPnPDeviceDescription:
     @pytest.mark.asyncio
     async def test_fetch_device_description_parse_error(self):
         """Test fetch_device_description XML parse error (lines 204-206)."""
-        import aiohttp
-        from xml.etree.ElementTree import ParseError
-
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.read = AsyncMock(return_value=b"<invalid xml")
@@ -219,8 +208,6 @@ class TestUPnPDeviceDescription:
     @pytest.mark.asyncio
     async def test_fetch_device_description_general_error(self):
         """Test fetch_device_description general error (lines 207-209)."""
-        import aiohttp
-
         mock_client_session = MagicMock(side_effect=OSError("Network error"))
 
         with patch("ccbt.nat.upnp.aiohttp.ClientSession", side_effect=mock_client_session):
@@ -244,8 +231,6 @@ class TestUPnPSOAPAction:
     @pytest.mark.asyncio
     async def test_send_soap_action_http_error(self):
         """Test send_soap_action HTTP error."""
-        import aiohttp
-
         mock_response = MagicMock()
         mock_response.status = 500
         mock_response.read = AsyncMock(return_value=b"<xml>Error</xml>")
@@ -271,8 +256,6 @@ class TestUPnPSOAPAction:
     @pytest.mark.asyncio
     async def test_send_soap_action_fault(self):
         """Test send_soap_action SOAP fault handling (lines 308-320)."""
-        import aiohttp
-
         fault_xml = """<?xml version="1.0"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
   <s:Body>
@@ -307,9 +290,6 @@ class TestUPnPSOAPAction:
     @pytest.mark.asyncio
     async def test_send_soap_action_parse_error(self):
         """Test send_soap_action XML parse error (lines 323-325)."""
-        import aiohttp
-        from xml.etree.ElementTree import ParseError
-
         mock_response = MagicMock()
         mock_response.status = 200
         mock_response.read = AsyncMock(return_value=b"<invalid xml")
@@ -335,8 +315,6 @@ class TestUPnPSOAPAction:
     @pytest.mark.asyncio
     async def test_send_soap_action_general_error(self):
         """Test send_soap_action general error (lines 326-328)."""
-        import aiohttp
-
         mock_client_session = MagicMock(side_effect=OSError("Network error"))
 
         with patch("ccbt.nat.upnp.aiohttp.ClientSession", side_effect=mock_client_session):
@@ -351,8 +329,6 @@ class TestUPnPSOAPAction:
     @pytest.mark.asyncio
     async def test_send_soap_action_non_utf8_response_body(self):
         """Test send_soap_action with non-UTF-8 SOAP body (byte 0x84); no UnicodeDecodeError."""
-        import aiohttp
-
         # Body with byte 0x84 (invalid UTF-8 start byte); would break resp.text() with UTF-8
         soap_with_invalid_utf8 = (
             b'<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">'
@@ -399,28 +375,28 @@ class TestUPnPClient:
     async def test_discover_no_devices(self):
         """Test discover with no devices found (line 357)."""
         client = UPnPClient()
-        
+
         with patch("ccbt.nat.upnp.discover_upnp_devices", return_value=[]):
             result = await client.discover()
-            
+
         assert result is False
 
     @pytest.mark.asyncio
     async def test_discover_no_control_url(self):
         """Test discover with no control URL (lines 362-363)."""
         client = UPnPClient()
-        
+
         with patch("ccbt.nat.upnp.discover_upnp_devices", return_value=[{"location": "http://example.com"}]), \
              patch("ccbt.nat.upnp.fetch_device_description", return_value={}):
             result = await client.discover()
-            
+
         assert result is False
 
     @pytest.mark.asyncio
     async def test_get_external_ip_discovery_fails(self):
         """Test get_external_ip when discovery fails (lines 379-382)."""
         client = UPnPClient()
-        
+
         with patch.object(client, "discover", return_value=False):
             with pytest.raises(UPnPError, match="Failed to discover UPnP device"):
                 await client.get_external_ip()
@@ -430,7 +406,7 @@ class TestUPnPClient:
         """Test get_external_ip when control URL not set (lines 384-386)."""
         client = UPnPClient()
         client.control_url = None
-        
+
         with patch.object(client, "discover", return_value=True):
             with pytest.raises(UPnPError, match="Control URL not set"):
                 await client.get_external_ip()
@@ -439,7 +415,7 @@ class TestUPnPClient:
     async def test_add_port_mapping_discovery_fails(self):
         """Test add_port_mapping when discovery fails."""
         client = UPnPClient()
-        
+
         with patch.object(client, "discover", return_value=False):
             with pytest.raises(UPnPError, match="Failed to discover UPnP device"):
                 await client.add_port_mapping(6881, 6881, "tcp")
@@ -449,7 +425,7 @@ class TestUPnPClient:
         """Test add_port_mapping when control URL not set."""
         client = UPnPClient()
         client.control_url = None
-        
+
         with patch.object(client, "discover", return_value=True):
             with pytest.raises(UPnPError, match="Control URL not set"):
                 await client.add_port_mapping(6881, 6881, "tcp")
@@ -458,7 +434,7 @@ class TestUPnPClient:
     async def test_delete_port_mapping_discovery_fails(self):
         """Test delete_port_mapping when discovery fails."""
         client = UPnPClient()
-        
+
         with patch.object(client, "discover", return_value=False):
             with pytest.raises(UPnPError, match="Failed to discover UPnP device"):
                 await client.delete_port_mapping(6881, "tcp")
@@ -468,7 +444,7 @@ class TestUPnPClient:
         """Test delete_port_mapping when control URL not set."""
         client = UPnPClient()
         client.control_url = None
-        
+
         with patch.object(client, "discover", return_value=True):
             with pytest.raises(UPnPError, match="Control URL not set"):
                 await client.delete_port_mapping(6881, "tcp")
@@ -479,7 +455,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         with patch("ccbt.nat.upnp.send_soap_action", side_effect=UPnPError("SOAP error")):
             with pytest.raises(UPnPError, match="SOAP error"):
                 await client.add_port_mapping(6881, 6881, "tcp")
@@ -490,7 +466,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         with patch("ccbt.nat.upnp.send_soap_action", side_effect=UPnPError("SOAP error")):
             with pytest.raises(UPnPError, match="SOAP error"):
                 await client.delete_port_mapping(6881, "tcp")
@@ -501,7 +477,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         with patch("ccbt.nat.upnp.send_soap_action", return_value={}):
             with pytest.raises(UPnPError, match="No external IP"):
                 await client.get_external_ip()
@@ -512,7 +488,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         with patch("ccbt.nat.upnp.send_soap_action", return_value={"NewExternalIPAddress": "invalid"}):
             with pytest.raises(UPnPError, match="Invalid external IP"):
                 await client.get_external_ip()
@@ -523,7 +499,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         # Mock delete_port_mapping to return error code (called before add_port_mapping)
         with patch.object(client, "delete_port_mapping", side_effect=UPnPError("DeletePortMapping failed: error code 402")):
             with pytest.raises(UPnPError, match="DeletePortMapping failed"):
@@ -535,7 +511,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         # Mock delete_port_mapping to raise exception (called before add_port_mapping)
         with patch.object(client, "delete_port_mapping", side_effect=UPnPError("Error deleting port mapping: Test error")):
             with pytest.raises(UPnPError, match="Error deleting port mapping"):
@@ -593,7 +569,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         with patch("ccbt.nat.upnp.send_soap_action", return_value={"errorCode": "402"}):
             with pytest.raises(UPnPError, match="DeletePortMapping failed"):
                 await client.delete_port_mapping(6881, "tcp")
@@ -604,7 +580,7 @@ class TestUPnPClient:
         client = UPnPClient()
         client.control_url = "http://example.com/control"
         client.service_type = "urn:schemas-upnp-org:service:WANIPConnection:1"
-        
+
         with patch("ccbt.nat.upnp.send_soap_action", side_effect=ValueError("Test error")):
             with pytest.raises(UPnPError, match="Error deleting port mapping"):
                 await client.delete_port_mapping(6881, "tcp")
@@ -616,7 +592,7 @@ class TestUPnPUtilityFunctions:
     def test_build_msearch_request(self):
         """Test build_msearch_request."""
         request = build_msearch_request()
-        
+
         assert isinstance(request, bytes)
         assert b"M-SEARCH" in request
         assert b"239.255.255.250" in request
@@ -628,7 +604,7 @@ class TestUPnPUtilityFunctions:
             "urn:schemas-upnp-org:service:WANIPConnection:1",
             {"NewExternalPort": "6881", "NewInternalPort": "6881"},
         )
-        
+
         assert "AddPortMapping" in soap
         assert "NewExternalPort" in soap
         assert "NewInternalPort" in soap
@@ -641,7 +617,7 @@ SERVER: Test Server\r\n
 USN: uuid:test\r\n
 """
         headers = parse_ssdp_response(response)
-        
+
         assert "location" in headers
         assert headers["location"] == "http://example.com/device.xml"
         assert "server" in headers

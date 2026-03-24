@@ -3,29 +3,32 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
-from types import SimpleNamespace
 import hashlib
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from ccbt.security.key_manager import Ed25519KeyManager
-from ccbt.security.swarm_auth_contract import build_swarm_auth_extension, build_swarm_auth_message
-from ccbt.security.swarm_revocation import SwarmRevocationCache, SwarmRevocationProfile
-from ccbt.security.swarm_trust_store import SwarmTrustAnchor, SwarmTrustStore
+from ccbt.security.swarm_auth_contract import (
+    build_swarm_auth_extension,
+    build_swarm_auth_message,
+)
 from ccbt.security.swarm_auth_policy import (
     SWARM_AUTH_METRIC_BY_MODE,
     SWARM_AUTH_METRIC_REASONS,
     SWARM_AUTH_METRIC_TOTAL,
-    AuthDecision,
     SWARM_AUTH_OPPORTUNISTIC_VERIFY_FAILED_TOTAL,
     SWARM_AUTH_STRICT_LTEP_TIMEOUT_TOTAL,
+    AuthDecision,
     SwarmAuthPolicy,
     evaluate_inbound_admission,
     evaluate_outbound_admission,
 )
 from ccbt.security.swarm_identity import canonicalize_swarm_id
+from ccbt.security.swarm_revocation import SwarmRevocationCache, SwarmRevocationProfile
+from ccbt.security.swarm_trust_store import SwarmTrustAnchor, SwarmTrustStore
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 

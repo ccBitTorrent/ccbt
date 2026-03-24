@@ -63,11 +63,10 @@ class TestQueueListEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -84,7 +83,7 @@ class TestQueueListEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -100,11 +99,10 @@ class TestQueueListEdgeCases:
 
         # Patch _get_executor to return a mock executor that raises exception
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -114,7 +112,7 @@ class TestQueueListEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -135,11 +133,10 @@ class TestQueueAddEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates queue manager not initialized
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -152,7 +149,7 @@ class TestQueueAddEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -173,11 +170,10 @@ class TestQueueAddEdgeCases:
 
         # Patch _get_executor to return a mock executor that succeeds
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -190,7 +186,7 @@ class TestQueueAddEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -220,11 +216,10 @@ class TestQueueAddEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -241,7 +236,7 @@ class TestQueueAddEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -266,11 +261,10 @@ class TestQueueRemoveEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates queue manager not initialized
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -283,7 +277,7 @@ class TestQueueRemoveEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -304,11 +298,10 @@ class TestQueueRemoveEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates torrent not found
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -321,7 +314,7 @@ class TestQueueRemoveEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -351,11 +344,10 @@ class TestQueueRemoveEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -372,7 +364,7 @@ class TestQueueRemoveEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -397,11 +389,10 @@ class TestQueuePriorityEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates queue manager not initialized
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -414,7 +405,7 @@ class TestQueuePriorityEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -435,11 +426,10 @@ class TestQueuePriorityEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates torrent not found
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -452,7 +442,7 @@ class TestQueuePriorityEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -482,11 +472,10 @@ class TestQueuePriorityEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -503,7 +492,7 @@ class TestQueuePriorityEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -528,11 +517,10 @@ class TestQueueReorderEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates queue manager not initialized
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -545,7 +533,7 @@ class TestQueueReorderEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -566,11 +554,10 @@ class TestQueueReorderEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates failed move
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -583,7 +570,7 @@ class TestQueueReorderEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -617,11 +604,10 @@ class TestQueueReorderEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -638,7 +624,7 @@ class TestQueueReorderEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -663,11 +649,10 @@ class TestQueuePauseResumeEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates queue manager not initialized
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -680,7 +665,7 @@ class TestQueuePauseResumeEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -701,11 +686,10 @@ class TestQueuePauseResumeEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates torrent not found
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -718,7 +702,7 @@ class TestQueuePauseResumeEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -748,11 +732,10 @@ class TestQueuePauseResumeEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -769,7 +752,7 @@ class TestQueuePauseResumeEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -790,11 +773,10 @@ class TestQueuePauseResumeEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates queue manager not initialized
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -807,7 +789,7 @@ class TestQueuePauseResumeEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -828,11 +810,10 @@ class TestQueuePauseResumeEdgeCases:
 
         # Patch _get_executor to return a mock executor that simulates torrent not found
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -845,7 +826,7 @@ class TestQueuePauseResumeEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 
@@ -875,11 +856,10 @@ class TestQueuePauseResumeEdgeCases:
         mock_config_manager = MagicMock()
         # Patch _get_executor to return a mock executor
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
-        
+            main_module = sys.modules["ccbt.cli.main"]
+
         async def mock_get_executor():
             # Return a mock executor and indicate it's daemon mode
             mock_executor = MagicMock()
@@ -896,7 +876,7 @@ class TestQueuePauseResumeEdgeCases:
             mock_executor.adapter.ipc_client = MagicMock()
             mock_executor.adapter.ipc_client.close = AsyncMock()
             return (mock_executor, True)
-        
+
         monkeypatch.setattr(main_module, "_get_executor", mock_get_executor)
         monkeypatch.setattr(cli_queue_commands.asyncio, "run", _run_coro_locally)
 

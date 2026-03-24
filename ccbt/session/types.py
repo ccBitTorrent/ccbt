@@ -6,7 +6,10 @@ the session management system.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from ccbt.models import ConnectSubmitResult
 
 
 @runtime_checkable
@@ -64,7 +67,9 @@ class PeerManagerProtocol(Protocol):
 
     async def start(self) -> None: ...  # noqa: D102
 
-    async def connect_to_peers(self, peers: list[dict[str, Any]]) -> None: ...  # noqa: D102
+    async def connect_to_peers(  # noqa: D102
+        self, peers: list[dict[str, Any]]
+    ) -> ConnectSubmitResult: ...
 
     async def broadcast_have(self, piece_index: int) -> Any: ...  # noqa: D102
 

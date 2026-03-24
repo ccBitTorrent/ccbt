@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from functools import lru_cache
-from pathlib import Path
-from typing import Any
 import importlib.util
 import json
 import re
 import sys
 import types
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 import pytest
 import toml
 
 from ccbt.config.config_schema import ConfigDiscovery
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -437,3 +436,74 @@ def test_apply_profile_sets_max_peers_per_torrent_key() -> None:
     manager.apply_profile("low_resource")
 
     assert manager.config.network.max_peers_per_torrent == 10
+
+
+@pytest.mark.unit
+def test_env_mapping_includes_peer_discovery_sparse_and_inbound_knobs() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+
+    with pytest.MonkeyPatch.context() as monkey:
+        monkey.setenv("CCBT_INBOUND_PROBATION_QUEUED_MAX_WAIT_S", "180")
+        monkey.setenv(
+            "CCBT_PEER_QUALITY_PROBATION_SPARSE_CHOKE_GRACE_SECONDS",
+            "120",
+        )
+        monkey.setenv("CCBT_PEER_RECYCLE_SPARSE_BACKOFF_CAP_SECONDS", "7.5")
+        monkey.setenv("CCBT_RECYCLE_PRESSURE_THRESHOLD", "0.9")
+        manager = ConfigManager()
+        env_values = manager._get_env_config()
+
+    assert env_values["network"]["inbound_probation_queued_max_wait_s"] == 180
+    assert (
+        env_values["network"]["peer_quality_probation_sparse_choke_grace_seconds"]
+        == 120
+    )
+    assert env_values["network"]["peer_recycle_sparse_backoff_cap_seconds"] == 7.5
+    assert env_values["network"]["recycle_pressure_threshold"] == 0.9
+
+
+@pytest.mark.unit
+def test_peer_discovery_knob_effective_values_match_toml_and_yaml_inputs() -> None:
+    modules = _load_config_modules()
+    ConfigManager = modules["config"].ConfigManager
+    manager = ConfigManager.__new__(ConfigManager)
+
+    toml_payload = toml.loads(
+        """
+[network]
+inbound_probation_queued_max_wait_s = 111.0
+peer_quality_probation_sparse_choke_grace_seconds = 95.0
+peer_recycle_sparse_backoff_cap_seconds = 9.0
+recycle_pressure_threshold = 0.75
+"""
+    )
+    cfg_from_toml = manager.simulate_load_from_file_dict(toml_payload)
+
+    yaml = pytest.importorskip("yaml")
+    yaml_payload = yaml.safe_load(
+        """
+network:
+  inbound_probation_queued_max_wait_s: 111.0
+  peer_quality_probation_sparse_choke_grace_seconds: 95.0
+  peer_recycle_sparse_backoff_cap_seconds: 9.0
+  recycle_pressure_threshold: 0.75
+"""
+    )
+    cfg_from_yaml = manager.simulate_load_from_file_dict(yaml_payload)
+
+    assert cfg_from_toml.network.inbound_probation_queued_max_wait_s == pytest.approx(
+        cfg_from_yaml.network.inbound_probation_queued_max_wait_s
+    )
+    assert (
+        cfg_from_toml.network.peer_quality_probation_sparse_choke_grace_seconds
+        == pytest.approx(
+            cfg_from_yaml.network.peer_quality_probation_sparse_choke_grace_seconds
+        )
+    )
+    assert cfg_from_toml.network.peer_recycle_sparse_backoff_cap_seconds == pytest.approx(
+        cfg_from_yaml.network.peer_recycle_sparse_backoff_cap_seconds
+    )
+    assert cfg_from_toml.network.recycle_pressure_threshold == pytest.approx(
+        cfg_from_yaml.network.recycle_pressure_threshold
+    )

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 
 import pytest
 
@@ -111,10 +110,10 @@ class TestMetricsCollectorHTTPComprehensive:
 
         # Patch the shutdown method to raise
         original_shutdown = metrics._http_server.shutdown
-        
+
         def raise_error():
             raise RuntimeError("Shutdown failed")
-        
+
         monkeypatch.setattr(metrics._http_server, "shutdown", raise_error)
 
         # Should not raise (exception is caught and logged)
@@ -124,7 +123,7 @@ class TestMetricsCollectorHTTPComprehensive:
         # and _http_server is NOT set to None (line 844 only executes on success)
         # So _http_server should still be set after exception
         assert metrics._http_server is not None
-        
+
         # Now properly stop it
         monkeypatch.setattr(metrics._http_server, "shutdown", original_shutdown)
         await metrics._stop_prometheus_server()
@@ -168,11 +167,10 @@ class TestMetricsCollectorHTTPComprehensive:
 # Import Mock here to avoid issues
 from unittest.mock import Mock
 
+
 @pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
-    from unittest.mock import Mock
-
     mock_config = Mock()
     mock_observability = Mock()
     mock_observability.enable_metrics = True
@@ -190,7 +188,6 @@ def mock_config_enabled(monkeypatch):
 @pytest.fixture(scope="function")
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
-    from unittest.mock import Mock
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test

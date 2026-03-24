@@ -11,7 +11,6 @@ import pytest
 
 from ccbt.utils.events import EventBus, PeerCountLowEvent
 
-
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
 
@@ -137,7 +136,9 @@ async def test_peer_count_low_queues_tracker_peers_when_peer_manager_unavailable
     dht_client = SimpleNamespace(
         get_peers=AsyncMock(return_value=[("203.0.113.5", 6881)]),
     )
-    session._dht_setup = object()
+    session._dht_setup = SimpleNamespace(
+        _ensure_bootstrap_ready=AsyncMock(return_value=1)
+    )
     session.session_manager = SimpleNamespace(dht_client=dht_client)
 
     # Force no peer manager readiness so queued-path is selected.
@@ -150,9 +151,15 @@ async def test_peer_count_low_queues_tracker_peers_when_peer_manager_unavailable
     handler = session._peer_count_low_handler
     assert handler is not None
     await handler.handle(PeerCountLowEvent(active_peers=0, info_hash=session.info.info_hash))
-    await asyncio.sleep(0)
+    recovery_task = session._peer_count_low_recovery_task
+    assert recovery_task is not None
+    await asyncio.wait_for(recovery_task, timeout=2.0)
 
-    assert len(session.get_queued_peers()) == 1
+    queued_peers = session.get_queued_peers()
+    assert len(queued_peers) >= 1
+    queued_sources = {str(peer.get("peer_source", "")) for peer in queued_peers}
+    assert "tracker" in queued_sources
+    assert "dht_immediate" in queued_sources
     dht_client.get_peers.assert_awaited_once()
 
 
@@ -326,7 +333,6 @@ async def test_dht_discovery_loop_bypasses_batch_wait_when_zero_peers(
         sleep_calls += 1
         if sleep_calls >= 2:
             session.stopped = True
-        return None
 
     monkeypatch.setattr("ccbt.session.dht_setup.asyncio.sleep", fast_sleep)
 
@@ -341,7 +347,7 @@ async def test_dht_discovery_loop_bypasses_batch_wait_when_zero_peers(
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
                 _connection_batches_in_progress=True,
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -407,7 +413,7 @@ async def test_dht_discovery_records_query_zero_nodes_state(monkeypatch) -> None
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
                 _connection_batches_in_progress=False,
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -474,7 +480,7 @@ async def test_dht_discovery_empty_routing_triggers_rebootstrap(monkeypatch) -> 
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
                 _connection_batches_in_progress=False,
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -541,7 +547,7 @@ async def test_dht_discovery_empty_routing_immediate_recovery_is_bounded(monkeyp
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
                 _connection_batches_in_progress=False,
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -613,7 +619,7 @@ async def test_dht_discovery_query_zero_nodes_triggers_rebootstrap(monkeypatch) 
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
                 _connection_batches_in_progress=False,
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -905,7 +911,7 @@ async def test_tracker_wait_is_shortened_when_no_tracker_progress(monkeypatch) -
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
                 _connection_batches_in_progress=False,
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -974,7 +980,7 @@ async def test_ensure_bootstrap_ready_replays_seed_bootstrap_on_rebootstrap_fail
         ),
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -1028,7 +1034,7 @@ async def test_bootstrap_zero_nodes_records_recovery_history_and_metric() -> Non
         ),
         download_manager=SimpleNamespace(
             peer_manager=SimpleNamespace(
-                get_active_peers=lambda: [],
+                get_active_peers=list,
                 connections={},
             )
         ),
@@ -1304,7 +1310,7 @@ async def test_get_swarm_recovery_state_projects_block_reasons(tmp_path) -> None
         peer_manager=SimpleNamespace(
             get_connection_summary=AsyncMock(side_effect=_connection_summary),
             connections={},
-            get_active_peers=lambda: [],
+            get_active_peers=list,
         )
     )
 
@@ -1315,3 +1321,359 @@ async def test_get_swarm_recovery_state_projects_block_reasons(tmp_path) -> None
     assert state["pipeline_saturated_peers"] == 1
     assert state["requestable_peers"] == 0
     assert state["productive_peers"] == 1
+
+
+@pytest.mark.asyncio
+async def test_peer_count_low_skips_dht_when_usability_improves_without_active_growth(
+    tmp_path,
+) -> None:
+    """Usability improvement (not active-count growth) should still take skip path."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "peer-count-skip-usable-no-growth",
+        "info_hash": b"\x21" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.logger = SimpleNamespace(
+        info=lambda *a, **k: None,
+        warning=lambda *a, **k: None,
+        debug=lambda *a, **k: None,
+        error=lambda *a, **k: None,
+    )
+    session.config.discovery.enable_dht = True
+    session.config.discovery.min_peers_before_dht = 10
+    session.config.discovery.peer_count_low_skip_dht_requires_usable_path = True
+    session.config.network.enable_fail_fast_dht = True
+    session.config.network.fail_fast_dht_timeout = 0.01
+    session._collect_trackers = lambda _td: []  # type: ignore[method-assign]
+    session._swarm_requires_fast_recovery = lambda _state: False  # type: ignore[method-assign]
+
+    session._get_swarm_recovery_state = AsyncMock(
+        side_effect=[
+            {
+                "metadata_incomplete": False,
+                "active_peers": 2,
+                "productive_peers": 0,
+                "requestable_peers": 0,
+                "peers_with_piece_info": 0,
+                "active_block_requests": 0,
+                "has_usable_download_path": False,
+            },
+            {
+                "metadata_incomplete": False,
+                "active_peers": 2,
+                "productive_peers": 1,
+                "requestable_peers": 1,
+                "peers_with_piece_info": 0,
+                "active_block_requests": 0,
+                "has_usable_download_path": True,
+            },
+        ]
+    )
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(
+            _dht_connect_deferral_active=False,
+            get_connection_summary=AsyncMock(
+                return_value={
+                    "active_connections": 2,
+                    "requestable_connections": 1,
+                    "productive_connections": 1,
+                    "peers_with_piece_info": 0,
+                }
+            ),
+            connections={},
+            get_active_peers=list,
+        )
+    )
+    session._dht_setup = SimpleNamespace(_ensure_bootstrap_ready=AsyncMock(return_value=1))
+    dht_client = SimpleNamespace(get_peers=AsyncMock(return_value=[]))
+    session.session_manager = SimpleNamespace(dht_client=dht_client)
+
+    await session._recover_from_peer_count_low(
+        {
+            "active_peers": 2,
+            "active_peer_count": 2,
+            "info_hash": session.info.info_hash.hex(),
+        }
+    )
+
+    cycle = session._peer_discovery_metrics["last_peer_count_low_recovery_cycle"]
+    assert cycle["decision"] == "skip_dht_after_tracker_success"
+    dht_client.get_peers.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_peer_count_low_triggers_dht_when_active_unchanged_and_not_more_usable(
+    tmp_path,
+) -> None:
+    """No active-count growth and no usability gain should not take skip path."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "peer-count-trigger-no-usable-growth",
+        "info_hash": b"\x22" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.logger = SimpleNamespace(
+        info=lambda *a, **k: None,
+        warning=lambda *a, **k: None,
+        debug=lambda *a, **k: None,
+        error=lambda *a, **k: None,
+    )
+    session.config.discovery.enable_dht = True
+    session.config.discovery.min_peers_before_dht = 10
+    session.config.discovery.peer_count_low_skip_dht_requires_usable_path = True
+    session.config.network.enable_fail_fast_dht = True
+    session.config.network.fail_fast_dht_timeout = 0.01
+    session._collect_trackers = lambda _td: []  # type: ignore[method-assign]
+    session._swarm_requires_fast_recovery = lambda _state: False  # type: ignore[method-assign]
+    session._low_peer_threshold = lambda: 1  # type: ignore[method-assign]
+    session._low_peer_suppression_window_s = lambda: 0.0  # type: ignore[method-assign]
+
+    _stuck_swarm_row = {
+        "metadata_incomplete": False,
+        "active_peers": 2,
+        "productive_peers": 0,
+        "requestable_peers": 0,
+        "peers_with_piece_info": 0,
+        "active_block_requests": 0,
+        "has_usable_download_path": False,
+    }
+    session._get_swarm_recovery_state = AsyncMock(return_value=_stuck_swarm_row)
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(
+            _dht_connect_deferral_active=False,
+            get_connection_summary=AsyncMock(
+                return_value={
+                    "active_connections": 2,
+                    "requestable_connections": 0,
+                    "productive_connections": 0,
+                    "peers_with_piece_info": 0,
+                }
+            ),
+            connections={},
+            get_active_peers=list,
+        )
+    )
+    session._dht_setup = SimpleNamespace(_ensure_bootstrap_ready=AsyncMock(return_value=1))
+    dht_client = SimpleNamespace(get_peers=AsyncMock(return_value=[]))
+    session.session_manager = SimpleNamespace(dht_client=dht_client)
+
+    await session._recover_from_peer_count_low(
+        {
+            "active_peers": 2,
+            "active_peer_count": 2,
+            "info_hash": session.info.info_hash.hex(),
+        }
+    )
+
+    cycle = session._peer_discovery_metrics["last_peer_count_low_recovery_cycle"]
+    assert cycle["decision"] != "skip_dht_after_tracker_success"
+    dht_client.get_peers.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_peer_count_low_reentrant_tracker_submit_still_triggers_dht(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """queued_reentrant tracker submit must not short-circuit recovery; DHT tier still runs."""
+    from ccbt.session.session import AsyncTorrentSession, PeerConnectionHelper
+
+    td = {
+        "name": "reentrant-then-dht",
+        "info_hash": b"\x23" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.logger = SimpleNamespace(
+        info=lambda *a, **k: None,
+        warning=lambda *a, **k: None,
+        debug=lambda *a, **k: None,
+        error=lambda *a, **k: None,
+    )
+    session.config.discovery.enable_dht = True
+    session.config.discovery.min_peers_before_dht = 10
+    session.config.network.enable_fail_fast_dht = False
+    session.config.network.fail_fast_dht_timeout = 30.0
+    session._low_peer_threshold = lambda: 1  # type: ignore[method-assign]
+    session._low_peer_suppression_window_s = lambda: 0.0  # type: ignore[method-assign]
+    session._swarm_requires_fast_recovery = lambda _state: False  # type: ignore[method-assign]
+    session._get_swarm_recovery_state = AsyncMock(
+        return_value={
+            "metadata_incomplete": False,
+            "active_peers": 0,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "peers_with_piece_info": 0,
+            "active_block_requests": 0,
+            "has_usable_download_path": True,
+        }
+    )
+    session._collect_trackers = lambda _td: ["udp://tracker.example:80"]  # type: ignore[method-assign]
+
+    class _TrackerPeer:
+        def __init__(self) -> None:
+            self.ip = "127.0.0.1"
+            self.port = 6881
+
+    async def _announce(_td, _urls, port):  # type: ignore[unused-argument]
+        return [SimpleNamespace(peers=[_TrackerPeer()])]
+
+    session.tracker.announce_to_multiple = AsyncMock(side_effect=_announce)  # type: ignore[method-assign]
+
+    dht_client = SimpleNamespace(
+        get_peers=AsyncMock(return_value=[("203.0.113.5", 6881)]),
+    )
+    session._dht_setup = SimpleNamespace(
+        _ensure_bootstrap_ready=AsyncMock(return_value=1)
+    )
+    session.session_manager = SimpleNamespace(dht_client=dht_client)
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(
+            _dht_connect_deferral_active=False,
+            connections={},
+            get_active_peers=list,
+        )
+    )
+    session._announce_task = None
+    session._low_peer_recovery_suppressed_until = 0.0
+
+    monkeypatch.setattr(
+        PeerConnectionHelper,
+        "connect_peers_to_download",
+        AsyncMock(return_value=SimpleNamespace(status="queued_reentrant")),
+    )
+
+    await session._recover_from_peer_count_low(
+        {
+            "active_peers": 0,
+            "active_peer_count": 0,
+            "info_hash": session.info.info_hash.hex(),
+        }
+    )
+
+    assert session._peer_discovery_metrics["last_peer_count_low_recovery_cycle"][
+        "tracker_outcome"
+    ] == "tracker_handoff_submit_reentrant"
+    dht_client.get_peers.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_peer_count_low_skips_immediate_dht_until_requestable_deficit_persists(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Swarm at/above DHT threshold but non-requestable should defer immediate get_peers briefly."""
+    from ccbt.session.session import AsyncTorrentSession, PeerConnectionHelper
+
+    td = {
+        "name": "deficit-gate-dht",
+        "info_hash": b"\x24" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.logger = SimpleNamespace(
+        info=lambda *a, **k: None,
+        warning=lambda *a, **k: None,
+        debug=lambda *a, **k: None,
+        error=lambda *a, **k: None,
+    )
+    session.config.discovery.enable_dht = True
+    session.config.discovery.min_peers_before_dht = 10
+    session.config.discovery.peer_count_low_skip_dht_requires_usable_path = False
+    session.config.network.enable_fail_fast_dht = True
+    session.config.network.fail_fast_dht_timeout = 30.0
+    session._recovery_requestable_deficit_window_s = 12.0
+    session._low_peer_threshold = lambda: 1  # type: ignore[method-assign]
+    session._low_peer_suppression_window_s = lambda: 0.0  # type: ignore[method-assign]
+    session._swarm_requires_fast_recovery = lambda _state: False  # type: ignore[method-assign]
+
+    stuck_swarm = {
+        "metadata_incomplete": False,
+        "active_peers": 12,
+        "productive_peers": 0,
+        "requestable_peers": 0,
+        "peers_with_piece_info": 1,
+        "active_block_requests": 0,
+        "has_usable_download_path": True,
+    }
+    session._get_swarm_recovery_state = AsyncMock(return_value=stuck_swarm)
+
+    class _Tp:
+        ip = "198.51.100.2"
+        port = 6882
+
+    session._collect_trackers = lambda _td: ["udp://tracker.example:80"]  # type: ignore[method-assign]
+    session.tracker.announce_to_multiple = AsyncMock(
+        return_value=[SimpleNamespace(peers=[_Tp()])]
+    )
+
+    dht_client = SimpleNamespace(get_peers=AsyncMock(return_value=[]))
+    session._dht_setup = SimpleNamespace(
+        _ensure_bootstrap_ready=AsyncMock(return_value=1)
+    )
+    session.session_manager = SimpleNamespace(dht_client=dht_client)
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(
+            _dht_connect_deferral_active=False,
+            get_connection_summary=AsyncMock(
+                return_value={
+                    "active_connections": 12,
+                    "requestable_connections": 0,
+                    "productive_connections": 0,
+                    "peers_with_piece_info": 1,
+                }
+            ),
+            connections={},
+            get_active_peers=lambda: [object()] * 12,
+        )
+    )
+    session._announce_task = None
+    session._low_peer_recovery_suppressed_until = 0.0
+
+    async def _connect(_self, peer_list: list) -> SimpleNamespace:  # type: ignore[no-untyped-def]
+        assert peer_list
+        return SimpleNamespace(status="queued_reentrant")
+
+    monkeypatch.setattr(PeerConnectionHelper, "connect_peers_to_download", _connect)
+
+    await session._recover_from_peer_count_low(
+        {
+            "active_peers": 12,
+            "active_peer_count": 12,
+            "info_hash": session.info.info_hash.hex(),
+        }
+    )
+
+    cycle = session._peer_discovery_metrics["last_peer_count_low_recovery_cycle"]
+    assert cycle["decision"] == "skip_dht_deficit_not_persistent"
+    assert cycle["dht_outcome"] == "skipped_requestable_deficit_window"
+    dht_client.get_peers.assert_not_awaited()

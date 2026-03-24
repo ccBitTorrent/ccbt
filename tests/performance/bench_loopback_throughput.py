@@ -156,7 +156,7 @@ def main() -> int:
 	output_dir = Path(args.output_dir)
 	output_dir.mkdir(parents=True, exist_ok=True)
 	cfg = derive_config_name(args.config_file)
-	
+
 	# Record benchmark results using new system
 	per_run_path, timeseries_path = record_benchmark_results(
 		"loopback_throughput",
@@ -168,13 +168,13 @@ def main() -> int:
 	# Backward compatibility
 	out = write_json(output_dir, "loopback_throughput", cfg, results)
 	print(f"\nWrote (legacy): {out}")
-	
+
 	# Print recording results
 	if per_run_path:
 		print(f"Recorded per-run: {per_run_path}")
 	if timeseries_path:
 		print(f"Updated timeseries: {timeseries_path}")
-	
+
 	return 0
 
 

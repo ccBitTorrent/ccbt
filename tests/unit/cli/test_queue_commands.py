@@ -11,9 +11,9 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
 import importlib
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -42,7 +42,7 @@ class TestQueueList:
         info_hash = (b"\x00" * 20).hex()
 
         # Mock QueueListResponse
-        from ccbt.daemon.ipc_protocol import QueueListResponse, QueueEntry
+        from ccbt.daemon.ipc_protocol import QueueEntry, QueueListResponse
         mock_queue_response = QueueListResponse(
             entries=[
                 QueueEntry(

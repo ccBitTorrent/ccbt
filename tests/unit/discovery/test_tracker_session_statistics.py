@@ -7,7 +7,6 @@ and _update_tracker_session() method to ensure statistics are properly stored fr
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock
 
 import pytest
 

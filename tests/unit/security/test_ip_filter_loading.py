@@ -1,8 +1,6 @@
 """Unit tests for IP filter loading functionality."""
 
 import gzip
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -73,10 +71,10 @@ class TestIPFilterLoading:
         """Test loading from gzip compressed file."""
         filter_file = tmp_path / "filter.txt.gz"
         content = "192.168.1.0/24\n10.0.0.0/8\n"
-        
+
         with gzip.open(filter_file, "wt", encoding="utf-8") as f:
             f.write(content)
-        
+
         loaded, errors = await ip_filter.load_from_file(str(filter_file))
         assert loaded == 2
         assert errors == 0
@@ -89,7 +87,7 @@ class TestIPFilterLoading:
         test_dir.mkdir()
         filter_file = test_dir / "filter.txt"
         filter_file.write_text("192.168.1.0/24\n")
-        
+
         # Mock home directory
         monkeypatch.setenv("HOME", str(tmp_path))
         # Use ~/test_home/filter.txt
@@ -106,7 +104,7 @@ class TestIPFilterLoading:
             "192.168.1.0-192.168.1.255 Test range\n"
             "10.0.0.0-10.255.255.255 Another range\n"
         )
-        
+
         loaded, errors = await ip_filter.load_from_file(str(filter_file))
         assert loaded == 2
         assert len(ip_filter.rules) == 2
@@ -116,7 +114,7 @@ class TestIPFilterLoading:
         """Test loading empty file."""
         filter_file = tmp_path / "empty.txt"
         filter_file.write_text("")
-        
+
         loaded, errors = await ip_filter.load_from_file(str(filter_file))
         assert loaded == 0
         assert errors == 0
@@ -130,7 +128,7 @@ class TestIPFilterLoading:
             "# Comment 2\n"
             "  # Comment with spaces\n"
         )
-        
+
         loaded, errors = await ip_filter.load_from_file(str(filter_file))
         # Comments return True (successfully skipped), so loaded = 3
         assert loaded == 3
@@ -147,7 +145,7 @@ class TestIPFilterLoading:
             "172.16.0.1\n"
             "2001:db8::/32\n"
         )
-        
+
         loaded, errors = await ip_filter.load_from_file(str(filter_file))
         assert loaded == 4
 
@@ -156,11 +154,11 @@ class TestIPFilterLoading:
         """Test error handling during file loading."""
         filter_file = tmp_path / "error.txt"
         filter_file.write_text("192.168.1.0/24\n")
-        
+
         # Mock aiofiles.open to raise an exception
         async def mock_open(*args, **kwargs):
             raise OSError("Mocked error")
-        
+
         # We can't easily mock this without more complex setup, so we'll
         # just test that the function handles errors gracefully
         # This test verifies the try/except in load_from_file

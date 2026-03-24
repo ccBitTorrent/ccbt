@@ -1,10 +1,11 @@
 """Tests for session edge cases and error paths."""
 
-import pytest
-import time
 import asyncio
+import time
 
-from ccbt.models import TorrentCheckpoint, TorrentInfo
+import pytest
+
+from ccbt.models import TorrentCheckpoint
 
 
 @pytest.mark.asyncio
@@ -122,7 +123,6 @@ async def test_resume_propagates_exception(monkeypatch, tmp_path):
 async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
     """Test _announce_loop handles TorrentInfoModel torrent_data."""
     from ccbt.session.session import AsyncTorrentSession
-    from ccbt.models import TorrentInfo
 
     announce_called = []
     announce_data = []
@@ -154,9 +154,9 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
     session.tracker = _Tracker()
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
-    
+
     # Note: Ensure session.info exists for announce loop
-    if not hasattr(session, 'info') or session.info is None:
+    if not hasattr(session, "info") or session.info is None:
         from ccbt.session.session import TorrentSessionInfo
         session.info = TorrentSessionInfo(
             info_hash=b"1" * 20,

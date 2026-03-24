@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import sys
-from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -747,7 +746,7 @@ class TestFilterTest:
             "SecurityManager",
             lambda *args, **kwargs: mock_security_manager,
         )
-        
+
         # Patch ipaddress.ip_address in the filter_commands module namespace
         # The ValueError will be raised when trying to parse "invalid-ip" at line 378
         def mock_ip_address(ip_str):

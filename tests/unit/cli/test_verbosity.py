@@ -9,8 +9,8 @@ import logging
 
 import pytest
 
-from ccbt.utils.logging_config import TRACE_LOG_LEVEL
 from ccbt.cli.verbosity import VerbosityLevel, VerbosityManager, get_verbosity_from_ctx
+from ccbt.utils.logging_config import TRACE_LOG_LEVEL
 
 pytestmark = [pytest.mark.cli, pytest.mark.unit]
 

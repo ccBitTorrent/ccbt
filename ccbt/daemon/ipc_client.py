@@ -1073,7 +1073,7 @@ class IPCClient:
         """Request daemon shutdown.
 
         Returns:
-            True if shutdown request was sent
+            True if shutdown request was accepted
 
         """
         session = await self._ensure_session()
@@ -1082,7 +1082,18 @@ class IPCClient:
         try:
             async with session.post(url, headers=self._get_headers()) as resp:
                 resp.raise_for_status()
-                return True
+                payload = await resp.json()
+                if not isinstance(payload, dict):
+                    return False
+                accepted = payload.get("accepted")
+                if isinstance(accepted, bool):
+                    return accepted
+                # Backward compatibility with older daemon payloads.
+                status = payload.get("status")
+                return isinstance(status, str) and status in {
+                    "shutting_down",
+                    "already_shutting_down",
+                }
         except Exception as e:
             logger.debug(_("Error sending shutdown request: %s"), e)
             return False

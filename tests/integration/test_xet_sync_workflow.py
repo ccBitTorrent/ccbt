@@ -9,7 +9,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -33,7 +33,7 @@ def _build_session_manager_stub(use_real_cas: bool = False) -> SimpleNamespace:
         xet_cas_client=cas,
         dht_client=None,
         udp_tracker_client=None,
-        get_xet_discovery_status=lambda: {},
+        get_xet_discovery_status=dict,
     )
 
 
@@ -101,8 +101,8 @@ class TestXetSyncWorkflow:
     @pytest.mark.slow
     async def test_folder_change_detection(self, folder_path):
         """Test folder change detection and queuing."""
-        from ccbt.utils.events import get_event_bus
         from ccbt.storage.xet_folder_manager import XetFolder
+        from ccbt.utils.events import get_event_bus
 
         # Use mock CAS so CI does not run real discovery (timeouts on no network).
         session_manager = _build_session_manager_stub(use_real_cas=False)

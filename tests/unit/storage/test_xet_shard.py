@@ -6,8 +6,6 @@ serialization, and CAS information tracking.
 
 from __future__ import annotations
 
-import hmac
-import hashlib
 import struct
 
 import pytest
@@ -15,11 +13,8 @@ import pytest
 from ccbt.storage.xet_shard import (
     HMAC_SIZE,
     SHARD_HEADER_SIZE,
-    SHARD_MAGIC,
-    SHARD_VERSION,
     XetShard,
 )
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
@@ -495,7 +490,7 @@ class TestXetShard:
         """Test deserializing shard with HMAC but no key provided."""
         shard = XetShard()
         shard.add_file_info("test.txt", b"X" * 32, [], 100)
-        
+
         # Serialize with HMAC
         hmac_key = b"test_key_123456789012345678901234567890"  # 32 bytes
         data = shard.serialize(hmac_key=hmac_key)

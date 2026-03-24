@@ -84,14 +84,19 @@ Tests use default timeouts (300s per test) as configured in pytest. Coverage run
 ### Pre-Commit vs CI
 
 **Pre-commit hooks** (local development):
-- Run selective tests based on changed files
-- Use `tests/scripts/run_pytest_selective.py` for efficient local testing
-- Fast feedback loop for developers
+- Run adaptive selective tests based on changed files (`--mode pre-commit`)
+- Prefer direct changed-test paths first, then source-impact targets, then marker widening
+- Escalate deterministically for high-risk files (config/session/hook tooling) to broader test scopes
+- Treat no-tests-collected on selective targets as non-fatal to avoid brittle local loops
 
 **CI workflows** (remote validation):
 - Run full test suite across all platforms
 - Comprehensive coverage reporting
 - Platform-specific validation
+
+**Pre-push hooks** (local gate before remote):
+- Run full suite with coverage (`--mode pre-push --coverage --full-suite`)
+- Preserve project coverage threshold behavior before pushing
 
 ## Code Quality Checks
 

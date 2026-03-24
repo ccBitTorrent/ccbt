@@ -1,16 +1,16 @@
 """Tests for observability profiler."""
 
-import pytest
 import time
-import threading
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from ccbt.observability.profiler import (
     CPROfiler,
     ProfileEntry,
+    Profiler,
     ProfileReport,
     ProfileType,
-    Profiler,
 )
 
 
@@ -33,22 +33,22 @@ class TestProfiler:
     @pytest.mark.asyncio
     async def test_start_profiling(self, profiler):
         """Test starting profiling."""
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             profiler.start()
-        
+
         assert profiler.enabled
 
     @pytest.mark.asyncio
     async def test_stop_profiling(self, profiler):
         """Test stopping profiling."""
         profiler.enabled = True
-        
+
         # Add an active profile
         profile_id = profiler.start_profile("test_function")
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             profiler.stop()
-        
+
         assert not profiler.enabled
         assert len(profiler.active_profiles) == 0
 
@@ -60,10 +60,10 @@ class TestProfiler:
     def test_start_profile_enabled(self, profiler):
         """Test starting profile when enabled."""
         profiler.enabled = True
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             profile_id = profiler.start_profile("test_function")
-        
+
         assert profile_id != ""
         assert profile_id.startswith("test_function_")
         assert len(profiler.active_profiles) == 1
@@ -72,17 +72,17 @@ class TestProfiler:
     def test_start_profile_with_metadata(self, profiler):
         """Test starting profile with metadata."""
         profiler.enabled = True
-        
+
         metadata = {"test": "value", "count": 42}
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             profile_id = profiler.start_profile(
                 "test_function",
                 module_name="test_module",
                 profile_type=ProfileType.ASYNC,
                 metadata=metadata,
             )
-        
+
         entry = profiler.active_profiles[profile_id]
         assert entry.function_name == "test_function"
         assert entry.module_name == "test_module"
@@ -97,16 +97,16 @@ class TestProfiler:
     def test_end_profile_existing(self, profiler):
         """Test ending existing profile."""
         profiler.enabled = True
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             profile_id = profiler.start_profile("test_function")
-        
+
         # Sleep to ensure duration > min_duration
         time.sleep(0.002)
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
             entry = profiler.end_profile(profile_id)
-        
+
         assert entry is not None
         assert entry.function_name == "test_function"
         assert entry.duration >= 0.002
@@ -118,14 +118,14 @@ class TestProfiler:
         profiler.enabled = True
         # Set a higher min_duration to ensure the test works
         profiler.min_duration = 0.01  # 10ms minimum
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             profile_id = profiler.start_profile("test_function")
-        
+
         # Don't sleep - duration will be < min_duration
-        
+
         entry = profiler.end_profile(profile_id)
-        
+
         assert entry is not None
         assert len(profiler.profile_entries) == 0  # Should not be added
         assert profiler.stats["profiles_completed"] == 0
@@ -134,37 +134,37 @@ class TestProfiler:
     async def test_end_profile_bottleneck(self, profiler):
         """Test ending profile that is a bottleneck."""
         profiler.enabled = True
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             profile_id = profiler.start_profile("slow_function")
-        
+
         # Ensure the profile has sufficient duration by sleeping
         import time
         time.sleep(0.002)  # Longer than min_duration (0.001)
-        
+
         # Mock bottleneck detection
-        with patch.object(profiler, '_is_bottleneck', return_value=True), \
-             patch('ccbt.events.emit_event', new_callable=AsyncMock):
-            
+        with patch.object(profiler, "_is_bottleneck", return_value=True), \
+             patch("ccbt.events.emit_event", new_callable=AsyncMock):
+
             entry = profiler.end_profile(profile_id)
-        
+
         assert profiler.stats["bottlenecks_detected"] == 1
 
     @pytest.mark.asyncio
     async def test_profile_function_decorator(self, profiler):
         """Test function profiling decorator."""
         profiler.enabled = True
-        
+
         @profiler.profile_function("test_func", "test_module", ProfileType.FUNCTION)
         def test_function():
             import time
             time.sleep(0.002)  # Ensure sufficient duration
             return "test_result"
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024), \
-             patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024), \
+             patch("ccbt.events.emit_event", new_callable=AsyncMock):
             result = test_function()
-        
+
         assert result == "test_result"
         assert profiler.stats["profiles_started"] == 1
         assert profiler.stats["profiles_completed"] == 1
@@ -172,31 +172,31 @@ class TestProfiler:
     def test_profile_function_decorator_defaults(self, profiler):
         """Test function profiling decorator with defaults."""
         profiler.enabled = True
-        
+
         @profiler.profile_function()
         def test_function():
             return "test_result"
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             result = test_function()
-        
+
         assert result == "test_result"
 
     @pytest.mark.asyncio
     async def test_profile_async_function_decorator(self, profiler):
         """Test async function profiling decorator."""
         profiler.enabled = True
-        
+
         @profiler.profile_async_function("test_async_func", "test_module", ProfileType.ASYNC)
         async def test_async_function():
             import asyncio
             await asyncio.sleep(0.002)  # Ensure sufficient duration
             return "test_result"
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024), \
-             patch('ccbt.events.emit_event', new_callable=AsyncMock):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024), \
+             patch("ccbt.events.emit_event", new_callable=AsyncMock):
             result = await test_async_function()
-        
+
         assert result == "test_result"
         assert profiler.stats["profiles_started"] == 1
         assert profiler.stats["profiles_completed"] == 1
@@ -205,20 +205,20 @@ class TestProfiler:
     async def test_profile_async_function_decorator_defaults(self, profiler):
         """Test async function profiling decorator with defaults."""
         profiler.enabled = True
-        
+
         @profiler.profile_async_function()
         async def test_async_function():
             return "test_result"
-        
-        with patch.object(profiler, '_get_memory_usage', return_value=1024):
+
+        with patch.object(profiler, "_get_memory_usage", return_value=1024):
             result = await test_async_function()
-        
+
         assert result == "test_result"
 
     def test_get_profile_report_empty(self, profiler):
         """Test getting profile report with no entries."""
         report = profiler.get_profile_report()
-        
+
         assert isinstance(report, ProfileReport)
         assert report.total_duration == 0.0
         assert report.total_memory == 0
@@ -240,7 +240,7 @@ class TestProfiler:
             call_count=1,
             profile_type=ProfileType.FUNCTION,
         )
-        
+
         entry2 = ProfileEntry(
             function_name="func2",
             module_name="module2",
@@ -251,12 +251,12 @@ class TestProfiler:
             call_count=1,
             profile_type=ProfileType.FUNCTION,
         )
-        
+
         profiler.profile_entries.append(entry1)
         profiler.profile_entries.append(entry2)
-        
+
         report = profiler.get_profile_report()
-        
+
         assert report.total_duration == 2.0
         assert report.total_memory == 3072
         assert report.function_count == 2
@@ -278,9 +278,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
             profiler.profile_entries.append(entry)
-        
+
         report = profiler.get_profile_report(limit=3)
-        
+
         assert len(report.entries) == 3
 
     def test_get_function_stats_existing(self, profiler):
@@ -298,9 +298,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
             profiler.profile_entries.append(entry)
-        
+
         stats = profiler.get_function_stats("test_func")
-        
+
         assert stats["function_name"] == "test_func"
         assert stats["call_count"] == 3
         assert stats["total_duration"] == 3.3
@@ -323,7 +323,7 @@ class TestProfiler:
             ("func2", 2.0, 2000),
             ("func3", 1.0, 3000),
         ]
-        
+
         for func_name, duration, memory in functions:
             entry = ProfileEntry(
                 function_name=func_name,
@@ -336,9 +336,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
             profiler.profile_entries.append(entry)
-        
+
         top_functions = profiler.get_top_functions(limit=2, sort_by="total_duration")
-        
+
         assert len(top_functions) == 2
         assert top_functions[0]["function_name"] == "func1"
         assert top_functions[0]["total_duration"] == 3.0
@@ -353,7 +353,7 @@ class TestProfiler:
             ("func2", 2.0, 2000),
             ("func3", 3.0, 3000),
         ]
-        
+
         for func_name, duration, memory in functions:
             entry = ProfileEntry(
                 function_name=func_name,
@@ -366,9 +366,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
             profiler.profile_entries.append(entry)
-        
+
         top_functions = profiler.get_top_functions(limit=2, sort_by="total_memory")
-        
+
         assert len(top_functions) == 2
         assert top_functions[0]["function_name"] == "func3"
         assert top_functions[0]["total_memory"] == 3000
@@ -383,9 +383,9 @@ class TestProfiler:
         profiler.stats["total_duration"] = 5.0
         profiler.stats["total_memory"] = 10240
         profiler.stats["bottlenecks_detected"] = 2
-        
+
         stats = profiler.get_profiler_statistics()
-        
+
         assert stats["enabled"] is True
         assert stats["profiles_started"] == 10
         assert stats["profiles_completed"] == 8
@@ -400,7 +400,7 @@ class TestProfiler:
         """Test cleanup of old entries."""
         current_time = time.time()
         old_time = current_time - 4000  # 4000 seconds ago
-        
+
         # Add old entry
         old_entry = ProfileEntry(
             function_name="old_func",
@@ -413,7 +413,7 @@ class TestProfiler:
             profile_type=ProfileType.FUNCTION,
         )
         profiler.profile_entries.append(old_entry)
-        
+
         # Add recent entry
         recent_entry = ProfileEntry(
             function_name="recent_func",
@@ -426,30 +426,30 @@ class TestProfiler:
             profile_type=ProfileType.FUNCTION,
         )
         profiler.profile_entries.append(recent_entry)
-        
+
         # Cleanup entries older than 1 hour
         profiler.cleanup_old_entries(max_age_seconds=3600)
-        
+
         # Only recent entry should remain
         assert len(profiler.profile_entries) == 1
         assert profiler.profile_entries[0].function_name == "recent_func"
 
     def test_get_memory_usage_with_psutil(self, profiler):
         """Test getting memory usage with psutil."""
-        with patch('psutil.Process') as mock_process:
+        with patch("psutil.Process") as mock_process:
             mock_memory_info = MagicMock()
             mock_memory_info.rss = 1024000
             mock_process.return_value.memory_info.return_value = mock_memory_info
-            
+
             memory_usage = profiler._get_memory_usage()
-            
+
             assert memory_usage == 1024000
 
     def test_get_memory_usage_without_psutil(self, profiler):
         """Test getting memory usage without psutil."""
-        with patch('psutil.Process', side_effect=ImportError):
+        with patch("psutil.Process", side_effect=ImportError):
             memory_usage = profiler._get_memory_usage()
-            
+
             assert memory_usage == 0
 
     def test_is_bottleneck_true(self, profiler):
@@ -464,7 +464,7 @@ class TestProfiler:
             call_count=1,
             profile_type=ProfileType.FUNCTION,
         )
-        
+
         is_bottleneck = profiler._is_bottleneck(entry)
         assert is_bottleneck is True
 
@@ -480,7 +480,7 @@ class TestProfiler:
             call_count=1,
             profile_type=ProfileType.FUNCTION,
         )
-        
+
         is_bottleneck = profiler._is_bottleneck(entry)
         assert is_bottleneck is False
 
@@ -503,9 +503,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
         ]
-        
+
         recommendations = profiler._generate_recommendations(entries, [])
-        
+
         assert "Consider optimizing slow functions" in recommendations
 
     def test_generate_recommendations_high_memory(self, profiler):
@@ -522,9 +522,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
         ]
-        
+
         recommendations = profiler._generate_recommendations(entries, [])
-        
+
         assert "Consider optimizing memory usage" in recommendations
 
     def test_generate_recommendations_bottlenecks(self, profiler):
@@ -541,7 +541,7 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
         ]
-        
+
         bottlenecks = [
             ProfileEntry(
                 function_name="bottleneck_func",
@@ -554,9 +554,9 @@ class TestProfiler:
                 profile_type=ProfileType.FUNCTION,
             )
         ]
-        
+
         recommendations = profiler._generate_recommendations(entries, bottlenecks)
-        
+
         assert any("Focus on optimizing: bottleneck_func" in rec for rec in recommendations)
 
 
@@ -577,7 +577,7 @@ class TestCPROfiler:
         """Test starting cprofiler."""
         cprofiler.start()
         assert cprofiler.enabled
-        
+
         # Clean up
         cprofiler.stop()
 
@@ -595,17 +595,17 @@ class TestCPROfiler:
     def test_get_stats_enabled(self, cprofiler):
         """Test getting stats when enabled."""
         cprofiler.start()
-        
+
         # Run some code to profile
         def test_function():
             return sum(range(1000))
-        
+
         test_function()
-        
+
         stats = cprofiler.get_stats()
         assert isinstance(stats, str)
         assert len(stats) > 0
-        
+
         # Clean up
         cprofiler.stop()
 
@@ -617,19 +617,19 @@ class TestCPROfiler:
     def test_get_stats_dict_enabled(self, cprofiler):
         """Test getting stats dict when enabled."""
         cprofiler.start()
-        
+
         # Run some code to profile
         def test_function():
             return sum(range(1000))
-        
+
         test_function()
-        
+
         stats = cprofiler.get_stats_dict()
         assert isinstance(stats, dict)
         assert "total_calls" in stats
         assert "primitive_calls" in stats
         assert "total_time" in stats
         assert "cumulative_time" in stats
-        
+
         # Clean up
         cprofiler.stop()

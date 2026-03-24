@@ -165,6 +165,20 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "SLF001",
     "D103",
 ]
+"tests/unit/session/test_immediate_tracker_defer.py" = [
+    "SLF001",
+    "PLR2004",
+]
+"tests/unit/config/test_tracker_immediate_discovery_env.py" = [
+    "PLR2004",
+]
+"tests/unit/config/test_effective_peer_cap_precedence.py" = [
+    "PLR2004",
+    "E501",
+]
+"tests/unit/config/test_windows_network_clamp.py" = [
+    "PLR2004",
+]
 "tests/performance/bench_*.py" = [
     "T201",     # print statements - required for CLI output
     "PLR2004",  # magic-value-comparison - benchmark scripts use many constants

@@ -13,8 +13,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.queue]
 
-from ccbt.models import QueueConfig, QueueEntry, TorrentPriority
-from ccbt.queue.manager import QueueStatistics, TorrentQueueManager
+from ccbt.models import QueueConfig, TorrentPriority
+from ccbt.queue.manager import TorrentQueueManager
 
 
 @pytest.fixture(scope="function")
@@ -107,12 +107,12 @@ class TestTorrentQueueManagerLifecycle:
         await queue_manager.start()
         monitor_task = queue_manager._monitor_task
         bandwidth_task = queue_manager._bandwidth_task
-        
+
         # Wait a moment for tasks to start
         await asyncio.sleep(0.1)
-        
+
         await queue_manager.stop()
-        
+
         # Tasks should be cancelled or done
         assert monitor_task.cancelled() or monitor_task.done()
         # Bandwidth task might finish quickly, so check cancelled or done
@@ -129,13 +129,13 @@ class TestTorrentQueueManagerLifecycle:
         """Test stop() handles CancelledError properly."""
         queue_manager.config.auto_manage_queue = True
         await queue_manager.start()
-        
+
         # Cancel tasks manually to trigger CancelledError path
         if queue_manager._monitor_task:
             queue_manager._monitor_task.cancel()
         if queue_manager._bandwidth_task:
             queue_manager._bandwidth_task.cancel()
-        
+
         # Should handle gracefully
         await queue_manager.stop()
 
@@ -659,7 +659,7 @@ class TestTorrentQueueManagerSyncActiveSets:
         info_hash = b"\xd5" * 20
         queue_manager.session_manager.torrents[info_hash] = mock_torrent_session
         mock_torrent_session.get_status = AsyncMock(return_value={"status": "downloading", "progress": 0.5})
-        
+
         # Must be in queue for sync to work
         await queue_manager.add_torrent(info_hash)
         # Add to active set first
@@ -677,7 +677,7 @@ class TestTorrentQueueManagerSyncActiveSets:
         info_hash = b"\xe1" * 20
         queue_manager.session_manager.torrents[info_hash] = mock_torrent_session
         mock_torrent_session.get_status = AsyncMock(return_value={"status": "paused", "progress": 1.0})  # Was seeding, now paused
-        
+
         await queue_manager.add_torrent(info_hash)
         queue_manager._active_seeding.add(info_hash)
 
@@ -693,7 +693,7 @@ class TestTorrentQueueManagerSyncActiveSets:
         info_hash = b"\xe3" * 20
         queue_manager.session_manager.torrents[info_hash] = mock_torrent_session
         mock_torrent_session.get_status = AsyncMock(return_value={"status": "stopped", "progress": 1.0})  # Was seeding, now stopped
-        
+
         await queue_manager.add_torrent(info_hash)
         queue_manager._active_seeding.add(info_hash)
 
@@ -762,7 +762,7 @@ class TestTorrentQueueManagerSyncActiveSets:
         queue_manager.session_manager.torrents[info_hash] = mock_torrent_session
         await queue_manager.add_torrent(info_hash)
         queue_manager._active_downloading.add(info_hash)
-        
+
         # Should return True immediately if already active
         result = await queue_manager._try_start_torrent(info_hash)
         assert result is True
@@ -814,8 +814,6 @@ class TestTorrentQueueManagerSyncActiveSets:
     @pytest.mark.asyncio
     async def test_allocate_bandwidth_calls_allocator(self, queue_manager, mock_session_manager):
         """Test _allocate_bandwidth calls BandwidthAllocator."""
-        from unittest.mock import patch
-
         queue_manager.config.auto_manage_queue = True
         info_hash = b"\xc4" * 20
         await queue_manager.add_torrent(info_hash)
@@ -856,12 +854,12 @@ class TestTorrentQueueManagerSyncActiveSets:
         long waits from background task sleeps.
         """
         queue_manager.config.auto_manage_queue = False  # Don't start background task
-        
+
         # Add a torrent so sync has something to work with
         info_hash = b"\xe4" * 20
         await queue_manager.add_torrent(info_hash)
         queue_manager.session_manager.torrents[info_hash] = mock_torrent_session
-        
+
         # Make _enforce_queue_limits raise an exception to test exception handler
         original_enforce = queue_manager._enforce_queue_limits
         exception_raised = False
@@ -869,9 +867,9 @@ class TestTorrentQueueManagerSyncActiveSets:
             nonlocal exception_raised
             exception_raised = True
             raise RuntimeError("Test exception in enforce")
-        
+
         queue_manager._enforce_queue_limits = failing_enforce
-        
+
         # Manually execute one iteration to test exception handling (lines 659-661)
         # This simulates what happens in the monitor loop when an exception occurs
         try:
@@ -884,10 +882,10 @@ class TestTorrentQueueManagerSyncActiveSets:
             # Simulate exception handler at lines 659-661
             queue_manager.logger.exception("Error in queue monitor loop")
             # Exception handler would sleep 10s, but we skip that in unit test
-            
+
         # Verify exception was raised
         assert exception_raised
-        
+
         # Restore original
         queue_manager._enforce_queue_limits = original_enforce
 
@@ -916,7 +914,7 @@ class TestTorrentQueueManagerSyncActiveSets:
         from background task sleeps.
         """
         queue_manager.config.auto_manage_queue = False  # Don't start background task
-        
+
         # Make _allocate_bandwidth raise an exception to test exception handler
         original_allocate = queue_manager._allocate_bandwidth
         exception_raised = False
@@ -924,9 +922,9 @@ class TestTorrentQueueManagerSyncActiveSets:
             nonlocal exception_raised
             exception_raised = True
             raise RuntimeError("Test exception in allocate")
-        
+
         queue_manager._allocate_bandwidth = failing_allocate
-        
+
         # Manually execute to test exception handling (lines 703-705)
         # This simulates what happens in the bandwidth loop when an exception occurs
         try:
@@ -936,10 +934,10 @@ class TestTorrentQueueManagerSyncActiveSets:
             # Simulate exception handler at lines 703-705
             queue_manager.logger.exception("Error in bandwidth allocation loop")
             # Exception handler would sleep 5s, but we skip that in unit test
-            
+
         # Verify exception was raised
         assert exception_raised
-        
+
         # Restore original
         queue_manager._allocate_bandwidth = original_allocate
 

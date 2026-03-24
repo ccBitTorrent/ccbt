@@ -987,12 +987,20 @@ class CheckpointController:
 
                 if peer_list and hasattr(peer_manager, "connect_to_peers"):
                     try:
-                        await peer_manager.connect_to_peers(peer_list)
+                        submit = await peer_manager.connect_to_peers(peer_list)
                         if self._ctx.logger:
-                            self._ctx.logger.debug(
-                                "Restored %d peers from checkpoint",
-                                len(peer_list),
-                            )
+                            if getattr(submit, "status", None) == "queued_reentrant":
+                                self._ctx.logger.debug(
+                                    "Queued %d checkpoint peers for later connect "
+                                    "(queue_depth=%s)",
+                                    len(peer_list),
+                                    getattr(submit, "queue_depth_after", None),
+                                )
+                            else:
+                                self._ctx.logger.debug(
+                                    "Restored %d peers from checkpoint",
+                                    len(peer_list),
+                                )
                     except Exception as e:
                         if self._ctx.logger:
                             self._ctx.logger.debug(

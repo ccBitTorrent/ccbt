@@ -10,16 +10,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ccbt.security.mse_handshake import (
-    CipherType,
-    MSEHandshake,
-    MSEHandshakeResult,
-    MSEHandshakeReadFailureReason,
-    MSEHandshakeType,
-)
 from ccbt.security.ciphers.aes import AESCipher
 from ccbt.security.ciphers.chacha20 import ChaCha20Cipher
 from ccbt.security.ciphers.rc4 import RC4Cipher
+from ccbt.security.mse_handshake import (
+    CipherType,
+    MSEHandshake,
+    MSEHandshakeReadFailureReason,
+    MSEHandshakeResult,
+    MSEHandshakeType,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 

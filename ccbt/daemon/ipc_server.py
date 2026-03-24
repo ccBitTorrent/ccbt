@@ -13,7 +13,7 @@ import logging
 import os
 import ssl
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import aiohttp
 from aiohttp import web
@@ -110,6 +110,8 @@ class IPCServer:
         websocket_enabled: bool = True,
         websocket_heartbeat_interval: float = 30.0,
         tls_enabled: bool = False,
+        shutdown_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        shutdown_event: Optional[asyncio.Event] = None,
     ):
         """Initialize IPC server.
 
@@ -122,6 +124,8 @@ class IPCServer:
             websocket_enabled: Enable WebSocket support
             websocket_heartbeat_interval: WebSocket heartbeat interval in seconds
             tls_enabled: Enable TLS/HTTPS (requires key_manager)
+            shutdown_callback: Optional callback invoked when /shutdown is requested
+            shutdown_event: Optional daemon shutdown event (used for idempotent status)
 
         """
         self.session_manager = session_manager
@@ -169,6 +173,8 @@ class IPCServer:
         self.port = port
         self.websocket_enabled = websocket_enabled
         self.websocket_heartbeat_interval = websocket_heartbeat_interval
+        self._shutdown_callback = shutdown_callback
+        self._shutdown_event = shutdown_event
 
         self.app = web.Application()  # type: ignore[attr-defined]
         self.runner: Optional[web.AppRunner] = None  # type: ignore[attr-defined]
@@ -2320,6 +2326,7 @@ class IPCServer:
     async def _handle_add_torrent(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/add."""
         info_hash_hex: Optional[str] = None
+        visibility_ready = True
         path_or_magnet: str = "unknown"
         try:
             # Parse JSON request body with error handling
@@ -2459,6 +2466,14 @@ class IPCServer:
                         ).model_dump(),
                         status=400,
                     )
+                # Visibility can lag behind successful add completion.
+                # Preserve this as a signal in the success payload instead of hard-failing.
+                visibility_ready = await self._wait_for_add_visibility(info_hash_hex)
+                if not visibility_ready:
+                    logger.warning(
+                        "Add returned info_hash=%s but session registration is not visible yet",
+                        info_hash_hex,
+                    )
             except Exception as add_error:
                 # Catch any other unexpected errors (shouldn't happen due to inner try-except)
                 # But this is a safety net to ensure the daemon never crashes
@@ -2496,9 +2511,17 @@ class IPCServer:
             # Note: This check should never be reached if the inner try-except
             # handled the case correctly, but we include it as a safety net
             if info_hash_hex:
-                return web.json_response(
-                    {"info_hash": info_hash_hex, "status": "added"}
-                )  # type: ignore[attr-defined]
+                response_payload: dict[str, Any] = {
+                    "info_hash": info_hash_hex,
+                    "status": "added",
+                    "visibility_ready": visibility_ready,
+                }
+                if not visibility_ready:
+                    response_payload["warning_code"] = "ADD_VISIBILITY_NOT_READY"
+                    response_payload["warning"] = (
+                        "Torrent add completed but registration is not visible yet"
+                    )
+                return web.json_response(response_payload)  # type: ignore[attr-defined]
             # This should never happen due to the check at lines 672-684, but handle it gracefully
             logger.error(
                 "Torrent was not added (info_hash is None) - this should not happen",
@@ -2521,6 +2544,30 @@ class IPCServer:
                 ErrorResponse(error=str(e), code="ADD_TORRENT_ERROR").model_dump(),
                 status=400,
             )
+
+    async def _wait_for_add_visibility(
+        self,
+        info_hash_hex: str,
+        *,
+        timeout_s: float = 1.0,
+        poll_interval_s: float = 0.02,
+    ) -> bool:
+        """Wait until add registration is visible to inbound session lookup."""
+        try:
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+        except (TypeError, ValueError):
+            return False
+
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        while True:
+            session = await self.session_manager.get_session_for_info_hash(
+                info_hash_bytes
+            )
+            if session is not None:
+                return True
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(poll_interval_s)
 
     async def _handle_remove_torrent(self, request: Request) -> Response:
         """Handle DELETE /api/v1/torrents/{info_hash}."""
@@ -3840,17 +3887,71 @@ class IPCServer:
     async def _handle_shutdown(self, _request: Request) -> Response:
         """Handle POST /api/v1/shutdown."""
         logger.info("Shutdown requested via IPC")
-        # Schedule shutdown (don't block the response) - fire-and-forget
-        asyncio.create_task(self._shutdown_async())  # noqa: RUF006
-        # Don't await - let it run after response is sent
-        return web.json_response({"status": "shutting_down"})  # type: ignore[attr-defined]
+
+        if self._shutdown_event is not None and self._shutdown_event.is_set():
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": True,
+                    "status": "already_shutting_down",
+                    "message": "Shutdown already in progress",
+                }
+            )
+
+        if self._shutdown_callback is None and self._shutdown_event is None:
+            logger.error(
+                "Shutdown request rejected: daemon shutdown bridge unavailable"
+            )
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": False,
+                    "status": "rejected",
+                    "error": "Shutdown handler unavailable",
+                    "fallback_hint": "Use signal-based shutdown path",
+                },
+                status=503,
+            )
+
+        try:
+            # Schedule shutdown (don't block the response) - fire-and-forget
+            asyncio.create_task(self._shutdown_async())  # noqa: RUF006
+        except Exception:
+            logger.exception("Failed to enqueue shutdown task")
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": False,
+                    "status": "enqueue_failed",
+                    "error": "Failed to enqueue shutdown task",
+                    "fallback_hint": "Use signal-based shutdown path",
+                },
+                status=500,
+            )
+
+        return web.json_response(  # type: ignore[attr-defined]
+            {
+                "accepted": True,
+                "status": "shutting_down",
+                "message": "Shutdown enqueued",
+            }
+        )
 
     async def _shutdown_async(self) -> None:
         """Async shutdown handler."""
         await asyncio.sleep(0.1)  # Give response time to send
-        # Signal shutdown to daemon main (this will be handled by DaemonMain)
-        # For now, we'll just log it
-        logger.info("Shutdown signal sent")
+        if self._shutdown_event is not None and self._shutdown_event.is_set():
+            logger.debug("Shutdown event already set; skipping duplicate IPC signal")
+            return
+
+        if self._shutdown_callback is not None:
+            try:
+                await self._shutdown_callback()
+                logger.info("Shutdown signal sent")
+                return
+            except Exception:
+                logger.exception("Shutdown callback failed")
+
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+            logger.info("Shutdown event set from IPC")
 
     async def _handle_restart_service(self, request: Request) -> Response:
         """Handle POST /api/v1/services/{service_name}/restart."""

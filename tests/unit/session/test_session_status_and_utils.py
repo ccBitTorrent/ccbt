@@ -1,9 +1,8 @@
 """Tests for session status and utility methods."""
 
-import pytest
 import time
 
-from ccbt.models import TorrentInfo
+import pytest
 
 
 @pytest.mark.asyncio
@@ -97,7 +96,7 @@ async def test_peers_property(monkeypatch, tmp_path):
 
     class _DM:
         def get_status(self):
-            return {"peers": 5}
+            return {"connected_peers": 5}
 
     td = {
         "name": "test",
@@ -177,9 +176,10 @@ async def test_info_hash_hex_property(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_pause_saves_checkpoint(monkeypatch, tmp_path):
     """Test pause saves checkpoint when enabled."""
-    from ccbt.session.session import AsyncTorrentSession
-    from ccbt.models import TorrentCheckpoint
     import time
+
+    from ccbt.models import TorrentCheckpoint
+    from ccbt.session.session import AsyncTorrentSession
 
     checkpoint_saved = []
 
@@ -216,7 +216,7 @@ async def test_pause_saves_checkpoint(monkeypatch, tmp_path):
     session.checkpoint_manager = _CPM()
     session.piece_manager = _PM()
     session.config.disk.checkpoint_enabled = True
-    
+
     # Create a proper stop event
     import asyncio
     session._stop_event = asyncio.Event()
@@ -247,7 +247,7 @@ async def test_resume_starts_background_tasks(monkeypatch, tmp_path):
     session = AsyncTorrentSession(td, str(tmp_path))
     session._stop_event = type("Event", (), {"clear": lambda: None})()
     session._background_tasks = []
-    
+
     # Mock background task methods
     session._announce_loop = _mock_task
     session._status_loop = _mock_task

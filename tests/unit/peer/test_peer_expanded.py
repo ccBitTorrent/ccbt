@@ -1,35 +1,29 @@
 """Expanded tests for peer.py covering SocketOptimizer, OptimizedMessageDecoder, MessageBuffer, and AsyncMessageDecoder."""
 
-import asyncio
-import platform
 import socket
 import struct
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.utils.exceptions import MessageError
 from ccbt.models import MessageType
 from ccbt.peer.peer import (
     AsyncMessageDecoder,
     BitfieldMessage,
     CancelMessage,
     ChokeMessage,
-    HandshakeError,
     HaveMessage,
-    InterestedMessage,
     KeepAliveMessage,
     MessageBuffer,
-    NotInterestedMessage,
     OptimizedMessageDecoder,
     PeerState,
     PieceMessage,
     RequestMessage,
     SocketOptimizer,
-    UnchokeMessage,
 )
+from ccbt.utils.exceptions import MessageError
 
 
 class TestSocketOptimizer:
@@ -177,7 +171,6 @@ class TestSocketOptimizer:
         # This test is effectively testing the same as test_get_optimal_buffer_sizes_default
         # The TypeError path would only trigger if socket_rcvbuf/socket_sndbuf existed with invalid types
         # Since they don't exist in the actual config model, we skip this edge case
-        pass
 
 
 class TestOptimizedMessageDecoder:
@@ -317,10 +310,10 @@ class TestOptimizedMessageDecoder:
         choke1 = struct.pack("!IB", 1, MessageType.CHOKE)
         messages1 = decoder.add_data(choke1)
         msg1 = messages1[0]
-        
+
         # Verify message type
         assert isinstance(msg1, ChokeMessage)
-        
+
         # Get another - should work
         choke2 = struct.pack("!IB", 1, MessageType.CHOKE)
         messages2 = decoder.add_data(choke2)
@@ -331,10 +324,10 @@ class TestOptimizedMessageDecoder:
         have1 = struct.pack("!IBI", 5, MessageType.HAVE, 42)
         messages1 = decoder.add_data(have1)
         msg1 = messages1[0]
-        
+
         assert isinstance(msg1, HaveMessage)
         assert msg1.piece_index == 42
-        
+
         # Get another
         have2 = struct.pack("!IBI", 5, MessageType.HAVE, 43)
         messages2 = decoder.add_data(have2)
@@ -383,11 +376,11 @@ class TestMessageBuffer:
         large_block = b"x" * 500
         message1 = PieceMessage(0, 0, large_block)
         buffer.add_message(message1)
-        
+
         # Try to add another large message
         message2 = PieceMessage(1, 0, large_block)
         result = buffer.add_message(message2)
-        
+
         # Should fail if buffer is full
         if buffer.write_pos + len(message2.encode()) > buffer.max_size:
             assert result is False
@@ -405,7 +398,7 @@ class TestMessageBuffer:
         message = ChokeMessage()
         buffer.add_message(message)
         assert buffer.write_pos > 0
-        
+
         buffer.clear()
         assert buffer.write_pos == 0
         assert len(buffer.pending_messages) == 0
@@ -415,7 +408,7 @@ class TestMessageBuffer:
         message = ChokeMessage()
         buffer.add_message(message)
         stats = buffer.get_stats()
-        
+
         assert "buffer_size" in stats
         assert "buffer_capacity" in stats
         assert "buffer_usage" in stats
@@ -454,10 +447,10 @@ class TestMessageDecoderFactoryBehavior:
         choke = struct.pack("!IB", 1, MessageType.CHOKE)
         data = keepalive + choke
         await decoder.feed_data(data)
-        
+
         msg1 = await decoder.get_message()
         assert isinstance(msg1, KeepAliveMessage)
-        
+
         msg2 = await decoder.get_message()
         assert isinstance(msg2, ChokeMessage)
 
@@ -476,7 +469,7 @@ class TestMessageDecoderFactoryBehavior:
         choke = struct.pack("!IB", 1, MessageType.CHOKE)
         data = keepalive + choke
         await decoder.feed_data(data)
-        
+
         messages = await decoder.get_messages(max_messages=5)
         assert len(messages) == 2
         assert isinstance(messages[0], KeepAliveMessage)
@@ -489,7 +482,7 @@ class TestMessageDecoderFactoryBehavior:
         for _ in range(10):
             keepalive = struct.pack("!I", 0)
             await decoder.feed_data(keepalive)
-        
+
         messages = await decoder.get_messages(max_messages=3)
         assert len(messages) == 3
 
@@ -502,11 +495,11 @@ class TestMessageDecoderFactoryBehavior:
         await decoder.feed_data(data)
         # Signal end with None
         await decoder.message_queue.put(None)
-        
+
         messages = []
         async for message in decoder:
             messages.append(message)
-        
+
         assert len(messages) == 2
         assert isinstance(messages[0], KeepAliveMessage)
         assert isinstance(messages[1], ChokeMessage)
@@ -517,7 +510,7 @@ class TestMessageDecoderFactoryBehavior:
         # Add invalid message data
         invalid = struct.pack("!I", 1) + b"\x99"  # Invalid message ID
         await decoder.feed_data(invalid)
-        
+
         # Should handle error gracefully
         # Queue might be empty or have None
         assert decoder.message_queue.qsize() == 0 or decoder.message_queue.qsize() == 1
@@ -528,9 +521,9 @@ class TestMessageDecoderFactoryBehavior:
         choke = struct.pack("!IB", 1, MessageType.CHOKE)
         await decoder.feed_data(choke)
         message = await decoder.get_message()
-        
+
         decoder.return_message_to_pool(message)
-        
+
         # Pool should have the message
         pool = decoder.message_pools[MessageType.CHOKE]
         assert len(pool) >= 0  # Pool might be at max capacity
@@ -540,7 +533,7 @@ class TestMessageDecoderFactoryBehavior:
         """Test getting buffer statistics."""
         keepalive = struct.pack("!I", 0)
         await decoder.feed_data(keepalive)
-        
+
         stats = decoder.get_buffer_stats()
         assert "buffer_size" in stats
         assert "buffer_capacity" in stats
@@ -571,7 +564,7 @@ class TestPeerState:
         state.peer_interested = True
         state.bitfield = b"\xff\x00"
         state.pieces_we_have.add(5)
-        
+
         assert not state.am_choking
         assert state.am_interested
         assert not state.peer_choking

@@ -10,6 +10,7 @@ from typing import Any, Optional, cast
 from ccbt.monitoring import get_metrics_collector
 from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 from ccbt.utils.events import Event, EventType, emit_event
+from ccbt.utils.shutdown import is_shutting_down
 
 
 class DHTDiscoverySetup:
@@ -155,6 +156,40 @@ class DHTDiscoverySetup:
         self._bootstrap_retry_last_attempt: dict[str, float] = {}
         self._last_requestable_driven_tick = 0.0
         self._requestable_driven_compress_until = 0.0
+        # PEX/LSD complements while DHT get_peers is rate-limited or sleeping (debounced).
+        self._last_discovery_complement_monotonic = 0.0
+
+    async def _maybe_run_discovery_complements(self, reason: str) -> None:
+        """Invoke PEX/LSD complements when DHT queries are throttled or deferred.
+
+        DHT intentionally sleeps between get_peers calls; PEX and local discovery are
+        independent and should still get opportunities in that window.
+        """
+        if self._should_abort_discovery():
+            return
+        min_interval_s = 10.0
+        now = time.monotonic()
+        if now - self._last_discovery_complement_monotonic < min_interval_s:
+            return
+        self._last_discovery_complement_monotonic = now
+        from ccbt.session.peers import run_discovery_complements
+
+        self.logger.debug(
+            "Discovery complement (%s): DHT waiting/throttled; running PEX/LSD opportunities",
+            reason,
+        )
+        await run_discovery_complements(self.session, reason=reason)
+
+    def _should_abort_discovery(self) -> bool:
+        """Return True if discovery work should stop due to shutdown."""
+        if is_shutting_down():
+            return True
+        if bool(getattr(self.session, "stopped", False)):
+            return True
+        manager = getattr(self.session, "session_manager", None)
+        return manager is not None and bool(
+            getattr(manager, "_manager_shutting_down", False)
+        )
 
     def _record_rebootstrap_outcome(
         self,
@@ -270,6 +305,107 @@ class DHTDiscoverySetup:
         """Track the current DHT health state for diagnostics and recovery."""
         self._health_state = state
         self._dht_query_metrics["bootstrap_health_state"] = state
+
+    async def _handle_aggressive_mode_transition(
+        self,
+        *,
+        current_aggressive_mode: bool,
+        new_aggressive_mode: bool,
+        requestable_stall: bool,
+        is_popular: bool,
+        is_active: bool,
+        current_peer_count: int,
+        current_download_rate: float,
+        dht_retry_interval: float,
+        max_peers_per_query: int,
+    ) -> bool:
+        """Apply aggressive-mode transition once and emit telemetry once."""
+        # Use persisted controller state as authoritative to avoid duplicate/missed
+        # transition edges if the loop-local flag gets reset (e.g., loop restart).
+        effective_current_mode = bool(self._aggressive_mode)
+        if effective_current_mode != current_aggressive_mode:
+            current_aggressive_mode = effective_current_mode
+
+        if new_aggressive_mode == current_aggressive_mode:
+            # Keep persisted state aligned even on no-op edges.
+            self._aggressive_mode = current_aggressive_mode
+            return current_aggressive_mode
+
+        aggressive_mode = new_aggressive_mode
+        self._aggressive_mode = aggressive_mode
+
+        if aggressive_mode:
+            self.logger.debug(
+                "🔍 DHT DISCOVERY: Conservative aggressive mode enabled for %s (peer_count: %d, download_rate: %.1f KB/s). "
+                "Using interval: %.1fs, max_peers: %d (conservative to avoid blacklisting)",
+                self.session.info.name,
+                current_peer_count,
+                current_download_rate / 1024.0,
+                dht_retry_interval,
+                max_peers_per_query,
+            )
+        else:
+            self.logger.debug(
+                "🔍 DHT DISCOVERY: Normal mode for %s (peer_count: %d). Using interval: %.1fs, max_peers: %d (conservative to avoid blacklisting)",
+                self.session.info.name,
+                current_peer_count,
+                dht_retry_interval,
+                max_peers_per_query,
+            )
+
+        try:
+            from ccbt.utils.events import Event, EventType, emit_event
+
+            if requestable_stall and not is_popular and not is_active:
+                reason = "requestable_stall"
+            else:
+                reason = (
+                    "popular" if is_popular else ("active" if is_active else "normal")
+                )
+            if aggressive_mode:
+                await emit_event(
+                    Event(
+                        event_type=EventType.DHT_AGGRESSIVE_MODE_ENABLED.value,
+                        data={
+                            "info_hash": self.session.info.info_hash.hex(),
+                            "torrent_name": self.session.info.name,
+                            "reason": reason,
+                            "peer_count": current_peer_count,
+                            "download_rate_kib": current_download_rate / 1024.0,
+                        },
+                    )
+                )
+            else:
+                await emit_event(
+                    Event(
+                        event_type=EventType.DHT_AGGRESSIVE_MODE_DISABLED.value,
+                        data={
+                            "info_hash": self.session.info.info_hash.hex(),
+                            "torrent_name": self.session.info.name,
+                            "reason": reason,
+                            "peer_count": current_peer_count,
+                            "download_rate_kib": current_download_rate / 1024.0,
+                        },
+                    )
+                )
+        except Exception as e:
+            self.logger.debug("Failed to emit aggressive mode event: %s", e)
+
+        if aggressive_mode:
+            self.logger.debug(
+                "Enabling aggressive DHT discovery for %s (peers: %d, download: %.1f KB/s)",
+                self.session.info.name,
+                current_peer_count,
+                current_download_rate / 1024.0,
+            )
+        else:
+            self.logger.debug(
+                "Disabling aggressive DHT discovery for %s (peers: %d, download: %.1f KB/s)",
+                self.session.info.name,
+                current_peer_count,
+                current_download_rate / 1024.0,
+            )
+        return aggressive_mode
 
     def _normalize_bootstrap_reason(self, reason: str) -> str:
         """Normalize bootstrap reason for memoized recovery attempts."""
@@ -1067,8 +1203,16 @@ class DHTDiscoverySetup:
                         timeout=float(self._dht_bootstrap_timeout_s),
                         min_nodes=1,
                     )
+                with contextlib.suppress(Exception):
+                    await self._maybe_run_discovery_complements(
+                        "requestable_driven_zero_nodes"
+                    )
             else:
                 metrics.increment_counter("requestable_driven_dht_pressure_total")
+                with contextlib.suppress(Exception):
+                    await self._maybe_run_discovery_complements(
+                        "requestable_driven_pressure"
+                    )
 
         burst_cap = int(getattr(disc, "max_connect_burst_per_tick", 16) or 16)
         _ = burst_cap
@@ -1076,6 +1220,13 @@ class DHTDiscoverySetup:
             getattr(self.session, "download_manager", None), "peer_manager", None
         )
         if pm is not None:
+            with contextlib.suppress(Exception):
+                notify_deficit = getattr(pm, "notify_requestable_peer_deficit", None)
+                if callable(notify_deficit):
+                    notify_deficit()
+                    metrics.increment_counter(
+                        "requestable_driven_pending_deficit_notify_total"
+                    )
             resume = getattr(pm, "_resume_pending_batches", None)
             if callable(resume):
                 metrics.increment_counter("requestable_driven_connect_resume_total")
@@ -1285,6 +1436,10 @@ class DHTDiscoverySetup:
                 ]
                 with contextlib.suppress(Exception):
                     self.session.record_discovered_peers(peer_list)
+                with contextlib.suppress(Exception):
+                    self.session.record_dht_candidate_intel(
+                        peer_list, source="dht_callback"
+                    )
 
                 if not peer_list:
                     self.logger.debug(
@@ -1330,6 +1485,17 @@ class DHTDiscoverySetup:
                         len(peer_list),
                         self.session.info.name,
                     )
+                    with contextlib.suppress(Exception):
+                        promotions = await self.session.select_dht_candidate_promotions(
+                            existing_peers=peer_list
+                        )
+                        if promotions:
+                            peer_list = peer_list + promotions
+                            self.logger.debug(
+                                "Promoting %d cached DHT candidate(s) for %s",
+                                len(promotions),
+                                self.session.info.name,
+                            )
                     from ccbt.session.peers import PeerConnectionHelper
 
                     helper = PeerConnectionHelper(self.session)
@@ -2194,6 +2360,10 @@ class DHTDiscoverySetup:
                                     {"ip": ip, "port": port, "peer_source": "dht"}
                                     for ip, port in peers
                                 ]
+                                with contextlib.suppress(Exception):
+                                    self.session.record_dht_candidate_intel(
+                                        peer_list, source="dht_initial"
+                                    )
                                 # Trigger metadata exchange in background task
                                 metadata_task = asyncio.create_task(
                                     self.session.handle_magnet_metadata_exchange(
@@ -2268,9 +2438,10 @@ class DHTDiscoverySetup:
             dht_client: DHT client instance
 
         """
-        # IMPROVEMENT: Aggressive peer discovery for popular torrents
-        # Adaptive retry logic based on torrent popularity and download activity
-        # Standard exponential backoff: 60s → 120s → 240s → 480s → 960s → 1920s (32min max)
+        # Adaptive discovery retry model:
+        # - base retry seed starts at 30s
+        # - normal mode is clamped to >=60s between iterations before backoff growth
+        # - failures back off exponentially up to 32m
         initial_retry_interval = 30.0
         max_retry_interval = (
             1920.0  # Cap at 32 minutes (standard exponential backoff maximum)
@@ -2283,9 +2454,15 @@ class DHTDiscoverySetup:
         consecutive_failures = 0
         max_consecutive_failures = 10  # Increased from 5 to 10
         attempt_count = 0
+        self.logger.debug(
+            "DHT DISCOVERY CONFIG: initial_retry=%.1fs normal_min_retry=60.0s query_min_interval=%.1fs max_retry=%.1fs",
+            initial_retry_interval,
+            self._min_dht_query_interval,
+            max_retry_interval,
+        )
 
         # Track torrent popularity and activity
-        aggressive_mode = False
+        aggressive_mode = bool(self._aggressive_mode)
 
         # Note: Wait for DHT bootstrap to complete (max 120 seconds for slow networks)
         # Increased timeout to 120s to handle slow networks and routers
@@ -2368,7 +2545,7 @@ class DHTDiscoverySetup:
         )
         dht_started = False
 
-        while not self.session.stopped:
+        while not self._should_abort_discovery():
             try:
                 # Note: Wait for connection batches to complete before starting DHT
                 # User requirement: "peer count low checks should only start basically after the first batches of connections are exhausted"
@@ -2379,7 +2556,9 @@ class DHTDiscoverySetup:
                     peer_manager = self.session.download_manager.peer_manager
                     if peer_manager:
                         connection_batches_in_progress = getattr(
-                            peer_manager, "_connection_batches_in_progress", False
+                            peer_manager,
+                            "_dht_connect_deferral_active",
+                            False,
                         )
                         if connection_batches_in_progress:
                             self.logger.debug(
@@ -2403,7 +2582,7 @@ class DHTDiscoverySetup:
                                 waited += check_interval
                                 connection_batches_in_progress = getattr(
                                     peer_manager,
-                                    "_connection_batches_in_progress",
+                                    "_dht_connect_deferral_active",
                                     False,
                                 )
                                 active_peer_count_during_wait = 0
@@ -2582,6 +2761,9 @@ class DHTDiscoverySetup:
                             self.session.info.name,
                             wait_time,
                         )
+                        await self._maybe_run_discovery_complements(
+                            "dht_zero_state_block"
+                        )
                         await asyncio.sleep(max(wait_time, 0.0))
                         continue
 
@@ -2739,6 +2921,7 @@ class DHTDiscoverySetup:
                         peers_with_piece_info,
                         low_peer_wait_s,
                     )
+                    await self._maybe_run_discovery_complements("dht_low_peer_deferral")
                     await asyncio.sleep(low_peer_wait_s)
                     continue
 
@@ -2811,96 +2994,24 @@ class DHTDiscoverySetup:
                     (is_popular or is_active) and is_below_limit
                 ) or requestable_stall
 
-                # Note: Use conservative DHT query intervals to avoid blacklisting
-                # Minimum 60 seconds between queries (standard DHT interval)
+                # Conservative discovery cadence in normal mode:
+                # clamp retry interval to >=60s before applying failure backoff.
                 dht_retry_interval = max(
                     60.0, initial_retry_interval
                 )  # Minimum 60 seconds
                 max_peers_per_query = 50  # Reduced from 100 to avoid overwhelming
 
-                if new_aggressive_mode != aggressive_mode:
-                    aggressive_mode = new_aggressive_mode
-                    self._aggressive_mode = aggressive_mode  # Store for metrics
-
-                    if aggressive_mode:
-                        self.logger.debug(
-                            "🔍 DHT DISCOVERY: Conservative aggressive mode enabled for %s (peer_count: %d, download_rate: %.1f KB/s). "
-                            "Using interval: %.1fs, max_peers: %d (conservative to avoid blacklisting)",
-                            self.session.info.name,
-                            current_peer_count,
-                            current_download_rate / 1024.0,
-                            dht_retry_interval,
-                            max_peers_per_query,
-                        )
-                    else:
-                        self.logger.debug(
-                            "🔍 DHT DISCOVERY: Normal mode for %s (peer_count: %d). Using interval: %.1fs, max_peers: %d (conservative to avoid blacklisting)",
-                            self.session.info.name,
-                            current_peer_count,
-                            dht_retry_interval,
-                            max_peers_per_query,
-                        )
-                if new_aggressive_mode != aggressive_mode:
-                    aggressive_mode = new_aggressive_mode
-                    self._aggressive_mode = aggressive_mode  # Store for metrics
-
-                    # IMPROVEMENT: Emit event for aggressive mode change
-                    try:
-                        from ccbt.utils.events import Event, EventType, emit_event
-
-                        if requestable_stall and not is_popular and not is_active:
-                            reason = "requestable_stall"
-                        else:
-                            reason = (
-                                "popular"
-                                if is_popular
-                                else ("active" if is_active else "normal")
-                            )
-                        if aggressive_mode:
-                            await emit_event(
-                                Event(
-                                    event_type=EventType.DHT_AGGRESSIVE_MODE_ENABLED.value,
-                                    data={
-                                        "info_hash": self.session.info.info_hash.hex(),
-                                        "torrent_name": self.session.info.name,
-                                        "reason": reason,
-                                        "peer_count": current_peer_count,
-                                        "download_rate_kib": current_download_rate
-                                        / 1024.0,
-                                    },
-                                )
-                            )
-                        else:
-                            await emit_event(
-                                Event(
-                                    event_type=EventType.DHT_AGGRESSIVE_MODE_DISABLED.value,
-                                    data={
-                                        "info_hash": self.session.info.info_hash.hex(),
-                                        "torrent_name": self.session.info.name,
-                                        "reason": reason,
-                                        "peer_count": current_peer_count,
-                                        "download_rate_kib": current_download_rate
-                                        / 1024.0,
-                                    },
-                                )
-                            )
-                    except Exception as e:
-                        self.logger.debug("Failed to emit aggressive mode event: %s", e)
-
-                    if aggressive_mode:
-                        self.logger.debug(
-                            "Enabling aggressive DHT discovery for %s (peers: %d, download: %.1f KB/s)",
-                            self.session.info.name,
-                            current_peer_count,
-                            current_download_rate / 1024.0,
-                        )
-                    else:
-                        self.logger.debug(
-                            "Disabling aggressive DHT discovery for %s (peers: %d, download: %.1f KB/s)",
-                            self.session.info.name,
-                            current_peer_count,
-                            current_download_rate / 1024.0,
-                        )
+                aggressive_mode = await self._handle_aggressive_mode_transition(
+                    current_aggressive_mode=aggressive_mode,
+                    new_aggressive_mode=new_aggressive_mode,
+                    requestable_stall=requestable_stall,
+                    is_popular=is_popular,
+                    is_active=is_active,
+                    current_peer_count=current_peer_count,
+                    current_download_rate=current_download_rate,
+                    dht_retry_interval=dht_retry_interval,
+                    max_peers_per_query=max_peers_per_query,
+                )
 
                 # Adjust retry interval based on mode
                 if aggressive_mode:
@@ -2947,9 +3058,9 @@ class DHTDiscoverySetup:
                     dht_retry_interval = min(
                         base_interval, dht_retry_interval
                     )  # Don't increase if already low
-                # Normal mode - use exponential backoff: 60s → 120s → 240s → 480s → 960s → 1920s
+                # Normal mode exponential backoff anchored at the initial retry seed.
                 elif consecutive_failures == 0:
-                    dht_retry_interval = initial_retry_interval  # Start at 60s
+                    dht_retry_interval = initial_retry_interval
                 else:
                     # Exponential backoff: multiply by 2.0 for each consecutive failure
                     calculated_interval = initial_retry_interval * (
@@ -3053,18 +3164,26 @@ class DHTDiscoverySetup:
                             time_since_last_query,
                             effective_min_interval,
                         )
+                        await self._maybe_run_discovery_complements(
+                            "dht_query_rate_limit"
+                        )
                         # Note: Use interruptible sleep that checks _stopped frequently
                         # This ensures the loop exits quickly when shutdown is requested
                         sleep_interval = min(
                             wait_time, 1.0
                         )  # Check at least every second
                         elapsed = 0.0
-                        while elapsed < wait_time and not self.session.stopped:
+                        while (
+                            elapsed < wait_time and not self._should_abort_discovery()
+                        ):
                             await asyncio.sleep(sleep_interval)
                             elapsed += sleep_interval
+                            await self._maybe_run_discovery_complements(
+                                "dht_query_rate_limit"
+                            )
 
                         # Check _stopped after sleep
-                        if self.session.stopped:
+                        if self._should_abort_discovery():
                             break
                     self._last_dht_query_time = time_module.time()
 
@@ -3078,13 +3197,27 @@ class DHTDiscoverySetup:
                             # Use BEP 5 compliant values: alpha=4, k=8, max_depth=10 for better peer acceptance
                             # Slightly increase from normal but stay within reasonable bounds
                             alpha = min(
-                                self.session.config.discovery.dht_aggressive_alpha, 6
+                                getattr(
+                                    self.session.config.discovery,
+                                    "dht_aggressive_alpha",
+                                    self.session.config.discovery.dht_normal_alpha,
+                                ),
+                                6,
                             )  # Max 6 parallel queries (was 20)
                             k = min(
-                                self.session.config.discovery.dht_aggressive_k, 16
+                                getattr(
+                                    self.session.config.discovery,
+                                    "dht_aggressive_k",
+                                    self.session.config.discovery.dht_normal_k,
+                                ),
+                                16,
                             )  # Max 16 bucket size (was 64)
                             max_depth_override = min(
-                                self.session.config.discovery.dht_aggressive_max_depth,
+                                getattr(
+                                    self.session.config.discovery,
+                                    "dht_aggressive_max_depth",
+                                    self.session.config.discovery.dht_normal_max_depth,
+                                ),
                                 12,
                             )  # Max 12 depth (was 25)
                             self.logger.debug(
@@ -3095,10 +3228,20 @@ class DHTDiscoverySetup:
                                 max_depth_override,
                             )
                         else:
-                            alpha = self.session.config.discovery.dht_aggressive_alpha
-                            k = self.session.config.discovery.dht_aggressive_k
-                            max_depth_override = (
-                                self.session.config.discovery.dht_aggressive_max_depth
+                            alpha = getattr(
+                                self.session.config.discovery,
+                                "dht_aggressive_alpha",
+                                self.session.config.discovery.dht_normal_alpha,
+                            )
+                            k = getattr(
+                                self.session.config.discovery,
+                                "dht_aggressive_k",
+                                self.session.config.discovery.dht_normal_k,
+                            )
+                            max_depth_override = getattr(
+                                self.session.config.discovery,
+                                "dht_aggressive_max_depth",
+                                self.session.config.discovery.dht_normal_max_depth,
                             )
                     else:
                         # Normal mode: use normal configuration values
@@ -3319,6 +3462,15 @@ class DHTDiscoverySetup:
                                     {"ip": ip, "port": port, "peer_source": "dht"}
                                     for ip, port in peers
                                 ]
+                                with contextlib.suppress(Exception):
+                                    self.session.record_dht_candidate_intel(
+                                        peer_list, source="dht_periodic_fallback"
+                                    )
+                                    promotions = await self.session.select_dht_candidate_promotions(
+                                        existing_peers=peer_list
+                                    )
+                                    if promotions:
+                                        peer_list = peer_list + promotions
                                 await helper.connect_peers_to_download(peer_list)
                                 self.logger.debug(
                                     "Fallback connection attempted for %d peers from DHT for %s",
@@ -3657,12 +3809,12 @@ class DHTDiscoverySetup:
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(wait_time, 1.0)  # Check at least every second
                 elapsed = 0.0
-                while elapsed < wait_time and not self.session.stopped:
+                while elapsed < wait_time and not self._should_abort_discovery():
                     await asyncio.sleep(sleep_interval)
                     elapsed += sleep_interval
 
                 # Check _stopped after sleep
-                if self.session.stopped:
+                if self._should_abort_discovery():
                     break
             except asyncio.CancelledError:
                 self.logger.debug(
@@ -3695,10 +3847,10 @@ class DHTDiscoverySetup:
                 # This ensures the loop exits quickly when shutdown is requested
                 sleep_interval = min(wait_time, 1.0)  # Check at least every second
                 elapsed = 0.0
-                while elapsed < wait_time and not self.session.stopped:
+                while elapsed < wait_time and not self._should_abort_discovery():
                     await asyncio.sleep(sleep_interval)
                     elapsed += sleep_interval
 
                 # Check _stopped after sleep
-                if self.session.stopped:
+                if self._should_abort_discovery():
                     break

@@ -6,8 +6,8 @@ This module provides reusable fixtures and helpers for mocking network operation
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -85,23 +85,23 @@ def apply_network_mocks_to_session(session: Any, mock_network_components: dict) 
         mock_network_components: Dictionary from mock_network_components fixture
     """
     from unittest.mock import patch
-    
+
     # Store patches on session to keep them active
     if not hasattr(session, "_network_mock_patches"):
         session._network_mock_patches = []
-    
+
     # Mock NAT manager creation - this must be patched before start() is called
     if hasattr(session, "_make_nat_manager"):
         patch_obj = patch.object(session, "_make_nat_manager", return_value=mock_network_components["nat"])
         patch_obj.start()
         session._network_mock_patches.append(patch_obj)
-    
+
     # Mock TCP server creation
     if hasattr(session, "_make_tcp_server"):
         patch_obj = patch.object(session, "_make_tcp_server", return_value=mock_network_components["tcp_server"])
         patch_obj.start()
         session._network_mock_patches.append(patch_obj)
-    
+
     # Mock DHT client creation - patch both the method and direct instantiation
     if hasattr(session, "_make_dht_client"):
         # Patch the method
@@ -110,12 +110,12 @@ def apply_network_mocks_to_session(session: Any, mock_network_components: dict) 
         patch_obj = patch.object(session, "_make_dht_client", side_effect=mock_make_dht_client)
         patch_obj.start()
         session._network_mock_patches.append(patch_obj)
-    
+
     # Patch AsyncDHTClient instantiation at module level (it's imported from ccbt.discovery.dht)
     patch_dht = patch("ccbt.discovery.dht.AsyncDHTClient", return_value=mock_network_components["dht"])
     patch_dht.start()
     session._network_mock_patches.append(patch_dht)
-    
+
     # Patch process-wide UDP accessor (session uses ComponentFactory → get_udp_tracker_client).
     from unittest.mock import MagicMock
 
@@ -134,7 +134,7 @@ def apply_network_mocks_to_session(session: Any, mock_network_components: dict) 
     )
     patch_udp_ctor.start()
     session._network_mock_patches.append(patch_udp_ctor)
-    
+
     # Pre-set DHT client and TCP server to prevent real initialization
     # These will be set before start() is called
     session.dht_client = mock_network_components["dht"]
@@ -153,10 +153,10 @@ def session_with_mocked_network(mock_network_components):
             # ... test code ...
     """
     from contextlib import contextmanager
-    
+
     @contextmanager
     def _session_with_mocks():
         yield mock_network_components
-    
+
     return _session_with_mocks()
 

@@ -11,7 +11,6 @@ import pytest
 from ccbt.models import PeerInfo
 from ccbt.session.download_manager import AsyncDownloadManager
 
-
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
 

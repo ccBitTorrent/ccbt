@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 
 from ccbt.security.key_manager import Ed25519KeyManager
-from ccbt.security.swarm_identity import canonicalize_swarm_id
 from ccbt.security.swarm_auth_contract import (
     ALLOWED_TRUST_PROOF_HINTS,
     SWARM_AUTH_PREFIX,
@@ -13,6 +13,7 @@ from ccbt.security.swarm_auth_contract import (
     evaluate_swarm_auth_verification_order,
     parse_swarm_auth_dict,
 )
+from ccbt.security.swarm_identity import canonicalize_swarm_id
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 

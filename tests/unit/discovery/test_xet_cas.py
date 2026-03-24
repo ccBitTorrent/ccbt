@@ -5,13 +5,12 @@ Tests chunk discovery, peer lookup, chunk download, and DHT integration.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from ccbt.discovery.xet_cas import P2PCASClient
 from ccbt.models import PeerInfo
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.extensions]
 
@@ -51,7 +50,7 @@ class TestP2PCASClient:
 
         # Should call DHT store_chunk_hash if DHT client is available
         # The method may not call it if dht is None or doesn't have the method
-        if cas_client.dht and hasattr(cas_client.dht, 'store_chunk_hash'):
+        if cas_client.dht and hasattr(cas_client.dht, "store_chunk_hash"):
             # Check if it was called (may or may not be, depending on implementation)
             assert True  # Just verify the method completes without error
 
@@ -155,7 +154,7 @@ class TestP2PCASClient:
         # download_chunk requires connection_manager and torrent_data
         # This is a complex integration that requires full protocol stack
         # For unit tests, we just verify the method signature and error handling
-        
+
         # Without extension_manager injection, download raises NotImplementedError
         with pytest.raises(
             (TypeError, ValueError, AttributeError, NotImplementedError),
@@ -222,7 +221,7 @@ class TestP2PCASClient:
     async def test_announce_chunk_with_store_method(self, cas_client, mock_dht):
         """Test announcing chunk using DHT store method."""
         chunk_hash = b"I" * 32
-        
+
         # Mock DHT to have 'store' method instead of 'store_chunk_hash'
         mock_dht.store = AsyncMock(return_value=1)
         del mock_dht.store_chunk_hash
@@ -258,7 +257,7 @@ class TestP2PCASClient:
     async def test_find_chunk_peers_with_find_value(self, cas_client, mock_dht):
         """Test finding peers using DHT find_value method."""
         chunk_hash = b"L" * 32
-        
+
         # Mock DHT to have find_value method
         mock_dht.find_value = AsyncMock(return_value={"ip": "192.168.1.1", "port": 6881})
         del mock_dht.get_chunk_peers
@@ -273,7 +272,7 @@ class TestP2PCASClient:
         """Test finding peers when DHT returns PeerInfo objects."""
         chunk_hash = b"M" * 32
         peer = PeerInfo(ip="192.168.1.1", port=6881)
-        
+
         mock_dht.get_chunk_peers = AsyncMock(return_value=[peer])
 
         peers = await cas_client.find_chunk_peers(chunk_hash)

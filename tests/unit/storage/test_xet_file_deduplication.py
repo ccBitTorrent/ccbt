@@ -7,14 +7,12 @@ and file deduplication statistics.
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 
 import pytest
 
 from ccbt.models import XetFileMetadata
 from ccbt.storage.xet_deduplication import XetDeduplication
 from ccbt.storage.xet_file_deduplication import XetFileDeduplication
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
+from ccbt.core.bencode import BencodeEncoder
 from ccbt.extensions.protocol import ExtensionMessageType
 from ccbt.protocols.bittorrent_v2 import (
     INFO_HASH_V2_LEN,

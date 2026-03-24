@@ -10,9 +10,8 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
-from ccbt.cli.interactive import InteractiveCLI
 from ccbt.models import FileInfo, TorrentInfo
-from ccbt.piece.file_selection import FilePriority, FileSelectionManager, FileSelectionState
+from ccbt.piece.file_selection import FilePriority, FileSelectionManager
 
 
 @pytest.fixture
@@ -86,28 +85,28 @@ def file_selection_manager(multi_file_torrent_info):
     original_select_all_method = manager.select_all
     original_deselect_all_method = manager.deselect_all
     original_set_priority_method = manager.set_file_priority
-    
+
     async def mock_select(idx):
         await original_select(idx)
-    
+
     async def mock_deselect(idx):
         await original_deselect(idx)
-    
+
     async def mock_select_all_impl():
         await original_select_all_method()
-    
+
     async def mock_deselect_all_impl():
         await original_deselect_all_method()
-    
+
     async def mock_set_priority_impl(idx, pri):
         await original_set_priority_method(idx, pri)
-    
+
     # Wrap with AsyncMock using setattr to avoid shadowing warnings
-    setattr(manager, "select_file", AsyncMock(side_effect=mock_select))
-    setattr(manager, "deselect_file", AsyncMock(side_effect=mock_deselect))
-    setattr(manager, "select_all", AsyncMock(side_effect=mock_select_all_impl))
-    setattr(manager, "deselect_all", AsyncMock(side_effect=mock_deselect_all_impl))
-    setattr(manager, "set_file_priority", AsyncMock(side_effect=mock_set_priority_impl))
+    manager.select_file = AsyncMock(side_effect=mock_select)
+    manager.deselect_file = AsyncMock(side_effect=mock_deselect)
+    manager.select_all = AsyncMock(side_effect=mock_select_all_impl)
+    manager.deselect_all = AsyncMock(side_effect=mock_deselect_all_impl)
+    manager.set_file_priority = AsyncMock(side_effect=mock_set_priority_impl)
     return manager
 
 
@@ -824,9 +823,10 @@ class TestStatusCommandFileSelection:
         torrent_session_with_files,
     ):
         """Test show_status includes file selection information."""
+        from rich.console import Console
+
         from ccbt.cli.status import show_status
         from ccbt.executor.session_adapter import LocalSessionAdapter
-        from rich.console import Console
 
         info_hash_bytes = bytes.fromhex("abcd1234" * 5)
         mock_session.torrents = {info_hash_bytes: torrent_session_with_files}
@@ -846,9 +846,10 @@ class TestStatusCommandFileSelection:
         mock_session,
     ):
         """Test show_status when no file selection managers exist."""
+        from rich.console import Console
+
         from ccbt.cli.status import show_status
         from ccbt.executor.session_adapter import LocalSessionAdapter
-        from rich.console import Console
 
         # Create torrent session without file manager
         torrent_session = MagicMock()
@@ -867,9 +868,10 @@ class TestStatusCommandFileSelection:
     @pytest.mark.asyncio
     async def test_show_status_empty_torrents(self, mock_session):
         """Test show_status with empty torrents."""
+        from rich.console import Console
+
         from ccbt.cli.status import show_status
         from ccbt.executor.session_adapter import LocalSessionAdapter
-        from rich.console import Console
 
         mock_session.torrents = {}
         console = Console(record=True)

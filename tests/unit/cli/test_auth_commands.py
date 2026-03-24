@@ -48,20 +48,18 @@ def _bind_cli_config_manager(monkeypatch, manager):
 
     main_module = sys.modules.get("ccbt.cli.main")
     if main_module is None:
-        import ccbt.cli.main  # noqa: PLC0415
         main_module = sys.modules["ccbt.cli.main"]
     monkeypatch.setattr(main_module, "_get_config_from_context", lambda _ctx: manager)
     # If context is missing in future, init_config fallback path uses this.
     monkeypatch.setattr(config_module, "init_config", lambda: manager)
     auth_module = sys.modules.get("ccbt.cli.auth_commands")
     if auth_module is None:
-        import ccbt.cli.auth_commands  # noqa: PLC0415
         auth_module = sys.modules["ccbt.cli.auth_commands"]
     monkeypatch.setattr(auth_module, "get_config", lambda: manager.config)
 
 
 def test_auth_status_displays_values(monkeypatch, tmp_path):
-    """status command prints values from authenticated swarms config."""
+    """Status command prints values from authenticated swarms config."""
     manager, _ = _build_auth_config_manager(tmp_path, mode="strict")
     _bind_cli_config_manager(monkeypatch, manager)
 

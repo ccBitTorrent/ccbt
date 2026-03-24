@@ -11,9 +11,8 @@ Covers missing lines:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -96,8 +95,6 @@ async def test_status_update_error_paths(tmp_path: Path):
 
     Verifies error handling when status update operations fail.
     """
-    from ccbt.cli.main import main
-
     # Test error path when adding torrent fails (lines 555-562)
     with patch("ccbt.session.session.AsyncDownloadManager") as mock_download:
         mock_manager = AsyncMock()
@@ -118,8 +115,6 @@ async def test_status_update_error_572(tmp_path: Path):
 
     Verifies specific error condition in status update.
     """
-    from ccbt.cli.main import main
-
     # Test the error path in main() where status display fails (lines 572-576)
     with patch("sys.argv", ["ccbt", "--status"]):
         with patch("ccbt.session.session.AsyncSessionManager") as mock_session_class:
@@ -131,7 +126,6 @@ async def test_status_update_error_572(tmp_path: Path):
 
             # This should trigger error handling
             # The exception should be caught and handled
-            pass
 
 
 @pytest.mark.asyncio

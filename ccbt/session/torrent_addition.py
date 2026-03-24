@@ -670,9 +670,18 @@ class TorrentAdditionHandler:
                                     "Emergency: Connecting to %d peers from tracker",
                                     len(peer_list),
                                 )
-                                await session.download_manager.peer_manager.connect_to_peers(
+                                submit = await session.download_manager.peer_manager.connect_to_peers(
                                     peer_list
                                 )
+                                if (
+                                    getattr(submit, "status", None)
+                                    == "queued_reentrant"
+                                ):
+                                    self.logger.info(
+                                        "Emergency tracker peers queued_reentrant "
+                                        "(queue_depth=%s)",
+                                        getattr(submit, "queue_depth_after", None),
+                                    )
                 except Exception as e:
                     self.logger.warning(
                         "Emergency announce failed: %s",
@@ -749,9 +758,18 @@ class TorrentAdditionHandler:
                                     "Emergency: Connecting to %d peers from DHT",
                                     len(peer_list),
                                 )
-                                await session.download_manager.peer_manager.connect_to_peers(
+                                submit = await session.download_manager.peer_manager.connect_to_peers(
                                     peer_list
                                 )
+                                if (
+                                    getattr(submit, "status", None)
+                                    == "queued_reentrant"
+                                ):
+                                    self.logger.info(
+                                        "Emergency DHT peers queued_reentrant "
+                                        "(queue_depth=%s)",
+                                        getattr(submit, "queue_depth_after", None),
+                                    )
                             else:
                                 self.logger.warning(
                                     "Emergency: DHT found %d peers but peer_manager is None",

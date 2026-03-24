@@ -22,12 +22,12 @@ def pytest_collection_modifyitems(config, items):
     timeout_fast = pytest.mark.timeout(5)
     timeout_medium = pytest.mark.timeout(30)
     timeout_long = pytest.mark.timeout(300)
-    
+
     for item in items:
         # Check for explicit timeout marker first (highest priority)
         if item.get_closest_marker("timeout"):
             continue  # Already has explicit timeout, don't override
-        
+
         # Apply timeout based on category markers
         if item.get_closest_marker("timeout_fast"):
             item.add_marker(timeout_fast)

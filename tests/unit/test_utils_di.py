@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from ccbt.config.config import get_config
 from ccbt.discovery.tracker_udp_client import (
     get_udp_tracker_client,
     reset_udp_tracker_client_for_testing,
 )
 from ccbt.session.factories import ComponentFactory
 from ccbt.utils.di import DIContainer, default_container
-from ccbt.config.config import get_config
 
 
 def test_default_container_provides_config() -> None:

@@ -268,7 +268,7 @@ class TestEncryptedStreamWriter:
         # Get the encrypted data that was written
         call_args = mock_writer.write.call_args[0]
         encrypted = call_args[0]
-        
+
         # Verify we can decrypt it back to original
         decrypt_cipher = RC4Cipher(b"test_key_16bytes")
         decrypted = decrypt_cipher.decrypt(encrypted)
@@ -348,7 +348,7 @@ class TestEncryptedStreamWriter:
         # Get the encrypted data that was written
         call_args = mock_writer.write.call_args[0]
         encrypted = call_args[0]
-        
+
         # Verify we can decrypt it back and length matches
         decrypt_cipher = RC4Cipher(b"test_key_16bytes")
         decrypted = decrypt_cipher.decrypt(encrypted)

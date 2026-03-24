@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
@@ -52,7 +51,7 @@ def multi_file_torrent():
     - File 2: within piece 4 (part of last piece, starts after file 1 ends)
     """
     piece_length = 16384
-    
+
     # File 0: exactly 2 pieces (ends at piece 1 boundary)
     file0_length = piece_length * 2
     # File 1: starts at 32768, spans 2 pieces + some (ends in piece 4)
@@ -60,7 +59,7 @@ def multi_file_torrent():
     # File 2: remaining part of piece 4
     file2_length = piece_length - 1000
     total_length = file0_length + file1_length + file2_length
-    
+
     return TorrentInfo(
         name="multi_file_torrent",
         info_hash=b"\x00" * 20,
@@ -178,13 +177,13 @@ class TestPieceToFileMapper:
     def test_single_file_mapping(self, single_file_torrent):
         """Test mapping for single-file torrent."""
         mapper = PieceToFileMapper(single_file_torrent)
-        
+
         # All pieces should map to file 0
         for piece_index in range(5):
             files = mapper.piece_to_files[piece_index]
             assert len(files) == 1
             assert files[0][0] == 0  # file_index
-        
+
         # File 0 should have all pieces
         assert len(mapper.file_to_pieces[0]) == 5
         assert mapper.file_to_pieces[0] == [0, 1, 2, 3, 4]
@@ -192,42 +191,42 @@ class TestPieceToFileMapper:
     def test_multi_file_mapping(self, multi_file_torrent):
         """Test mapping for multi-file torrent."""
         mapper = PieceToFileMapper(multi_file_torrent)
-        
+
         # Piece 0 should only be in file 0
         files_in_piece_0 = mapper.piece_to_files[0]
         assert len(files_in_piece_0) == 1
         assert files_in_piece_0[0][0] == 0
-        
+
         # Piece 1 should only be in file 0 (file 0 ends exactly at piece 1 boundary)
         files_in_piece_1 = mapper.piece_to_files[1]
         assert len(files_in_piece_1) == 1
         assert files_in_piece_1[0][0] == 0
-        
+
         # Piece 2 should be in file 1 (file 1 starts at piece 2)
         files_in_piece_2 = mapper.piece_to_files[2]
         assert len(files_in_piece_2) == 1
         assert files_in_piece_2[0][0] == 1
-        
+
         # Piece 4 should have files 1 and 2 (file 1 ends, file 2 starts within piece 4)
         files_in_piece_4 = mapper.piece_to_files[4]
         file_indices = [f[0] for f in files_in_piece_4]
         assert 1 in file_indices
         assert 2 in file_indices
-        
+
         # Check reverse mapping
         assert 0 in mapper.file_to_pieces
         assert 1 in mapper.file_to_pieces
         assert 2 in mapper.file_to_pieces
-        
+
         # File 0 should have pieces 0 and 1
         assert 0 in mapper.file_to_pieces[0]
         assert 1 in mapper.file_to_pieces[0]
-        
+
         # File 1 should have pieces 2, 3, 4
         assert 2 in mapper.file_to_pieces[1]
         assert 3 in mapper.file_to_pieces[1]
         assert 4 in mapper.file_to_pieces[1]
-        
+
         # File 2 should have piece 4
         assert 4 in mapper.file_to_pieces[2]
 
@@ -235,16 +234,16 @@ class TestPieceToFileMapper:
         """Test file offset calculations in mappings."""
         mapper = PieceToFileMapper(multi_file_torrent)
         piece_length = 16384
-        
+
         # Piece 0, file 0: should start at offset 0
         files_in_piece_0 = mapper.piece_to_files[0]
         assert files_in_piece_0[0][1] == 0  # file_offset
-        
+
         # Piece 1, file 0: should continue from file 0
         # Piece 1 starts at piece_length, file 0 offset is piece_length - piece_length = 0? No
         # Actually piece 1 overlaps with end of file 0 and start of file 1
         # Let me verify the logic
-        
+
         # Piece 1 overlaps with file 0 (from piece_length to 2*piece_length) and file 1 (from 0)
         files_in_piece_1 = mapper.piece_to_files[1]
         for file_idx, file_offset, length in files_in_piece_1:
@@ -259,7 +258,7 @@ class TestPieceToFileMapper:
     def test_piece_boundaries(self, multi_file_torrent):
         """Test mapping handles piece boundaries correctly."""
         mapper = PieceToFileMapper(multi_file_torrent)
-        
+
         # Last piece (piece 4) should contain both file 1 (end) and file 2 (start)
         last_piece = multi_file_torrent.num_pieces - 1
         files_in_last = mapper.piece_to_files[last_piece]
@@ -274,7 +273,7 @@ class TestFileSelectionManager:
     def test_initialization(self, multi_file_torrent):
         """Test FileSelectionManager initialization."""
         manager = FileSelectionManager(multi_file_torrent)
-        
+
         assert len(manager.file_states) == 3
         assert all(state.selected for state in manager.file_states.values())
         assert all(state.priority == FilePriority.NORMAL for state in manager.file_states.values())
@@ -284,14 +283,14 @@ class TestFileSelectionManager:
         # File should start selected, deselect first
         asyncio.run(file_selection_manager.deselect_file(0))
         assert not file_selection_manager.is_file_selected(0)
-        
+
         asyncio.run(file_selection_manager.select_file(0))
         assert file_selection_manager.is_file_selected(0)
 
     def test_deselect_file(self, file_selection_manager):
         """Test deselecting a single file."""
         assert file_selection_manager.is_file_selected(0)
-        
+
         asyncio.run(file_selection_manager.deselect_file(0))
         assert not file_selection_manager.is_file_selected(0)
 
@@ -304,7 +303,7 @@ class TestFileSelectionManager:
         """Test selecting multiple files."""
         # Deselect all first
         asyncio.run(file_selection_manager.deselect_all())
-        
+
         asyncio.run(file_selection_manager.select_files([0, 2]))
         assert file_selection_manager.is_file_selected(0)
         assert not file_selection_manager.is_file_selected(1)
@@ -315,7 +314,7 @@ class TestFileSelectionManager:
         # All should be selected by default
         assert file_selection_manager.is_file_selected(0)
         assert file_selection_manager.is_file_selected(1)
-        
+
         asyncio.run(file_selection_manager.deselect_files([0, 1]))
         assert not file_selection_manager.is_file_selected(0)
         assert not file_selection_manager.is_file_selected(1)
@@ -325,14 +324,14 @@ class TestFileSelectionManager:
         """Test selecting all files."""
         asyncio.run(file_selection_manager.deselect_all())
         assert not any(file_selection_manager.is_file_selected(f) for f in range(3))
-        
+
         asyncio.run(file_selection_manager.select_all())
         assert all(file_selection_manager.is_file_selected(f) for f in range(3))
 
     def test_deselect_all(self, file_selection_manager):
         """Test deselecting all files."""
         assert all(file_selection_manager.is_file_selected(f) for f in range(3))
-        
+
         asyncio.run(file_selection_manager.deselect_all())
         assert not any(file_selection_manager.is_file_selected(f) for f in range(3))
 
@@ -340,20 +339,20 @@ class TestFileSelectionManager:
         """Test is_piece_needed when one file is selected."""
         # Deselect all
         asyncio.run(file_selection_manager.deselect_all())
-        
+
         # Select only file 0
         asyncio.run(file_selection_manager.select_file(0))
-        
+
         # Piece 0 should be needed (belongs to file 0)
         assert file_selection_manager.is_piece_needed(0)
-        
+
         # Piece 4 should not be needed (belongs to file 2, which is not selected)
         assert not file_selection_manager.is_piece_needed(4)
 
     def test_is_piece_needed_no_files_selected(self, file_selection_manager):
         """Test is_piece_needed when no files are selected."""
         asyncio.run(file_selection_manager.deselect_all())
-        
+
         # No pieces should be needed
         for piece_index in range(5):
             assert not file_selection_manager.is_piece_needed(piece_index)
@@ -370,15 +369,15 @@ class TestFileSelectionManager:
         asyncio.run(file_selection_manager.set_file_priority(0, FilePriority.HIGH))
         asyncio.run(file_selection_manager.set_file_priority(1, FilePriority.MAXIMUM))
         asyncio.run(file_selection_manager.set_file_priority(2, FilePriority.LOW))
-        
+
         # Piece 1 only belongs to file 0, should get HIGH
         priority = file_selection_manager.get_piece_priority(1)
         assert priority == int(FilePriority.HIGH.value)
-        
+
         # Piece 0 only belongs to file 0, should get HIGH
         priority = file_selection_manager.get_piece_priority(0)
         assert priority == int(FilePriority.HIGH.value)
-        
+
         # Piece 4 overlaps files 1 and 2, should get MAXIMUM (highest)
         priority = file_selection_manager.get_piece_priority(4)
         assert priority == int(FilePriority.MAXIMUM.value)
@@ -387,10 +386,10 @@ class TestFileSelectionManager:
         """Test piece priority when file is not selected."""
         # Deselect file 0
         asyncio.run(file_selection_manager.deselect_file(0))
-        
+
         # Set high priority on unselected file
         asyncio.run(file_selection_manager.set_file_priority(0, FilePriority.HIGH))
-        
+
         # Piece 0 should have DO_NOT_DOWNLOAD priority (file not selected)
         priority = file_selection_manager.get_piece_priority(0)
         assert priority == int(FilePriority.DO_NOT_DOWNLOAD.value)
@@ -400,15 +399,15 @@ class TestFileSelectionManager:
         # Piece 0 should only have file 0
         files = file_selection_manager.get_files_for_piece(0)
         assert files == [0]
-        
+
         # Piece 1 should only have file 0
         files = file_selection_manager.get_files_for_piece(1)
         assert files == [0]
-        
+
         # Piece 2 should have file 1
         files = file_selection_manager.get_files_for_piece(2)
         assert 1 in files
-        
+
         # Piece 4 should have files 1 and 2
         files = file_selection_manager.get_files_for_piece(4)
         assert 1 in files
@@ -420,13 +419,13 @@ class TestFileSelectionManager:
         pieces = file_selection_manager.get_pieces_for_file(0)
         assert 0 in pieces
         assert 1 in pieces
-        
+
         # File 1 should have pieces 2, 3, 4
         pieces = file_selection_manager.get_pieces_for_file(1)
         assert 2 in pieces
         assert 3 in pieces
         assert 4 in pieces
-        
+
         # File 2 should have piece 4
         pieces = file_selection_manager.get_pieces_for_file(2)
         assert 4 in pieces
@@ -436,9 +435,9 @@ class TestFileSelectionManager:
         state = file_selection_manager.get_file_state(0)
         assert state
         initial_bytes = state.bytes_downloaded
-        
+
         asyncio.run(file_selection_manager.update_file_progress(0, 5000))
-        
+
         updated_state = file_selection_manager.get_file_state(0)
         assert updated_state
         assert updated_state.bytes_downloaded == 5000
@@ -448,7 +447,7 @@ class TestFileSelectionManager:
         state = file_selection_manager.get_file_state(0)
         assert state is not None
         assert state.file_index == 0
-        
+
         # Invalid file index
         state = file_selection_manager.get_file_state(999)
         assert state is None
@@ -465,7 +464,7 @@ class TestFileSelectionManager:
         # All selected by default
         selected = file_selection_manager.get_selected_files()
         assert selected == [0, 1, 2]
-        
+
         # Deselect one
         asyncio.run(file_selection_manager.deselect_file(1))
         selected = file_selection_manager.get_selected_files()
@@ -476,18 +475,18 @@ class TestFileSelectionManager:
     def test_get_statistics(self, file_selection_manager):
         """Test getting file selection statistics."""
         stats = file_selection_manager.get_statistics()
-        
+
         assert stats["total_files"] == 3
         assert stats["selected_files"] == 3
         assert stats["deselected_files"] == 0
         assert stats["total_size"] > 0
         assert stats["selected_size"] == stats["total_size"]
         assert stats["deselected_size"] == 0
-        
+
         # Deselect one file
         asyncio.run(file_selection_manager.deselect_file(1))
         stats = file_selection_manager.get_statistics()
-        
+
         assert stats["selected_files"] == 2
         assert stats["deselected_files"] == 1
         assert stats["selected_size"] < stats["total_size"]
@@ -498,16 +497,16 @@ class TestFileSelectionManager:
         # Deselect file 0, select file 1
         asyncio.run(file_selection_manager.deselect_file(0))
         asyncio.run(file_selection_manager.select_file(1))
-        
+
         # Set priorities
         asyncio.run(file_selection_manager.set_file_priority(0, FilePriority.HIGH))
         asyncio.run(file_selection_manager.set_file_priority(1, FilePriority.MAXIMUM))
-        
+
         # Piece 4 spans files 1 and 2, file 1 is selected
         # Priority should be MAXIMUM (from selected file 1)
         priority = file_selection_manager.get_piece_priority(4)
         assert priority == int(FilePriority.MAXIMUM.value)
-        
+
         # Piece 0 only belongs to file 0 (not selected), should be DO_NOT_DOWNLOAD
         priority = file_selection_manager.get_piece_priority(0)
         assert priority == int(FilePriority.DO_NOT_DOWNLOAD.value)
@@ -519,11 +518,11 @@ class TestFileSelectionManagerEdgeCases:
     def test_single_file_torrent(self, single_file_torrent):
         """Test FileSelectionManager with single-file torrent."""
         manager = FileSelectionManager(single_file_torrent)
-        
+
         # Should have one file state
         assert len(manager.file_states) == 1
         assert manager.is_file_selected(0)
-        
+
         # All pieces should be needed
         for piece_index in range(5):
             assert manager.is_piece_needed(piece_index)
@@ -554,7 +553,7 @@ class TestFileSelectionManagerEdgeCases:
             pieces=[],
             num_pieces=0,
         )
-        
+
         manager = FileSelectionManager(torrent)
         assert len(manager.file_states) == 0
         assert manager.get_statistics()["total_files"] == 0
@@ -579,7 +578,7 @@ class TestFileSelectionManagerIntegration:
             FilePriority.HIGH,
             FilePriority.NORMAL,
         ]
-        
+
         for file_idx, priority in enumerate(priorities):
             asyncio.run(file_selection_manager.set_file_priority(file_idx, priority))
             assert file_selection_manager.get_file_priority(file_idx) == priority
@@ -589,13 +588,13 @@ class TestFileSelectionManagerIntegration:
         # All pieces needed initially
         for piece_idx in range(5):
             assert file_selection_manager.is_piece_needed(piece_idx)
-        
+
         # Deselect file 0
         asyncio.run(file_selection_manager.deselect_file(0))
-        
+
         # Piece 0 should not be needed (only belongs to file 0)
         assert not file_selection_manager.is_piece_needed(0)
-        
+
         # Piece 1 might still be needed (also belongs to file 1)
         # This depends on the mapping - if piece 1 has file 1, it should still be needed
         files_in_piece_1 = file_selection_manager.get_files_for_piece(1)
@@ -615,7 +614,7 @@ class TestFileSelectionManagerAsync:
             file_selection_manager.deselect_file(1),
             file_selection_manager.set_file_priority(2, FilePriority.HIGH),
         )
-        
+
         assert file_selection_manager.is_file_selected(0)
         assert not file_selection_manager.is_file_selected(1)
         assert file_selection_manager.get_file_priority(2) == FilePriority.HIGH
@@ -624,13 +623,13 @@ class TestFileSelectionManagerAsync:
         """Test bulk selection operations."""
         # Deselect all
         await file_selection_manager.deselect_all()
-        
+
         # Select multiple files concurrently
         await asyncio.gather(
             file_selection_manager.select_file(0),
             file_selection_manager.select_file(2),
         )
-        
+
         assert file_selection_manager.is_file_selected(0)
         assert not file_selection_manager.is_file_selected(1)
         assert file_selection_manager.is_file_selected(2)

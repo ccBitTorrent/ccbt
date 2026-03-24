@@ -10,6 +10,7 @@ for diagnostics only and does not drive the health band.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional
 
 from ccbt.models import AdaptiveTimeoutHealthPeerSource, SwarmTimeoutSignals
@@ -38,6 +39,15 @@ class AdaptiveTimeoutCalculator:
         self.config = config
         self.peer_manager = peer_manager
         self.logger = logging.getLogger(__name__)
+        self._last_shutdown_dht_timeout_log_monotonic = 0.0
+
+    def _allow_shutdown_debug_log(self) -> bool:
+        """Throttle high-frequency shutdown debug logs."""
+        now = time.monotonic()
+        if now - self._last_shutdown_dht_timeout_log_monotonic < 10.0:
+            return False
+        self._last_shutdown_dht_timeout_log_monotonic = now
+        return True
 
     def _health_source_is_active_only(self) -> bool:
         src = getattr(
@@ -204,7 +214,11 @@ class AdaptiveTimeoutCalculator:
         # Clamp to config bounds
         timeout = max(min_timeout, min(max_timeout, timeout))
 
-        if signals is not None:
+        emit_debug = True
+        if is_shutting_down():
+            emit_debug = self._allow_shutdown_debug_log()
+
+        if signals is not None and emit_debug:
             self.logger.debug(
                 "DHT timeout calculated: %.1fs (mode=%s, transport_live=%d "
                 "active_post_handshake=%d requestable=%d effective=%d)",
@@ -215,7 +229,7 @@ class AdaptiveTimeoutCalculator:
                 signals.requestable_count,
                 effective_count,
             )
-        else:
+        elif emit_debug:
             self.logger.debug(
                 "DHT timeout calculated: %.1fs (mode=%s, effective=%d, no swarm signals)",
                 timeout,

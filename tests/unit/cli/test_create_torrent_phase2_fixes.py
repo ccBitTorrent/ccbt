@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -45,16 +44,16 @@ class TestCreateTorrentARG001Fix:
         else:
             # Direct function
             func = cmd
-        
+
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
-        
+
         # Verify _verbose parameter exists (prefixed with _ for ARG001 fix)
         assert "_verbose" in params, "create_torrent should have _verbose parameter (ARG001 fix)"
-        
+
         # Verify _ctx parameter exists (Click pass_context)
         assert "_ctx" in params, "create_torrent should have _ctx parameter (Click pass_context)"
-        
+
         # Verify all expected parameters are present
         expected_params = [
             "_ctx",
@@ -79,28 +78,28 @@ class TestCreateTorrentARG001Fix:
         runner = CliRunner()
         source_file = tmp_path / "test.txt"
         source_file.write_text("test content")
-        
+
         # Mock TorrentV2Parser to avoid actual torrent creation
         mock_parser = MagicMock()
         mock_instance = MagicMock()
         mock_instance.generate_v2_torrent.return_value = b"torrent data"
         mock_parser.return_value = mock_instance
-        
+
         monkeypatch.setattr(
             "ccbt.core.torrent_v2.TorrentV2Parser",
             mock_parser,
         )
-        
+
         # Invoke command with --verbose flag (maps to _verbose parameter)
         result = runner.invoke(
             create_torrent_mod.create_torrent,
             [str(source_file), "--v2", "--verbose"],
         )
-        
+
         # Command should execute (may fail for other reasons, but not due to _verbose)
         # The _verbose parameter is unused, but Click still passes it
         assert result.exit_code in [0, 1, 2]  # Allow various exit codes
-        
+
         # Verify the command was invoked (not a signature error)
         assert "TypeError" not in result.output
         assert "missing required argument" not in result.output.lower()
@@ -110,24 +109,24 @@ class TestCreateTorrentARG001Fix:
         runner = CliRunner()
         source_file = tmp_path / "test.txt"
         source_file.write_text("test content")
-        
+
         # Mock TorrentV2Parser
         mock_parser = MagicMock()
         mock_instance = MagicMock()
         mock_instance.generate_v2_torrent.return_value = b"torrent data"
         mock_parser.return_value = mock_instance
-        
+
         monkeypatch.setattr(
             "ccbt.core.torrent_v2.TorrentV2Parser",
             mock_parser,
         )
-        
+
         # Invoke command with multiple -v flags (count=True means -vvv = 3)
         result = runner.invoke(
             create_torrent_mod.create_torrent,
             [str(source_file), "--v2", "-vvv"],
         )
-        
+
         # Command should execute without signature errors
         assert "TypeError" not in result.output
         assert "missing required argument" not in result.output.lower()
@@ -136,11 +135,10 @@ class TestCreateTorrentARG001Fix:
         """Test that _verbose parameter is marked as unused (ARG001 fix)."""
         # Read source file to verify noqa comment
         import ccbt.cli.create_torrent as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
+
         # Find the function definition line
         lines = source.splitlines()
         for i, line in enumerate(lines):
@@ -151,10 +149,10 @@ class TestCreateTorrentARG001Fix:
                         # Found the fix
                         assert True, "ARG001 fix found with noqa comment"
                         return
-        
+
         # If we get here, check if _verbose exists at all
         assert "_verbose" in source, "_verbose parameter should exist (may be in function signature)"
-        
+
         # Verify it's prefixed with underscore (ARG001 fix pattern)
         assert " _verbose" in source or ", _verbose" in source or "(_verbose" in source, \
             "_verbose should be prefixed with underscore (ARG001 fix)"
@@ -164,7 +162,7 @@ class TestCreateTorrentARG001Fix:
         # Verify the function is decorated with @click.command
         cmd = create_torrent_mod.create_torrent
         assert hasattr(cmd, "params"), "create_torrent should be a Click command"
-        
+
         # Verify it has @click.pass_context decorator
         # This is checked by the presence of _ctx parameter in signature
         if hasattr(cmd, "callback"):
@@ -173,7 +171,7 @@ class TestCreateTorrentARG001Fix:
             func = cmd
         sig = inspect.signature(func)
         assert "_ctx" in sig.parameters, "create_torrent should have _ctx parameter (Click pass_context)"
-        
+
         # Verify --verbose option exists
         params = cmd.params
         verbose_options = [p for p in params if hasattr(p, "name") and ("verbose" in p.name.lower() or p.name == "v")]
@@ -191,16 +189,16 @@ class TestCreateTorrentFunctionCompatibility:
             func = cmd.callback
         else:
             func = cmd
-        
+
         sig = inspect.signature(func)
-        
+
         # Get all parameters
         params = sig.parameters
-        
+
         # Verify we can construct a call with all parameters
         # (We don't actually call it, just verify the signature is valid)
         assert len(params) >= 13, "create_torrent should have at least 13 parameters"
-        
+
         # Verify _verbose is an int type (from count=True in Click)
         verbose_param = params.get("_verbose")
         if verbose_param:
@@ -212,18 +210,18 @@ class TestCreateTorrentFunctionCompatibility:
         runner = CliRunner()
         source_file = tmp_path / "test.txt"
         source_file.write_text("test content")
-        
+
         # Mock all dependencies
         mock_parser = MagicMock()
         mock_instance = MagicMock()
         mock_instance.generate_v2_torrent.return_value = b"torrent data"
         mock_parser.return_value = mock_instance
-        
+
         monkeypatch.setattr(
             "ccbt.core.torrent_v2.TorrentV2Parser",
             mock_parser,
         )
-        
+
         # Test with various verbose combinations
         test_cases = [
             ([str(source_file), "--v2"], "no verbose"),
@@ -231,13 +229,13 @@ class TestCreateTorrentFunctionCompatibility:
             ([str(source_file), "--v2", "-vv"], "double verbose"),
             ([str(source_file), "--v2", "--verbose"], "long verbose flag"),
         ]
-        
+
         for args, description in test_cases:
             result = runner.invoke(
                 create_torrent_mod.create_torrent,
                 args,
             )
-            
+
             # Should not fail due to signature issues
             assert "TypeError" not in result.output, \
                 f"Command failed with TypeError for {description}: {result.output}"

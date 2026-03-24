@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,8 +16,6 @@ from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
     ConnectionState,
-    PeerConnectionError,
-    PeerStats,
     RequestInfo,
 )
 from ccbt.peer.peer import (
@@ -28,7 +25,6 @@ from ccbt.peer.peer import (
     Handshake,
     HaveMessage,
     InterestedMessage,
-    KeepAliveMessage,
     NotInterestedMessage,
     PeerInfo,
     PieceMessage,
@@ -88,22 +84,22 @@ async def async_peer_manager(mock_torrent_data, mock_piece_manager):
                     connection.writer.close()
                 except Exception:
                     pass
-        
+
         # Cancel background tasks
         if manager._choking_task and not manager._choking_task.done():
             manager._choking_task.cancel()
         if manager._stats_task and not manager._stats_task.done():
             manager._stats_task.cancel()
-        
+
         # Wait with timeout for cancellation
         try:
             await asyncio.wait_for(asyncio.sleep(0.01), timeout=0.1)
         except asyncio.TimeoutError:
             pass
-        
+
         # Clear connections to avoid disconnect attempts
         manager.connections.clear()
-        
+
         # Now call stop which should be quick
         try:
             await asyncio.wait_for(manager.stop(), timeout=0.1)
@@ -295,20 +291,20 @@ class TestAsyncPeerConnectionManagerBasics:
         # Note: The fixture already starts the manager, so we need to stop it first
         # to test the start/stop lifecycle properly
         await async_peer_manager.stop()
-        
+
         # Now start it fresh
         await async_peer_manager.start()
         assert async_peer_manager._running is True
         assert async_peer_manager._choking_task is not None
         assert async_peer_manager._stats_task is not None
-        
+
         # Note: Store task references before stop() sets them to None
         choking_task = async_peer_manager._choking_task
         stats_task = async_peer_manager._stats_task
-        
+
         # Stop the manager
         await async_peer_manager.stop()
-        
+
         # Tasks should be cancelled or done (check stored references since stop() sets them to None)
         await asyncio.sleep(0.01)  # Give time for cancellation
         assert choking_task is not None and choking_task.done(), "Choking task should be done after stop"
@@ -355,12 +351,12 @@ class TestAsyncPeerConnectionManagerBasics:
         mock_writer = AsyncMock()
         mock_writer.drain = AsyncMock()
         mock_writer.write = MagicMock()
-        
+
         # Mock handshake response
         info_hash = async_peer_manager.torrent_data["info_hash"]
         handshake = Handshake(info_hash, b"peer_peer_id_20bytes")
         handshake_data = handshake.encode()
-        
+
         # Make readexactly return handshake then raise CancelledError to stop message loop
         call_count = 0
         async def mock_readexactly(n):
@@ -369,7 +365,7 @@ class TestAsyncPeerConnectionManagerBasics:
             if call_count == 1:
                 return handshake_data
             raise asyncio.CancelledError()
-        
+
         mock_reader.readexactly = mock_readexactly
 
         with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
@@ -377,7 +373,7 @@ class TestAsyncPeerConnectionManagerBasics:
 
             # Give time for connection task to start
             await asyncio.sleep(0.05)
-            
+
             # Cancel any running connection tasks to prevent hanging
             for connection in list(async_peer_manager.connections.values()):
                 if connection.connection_task and not connection.connection_task.done():
@@ -386,7 +382,7 @@ class TestAsyncPeerConnectionManagerBasics:
                         await asyncio.wait_for(connection.connection_task, timeout=0.1)
                     except (asyncio.CancelledError, asyncio.TimeoutError):
                         pass
-            
+
             # Should have created a connection
             assert len(async_peer_manager.connections) >= 0  # May be 0 if task cancelled quickly
 
@@ -400,12 +396,12 @@ class TestAsyncPeerConnectionManagerBasics:
         mock_writer = AsyncMock()
         mock_writer.drain = AsyncMock()
         mock_writer.write = MagicMock()
-        
+
         # Mock handshake with wrong info hash (exactly 20 bytes)
         wrong_info_hash = b"wrong_info_hash_20" + b"xy"  # Exactly 20 bytes
         handshake = Handshake(wrong_info_hash, b"peer_peer_id_20bytes")
         handshake_data = handshake.encode()
-        
+
         mock_reader.readexactly = AsyncMock(return_value=handshake_data)
 
         with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
@@ -730,13 +726,13 @@ class TestAsyncPeerConnectionManagerMessageHandling:
         # Note: Start the manager if not already started
         if not async_peer_manager._running:
             await async_peer_manager.start()
-        
+
         connection = AsyncPeerConnection(
             PeerInfo(ip="127.0.0.1", port=6881),
             async_peer_manager.torrent_data,
         )
         connection.state = ConnectionState.HANDSHAKE_RECEIVED
-        
+
         # Note: Add connection to manager's connections dict
         # _handle_bitfield might need the connection to be registered
         peer_key = str(connection.peer_info)
@@ -941,10 +937,10 @@ class TestAsyncPeerConnectionManagerConnectionLifecycle:
         )
         connection.state = ConnectionState.ACTIVE
         connection.reader = AsyncMock()
-        
+
         # Track if we've seen the keepalive
         keepalive_seen = False
-        
+
         # Mock keepalive (length 0) - return once then raise CancelledError
         async def mock_readexactly(n):
             nonlocal keepalive_seen
@@ -959,19 +955,19 @@ class TestAsyncPeerConnectionManagerConnectionLifecycle:
         task = asyncio.create_task(async_peer_manager._handle_peer_messages(connection))
         # Give it a moment to process the keepalive
         await asyncio.sleep(0.01)
-        
+
         # Cancel the task
         task.cancel()
-        
+
         # Wait for cancellation with timeout
         try:
             await asyncio.wait_for(task, timeout=0.1)
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
-        
+
         # Verify task is done
         assert task.done()
-        
+
         # Activity should be updated after keepalive
         assert connection.stats.last_activity > 0
 
@@ -1000,20 +996,20 @@ class TestAsyncPeerConnectionManagerConnectionLifecycle:
         )
         connection.state = ConnectionState.ACTIVE
         connection.reader = AsyncMock()
-        
+
         # Mock decoder to raise error immediately
         connection.message_decoder.add_data = MagicMock(side_effect=Exception("Decode error"))
 
         # Track read calls
         read_count = 0
-        
+
         # Mock to return length then payload, then cancel
         async def mock_readexactly(n):
             nonlocal read_count
             read_count += 1
             if read_count == 1:
                 return b"\x00\x00\x00\x05"  # Length
-            elif read_count == 2:
+            if read_count == 2:
                 return b"invalid"  # Payload
             # After payload, raise CancelledError to stop
             raise asyncio.CancelledError()
@@ -1023,16 +1019,16 @@ class TestAsyncPeerConnectionManagerConnectionLifecycle:
         task = asyncio.create_task(async_peer_manager._handle_peer_messages(connection))
         # Give time for reads to complete
         await asyncio.sleep(0.02)
-        
+
         # Cancel the task
         task.cancel()
-        
+
         # Wait for cancellation with timeout
         try:
             await asyncio.wait_for(task, timeout=0.1)
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
-        
+
         # Verify task is done
         assert task.done()
 

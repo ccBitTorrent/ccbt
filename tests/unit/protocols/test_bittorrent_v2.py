@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -34,10 +34,10 @@ from ccbt.protocols.bittorrent_v2 import (
     PieceLayerResponse,
     ProtocolVersion,
     ProtocolVersionError,
-    expected_plaintext_handshake_total_len,
     create_hybrid_handshake,
     create_v2_handshake,
     detect_protocol_version,
+    expected_plaintext_handshake_total_len,
     handle_v2_handshake,
     negotiate_protocol_version,
     parse_v2_handshake,
@@ -1166,7 +1166,7 @@ class TestAsyncHandshakeFunctions:
     async def test_handle_v2_handshake_incomplete_read_error(self):
         """Test handling handshake with IncompleteReadError."""
         reader = AsyncMock(spec=asyncio.StreamReader)
-        
+
         # First call (v2 size) raises IncompleteReadError, second call also raises it
         from asyncio import IncompleteReadError
         incomplete_error = IncompleteReadError(b"partial", 80)
@@ -1274,7 +1274,7 @@ class TestAsyncHandshakeFunctions:
         connection.our_peer_id = b"p" * PEER_ID_LEN
         connection.writer = AsyncMock(spec=asyncio.StreamWriter)
         connection.reader = AsyncMock(spec=asyncio.StreamReader)
-        
+
         # Mock reader to raise general exception
         connection.reader.readexactly = AsyncMock(side_effect=Exception("Unexpected error"))
 
@@ -1286,12 +1286,12 @@ class TestAsyncHandshakeFunctions:
         """Test protocol upgrade with exception during handshake send."""
         connection = MagicMock()
         connection.our_peer_id = b"p" * PEER_ID_LEN
-        
+
         # Mock writer to raise exception on write
         writer = AsyncMock(spec=asyncio.StreamWriter)
         writer.write = MagicMock(side_effect=Exception("Write error"))
         connection.writer = writer
-        
+
         connection.reader = AsyncMock(spec=asyncio.StreamReader)
 
         result = await upgrade_to_v2(connection, b"i" * INFO_HASH_V2_LEN)

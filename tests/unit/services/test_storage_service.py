@@ -430,7 +430,7 @@ async def test_storage_service_exception_in_execute_operation(monkeypatch, tmp_p
 
     # First operation should succeed
     await svc.write_file(str(tmp_path / "test1.bin"), b"data1")
-    
+
     # Wait for first operation to complete to free capacity
     try:
         await asyncio.wait_for(

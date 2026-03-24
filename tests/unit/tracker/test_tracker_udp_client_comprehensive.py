@@ -20,7 +20,7 @@ import asyncio
 import socket
 import struct
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -144,11 +144,10 @@ class TestAsyncUDPTrackerClientAnnounceResults:
                     {"ip": "192.168.1.1", "port": 6881},
                     {"ip": "192.168.1.2", "port": 6882},
                 ]
-            else:
-                return [
-                    {"ip": "192.168.1.2", "port": 6882},  # Duplicate
-                    {"ip": "192.168.1.3", "port": 6883},
-                ]
+            return [
+                {"ip": "192.168.1.2", "port": 6882},  # Duplicate
+                {"ip": "192.168.1.3", "port": 6883},
+            ]
 
         client._announce_to_tracker = mock_announce
 
@@ -378,7 +377,6 @@ class TestAsyncUDPTrackerClientConnection:
             tid, timeout, tracker_host=None, *, immediate_peers_callback=None
         ):
             await asyncio.sleep(0.01)
-            return None  # Timeout
 
         client._wait_for_response = mock_wait
 

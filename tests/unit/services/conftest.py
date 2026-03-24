@@ -14,7 +14,7 @@ async def service_manager():
     """Provide a ServiceManager that auto-cleans up services after test."""
     mgr = ServiceManager()
     yield mgr
-    
+
     # Cleanup: stop all services
     try:
         await mgr.shutdown()
@@ -38,6 +38,6 @@ def verify_tasks_cancelled():
             # Verify tasks are done or cancelled
             for task in service.operation_tasks:
                 assert task.done() or task.cancelled(), "Task not cancelled"
-        
+
     return _verify
 

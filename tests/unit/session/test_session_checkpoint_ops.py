@@ -1,9 +1,8 @@
 """Tests for session checkpoint operations."""
 
-import asyncio
 import pytest
 
-from ccbt.models import TorrentCheckpoint, PieceState
+from ccbt.models import TorrentCheckpoint
 
 
 @pytest.mark.asyncio
@@ -179,11 +178,11 @@ async def test_save_checkpoint_exception_logs(monkeypatch):
     session = AsyncTorrentSession(td, ".")
     mock_pm = _PM()
     session.download_manager = type("_DM", (), {"piece_manager": mock_pm})()
-    
+
     # Note: _save_checkpoint calls checkpoint_controller.save_checkpoint_state()
     # which uses self._ctx.piece_manager first, then falls back to session.piece_manager
     # Ensure checkpoint_controller exists and uses our mocked piece_manager
-    if not hasattr(session, 'checkpoint_controller') or session.checkpoint_controller is None:
+    if not hasattr(session, "checkpoint_controller") or session.checkpoint_controller is None:
         from ccbt.session.checkpointing import CheckpointController
         from ccbt.session.models import SessionContext
         # Create context with the mocked piece_manager
@@ -196,11 +195,10 @@ async def test_save_checkpoint_exception_logs(monkeypatch):
             piece_manager=mock_pm,  # CRITICAL: Set piece_manager in context
         )
         session.checkpoint_controller = CheckpointController(ctx)
-    else:
-        # If checkpoint_controller already exists, set piece_manager on context
-        if hasattr(session.checkpoint_controller, '_ctx'):
-            session.checkpoint_controller._ctx.piece_manager = mock_pm
-    
+    # If checkpoint_controller already exists, set piece_manager on context
+    elif hasattr(session.checkpoint_controller, "_ctx"):
+        session.checkpoint_controller._ctx.piece_manager = mock_pm
+
     # The exception from get_checkpoint_state should be re-raised
     with pytest.raises(RuntimeError, match="get_checkpoint_state failed"):
         await session._save_checkpoint()

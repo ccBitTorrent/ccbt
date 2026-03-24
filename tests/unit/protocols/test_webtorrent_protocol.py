@@ -8,8 +8,9 @@ Target: 95%+ code coverage.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 # Try to import aiortc, skip tests if not available
 try:
@@ -33,7 +34,7 @@ def webtorrent_protocol():
 
     if webtorrent_module.WebTorrentProtocol is None:  # type: ignore[attr-defined]
         pytest.skip("WebTorrentProtocol not available (aiortc not installed)")
-    
+
     protocol = webtorrent_module.WebTorrentProtocol()  # type: ignore[attr-defined]
     return protocol
 

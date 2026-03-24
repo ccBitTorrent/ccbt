@@ -5,7 +5,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 
 
 class TestPerformance:
@@ -27,16 +32,16 @@ class TestPerformance:
         # Set a large send window so data can be sent
         connection.send_window = 10 * 1024 * 1024  # 10MB window
         connection.recv_window = 65535
-        
+
         # Send 1MB of data
         data = b"x" * (1024 * 1024)
 
         # Start send task
         send_task = asyncio.create_task(connection.send(data))
-        
+
         # Wait a bit for packets to be created
         await asyncio.sleep(0.1)
-        
+
         # Cancel send task (it may take time)
         send_task.cancel()
         try:
@@ -51,10 +56,10 @@ class TestPerformance:
     async def test_many_concurrent_packets(self, connection):
         """Test handling many concurrent packets."""
         from ccbt.transport.utp_extensions import UTPExtensionType
-        
+
         # Ensure SACK is negotiated so received_seqs is tracked
         connection.negotiated_extensions.add(UTPExtensionType.SACK)
-        
+
         # Simulate receiving many packets
         for seq in range(1, 1000):
             packet = UTPPacket(
@@ -98,8 +103,8 @@ class TestPerformance:
         """Test extension parsing performance."""
         from ccbt.transport.utp_extensions import (
             ECNExtension,
-            SACKExtension,
             SACKBlock,
+            SACKExtension,
             WindowScalingExtension,
             encode_extensions,
         )

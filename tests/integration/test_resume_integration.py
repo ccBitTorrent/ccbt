@@ -19,10 +19,10 @@ import pytest
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.config import get_config
 from ccbt.models import DownloadStats, FileCheckpoint, TorrentCheckpoint
 from ccbt.session import AsyncSessionManager
+from ccbt.storage.checkpoint import CheckpointManager
 
 
 class TestResumeIntegration:
@@ -239,7 +239,7 @@ class TestResumeIntegration:
             mock_path_instance = Mock()
             mock_path_instance.exists.return_value = True
             mock_path_class.return_value = mock_path_instance
-            
+
             # TorrentParser is imported inside the function, so patch it where it's imported
             with patch("ccbt.core.torrent.TorrentParser") as mock_parser_class:
                 mock_parser = Mock()
@@ -248,7 +248,7 @@ class TestResumeIntegration:
                     "name": "priority_test",
                 }
                 mock_parser_class.return_value = mock_parser
-                
+
                 # Make add_torrent async mock
                 mock_add_torrent = AsyncMock(return_value="0123456789ABCDEF0123456789ABCDEF01234567")
                 session_manager.add_torrent = mock_add_torrent

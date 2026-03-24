@@ -3,8 +3,9 @@
 We only import and instantiate key components to ensure they are available.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
 
 
 def test_alert_manager_singleton():
@@ -29,8 +30,8 @@ import asyncio
 
 import pytest
 
-from ccbt.interface.terminal_dashboard import TerminalDashboard
 from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
+from ccbt.interface.terminal_dashboard import TerminalDashboard
 
 
 @pytest.mark.asyncio
@@ -56,7 +57,6 @@ async def test_dashboard_poll_once():
     app = TerminalDashboard(session, refresh_interval=0.5)
 
     # Mock the executor's get_global_stats method
-    from ccbt.interface.data_provider import DataProvider
     mock_data_provider = MagicMock()
     mock_data_provider.get_global_stats = AsyncMock(return_value={
         "num_torrents": 0,

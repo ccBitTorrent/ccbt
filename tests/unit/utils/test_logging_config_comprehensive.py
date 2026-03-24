@@ -22,21 +22,21 @@ import pytest
 
 pytestmark = [pytest.mark.unit]
 
+from ccbt.cli.verbosity import VerbosityManager
 from ccbt.models import LogLevel, ObservabilityConfig
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.logging_config import (
+    TRACE_LOG_LEVEL,
     CorrelationFilter,
     LoggingContext,
     StructuredFormatter,
     get_correlation_id,
     get_logger,
-    log_with_verbosity,
     log_exception,
+    log_with_verbosity,
     set_correlation_id,
     setup_logging,
-    TRACE_LOG_LEVEL,
 )
-from ccbt.cli.verbosity import VerbosityManager
 
 
 class TestCorrelationFilter:
@@ -45,10 +45,10 @@ class TestCorrelationFilter:
     def test_filter_with_correlation_id_set(self):
         """Test CorrelationFilter.filter() with correlation ID set (line 39)."""
         filter_obj = CorrelationFilter()
-        
+
         # Set correlation ID
         set_correlation_id("test-correlation-123")
-        
+
         # Create a log record
         record = logging.LogRecord(
             name="test",
@@ -59,9 +59,9 @@ class TestCorrelationFilter:
             args=(),
             exc_info=None,
         )
-        
+
         result = filter_obj.filter(record)
-        
+
         assert result is True
         assert hasattr(record, "correlation_id")
         assert record.correlation_id == "test-correlation-123"
@@ -69,11 +69,11 @@ class TestCorrelationFilter:
     def test_filter_without_correlation_id(self):
         """Test CorrelationFilter.filter() without correlation ID (default path, line 39)."""
         filter_obj = CorrelationFilter()
-        
+
         # Ensure no correlation ID is set
         from ccbt.utils.logging_config import correlation_id
         correlation_id.set(None)
-        
+
         # Create a log record
         record = logging.LogRecord(
             name="test",
@@ -84,9 +84,9 @@ class TestCorrelationFilter:
             args=(),
             exc_info=None,
         )
-        
+
         result = filter_obj.filter(record)
-        
+
         assert result is True
         assert hasattr(record, "correlation_id")
         assert record.correlation_id == "no-correlation-id"
@@ -98,7 +98,7 @@ class TestStructuredFormatter:
     def test_format_normal_log_record(self):
         """Test StructuredFormatter.format() - normal log record (lines 46-99)."""
         formatter = StructuredFormatter()
-        
+
         record = logging.LogRecord(
             name="test.logger",
             level=logging.INFO,
@@ -108,10 +108,10 @@ class TestStructuredFormatter:
             args=(),
             exc_info=None,
         )
-        
+
         result = formatter.format(record)
         data = json.loads(result)
-        
+
         assert data["level"] == "INFO"
         assert data["logger"] == "test.logger"
         assert data["message"] == "Test message"
@@ -125,7 +125,7 @@ class TestStructuredFormatter:
     def test_format_with_correlation_id(self):
         """Test StructuredFormatter.format() - with correlation_id attribute (lines 58-60)."""
         formatter = StructuredFormatter()
-        
+
         record = logging.LogRecord(
             name="test.logger",
             level=logging.INFO,
@@ -136,21 +136,21 @@ class TestStructuredFormatter:
             exc_info=None,
         )
         record.correlation_id = "test-correlation-123"
-        
+
         result = formatter.format(record)
         data = json.loads(result)
-        
+
         assert data["correlation_id"] == "test-correlation-123"
 
     def test_format_with_exception_info(self):
         """Test StructuredFormatter.format() - with exception info (lines 62-64)."""
         formatter = StructuredFormatter()
-        
+
         try:
             raise ValueError("Test exception")
         except ValueError:
             exc_info = sys.exc_info()
-        
+
         record = logging.LogRecord(
             name="test.logger",
             level=logging.ERROR,
@@ -160,10 +160,10 @@ class TestStructuredFormatter:
             args=(),
             exc_info=exc_info,
         )
-        
+
         result = formatter.format(record)
         data = json.loads(result)
-        
+
         assert "exception" in data
         assert "ValueError" in data["exception"]
         assert "Test exception" in data["exception"]
@@ -171,7 +171,7 @@ class TestStructuredFormatter:
     def test_format_with_extra_fields(self):
         """Test StructuredFormatter.format() - with extra fields (lines 66-97)."""
         formatter = StructuredFormatter()
-        
+
         record = logging.LogRecord(
             name="test.logger",
             level=logging.INFO,
@@ -183,17 +183,17 @@ class TestStructuredFormatter:
         )
         record.custom_field = "custom_value"
         record.another_field = 123
-        
+
         result = formatter.format(record)
         data = json.loads(result)
-        
+
         assert data["custom_field"] == "custom_value"
         assert data["another_field"] == 123
 
     def test_format_excluded_keys_not_in_output(self):
         """Test StructuredFormatter.format() - excluded keys not in output (lines 67-90)."""
         formatter = StructuredFormatter()
-        
+
         record = logging.LogRecord(
             name="test.logger",
             level=logging.INFO,
@@ -206,10 +206,10 @@ class TestStructuredFormatter:
         # Add non-excluded custom field
         record.valid_field = "should_be_included"
         record.custom_metric = 42
-        
+
         result = formatter.format(record)
         data = json.loads(result)
-        
+
         # Custom fields should be included
         assert "valid_field" in data
         assert "custom_metric" in data
@@ -252,9 +252,9 @@ class TestSetupLogging:
             structured_logging=False,
             log_correlation_id=False,
         )
-        
+
         setup_logging(config)
-        
+
         # Verify console handler is configured
         logger = logging.getLogger("ccbt")
         assert len(logger.handlers) > 0
@@ -263,23 +263,23 @@ class TestSetupLogging:
         """Test setup_logging() - with log_file specified (lines 134-136, 186-196)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = Path(tmpdir) / "test.log"
-            
+
             config = ObservabilityConfig(
                 log_level=LogLevel.INFO,
                 log_file=str(log_file),
                 structured_logging=False,
                 log_correlation_id=False,
             )
-            
+
             setup_logging(config)
-            
+
             # Verify file was created (setup_logging generates timestamped filename)
             # Check for timestamped pattern: ccbt-YYYYMMDD-HHMMSS-*.log
             log_dir = log_file.parent
             timestamped_files = list(log_dir.glob("ccbt-*-*.log"))
             assert len(timestamped_files) > 0, f"No timestamped log file found in {log_dir}"
             assert timestamped_files[0].exists()
-            
+
             # Close handlers to prevent file locking issues on Windows
             logger = logging.getLogger("ccbt")
             root_logger = logging.getLogger()
@@ -295,23 +295,23 @@ class TestSetupLogging:
         """Test setup_logging() - creates log directory if needed (lines 135-136)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = Path(tmpdir) / "subdir" / "test.log"
-            
+
             config = ObservabilityConfig(
                 log_level=LogLevel.INFO,
                 log_file=str(log_file),
                 structured_logging=False,
                 log_correlation_id=False,
             )
-            
+
             setup_logging(config)
-            
+
             # Verify directory was created (setup_logging generates timestamped filename)
             assert log_file.parent.exists()
             # Check for timestamped pattern: ccbt-YYYYMMDD-HHMMSS-*.log
             timestamped_files = list(log_file.parent.glob("ccbt-*-*.log"))
             assert len(timestamped_files) > 0, f"No timestamped log file found in {log_file.parent}"
             assert timestamped_files[0].exists()
-            
+
             # Close handlers to prevent file locking issues on Windows
             logger = logging.getLogger("ccbt")
             root_logger = logging.getLogger()
@@ -331,9 +331,9 @@ class TestSetupLogging:
             structured_logging=True,
             log_correlation_id=False,
         )
-        
+
         setup_logging(config)
-        
+
         # Console handler - may be RichHandler or StreamHandler depending on Rich availability
         logger = logging.getLogger("ccbt")
         handler = logger.handlers[0]
@@ -356,9 +356,9 @@ class TestSetupLogging:
             structured_logging=False,
             log_correlation_id=False,
         )
-        
+
         setup_logging(config)
-        
+
         # Console handler - may be RichHandler or StreamHandler depending on Rich availability
         logger = logging.getLogger("ccbt")
         handler = logger.handlers[0]
@@ -376,22 +376,22 @@ class TestSetupLogging:
         """Test setup_logging() - file handler with structured logging (line 190)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = Path(tmpdir) / "test.log"
-            
+
             config = ObservabilityConfig(
                 log_level=LogLevel.INFO,
                 log_file=str(log_file),
                 structured_logging=True,
                 log_correlation_id=False,
             )
-            
+
             setup_logging(config)
-            
+
             logger = logging.getLogger("ccbt")
             file_handlers = [h for h in logger.handlers if hasattr(h, "baseFilename")]
             assert len(file_handlers) > 0
             # File handler should use structured formatter
             assert isinstance(file_handlers[0].formatter, StructuredFormatter)
-            
+
             # Close handlers to prevent file locking issues on Windows
             for handler in logger.handlers[:]:
                 handler.close()
@@ -401,22 +401,22 @@ class TestSetupLogging:
         """Test setup_logging() - file handler with simple logging (line 190)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = Path(tmpdir) / "test.log"
-            
+
             config = ObservabilityConfig(
                 log_level=LogLevel.INFO,
                 log_file=str(log_file),
                 structured_logging=False,
                 log_correlation_id=False,
             )
-            
+
             setup_logging(config)
-            
+
             logger = logging.getLogger("ccbt")
             file_handlers = [h for h in logger.handlers if hasattr(h, "baseFilename")]
             assert len(file_handlers) > 0
             # File handler should use simple formatter (not structured)
             assert not isinstance(file_handlers[0].formatter, StructuredFormatter)
-            
+
             # Close handlers to prevent file locking issues on Windows
             for handler in logger.handlers[:]:
                 handler.close()
@@ -430,9 +430,9 @@ class TestSetupLogging:
             structured_logging=False,
             log_correlation_id=True,
         )
-        
+
         setup_logging(config)
-        
+
         # Correlation ID should be set
         corr_id = get_correlation_id()
         assert corr_id is not None
@@ -444,16 +444,16 @@ class TestSetupLogging:
         # Clear any existing correlation ID
         from ccbt.utils.logging_config import correlation_id
         correlation_id.set(None)
-        
+
         config = ObservabilityConfig(
             log_level=LogLevel.INFO,
             log_file=None,
             structured_logging=False,
             log_correlation_id=False,
         )
-        
+
         setup_logging(config)
-        
+
         # Correlation ID should not be set
         corr_id = get_correlation_id()
         # May be None or previous value, but not auto-generated
@@ -501,7 +501,7 @@ class TestGetLogger:
     def test_get_logger_returns_logger_with_prefix(self):
         """Test get_logger() - returns logger with ccbt prefix (line 208)."""
         logger = get_logger("test.module")
-        
+
         assert logger.name == "ccbt.test.module"
 
 
@@ -512,14 +512,14 @@ class TestCorrelationIDFunctions:
         """Test set_correlation_id() - with provided ID (lines 211-216)."""
         test_id = "test-correlation-123"
         result = set_correlation_id(test_id)
-        
+
         assert result == test_id
         assert get_correlation_id() == test_id
 
     def test_set_correlation_id_without_provided_id(self):
         """Test set_correlation_id() - without provided ID (generates UUID, lines 213-214)."""
         result = set_correlation_id()
-        
+
         assert result is not None
         assert isinstance(result, str)
         assert len(result) > 0
@@ -530,18 +530,18 @@ class TestCorrelationIDFunctions:
         """Test get_correlation_id() - returns current ID (lines 219-221)."""
         test_id = "test-correlation-456"
         set_correlation_id(test_id)
-        
+
         result = get_correlation_id()
-        
+
         assert result == test_id
 
     def test_get_correlation_id_returns_none_when_not_set(self):
         """Test get_correlation_id() - returns None when not set (line 221)."""
         from ccbt.utils.logging_config import correlation_id
         correlation_id.set(None)
-        
+
         result = get_correlation_id()
-        
+
         assert result is None
 
 
@@ -554,15 +554,15 @@ class TestLoggingContext:
         with patch("ccbt.utils.logging_config.get_logger") as mock_get_logger:
             mock_logger = MagicMock()
             mock_get_logger.return_value = mock_logger
-            
+
             # Create context - logger is created in __init__
             ctx = LoggingContext("test_operation", key1="value1", key2=42)
             assert mock_get_logger.called, "get_logger should be called during LoggingContext initialization"
-            
+
             # Enter context - should log start
             with ctx:
                 pass
-            
+
             # Check that logger methods were called (log, info, debug, etc.)
             # The logger.log() method is used, so check for that
             logger_calls = (
@@ -578,14 +578,14 @@ class TestLoggingContext:
         with patch("ccbt.utils.logging_config.get_logger") as mock_get_logger:
             mock_logger = MagicMock()
             mock_get_logger.return_value = mock_logger
-            
+
             # Create and use context
             ctx = LoggingContext("test_operation")
             assert mock_get_logger.called, "get_logger should be called during LoggingContext initialization"
-            
+
             with ctx:
                 pass
-            
+
             # Should have logged completion - check that logger.log() was called (used by both enter and exit)
             logger_calls = (
                 mock_logger.log.call_count +
@@ -600,13 +600,13 @@ class TestLoggingContext:
         with patch("ccbt.utils.logging_config.get_logger") as mock_get_logger:
             mock_logger = MagicMock()
             mock_get_logger.return_value = mock_logger
-            
+
             try:
                 with LoggingContext("test_operation"):
                     raise ValueError("Test exception")
             except ValueError:
                 pass
-            
+
             # Should have logged failure
             assert mock_logger.error.call_count >= 1
             error_calls = [str(call) for call in mock_logger.error.call_args_list]
@@ -630,10 +630,10 @@ class TestLogException:
         """Test log_exception() - with CCBTError (includes details, lines 267-274)."""
         logger = get_logger("test")
         error = CCBTError("Test error", details={"key": "value"})
-        
+
         with patch.object(logger, "error") as mock_error:
             log_exception(logger, error, "Test context")
-            
+
             mock_error.assert_called_once()
             call_args = mock_error.call_args
             assert "Test context" in str(call_args)
@@ -645,10 +645,10 @@ class TestLogException:
         """Test log_exception() - with generic Exception (lines 275-276)."""
         logger = get_logger("test")
         error = ValueError("Generic error")
-        
+
         with patch.object(logger, "error") as mock_error:
             log_exception(logger, error, "Test context")
-            
+
             mock_error.assert_called_once()
             call_args = mock_error.call_args
             assert "Test context" in str(call_args)
@@ -658,10 +658,10 @@ class TestLogException:
         """Test log_exception() - with context string."""
         logger = get_logger("test")
         error = Exception("Test error")
-        
+
         with patch.object(logger, "error") as mock_error:
             log_exception(logger, error, "Custom context message")
-            
+
             mock_error.assert_called_once()
             call_args = mock_error.call_args
             assert "Custom context message" in str(call_args)

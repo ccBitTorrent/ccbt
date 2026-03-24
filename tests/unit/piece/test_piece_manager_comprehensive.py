@@ -18,7 +18,6 @@ Covers missing lines:
 from __future__ import annotations
 
 import hashlib
-import threading
 import time
 from unittest.mock import Mock, patch
 
@@ -26,7 +25,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
-from ccbt.piece.piece_manager import PieceBlock, PieceData, PieceManager, PieceState
+from ccbt.piece.piece_manager import PieceData, PieceManager, PieceState
 
 
 class TestPieceDataCoverageGaps:
@@ -48,7 +47,7 @@ class TestPieceDataCoverageGaps:
         """Test get_data uses data_buffer when available (line 93)."""
         piece = PieceData(0, 100)
         piece.data_buffer = bytearray(b"test_data" * 12)  # 108 bytes, padded
-        
+
         # Manually mark as complete
         piece.blocks[0].received = True
         piece.blocks[0].data = b"x" * 100
@@ -183,7 +182,7 @@ class TestPieceManagerCoverageGaps:
         """Test _hash_piece_optimized with data_buffer (line 249)."""
         piece = PieceData(0, 100)
         piece.data_buffer = bytearray(b"test_data" * 15)  # 135 bytes
-        
+
         # Mark piece as complete
         piece.blocks[0].received = True
         piece.blocks[0].data = b"x" * 100
@@ -202,7 +201,7 @@ class TestPieceManagerCoverageGaps:
         # Create a piece larger than 1MB
         large_piece_length = 2 * 1024 * 1024  # 2MB
         piece = PieceData(0, large_piece_length)
-        
+
         # Create data matching expected hash
         test_data = b"x" * large_piece_length
         expected_hash = hashlib.sha1(test_data).digest()  # nosec B324
@@ -224,7 +223,7 @@ class TestPieceManagerCoverageGaps:
     def test_hash_piece_optimized_exception_handling(self):
         """Test _hash_piece_optimized exception handling (lines 272-279)."""
         piece = PieceData(0, 100)
-        
+
         # Mark piece as complete
         piece.blocks[0].received = True
         piece.blocks[0].data = b"x" * 100
@@ -233,7 +232,7 @@ class TestPieceManagerCoverageGaps:
         expected_hash = hashlib.sha1(b"test").digest()  # nosec B324
 
         # Mock get_data to raise exception
-        with patch.object(piece, 'get_data', side_effect=Exception("Test error")):
+        with patch.object(piece, "get_data", side_effect=Exception("Test error")):
             result = self.manager._hash_piece_optimized(piece, expected_hash)
 
         assert result is False

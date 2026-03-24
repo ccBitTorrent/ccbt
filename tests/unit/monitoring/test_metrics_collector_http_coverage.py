@@ -131,6 +131,7 @@ def mock_config_enabled(monkeypatch):
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test

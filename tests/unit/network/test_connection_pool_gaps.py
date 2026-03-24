@@ -15,9 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 from ccbt.models import PeerInfo
-
+from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 

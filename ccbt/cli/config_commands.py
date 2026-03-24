@@ -220,6 +220,36 @@ def security_posture(config_file: Optional[str]):
     click.echo(json.dumps(out, indent=2))
 
 
+@config.command("peer-cap-provenance")
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
+def peer_cap_provenance(config_file: Optional[str]) -> None:
+    """Print max_peers_per_torrent resolution chain (file → profile → env → clamp).
+
+    Same merge path as ``config show``. Does not include per-torrent overrides
+    (those apply when a torrent session binds its peer manager).
+    """
+    cm = ConfigManager(config_file)
+    prov = cm.max_peers_per_torrent_provenance
+    if prov is None:
+        click.echo(
+            json.dumps(
+                {
+                    "error": "peer_cap_provenance_unavailable",
+                    "hint": "Load failed before provenance was recorded.",
+                },
+                indent=2,
+            )
+        )
+        return
+    click.echo(json.dumps(prov.model_dump(mode="json"), indent=2))
+
+
 @config.command("get")
 @click.argument("key")
 @click.option(

@@ -388,6 +388,8 @@ class DaemonMain:
                 websocket_enabled=websocket_enabled,
                 websocket_heartbeat_interval=websocket_heartbeat,
                 tls_enabled=self._tls_enabled,
+                shutdown_callback=self._shutdown_handler,
+                shutdown_event=self._shutdown_event,
             )
 
             # Note: Set up session manager callbacks to emit WebSocket events
@@ -1169,6 +1171,14 @@ class DaemonMain:
                 logger.debug("IPC server stopped (port released)")
             except Exception:
                 logger.exception("Error stopping IPC server")
+
+        # Ask all sessions to quiesce before state-save and full stop sequence.
+        if self.session_manager:
+            try:
+                self.session_manager.begin_shutdown_quiesce()
+                logger.debug("Session manager pre-quiesce completed")
+            except Exception:
+                logger.exception("Error in session manager pre-quiesce")
 
         # Save state (after IPC stopped so no handler blocks lock acquisition)
         if self.session_manager:

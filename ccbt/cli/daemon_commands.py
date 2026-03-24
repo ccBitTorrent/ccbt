@@ -963,6 +963,12 @@ def exit_daemon(force: bool, timeout: float) -> None:
                                     ).format(elapsed=elapsed),
                                 )
                                 time.sleep(0.5)
+                    else:
+                        click.echo(
+                            _(
+                                "Daemon rejected graceful shutdown request, using signal fallback..."
+                            )
+                        )
                 except Exception as e:
                     logger.debug(_("Error sending shutdown request: %s"), e)
                     click.echo(_("Could not send shutdown request, using signal..."))

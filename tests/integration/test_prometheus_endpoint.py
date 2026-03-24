@@ -6,10 +6,7 @@ Tests HTTP endpoint accessibility and Prometheus format output.
 from __future__ import annotations
 
 import asyncio
-import socket
-import time
 from http.client import HTTPConnection
-from threading import Thread
 
 import pytest
 
@@ -70,7 +67,7 @@ class TestPrometheusEndpoint:
 
         # Ensure any previous metrics are shut down
         await shutdown_metrics()
-        
+
         # Reset singleton
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
 
@@ -150,7 +147,7 @@ class TestPrometheusEndpoint:
 
         # Register a test metric
         from ccbt.monitoring.metrics_collector import MetricType
-        
+
         metrics.register_metric(
             "test_metric",
             MetricType.GAUGE,
@@ -301,6 +298,7 @@ def mock_config_enabled(monkeypatch):
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test

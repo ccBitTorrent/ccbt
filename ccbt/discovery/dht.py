@@ -3113,7 +3113,9 @@ class AsyncDHTClient:
                     self._log_empty_routing_warning(
                         "DHT refresh detected empty routing table; triggering rebootstrap."
                     )
-                    await self.rebootstrap()
+                    self._schedule_zero_node_rebootstrap(
+                        reason="refresh_loop_empty_routing"
+                    )
                     continue
                 await self._refresh_routing_table()
             except asyncio.CancelledError:
@@ -3395,6 +3397,12 @@ def get_dht_client() -> AsyncDHTClient:
 
 async def init_dht() -> AsyncDHTClient:
     """Initialize global DHT client."""
+    global _dht_client
+    # Deterministic singleton lifecycle: if a global client already exists,
+    # stop it before replacing the reference.
+    if _dht_client is not None:
+        with contextlib.suppress(Exception):
+            await _dht_client.stop()
     _dht_client = AsyncDHTClient()
     await _dht_client.start()
     return _dht_client
@@ -3408,5 +3416,8 @@ async def shutdown_dht() -> None:
     """Shutdown global DHT client."""
     global _dht_client
     if _dht_client:
-        await _dht_client.stop()
+        client = _dht_client
+        # Always clear the singleton reference, even if stop fails, so
+        # subsequent tests/runs don't inherit stale state.
         _dht_client = None
+        await client.stop()

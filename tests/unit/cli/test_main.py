@@ -8,8 +8,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -233,7 +233,7 @@ class _Sess:
         self.lock = asyncio.Lock()
         # Add checkpoint_ops for resume tests
         self.checkpoint_ops = SimpleNamespace()
-        
+
     async def add_torrent(self, torrent_data, resume=False):
         """Mock add_torrent that populates torrents dict."""
         info_hash = torrent_data.get("info_hash", b"\x00" * 20)
@@ -247,10 +247,10 @@ class _Sess:
         mock_session.file_selection_manager = None
         self.torrents[info_hash] = mock_session
         return info_hash_hex
-        
+
     async def start(self):
         pass
-        
+
     async def stop(self):
         pass
 
@@ -292,10 +292,10 @@ class _FakeSession:
         self.scrape_cache_lock = asyncio.Lock()
         # Add checkpoint_ops for resume tests
         self.checkpoint_ops = SimpleNamespace()
-        
+
     async def start(self):
         pass
-        
+
     async def stop(self):
         pass
 
@@ -357,7 +357,7 @@ class TestMainEntry:
                             mock_dht_instance.stop = AsyncMock(return_value=None)
                             mock_dht_instance.get_peers = AsyncMock(return_value=[])
                             mock_dht_class.return_value = mock_dht_instance
-                            
+
                             with patch("time.sleep"):
                                 result = main_module.main()
 
@@ -731,11 +731,12 @@ class TestMainEntry:
     def test_alerts_help(self):
         """Test alerts command help."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
-        
+
         runner = CliRunner()
         result = runner.invoke(cli, ["alerts", "--help"])
-        
+
         assert result.exit_code == 0
         assert "alerts" in result.output.lower()
 
@@ -743,13 +744,14 @@ class TestMainEntry:
     def test_all_commands_accessible(self):
         """Test that all expected commands are accessible."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
-        
+
         runner = CliRunner()
-        
+
         # Test that we can get help for each major command
         commands = ["download", "magnet", "web", "status", "test", "config", "dashboard", "alerts", "metrics", "performance", "security", "recover"]
-        
+
         for cmd in commands:
             result = runner.invoke(cli, [cmd, "--help"])
             assert result.exit_code == 0, f"Command '{cmd}' help failed"
@@ -759,10 +761,10 @@ class TestMainEntry:
 def test_apply_discovery_strategy_disk_observability_and_limits():
     from ccbt.cli.main import (
         _apply_discovery_overrides,
-        _apply_strategy_overrides,
         _apply_disk_overrides,
-        _apply_observability_overrides,
         _apply_limit_overrides,
+        _apply_observability_overrides,
+        _apply_strategy_overrides,
     )
 
     cfg = _make_cfg()
@@ -893,6 +895,7 @@ def test_apply_network_overrides_exercises_paths():
     def test_checkpoint_backup_invalid_info_hash(self, mock_config_manager, tmp_path):
         """Test checkpoint backup with invalid info_hash format (lines 1155-1158)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Setup mock config manager
@@ -917,6 +920,7 @@ def test_apply_network_overrides_exercises_paths():
     def test_checkpoint_export_invalid_info_hash(self, mock_config_manager, tmp_path):
         """Test checkpoint export with invalid info_hash format (lines 1112-1115)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Setup mock config manager
@@ -941,6 +945,7 @@ def test_apply_network_overrides_exercises_paths():
     def test_checkpoint_verify_invalid_info_hash(self, mock_config_manager):
         """Test checkpoint verify with invalid info_hash format (lines 1068-1071)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Setup mock config manager
@@ -972,11 +977,11 @@ def test_checkpoints_clean_actual(monkeypatch):
         async def cleanup_old_checkpoints(self, days: int):
             return 3
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--days", "7"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--days", "7"])
     assert result.exit_code == 0
     assert "Cleaned up 3 old checkpoints" in result.output
 
@@ -1002,10 +1007,10 @@ def test_checkpoints_clean_dry_run(monkeypatch):
             # One ancient, one recent
             return [_CP(0), _CP(10**12)]
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
-    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--dry-run", "--days", "1"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--dry-run", "--days", "1"])
     assert result.exit_code == 0
     assert "Would delete" in result.output or "No checkpoints older" in result.output
 
@@ -1022,11 +1027,11 @@ def test_checkpoints_delete_invalid_hash(monkeypatch):
 
         async def delete_checkpoint(self, *_a, **_k):
             return False
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Invalid hex string
-    result = runner.invoke(cli_main.cli, ["checkpoints", "delete", "not-hex"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "delete", "not-hex"])
     assert result.exit_code != 0
     assert "Invalid info hash format" in result.output
 
@@ -1045,7 +1050,7 @@ def test_checkpoints_delete_valid_and_missing(monkeypatch):
         async def delete_checkpoint(self, ih: bytes):
             return ih.startswith(b"\x00")
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -1083,7 +1088,7 @@ def test_checkpoints_export_backup_restore_migrate_minimal_paths(monkeypatch, tm
         async def convert_checkpoint_format(self, *_a, **_k):
             return tmp_path / "migrated.cp"
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -1149,13 +1154,13 @@ def test_checkpoints_list_empty(monkeypatch, tmp_path):
             # Accept checkpoint_format parameter to match real method signature
             return []
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
-    
+
     # Also patch asyncio.run to handle the async mock
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"])
     assert result.exit_code == 0
     assert "No checkpoints found" in result.output
 
@@ -1182,11 +1187,11 @@ def test_checkpoints_list_non_empty(monkeypatch):
         async def list_checkpoints(self, *args, **kwargs):
             return [_CP()]
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"])
     assert result.exit_code == 0
     assert "Available Checkpoints" in result.output
 
@@ -1203,7 +1208,7 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
 
         async def verify_checkpoint(self, info_hash: bytes):
             return info_hash.startswith(b"\x00")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Patch asyncio.run to consume the coroutine
@@ -1221,10 +1226,10 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
     def test_cli_consistency(self):
         """Test CLI consistency across commands."""
         runner = CliRunner()
-        
+
         # Test that all commands have consistent help output
         commands = ["download", "magnet", "web", "status", "test", "config", "dashboard", "alerts", "metrics", "performance", "security", "recover"]
-        
+
         for cmd in commands:
             result = runner.invoke(cli, [cmd, "--help"])
             assert result.exit_code == 0
@@ -1236,7 +1241,7 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
         """Test CLI help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
-        
+
         assert result.exit_code == 0
         assert "CcBitTorrent" in result.output
 
@@ -1245,7 +1250,7 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
         """Test CLI with invalid command."""
         runner = CliRunner()
         result = runner.invoke(cli, ["invalid-command"])
-        
+
         assert result.exit_code == 2
         assert "No such command" in result.output or "Error" in result.output
 
@@ -1254,13 +1259,13 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
         """Test that expected subcommands exist."""
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
-        
+
         assert result.exit_code == 0
         output = result.output.lower()
-        
+
         # Check for actual subcommands based on the CLI structure
         expected_commands = ["download", "magnet", "web", "status", "test", "config", "dashboard", "alerts", "metrics", "performance", "security", "recover"]
-        
+
         for cmd in expected_commands:
             assert cmd in output, f"Command '{cmd}' not found in help output"
 
@@ -1269,11 +1274,11 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
     def test_command_error_handling(self):
         """Test command error handling."""
         runner = CliRunner()
-        
+
         # Test with invalid options
         result = runner.invoke(cli, ["--invalid-option"])
         assert result.exit_code == 2
-        
+
         # Test with invalid subcommand
         result = runner.invoke(cli, ["invalid-subcommand"])
         assert result.exit_code == 2
@@ -1283,6 +1288,7 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
     def test_config_command_exception(self, mock_config_manager):
         """Test config command exception handling when ConfigManager fails."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Make ConfigManager raise an exception
@@ -1306,7 +1312,7 @@ def test_config_command_shows_table(monkeypatch):
         observability=SimpleNamespace(log_level=SimpleNamespace(value="INFO"), enable_metrics=False),
     )
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=config))
-    result = runner.invoke(cli_main.cli, ["config", "--help"]) 
+    result = runner.invoke(cli_main.cli, ["config", "--help"])
     assert result.exit_code == 0
 
 
@@ -1315,7 +1321,7 @@ def test_config_command_shows_table(monkeypatch):
         """Test config command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["config", "--help"])
-        
+
         assert result.exit_code == 0
         assert "config" in result.output.lower()
 
@@ -1324,7 +1330,7 @@ def test_config_command_shows_table(monkeypatch):
         """Test config show command."""
         runner = CliRunner()
         result = runner.invoke(cli, ["config", "show"])
-        
+
         # This might fail due to missing config, but we test the command structure
         assert result.exit_code in [0, 1, 2]  # Allow for various errors
 
@@ -1334,7 +1340,7 @@ def test_config_command_shows_table(monkeypatch):
         """Test dashboard command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["dashboard", "--help"])
-        
+
         assert result.exit_code == 0
         assert "dashboard" in result.output.lower()
 
@@ -1352,7 +1358,7 @@ def test_debug_command_basic(monkeypatch):
     class DummySession:
         def __init__(self, *_):
             pass
-        
+
         async def start(self):
             pass
 
@@ -1419,7 +1425,7 @@ def test_debug_error_path(monkeypatch):
         raise RuntimeError("dbg-err")
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
-    result = runner.invoke(cli_main.cli, ["debug"]) 
+    result = runner.invoke(cli_main.cli, ["debug"])
     assert result.exit_code != 0
     assert "Error: dbg-err" in result.output
 
@@ -1439,7 +1445,7 @@ def test_debug_happy_path(monkeypatch):
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Sess())
     monkeypatch.setattr(cli_main, "start_debug_mode", _start_debug)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    res = runner.invoke(cli_main.cli, ["debug"]) 
+    res = runner.invoke(cli_main.cli, ["debug"])
     assert res.exit_code == 0
 
 
@@ -1627,7 +1633,7 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
             return _CP()
 
     fake_mod = type(sys)("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Mock load_torrent from torrent_utils (this is what the download command actually calls)
@@ -1660,7 +1666,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
     class _FakeMgr(_FakeSession):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -1686,7 +1692,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
         async def load_checkpoint(self, *_a, **_k):
             return _CP()
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Force non-interactive branch by making stdin not a TTY
@@ -1697,7 +1703,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
     monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
 
     # Provide an existing file path by pointing to this test file; exists=True check passes
-    result = runner.invoke(cli_main.cli, ["download", __file__]) 
+    result = runner.invoke(cli_main.cli, ["download", __file__])
     # Should hit non-interactive checkpoint path regardless of later download errors
     assert result.exit_code in (0, 1)
     assert "Non-interactive mode, starting fresh download" in result.output
@@ -1706,7 +1712,6 @@ def test_download_checkpoint_noninteractive(monkeypatch):
 
 def test_download_checkpoint_prompt_noninteractive(monkeypatch, tmp_path):
     import importlib
-    from pathlib import Path
     cli_main = importlib.import_module("ccbt.cli.main")
 
     class DummyCfg:
@@ -1745,7 +1750,7 @@ def test_download_checkpoint_prompt_noninteractive(monkeypatch, tmp_path):
     import builtins
     import types as _types
     cm_mod = _types.ModuleType("ccbt.storage.checkpoint")
-    setattr(cm_mod, "CheckpointManager", DummyCkptMgr)
+    cm_mod.CheckpointManager = DummyCkptMgr
     builtins.__import__("ccbt.storage")
     import sys
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", cm_mod)
@@ -1755,7 +1760,7 @@ def test_download_checkpoint_prompt_noninteractive(monkeypatch, tmp_path):
     tf.write_bytes(b"d8:announce4:test4:infod3:key5:valuee")
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["download", str(tf), "--no-checkpoint"])  # disable to skip prompt path 
+    result = runner.invoke(cli_main.cli, ["download", str(tf), "--no-checkpoint"])  # disable to skip prompt path
     # Accept either success or graceful error depending on environment
     if result.exit_code != 0:
         assert "Error:" in result.output
@@ -1808,7 +1813,7 @@ def test_download_file_not_found_path(monkeypatch):
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
     monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
-    res = runner.invoke(cli_main.cli, ["download", __file__]) 
+    res = runner.invoke(cli_main.cli, ["download", __file__])
     assert res.exit_code != 0
     assert "File not found" in res.output or "Torrent file not found" in res.output
 
@@ -1822,7 +1827,7 @@ def test_download_happy_path_noninteractive(monkeypatch):
     class _Mgr(_FakeSession):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -1838,7 +1843,7 @@ def test_download_happy_path_noninteractive(monkeypatch):
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["download", __file__, "--no-checkpoint"]) 
+    result = runner.invoke(cli_main.cli, ["download", __file__, "--no-checkpoint"])
     assert result.exit_code == 0
 
 
@@ -1848,7 +1853,7 @@ def test_download_happy_path_noninteractive(monkeypatch):
         """Test download command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["download", "--help"])
-        
+
         assert result.exit_code == 0
         assert "download" in result.output.lower()
 
@@ -1873,7 +1878,7 @@ def test_download_interactive_path(monkeypatch):
     monkeypatch.setattr(cli_main, "start_interactive_download", _start_interactive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    res = runner.invoke(cli_main.cli, ["download", __file__, "-i"]) 
+    res = runner.invoke(cli_main.cli, ["download", __file__, "-i"])
     assert res.exit_code == 0
 
 
@@ -1882,7 +1887,7 @@ def test_download_interactive_path(monkeypatch):
         """Test download command without torrent."""
         runner = CliRunner()
         result = runner.invoke(cli, ["download"])
-        
+
         assert result.exit_code == 2
         assert "Missing argument" in result.output
 
@@ -1940,7 +1945,7 @@ def test_download_value_error(monkeypatch):
         """Test download command with magnet link."""
         runner = CliRunner()
         result = runner.invoke(cli, ["magnet", "magnet:?xt=urn:btih:test"])
-        
+
         # This might fail due to invalid magnet, but we test the command structure
         assert result.exit_code in [0, 1, 2]  # Allow for various errors
 
@@ -2033,7 +2038,7 @@ def test_download_with_override_flags_matrix(monkeypatch):
         """Test download command with torrent."""
         runner = CliRunner()
         result = runner.invoke(cli, ["download", "test.torrent"])
-        
+
         # This might fail due to missing file, but we test the command structure
         assert result.exit_code in [0, 1, 2]  # Allow for various errors
 
@@ -2055,21 +2060,21 @@ def test_download_with_override_flags_matrix(monkeypatch):
         from ccbt.cli.main import _apply_disk_overrides
 
         cfg = _make_mock_config()
-        
+
         # Make setting enable_io_uring raise an AttributeError (platform-specific)
         def set_io_uring(value):
             raise AttributeError("enable_io_uring not available on this platform")
-        
+
         type(cfg.disk).enable_io_uring = property(
             lambda self: False,
             set_io_uring
         )
-        
+
         options = {"enable_io_uring": True}
 
         # Exception should be caught and logged
         _apply_disk_overrides(cfg, options)
-        
+
         # Should not raise - exception is caught
 
 
@@ -2161,7 +2166,7 @@ def test_interactive_command_runs_cli(monkeypatch):
     monkeypatch.setattr(cli_main, "InteractiveCLI", _FakeInteractive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["interactive"]) 
+    result = runner.invoke(cli_main.cli, ["interactive"])
     assert result.exit_code == 0
 
 
@@ -2174,16 +2179,17 @@ def test_interactive_command_runs_cli(monkeypatch):
         """
         # This test verifies the code structure exists
         # The actual error path is tested via integration tests
-        pass
 
 
 
 def test_ip_filter_loading_success(tmp_path, monkeypatch):
     """Test IP filter file loading success path (lines 746-749)."""
-    from ccbt.cli.main import download
-    from click.testing import CliRunner
     from unittest.mock import AsyncMock, MagicMock, patch
+
     import click
+    from click.testing import CliRunner
+
+    from ccbt.cli.main import download
 
     # Create a filter file
     filter_file = tmp_path / "filter.dat"
@@ -2198,11 +2204,11 @@ def test_ip_filter_loading_success(tmp_path, monkeypatch):
     mock_security_manager.load_ip_filter = AsyncMock()
 
     runner = CliRunner()
-    
+
     with patch("ccbt.security.security_manager.SecurityManager", return_value=mock_security_manager), \
          patch("ccbt.cli.main.ConfigManager") as mock_cm, \
          patch("ccbt.cli.main.AsyncSessionManager") as mock_session:
-        
+
         # Setup mocks
         mock_config = _make_cfg()
         mock_cm_instance = MagicMock()
@@ -2236,10 +2242,12 @@ def test_ip_filter_loading_success(tmp_path, monkeypatch):
 
 def test_ip_filter_loading_with_errors(tmp_path, monkeypatch):
     """Test IP filter file loading with errors (lines 750-753)."""
-    from ccbt.cli.main import download
-    from click.testing import CliRunner
     from unittest.mock import AsyncMock, MagicMock, patch
+
     import click
+    from click.testing import CliRunner
+
+    from ccbt.cli.main import download
 
     # Create a filter file
     filter_file = tmp_path / "filter.dat"
@@ -2254,11 +2262,11 @@ def test_ip_filter_loading_with_errors(tmp_path, monkeypatch):
     mock_security_manager.load_ip_filter = AsyncMock()
 
     runner = CliRunner()
-    
+
     with patch("ccbt.security.security_manager.SecurityManager", return_value=mock_security_manager), \
          patch("ccbt.cli.main.ConfigManager") as mock_cm, \
          patch("ccbt.cli.main.AsyncSessionManager") as mock_session:
-        
+
         # Setup mocks
         mock_config = _make_cfg()
         mock_cm_instance = MagicMock()
@@ -2292,10 +2300,12 @@ def test_ip_filter_loading_with_errors(tmp_path, monkeypatch):
 
 def test_ip_filter_not_available_warning(tmp_path, monkeypatch):
     """Test IP filter not available warning (lines 756-759)."""
-    from ccbt.cli.main import download
-    from click.testing import CliRunner
     from unittest.mock import AsyncMock, MagicMock, patch
+
     import click
+    from click.testing import CliRunner
+
+    from ccbt.cli.main import download
 
     # Create a filter file
     filter_file = tmp_path / "filter.dat"
@@ -2307,11 +2317,11 @@ def test_ip_filter_not_available_warning(tmp_path, monkeypatch):
     mock_security_manager.load_ip_filter = AsyncMock()
 
     runner = CliRunner()
-    
+
     with patch("ccbt.security.security_manager.SecurityManager", return_value=mock_security_manager), \
          patch("ccbt.cli.main.ConfigManager") as mock_cm, \
          patch("ccbt.cli.main.AsyncSessionManager") as mock_session:
-        
+
         # Setup mocks
         mock_config = _make_cfg()
         mock_cm_instance = MagicMock()
@@ -2366,7 +2376,7 @@ def test_magnet_checkpoint_confirm_no(monkeypatch):
             return _CP()
 
     fake_mod = type(sys)("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Mock DaemonManager to prevent PID file check from failing
@@ -2425,7 +2435,7 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
             return _CP()
 
     fake_mod = type(sys)("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Mock DaemonManager to prevent PID file check from failing
@@ -2466,7 +2476,7 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
     def test_magnet_command_exists(self):
         """Verify magnet command is registered."""
         from ccbt.cli.main import cli
-        
+
         # Verify command exists
         assert "magnet" in [cmd.name for cmd in cli.commands.values()]
 
@@ -2474,7 +2484,7 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
     def test_magnet_command_options_exist(self):
         """Verify magnet command options are defined."""
         from ccbt.cli.main import magnet
-        
+
         # Verify command has options
         assert magnet.params is not None
 
@@ -2494,10 +2504,10 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
     class _Mgr(_FakeSession):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
-            
+
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
@@ -2523,7 +2533,7 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
     monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "--no-checkpoint"]) 
+    result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "--no-checkpoint"])
     assert result.exit_code == 0
 
 
@@ -2793,7 +2803,7 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
         """Test metrics command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["metrics", "--help"])
-        
+
         assert result.exit_code == 0
         assert "metrics" in result.output.lower()
 
@@ -2924,7 +2934,7 @@ def test_no_verify_file_sha1_flag():
         """Test performance command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["performance", "--help"])
-        
+
         assert result.exit_code == 0
         assert "performance" in result.output.lower()
 
@@ -2960,7 +2970,6 @@ def test_preserve_attributes_flag():
         """
         # This test verifies the code structure exists
         # The actual error path is tested via integration tests
-        pass
 
 
 
@@ -2979,12 +2988,13 @@ def test_proxy_host_port_parsing():
 
 def test_proxy_invalid_port():
     """Test click.Abort when port is not numeric (lines 338-342)."""
-    from ccbt.cli.main import _apply_proxy_overrides
     import click
+
+    from ccbt.cli.main import _apply_proxy_overrides
 
     cfg = _make_cfg()
     opts = {"proxy": "proxy.example.com:invalid"}
-    
+
     with pytest.raises(click.Abort):
         _apply_proxy_overrides(cfg, opts)
 
@@ -3033,7 +3043,7 @@ def test_proxy_username_config():
         """Test recover command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["recover", "--help"])
-        
+
         assert result.exit_code == 0
         assert "recover" in result.output.lower()
 
@@ -3059,12 +3069,12 @@ def test_resume_cannot_auto_resume(monkeypatch):
             return _CP()
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: object())
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    res = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()]) 
+    res = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()])
     assert res.exit_code != 0
     assert "cannot be auto-resumed" in res.output
 
@@ -3073,7 +3083,7 @@ def test_resume_cannot_auto_resume(monkeypatch):
 def test_resume_cli_help(monkeypatch):
     # Basic help path for resume command (avoids Click signature nuances)
     runner = CliRunner()
-    res = runner.invoke(cli_main.cli, ["resume", "--help"]) 
+    res = runner.invoke(cli_main.cli, ["resume", "--help"])
     assert res.exit_code == 0
 
 
@@ -3099,7 +3109,7 @@ def test_resume_cli_success_with_checkpoint(monkeypatch):
             return _CP()
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Minimal session and resume_download pass-through
@@ -3114,7 +3124,7 @@ def test_resume_cli_success_with_checkpoint(monkeypatch):
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     ih = (b"\x00" * 20).hex()
-    result = runner.invoke(cli_main.cli, ["resume", ih]) 
+    result = runner.invoke(cli_main.cli, ["resume", ih])
     assert result.exit_code == 0
 
 
@@ -3398,18 +3408,18 @@ def test_resume_invalid_hex_and_no_checkpoint(monkeypatch):
             return None
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # invalid hex
-    bad = runner.invoke(cli_main.cli, ["resume", "not-hex"]) 
+    bad = runner.invoke(cli_main.cli, ["resume", "not-hex"])
     assert bad.exit_code != 0
     assert "Invalid info hash format" in bad.output
 
     # valid hex but no checkpoint
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: object())
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    okhex = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()]) 
+    okhex = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()])
     assert okhex.exit_code != 0
     assert "No checkpoint found" in okhex.output
 
@@ -3437,7 +3447,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
             return False
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     sys.modules["ccbt.storage.checkpoint"] = fake_mod
 
     # Skip CLI resume due to environment-specific Click signature handling; exercise direct helper paths elsewhere
@@ -3467,7 +3477,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
             return False
 
     fake_mod2 = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod2, "CheckpointManager", _CPM2)
+    fake_mod2.CheckpointManager = _CPM2
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod2)
 
     # Skip CLI resume in this test; covered via helper tests
@@ -3601,7 +3611,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -3667,7 +3677,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -3721,7 +3731,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return None
 
@@ -3748,7 +3758,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -3781,7 +3791,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -3831,7 +3841,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
         """Test security command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["security", "--help"])
-        
+
         assert result.exit_code == 0
         assert "security" in result.output.lower()
 
@@ -3874,36 +3884,36 @@ def test_skip_padding_files_flag():
 
 def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
     """Test SSL CA certificates path expansion and validation (lines 369-374)."""
-    from ccbt.cli.main import _apply_ssl_overrides
     from pathlib import Path
-    from unittest.mock import MagicMock
+
+    from ccbt.cli.main import _apply_ssl_overrides
 
     cfg = _make_cfg()
     ca_file = tmp_path / "ca.crt"
     ca_file.write_text("fake ca cert")
-    
+
     # Test with existing path
     opts = {"ssl_ca_certs": str(ca_file)}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_ca_certificates == str(ca_file)
-    
+
     # Test path expansion with ~ (expanduser)
     expanded_path = tmp_path / "expanded.crt"
     expanded_path.write_text("fake ca cert")
-    
+
     # Mock Path to return expanded_path when expanduser is called
     original_path_init = Path.__init__
-    
+
     class MockPath(Path):
         def expanduser(self):
             return expanded_path
-    
+
     def mock_path_init(self, *args, **kwargs):
         if args and str(args[0]) == "~/ca.crt":
             # Return expanded path
             return original_path_init(self, expanded_path, **kwargs)
         return original_path_init(self, *args, **kwargs)
-    
+
     with monkeypatch.context() as m:
         m.setattr(Path, "__init__", mock_path_init)
         cfg2 = _make_cfg()
@@ -3912,7 +3922,7 @@ def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
         # Should use expanded path
         if expanded_path.exists():
             assert cfg2.security.ssl.ssl_ca_certificates == str(expanded_path)
-    
+
     # Test with non-existent path (should warn but not set)
     cfg3 = _make_cfg()
     nonexistent_file = tmp_path / "nonexistent.crt"
@@ -3929,16 +3939,15 @@ def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
 def test_ssl_client_cert_path_expansion_and_validation(tmp_path, monkeypatch):
     """Test SSL client certificate path expansion and validation (lines 376-381)."""
     from ccbt.cli.main import _apply_ssl_overrides
-    from unittest.mock import MagicMock
 
     cfg = _make_cfg()
     cert_file = tmp_path / "client.crt"
     cert_file.write_text("fake cert")
-    
+
     opts = {"ssl_client_cert": str(cert_file)}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_client_certificate == str(cert_file)
-    
+
     # Test with non-existent path (should warn)
     cfg2 = _make_cfg()
     nonexistent_file = tmp_path / "nonexistent.crt"
@@ -3953,16 +3962,15 @@ def test_ssl_client_cert_path_expansion_and_validation(tmp_path, monkeypatch):
 def test_ssl_client_key_path_expansion_and_validation(tmp_path, monkeypatch):
     """Test SSL client key path expansion and validation (lines 383-388)."""
     from ccbt.cli.main import _apply_ssl_overrides
-    from unittest.mock import MagicMock
 
     cfg = _make_cfg()
     key_file = tmp_path / "client.key"
     key_file.write_text("fake key")
-    
+
     opts = {"ssl_client_key": str(key_file)}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_client_key == str(key_file)
-    
+
     # Test with non-existent path (should warn)
     cfg2 = _make_cfg()
     nonexistent_file = tmp_path / "nonexistent.key"
@@ -4069,7 +4077,7 @@ def test_start_basic_download_with_object_torrent_data(monkeypatch):
             # Use bytes keys like real AsyncSessionManager
             self.torrents: dict[bytes, Any] = {}
             self.lock = asyncio.Lock()
-            
+
         async def add_torrent(self, torrent_data, resume=False):
             """Mock add_torrent that populates torrents dict."""
             from unittest.mock import AsyncMock
@@ -4101,7 +4109,7 @@ def test_start_basic_download_with_object_torrent_data(monkeypatch):
         """Test status command."""
         runner = CliRunner()
         result = runner.invoke(cli, ["status"])
-        
+
         # This might fail due to missing daemon, but we test the command structure
         assert result.exit_code in [0, 1, 2]  # Allow for various errors
 
@@ -4168,7 +4176,7 @@ def test_status_command_error_path(monkeypatch):
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
 
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code != 0
     assert "Error: boom" in result.output
 
@@ -4232,7 +4240,7 @@ def test_status_command_happy_and_error(monkeypatch):
         raise RuntimeError("stat-err")
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
-    err = runner.invoke(cli_main.cli, ["status"]) 
+    err = runner.invoke(cli_main.cli, ["status"])
     assert err.exit_code != 0
     assert "Error: stat-err" in err.output
 
@@ -4253,7 +4261,7 @@ def test_status_command_happy_path(monkeypatch):
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run)
 
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code == 0
     # Basic smoke: table title present
     assert "ccBitTorrent Status" in result.output
@@ -4269,7 +4277,7 @@ def test_status_error_branch(monkeypatch):
         pass
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _BadSession())
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code != 0
     assert "Error:" in result.output
 
@@ -4280,7 +4288,7 @@ def test_status_error_branch(monkeypatch):
         """Test status command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["status", "--help"])
-        
+
         assert result.exit_code == 0
         assert "status" in result.output.lower()
 
@@ -4289,10 +4297,10 @@ def test_status_error_branch(monkeypatch):
     def test_test_command(self, mock_subprocess_run):
         """Test test command."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(cli, ["test"])
-        
+
         # This might fail due to missing tests, but we test the command structure
         assert result.exit_code in [0, 1, 2]  # Allow for various errors
         mock_subprocess_run.assert_called_once()
@@ -4303,7 +4311,7 @@ def test_status_error_branch(monkeypatch):
         """Test test command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["test", "--help"])
-        
+
         assert result.exit_code == 0
         assert "test" in result.output.lower()
 
@@ -4348,11 +4356,10 @@ def test_web_command_does_not_await_when_not_coroutine(monkeypatch):
 
     def _fake_run(_coro):
         called["run"] += 1
-        return None
 
     monkeypatch.setattr(cli_main.asyncio, "run", _fake_run)
 
-    result = runner.invoke(cli_main.cli, ["web", "--host", "127.0.0.1", "--port", "9090"]) 
+    result = runner.invoke(cli_main.cli, ["web", "--host", "127.0.0.1", "--port", "9090"])
     assert result.exit_code == 0
     # Ensure asyncio.run was not invoked for non-coroutine
     assert called["run"] == 0
@@ -4376,7 +4383,7 @@ def test_web_coroutine_path_runs(monkeypatch):
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
     monkeypatch.setattr(cli_main.asyncio, "run", _wrapped_run)
 
-    res = runner.invoke(cli_main.cli, ["web"]) 
+    res = runner.invoke(cli_main.cli, ["web"])
     assert res.exit_code == 0
     assert calls["run"] == 1
 
@@ -4389,7 +4396,7 @@ def test_web_error_path(monkeypatch):
         raise RuntimeError("bad")
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
-    result = runner.invoke(cli_main.cli, ["web"]) 
+    result = runner.invoke(cli_main.cli, ["web"])
     assert result.exit_code != 0
     assert "Error: bad" in result.output
 
@@ -4399,7 +4406,7 @@ def test_web_error_path(monkeypatch):
         """Test web command help."""
         runner = CliRunner()
         result = runner.invoke(cli, ["web", "--help"])
-        
+
         assert result.exit_code == 0
         assert "web" in result.output.lower()
 
@@ -4409,10 +4416,10 @@ def test_web_error_path(monkeypatch):
     def test_web_start(self, mock_asyncio_run):
         """Test web start command."""
         mock_asyncio_run.return_value = None
-        
+
         runner = CliRunner()
         result = runner.invoke(cli, ["web"])
-        
+
         # This might fail due to missing config, but we test the command structure
         assert result.exit_code in [0, 1, 2]  # Allow for various errors
         mock_asyncio_run.assert_called_once()

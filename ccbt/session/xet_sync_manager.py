@@ -414,6 +414,12 @@ class XetSyncManager:
 
         """
         async with self.queue_lock:
+            # Keep only the most recent update per file path to avoid replaying stale
+            # manifests behind fresher updates during bursty propagation.
+            self.update_queue = deque(
+                [entry for entry in self.update_queue if entry.file_path != file_path],
+                maxlen=self.max_queue_size,
+            )
             if len(self.update_queue) >= self.max_queue_size:
                 self.logger.warning("Update queue is full, dropping update")
                 return False

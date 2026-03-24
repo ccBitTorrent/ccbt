@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -54,11 +54,11 @@ async def test_tracing_manager_init(tracing_manager):
 async def test_start_span(tracing_manager):
     """Test start_span creates span (lines 111-162)."""
     span_id = tracing_manager.start_span("test_span", SpanKind.INTERNAL)
-    
+
     assert span_id is not None
     assert span_id in tracing_manager.active_spans
     assert tracing_manager.stats["spans_created"] >= 1
-    
+
     span = tracing_manager.active_spans[span_id]
     assert span.name == "test_span"
     assert span.kind == SpanKind.INTERNAL
@@ -71,7 +71,7 @@ async def test_start_span_with_parent(tracing_manager):
     """Test start_span with parent span."""
     parent_id = tracing_manager.start_span("parent", SpanKind.INTERNAL)
     child_id = tracing_manager.start_span("child", SpanKind.INTERNAL, parent_span_id=parent_id)
-    
+
     child_span = tracing_manager.active_spans[child_id]
     assert child_span.parent_span_id == parent_id
 
@@ -81,7 +81,7 @@ async def test_start_span_with_attributes(tracing_manager):
     """Test start_span with attributes (lines 116-117)."""
     attributes = {"key1": "value1", "key2": 42}
     span_id = tracing_manager.start_span("attr_span", attributes=attributes)
-    
+
     span = tracing_manager.active_spans[span_id]
     assert span.attributes == attributes
 
@@ -90,7 +90,7 @@ async def test_start_span_with_attributes(tracing_manager):
 async def test_start_span_generates_trace_id(tracing_manager):
     """Test start_span generates trace ID (line 120)."""
     span_id = tracing_manager.start_span("test")
-    
+
     span = tracing_manager.active_spans[span_id]
     assert span.trace_id is not None
     assert len(span.trace_id) > 0
@@ -100,7 +100,7 @@ async def test_start_span_generates_trace_id(tracing_manager):
 async def test_start_span_updates_context(tracing_manager):
     """Test start_span updates trace context (line 140)."""
     span_id = tracing_manager.start_span("test")
-    
+
     context = tracing_manager.trace_context.get()
     assert context is not None
     assert context.get("trace_id") == tracing_manager.active_spans[span_id].trace_id
@@ -111,9 +111,9 @@ async def test_start_span_updates_context(tracing_manager):
 async def test_end_span(tracing_manager):
     """Test end_span completes span (lines 164-211)."""
     span_id = tracing_manager.start_span("test_span")
-    
+
     span = tracing_manager.end_span(span_id)
-    
+
     assert span is not None
     assert span.end_time is not None
     assert span.duration is not None
@@ -127,9 +127,9 @@ async def test_end_span(tracing_manager):
 async def test_end_span_with_status(tracing_manager):
     """Test end_span with custom status (lines 167-168)."""
     span_id = tracing_manager.start_span("error_span")
-    
+
     span = tracing_manager.end_span(span_id, status=SpanStatus.ERROR)
-    
+
     assert span.status == SpanStatus.ERROR
 
 
@@ -138,9 +138,9 @@ async def test_end_span_with_attributes(tracing_manager):
     """Test end_span updates attributes (lines 180-181)."""
     span_id = tracing_manager.start_span("test")
     end_attrs = {"end_key": "end_value"}
-    
+
     span = tracing_manager.end_span(span_id, attributes=end_attrs)
-    
+
     assert "end_key" in span.attributes
     assert span.attributes["end_key"] == "end_value"
 
@@ -149,7 +149,7 @@ async def test_end_span_with_attributes(tracing_manager):
 async def test_end_span_nonexistent(tracing_manager):
     """Test end_span with nonexistent span (lines 171-172)."""
     span = tracing_manager.end_span("nonexistent")
-    
+
     assert span is None
 
 
@@ -158,9 +158,9 @@ async def test_end_span_updates_trace(tracing_manager):
     """Test end_span updates trace (line 188)."""
     span_id = tracing_manager.start_span("root_span")
     trace_id = tracing_manager.active_spans[span_id].trace_id
-    
+
     tracing_manager.end_span(span_id)
-    
+
     trace = tracing_manager.traces.get(trace_id)
     assert trace is not None
     assert len(trace.spans) == 1
@@ -170,9 +170,9 @@ async def test_end_span_updates_trace(tracing_manager):
 async def test_add_span_event(tracing_manager):
     """Test add_span_event (lines 213-229)."""
     span_id = tracing_manager.start_span("test")
-    
+
     tracing_manager.add_span_event(span_id, "event1", {"attr": "value"})
-    
+
     span = tracing_manager.active_spans[span_id]
     assert len(span.events) == 1
     assert span.events[0]["name"] == "event1"
@@ -191,10 +191,10 @@ async def test_add_span_event_nonexistent(tracing_manager):
 async def test_add_span_attribute(tracing_manager):
     """Test add_span_attribute (lines 231-237)."""
     span_id = tracing_manager.start_span("test")
-    
+
     tracing_manager.add_span_attribute(span_id, "key1", "value1")
     tracing_manager.add_span_attribute(span_id, "key2", 42)
-    
+
     span = tracing_manager.active_spans[span_id]
     assert span.attributes["key1"] == "value1"
     assert span.attributes["key2"] == 42
@@ -212,9 +212,9 @@ async def test_add_span_attribute_nonexistent(tracing_manager):
 async def test_get_active_span(tracing_manager):
     """Test get_active_span (lines 239-244)."""
     span_id = tracing_manager.start_span("test")
-    
+
     active = tracing_manager.get_active_span()
-    
+
     assert active is not None
     assert active.span_id == span_id
 
@@ -223,7 +223,7 @@ async def test_get_active_span(tracing_manager):
 async def test_get_active_span_none(tracing_manager):
     """Test get_active_span when no active span."""
     active = tracing_manager.get_active_span()
-    
+
     assert active is None
 
 
@@ -233,9 +233,9 @@ async def test_get_trace(tracing_manager):
     span_id = tracing_manager.start_span("test")
     trace_id = tracing_manager.active_spans[span_id].trace_id
     tracing_manager.end_span(span_id)
-    
+
     trace = tracing_manager.get_trace(trace_id)
-    
+
     assert trace is not None
     assert trace.trace_id == trace_id
 
@@ -244,7 +244,7 @@ async def test_get_trace(tracing_manager):
 async def test_get_trace_nonexistent(tracing_manager):
     """Test get_trace with nonexistent trace."""
     trace = tracing_manager.get_trace("nonexistent")
-    
+
     assert trace is None
 
 
@@ -254,13 +254,13 @@ async def test_get_trace_spans(tracing_manager):
     span_id1 = tracing_manager.start_span("span1")
     trace_id = tracing_manager.active_spans[span_id1].trace_id
     tracing_manager.end_span(span_id1)
-    
+
     span_id2 = tracing_manager.start_span("span2")
     # Different trace
     tracing_manager.end_span(span_id2)
-    
+
     spans = tracing_manager.get_trace_spans(trace_id)
-    
+
     assert len(spans) >= 1
     assert all(span.trace_id == trace_id for span in spans)
 
@@ -270,9 +270,9 @@ async def test_get_trace_statistics(tracing_manager):
     """Test get_trace_statistics (lines 254-267)."""
     tracing_manager.start_span("test1")
     tracing_manager.start_span("test2")
-    
+
     stats = tracing_manager.get_trace_statistics()
-    
+
     assert "spans_created" in stats
     assert "spans_completed" in stats
     assert "traces_created" in stats
@@ -290,9 +290,9 @@ async def test_export_traces_json(tracing_manager):
     span_id = tracing_manager.start_span("test")
     trace_id = tracing_manager.active_spans[span_id].trace_id
     tracing_manager.end_span(span_id)
-    
+
     export = tracing_manager.export_traces("json")
-    
+
     import json
     data = json.loads(export)
     assert trace_id in data
@@ -319,25 +319,25 @@ async def test_cleanup_old_traces(tracing_manager):
     span.start_time = old_time
     trace_id = span.trace_id
     tracing_manager.end_span(span_id)
-    
+
     # Trace gets created when span ends
     assert trace_id in tracing_manager.traces
     old_trace = tracing_manager.traces[trace_id]
     old_trace.start_time = old_time  # Ensure it's old
-    
+
     # Create new span with separate trace - clear context again
     tracing_manager.trace_context.set(None)
     new_span_id = tracing_manager.start_span("new_span")
     new_trace_id = tracing_manager.active_spans[new_span_id].trace_id
     tracing_manager.end_span(new_span_id)
-    
+
     # New trace should exist after span ends
     assert new_trace_id in tracing_manager.traces
     assert new_trace_id != trace_id  # Should be different trace
-    
+
     # Cleanup traces older than 1 hour
     tracing_manager.cleanup_old_traces(max_age_seconds=3600)
-    
+
     # Old trace should be removed
     assert trace_id not in tracing_manager.traces
     # New trace should remain (has recent start_time)
@@ -353,12 +353,12 @@ async def test_cleanup_old_traces_spans(tracing_manager):
     span = tracing_manager.active_spans[span_id]
     span.start_time = old_time
     tracing_manager.end_span(span_id)
-    
+
     initial_count = len(tracing_manager.completed_spans)
-    
+
     # Cleanup
     tracing_manager.cleanup_old_traces(max_age_seconds=3600)
-    
+
     # Old span should be removed
     assert len(tracing_manager.completed_spans) < initial_count
 
@@ -367,13 +367,13 @@ async def test_cleanup_old_traces_spans(tracing_manager):
 async def test_set_sampling_rate(tracing_manager):
     """Test set_sampling_rate (lines 317-319)."""
     tracing_manager.set_sampling_rate(0.5)
-    
+
     assert tracing_manager.sampling_rate == 0.5
-    
+
     # Test clamping
     tracing_manager.set_sampling_rate(1.5)  # Should clamp to 1.0
     assert tracing_manager.sampling_rate == 1.0
-    
+
     tracing_manager.set_sampling_rate(-0.5)  # Should clamp to 0.0
     assert tracing_manager.sampling_rate == 0.0
 
@@ -383,9 +383,9 @@ async def test_get_or_create_trace_id_new(tracing_manager):
     """Test _get_or_create_trace_id creates new (lines 321-334)."""
     # Clear context
     tracing_manager.trace_context.set(None)
-    
+
     trace_id = tracing_manager._get_or_create_trace_id()
-    
+
     assert trace_id is not None
     assert len(trace_id) > 0
 
@@ -396,9 +396,9 @@ async def test_get_or_create_trace_id_existing(tracing_manager):
     # Set context with trace_id
     existing_trace_id = "existing-trace-id"
     tracing_manager.trace_context.set({"trace_id": existing_trace_id})
-    
+
     trace_id = tracing_manager._get_or_create_trace_id()
-    
+
     assert trace_id == existing_trace_id
 
 
@@ -406,9 +406,9 @@ async def test_get_or_create_trace_id_existing(tracing_manager):
 async def test_get_current_span_id(tracing_manager):
     """Test _get_current_span_id (lines 336-341)."""
     span_id = tracing_manager.start_span("test")
-    
+
     current_id = tracing_manager._get_current_span_id()
-    
+
     assert current_id == span_id
 
 
@@ -416,9 +416,9 @@ async def test_get_current_span_id(tracing_manager):
 async def test_get_current_span_id_none(tracing_manager):
     """Test _get_current_span_id when no context."""
     tracing_manager.trace_context.set(None)
-    
+
     current_id = tracing_manager._get_current_span_id()
-    
+
     assert current_id is None
 
 
@@ -426,7 +426,7 @@ async def test_get_current_span_id_none(tracing_manager):
 async def test_update_trace_context(tracing_manager):
     """Test _update_trace_context (lines 343-351)."""
     tracing_manager._update_trace_context("trace1", "span1")
-    
+
     context = tracing_manager.trace_context.get()
     assert context is not None
     assert context.get("trace_id") == "trace1"
@@ -437,7 +437,7 @@ async def test_update_trace_context(tracing_manager):
 async def test_update_trace_context_filters_none(tracing_manager):
     """Test _update_trace_context filters None values (lines 349-350)."""
     tracing_manager._update_trace_context("trace1", None)
-    
+
     context = tracing_manager.trace_context.get()
     assert context is not None
     assert "trace_id" in context
@@ -450,7 +450,7 @@ async def test_update_trace_new_trace(tracing_manager):
     span_id = tracing_manager.start_span("root")
     span = tracing_manager.active_spans[span_id]
     tracing_manager.end_span(span_id)
-    
+
     # Trace should be created
     trace = tracing_manager.traces.get(span.trace_id)
     assert trace is not None
@@ -463,11 +463,11 @@ async def test_update_trace_existing_trace(tracing_manager):
     span_id1 = tracing_manager.start_span("span1")
     trace_id = tracing_manager.active_spans[span_id1].trace_id
     tracing_manager.end_span(span_id1)
-    
+
     # Add another span to same trace
     span_id2 = tracing_manager.start_span("span2", parent_span_id=span_id1)
     tracing_manager.end_span(span_id2)
-    
+
     trace = tracing_manager.traces[trace_id]
     assert len(trace.spans) == 2
 
@@ -479,11 +479,11 @@ async def test_update_trace_timing(tracing_manager):
     trace_id = tracing_manager.active_spans[span_id1].trace_id
     time.sleep(0.01)
     tracing_manager.end_span(span_id1)
-    
+
     span_id2 = tracing_manager.start_span("late")
     time.sleep(0.01)
     tracing_manager.end_span(span_id2)
-    
+
     trace = tracing_manager.traces[trace_id]
     assert trace.start_time is not None
     assert trace.end_time is not None
@@ -496,7 +496,7 @@ async def test_update_trace_root_span(tracing_manager):
     span_id1 = tracing_manager.start_span("root")
     trace_id = tracing_manager.active_spans[span_id1].trace_id
     tracing_manager.end_span(span_id1)
-    
+
     trace = tracing_manager.traces[trace_id]
     assert trace.root_span is not None
     assert trace.root_span.span_id == span_id1
@@ -508,10 +508,10 @@ async def test_is_trace_complete(tracing_manager):
     span_id = tracing_manager.start_span("test")
     trace_id = tracing_manager.active_spans[span_id].trace_id
     tracing_manager.end_span(span_id)
-    
+
     trace = tracing_manager.traces[trace_id]
     is_complete = tracing_manager._is_trace_complete(trace)
-    
+
     assert is_complete is True
 
 
@@ -521,7 +521,7 @@ async def test_is_trace_complete_incomplete(tracing_manager):
     span_id = tracing_manager.start_span("incomplete")
     trace_id = tracing_manager.active_spans[span_id].trace_id
     # Don't end span
-    
+
     trace = tracing_manager.traces.get(trace_id)
     if trace:
         is_complete = tracing_manager._is_trace_complete(trace)
@@ -536,10 +536,10 @@ async def test_is_trace_complete_emits_event(tracing_manager):
     """Test trace completion emits event (lines 384-398)."""
     span_id = tracing_manager.start_span("test")
     trace_id = tracing_manager.active_spans[span_id].trace_id
-    
+
     with patch("ccbt.monitoring.tracing.emit_event", new_callable=AsyncMock) as mock_emit:
         tracing_manager.end_span(span_id)
-        
+
         # Should emit trace completed event
         assert mock_emit.called or tracing_manager.stats["traces_completed"] >= 0
 
@@ -548,7 +548,7 @@ async def test_is_trace_complete_emits_event(tracing_manager):
 async def test_should_sample(tracing_manager):
     """Test _should_sample (lines 408-418)."""
     tracing_manager.set_sampling_rate(1.0)  # 100% sampling
-    
+
     # Should always sample with 100% rate
     sampled = tracing_manager._should_sample()
     assert sampled is True
@@ -560,9 +560,9 @@ async def test_should_sample(tracing_manager):
 async def test_should_sample_zero_rate(tracing_manager):
     """Test _should_sample with 0% sampling rate."""
     tracing_manager.set_sampling_rate(0.0)
-    
+
     sampled = tracing_manager._should_sample()
-    
+
     # May or may not sample (random), but should update stats
     assert tracing_manager.stats["sampling_decisions"] >= 1
 
@@ -580,7 +580,7 @@ async def test_trace_context_exit_success(tracing_manager):
     """Test TraceContext __exit__ with success (lines 457-464)."""
     with TraceContext(tracing_manager, "test_span") as ctx:
         span_id = ctx.span_id
-    
+
     # Span should be completed
     assert span_id not in tracing_manager.active_spans
     assert span_id is None or any(s.span_id == span_id for s in tracing_manager.completed_spans)
@@ -593,7 +593,7 @@ async def test_trace_context_exit_exception(tracing_manager):
         with TraceContext(tracing_manager, "error_span") as ctx:
             span_id = ctx.span_id
             raise ValueError("Test error")
-    
+
     # Span should be marked as error
     if span_id:
         spans = [s for s in tracing_manager.completed_spans if s.span_id == span_id]
@@ -606,7 +606,7 @@ async def test_trace_context_add_event(tracing_manager):
     """Test TraceContext add_event (lines 466-469)."""
     with TraceContext(tracing_manager, "test_span") as ctx:
         ctx.add_event("event1", {"key": "value"})
-    
+
     # Event should be added to span
     assert True  # Verification done through tracing_manager
 
@@ -617,7 +617,7 @@ async def test_trace_context_add_attribute(tracing_manager):
     with TraceContext(tracing_manager, "test_span") as ctx:
         ctx.add_attribute("key1", "value1")
         ctx.add_attribute("key2", 42)
-    
+
     # Attribute should be added
     assert True  # Verification done through tracing_manager
 
@@ -626,7 +626,7 @@ async def test_trace_context_add_attribute(tracing_manager):
 async def test_trace_context_not_sampled(tracing_manager):
     """Test TraceContext when not sampled (lines 441-442)."""
     tracing_manager.set_sampling_rate(0.0)
-    
+
     with TraceContext(tracing_manager, "unsampled") as ctx:
         # Should not create span
         assert ctx.span_id is None
@@ -638,9 +638,9 @@ async def test_trace_function_decorator(tracing_manager):
     @trace_function(tracing_manager, "decorated_func")
     def test_func(x, y):
         return x + y
-    
+
     result = test_func(2, 3)
-    
+
     assert result == 5
     # Span should be created
     assert tracing_manager.stats["spans_created"] >= 1
@@ -652,9 +652,9 @@ async def test_trace_function_decorator_default_name(tracing_manager):
     @trace_function(tracing_manager)
     def another_func():
         return "result"
-    
+
     result = another_func()
-    
+
     assert result == "result"
 
 
@@ -665,9 +665,9 @@ async def test_trace_async_function_decorator(tracing_manager):
     async def async_func(x, y):
         await asyncio.sleep(0.01)
         return x * y
-    
+
     result = await async_func(3, 4)
-    
+
     assert result == 12
     assert tracing_manager.stats["spans_created"] >= 1
 
@@ -678,9 +678,9 @@ async def test_trace_async_function_default_name(tracing_manager):
     @trace_async_function(tracing_manager)
     async def another_async():
         return "async_result"
-    
+
     result = await another_async()
-    
+
     assert result == "async_result"
 
 
@@ -692,14 +692,14 @@ async def test_export_traces_all_fields(tracing_manager):
     tracing_manager.add_span_event(span_id, "test_event")
     trace_id = tracing_manager.active_spans[span_id].trace_id
     tracing_manager.end_span(span_id, status=SpanStatus.OK)
-    
+
     export = tracing_manager.export_traces("json")
-    
+
     import json
     data = json.loads(export)
     trace_data = data[trace_id]
     span_data = trace_data["spans"][0]
-    
+
     assert "span_id" in span_data
     assert "parent_span_id" in span_data
     assert "name" in span_data
@@ -720,17 +720,17 @@ async def test_update_trace_timing_updates(tracing_manager):
     early_time = tracing_manager.active_spans[span_id1].start_time
     time.sleep(0.01)
     tracing_manager.end_span(span_id1)
-    
+
     trace = tracing_manager.traces[trace_id]
     assert trace.start_time == early_time
-    
+
     # Add later span
     time.sleep(0.01)
     span_id2 = tracing_manager.start_span("late", parent_span_id=span_id1)
     late_start = tracing_manager.active_spans[span_id2].start_time
     time.sleep(0.01)
     tracing_manager.end_span(span_id2)
-    
+
     # Trace end_time should be updated
     updated_trace = tracing_manager.traces[trace_id]
     assert updated_trace.end_time is not None

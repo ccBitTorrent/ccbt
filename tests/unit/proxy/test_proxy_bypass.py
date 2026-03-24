@@ -120,7 +120,7 @@ class TestProxyBypassLogic:
         config.proxy = MagicMock()
         config.proxy.enable_proxy = True
         config.proxy.proxy_bypass_list = []
-        
+
         with patch.object(tracker_client, "config", config):
             # Should still bypass localhost
             assert tracker_client._should_bypass_proxy("http://localhost:8080/announce")

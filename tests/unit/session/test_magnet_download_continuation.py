@@ -10,8 +10,8 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.session, pytest.mark.integration]
 
 from ccbt.models import PeerInfo, TrackerResponse
-from ccbt.session.session import AsyncSessionManager
 from ccbt.session.download_manager import download_magnet
+from ccbt.session.session import AsyncSessionManager
 
 
 class TestMagnetDownloadContinuation:
@@ -52,6 +52,7 @@ class TestMagnetDownloadContinuation:
             mock_parse.return_value = MagnetInfo(
                 info_hash=b"\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67",
                 display_name="test",
+                swarm_id=None,
                 trackers=["http://tracker.example.com/announce"],
                 web_seeds=[],
             )
@@ -91,7 +92,7 @@ class TestMagnetDownloadContinuation:
                         mock_dm.peer_manager = None  # Will be set during start
                         mock_dm.torrent_data = {}  # Set torrent_data attribute
                         mock_dm._download_started = False  # Track download started state
-                        
+
                         # Mock piece manager
                         mock_piece_manager = AsyncMock()
                         mock_piece_manager.start = AsyncMock()
@@ -100,7 +101,7 @@ class TestMagnetDownloadContinuation:
                         mock_piece_manager.is_downloading = False
                         mock_piece_manager.num_pieces = 1
                         mock_dm.piece_manager = mock_piece_manager
-                        
+
                         mock_dm_class.return_value = mock_dm
 
                         # Mock _get_peers_from_trackers to return peers
@@ -130,20 +131,20 @@ class TestMagnetDownloadContinuation:
 
                                     # Verify download manager was created
                                     mock_dm_class.assert_called_once()
-                                    
+
                                     # The session may complete via normal start or emergency start
                                     # Emergency start calls start() and start_download([])
                                     # Normal start may call start_download with peers
                                     # Verify that start() was called (either normal or emergency)
                                     assert mock_dm.start.called, "Expected download_manager.start() to be called"
-                                    
+
                                     # Verify that start_download was called (may be with empty list in emergency start)
                                     assert mock_dm.start_download.called, "Expected download_manager.start_download() to be called"
-                                    
+
                                     # Get the call arguments
                                     call_args = mock_dm.start_download.call_args[0][0]
                                     assert isinstance(call_args, list), "start_download should be called with a list"
-                                    
+
                                     # In emergency start, peers list may be empty initially
                                     # The important thing is that start_download was called to initiate download
                                     # Peers will be added later via tracker/DHT discovery
@@ -161,6 +162,7 @@ class TestMagnetDownloadContinuation:
             mock_parse.return_value = MagnetInfo(
                 info_hash=b"\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67",
                 display_name="test",
+                swarm_id=None,
                 trackers=["http://tracker.example.com/announce"],
                 web_seeds=[],
             )
@@ -203,7 +205,7 @@ class TestMagnetDownloadContinuation:
                             mock_config.discovery.magnet_respect_indices = True
                             mock_config.per_torrent_defaults = None
                             mock_get_config.return_value = mock_config
-                            
+
                             # Mock tracker client
                             with patch("ccbt.session.session.AsyncTrackerClient") as mock_tracker_class:
                                 mock_tracker = AsyncMock()
@@ -212,10 +214,9 @@ class TestMagnetDownloadContinuation:
                                 mock_tracker_class.return_value = mock_tracker
 
                                 # Capture log output
-                                import logging
                                 with patch.object(session_manager.logger, "warning") as mock_warning:
                                     torrent_id = await session_manager.add_magnet(magnet_uri)
-                                    
+
                                     # Wait for async operations and background tasks to complete
                                     # Increased wait time to allow warning to be logged
                                     for _ in range(10):  # Check every 0.1s for up to 1 second
@@ -229,8 +230,8 @@ class TestMagnetDownloadContinuation:
                                     warning_calls = [str(call) for call in mock_warning.call_args_list]
                                     # Check for any metadata-related warning
                                     has_metadata_warning = any(
-                                        "metadata" in str(call).lower() or 
-                                        "download" in str(call).lower() and "start" in str(call).lower()
+                                        "metadata" in str(call).lower() or
+                                        ("download" in str(call).lower() and "start" in str(call).lower())
                                         for call in warning_calls
                                     )
                                     # If no specific metadata warning, that's okay - the session may still be added
@@ -267,6 +268,7 @@ class TestMagnetDownloadContinuation:
             mock_parse.return_value = MagnetInfo(
                 info_hash=b"\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67",
                 display_name="test",
+                swarm_id=None,
                 trackers=["http://tracker.example.com/announce"],
                 web_seeds=[],
             )
@@ -363,6 +365,7 @@ class TestMagnetDownloadContinuation:
             mock_parse.return_value = MagnetInfo(
                 info_hash=b"\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67",
                 display_name="test",
+                swarm_id=None,
                 trackers=["http://tracker.example.com/announce"],
                 web_seeds=[],
             )
@@ -414,6 +417,7 @@ class TestMagnetDownloadContinuation:
             mock_parse.return_value = MagnetInfo(
                 info_hash=b"\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67\x89\xab\xcd\xef\x01\x23\x45\x67",
                 display_name="test",
+                swarm_id=None,
                 trackers=["http://tracker.example.com/announce"],
                 web_seeds=[],
             )

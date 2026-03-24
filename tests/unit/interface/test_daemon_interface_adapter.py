@@ -79,7 +79,6 @@ async def test_websocket_reconnect_calls_resync_from_snapshot(
 @pytest.mark.asyncio
 async def test_media_events_invalidate_media_cache_and_notify_callbacks() -> None:
     """Media WebSocket events should invalidate caches and reach UI callbacks."""
-
     ipc_client = MagicMock()
     adapter = DaemonInterfaceAdapter(ipc_client)
     adapter._media_status_cache["a" * 40] = {"state": "buffering"}

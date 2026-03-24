@@ -1,7 +1,6 @@
 """Unit tests for uTP retransmission and RTO calculation."""
 
-import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -84,7 +83,7 @@ class TestRetransmission:
         connection.state = UTPConnectionState.CONNECTED
         connection.transport = MagicMock()
         connection.transport.sendto = MagicMock()
-        
+
         packet = UTPPacket(
             type=UTPPacketType.ST_DATA,
             connection_id=12345,
@@ -107,19 +106,19 @@ class TestRetransmission:
             and hasattr(connection.config.network.utp, "max_retransmits")
             else 5
         )
-        
+
         # Calculate RTO to determine timeout
         # RTO = SRTT + 4 * RTTVAR (from the code)
         rto = connection.srtt + 4.0 * connection.rttvar
         rto = max(0.1, min(rto, 60.0))  # Bounded between 0.1 and 60.0
-        
+
         # With exponential backoff, packet_timeout = rto * (2**retry_count)
         # For retry_count = max_retries, we need to ensure old_time is old enough
         # Set old send time to be well past the timeout even with exponential backoff
         packet_timeout = rto * (2**max_retries)  # Exponential backoff
         # Add extra margin to ensure timeout
         old_time = time.perf_counter() - (packet_timeout + 1.0)
-        
+
         # Set retry count to max_retries (will trigger connection close)
         # The code checks: if retry_count >= max_retries: then close
         connection.send_buffer[100] = (packet, old_time, max_retries)

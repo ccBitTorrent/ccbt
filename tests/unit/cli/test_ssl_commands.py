@@ -15,10 +15,8 @@ Covers:
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, mock_open, patch
-import importlib
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -122,22 +120,22 @@ class TestSSLEnableDisableTrackers:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -163,22 +161,22 @@ class TestSSLEnableDisableTrackers:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -200,15 +198,14 @@ class TestSSLEnableDisableTrackers:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(cli_ssl_commands.ssl, ["enable-trackers"])
@@ -235,22 +232,22 @@ class TestSSLEnableDisableTrackers:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -272,15 +269,14 @@ class TestSSLEnableDisableTrackers:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(cli_ssl_commands.ssl, ["disable-trackers"])
@@ -311,22 +307,22 @@ class TestSSLEnableDisablePeers:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -348,15 +344,14 @@ class TestSSLEnableDisablePeers:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(cli_ssl_commands.ssl, ["enable-peers"])
@@ -383,22 +378,22 @@ class TestSSLEnableDisablePeers:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -420,15 +415,14 @@ class TestSSLEnableDisablePeers:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(cli_ssl_commands.ssl, ["disable-peers"])
@@ -462,22 +456,22 @@ class TestSSLSetCACerts:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -505,22 +499,22 @@ class TestSSLSetCACerts:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -548,22 +542,22 @@ class TestSSLSetCACerts:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -606,22 +600,22 @@ class TestSSLSetClientCert:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -649,22 +643,22 @@ class TestSSLSetClientCert:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -694,22 +688,22 @@ class TestSSLSetClientCert:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -739,22 +733,22 @@ class TestSSLSetClientCert:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -790,22 +784,22 @@ class TestSSLSetProtocol:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -832,22 +826,22 @@ class TestSSLSetProtocol:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -870,15 +864,14 @@ class TestSSLSetProtocol:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(
@@ -911,22 +904,22 @@ class TestSSLVerify:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -948,15 +941,14 @@ class TestSSLVerify:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(cli_ssl_commands.ssl, ["verify-on"])
@@ -983,22 +975,22 @@ class TestSSLVerify:
         # Since _get_config_from_context is imported inside the function with "from ccbt.cli.main import _get_config_from_context",
         # we need to patch it in the ccbt.cli.main module namespace
         import sys
+
         import ccbt.cli.main as main_module
         # Ensure we have the module, not the function
-        if not hasattr(main_module, '_get_config_from_context'):
+        if not hasattr(main_module, "_get_config_from_context"):
             # If the module doesn't have it, it might be because we got the function instead
             # Try to get the actual module from sys.modules
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(
             main_module, "_get_config_from_context", lambda ctx: mock_config_manager
         )
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(
             config_module, "init_config", lambda: mock_config_manager
         )
@@ -1020,15 +1012,14 @@ class TestSSLVerify:
         # we need to patch it in the ccbt.cli.main module namespace
         # Use sys.modules to get the actual module object, not the function
         import sys
-        main_module = sys.modules['ccbt.cli.main']
+        main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
         # Also patch init_config in the config module
         # Use sys.modules to get the actual module object
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
             # Module not loaded yet, import it
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
 
         result = runner.invoke(cli_ssl_commands.ssl, ["verify-off"])

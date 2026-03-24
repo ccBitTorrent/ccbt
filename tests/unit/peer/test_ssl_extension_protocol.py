@@ -10,14 +10,13 @@ from __future__ import annotations
 import asyncio
 import struct
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer, pytest.mark.security, pytest.mark.extensions]
 
 from ccbt.extensions.manager import ExtensionManager
-from ccbt.extensions.protocol import ExtensionProtocol
 from ccbt.extensions.ssl import SSLExtension, SSLMessageType, SSLNegotiationState
 from ccbt.models import Config
 from ccbt.peer.ssl_peer import SSLPeerConnection, SSLPeerStats
@@ -501,33 +500,32 @@ class TestSSLNegotiationFlow:
 
             with patch.object(
                 connection, "_check_peer_ssl_capability", return_value=True
+            ), patch.object(
+                connection, "_send_ssl_extension_message", return_value=None
             ):
-                with patch.object(
-                    connection, "_send_ssl_extension_message", return_value=None
-                ):
-                    mock_manager = Mock()
-                    mock_ssl_ext = Mock()
+                mock_manager = Mock()
+                mock_ssl_ext = Mock()
 
-                    # Create state that never gets accepted
-                    negotiation_state = SSLNegotiationState(
-                        peer_id="peer123",
-                        state="requested",
-                        timestamp=time.time(),
-                        request_id=123,
-                    )
-                    mock_ssl_ext.get_negotiation_state.return_value = negotiation_state
-                    mock_manager.get_extension.return_value = mock_ssl_ext
-                    connection.extension_manager = mock_manager
+                # Create state that never gets accepted
+                negotiation_state = SSLNegotiationState(
+                    peer_id="peer123",
+                    state="requested",
+                    timestamp=time.time(),
+                    request_id=123,
+                )
+                mock_ssl_ext.get_negotiation_state.return_value = negotiation_state
+                mock_manager.get_extension.return_value = mock_ssl_ext
+                connection.extension_manager = mock_manager
 
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, "peer123", "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, "peer123", "127.0.0.1", 6881
+                )
 
-                    # Should return None due to timeout (opportunistic mode)
-                    assert result is None
+                # Should return None due to timeout (opportunistic mode)
+                assert result is None
 
     @pytest.mark.asyncio
     async def test_negotiate_ssl_after_handshake_rejected(self):
@@ -550,33 +548,32 @@ class TestSSLNegotiationFlow:
 
             with patch.object(
                 connection, "_check_peer_ssl_capability", return_value=True
+            ), patch.object(
+                connection, "_send_ssl_extension_message", return_value=None
             ):
-                with patch.object(
-                    connection, "_send_ssl_extension_message", return_value=None
-                ):
-                    mock_manager = Mock()
-                    mock_ssl_ext = Mock()
+                mock_manager = Mock()
+                mock_ssl_ext = Mock()
 
-                    # Create rejected state
-                    negotiation_state = SSLNegotiationState(
-                        peer_id="peer123",
-                        state="rejected",
-                        timestamp=time.time(),
-                        request_id=123,
-                    )
-                    mock_ssl_ext.get_negotiation_state.return_value = negotiation_state
-                    mock_manager.get_extension.return_value = mock_ssl_ext
-                    connection.extension_manager = mock_manager
+                # Create rejected state
+                negotiation_state = SSLNegotiationState(
+                    peer_id="peer123",
+                    state="rejected",
+                    timestamp=time.time(),
+                    request_id=123,
+                )
+                mock_ssl_ext.get_negotiation_state.return_value = negotiation_state
+                mock_manager.get_extension.return_value = mock_ssl_ext
+                connection.extension_manager = mock_manager
 
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, "peer123", "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, "peer123", "127.0.0.1", 6881
+                )
 
-                    # Should return None due to rejection (opportunistic mode)
-                    assert result is None
+                # Should return None due to rejection (opportunistic mode)
+                assert result is None
 
 
 class TestExtensionManagerSSLIntegration:
@@ -771,24 +768,23 @@ class TestExtensionManagerSSLIntegration:
             connection.extension_manager = manager
             with patch.object(
                 connection, "_send_ssl_extension_message", return_value=None
-            ):
-                with patch.object(
-                    connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
-                ) as mock_wrap:
-                    mock_ssl_reader = AsyncMock()
-                    mock_ssl_writer = AsyncMock()
-                    mock_wrap.return_value = (mock_ssl_reader, mock_ssl_writer, True)
+            ), patch.object(
+                connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
+            ) as mock_wrap:
+                mock_ssl_reader = AsyncMock()
+                mock_ssl_writer = AsyncMock()
+                mock_wrap.return_value = (mock_ssl_reader, mock_ssl_writer, True)
 
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
+                )
 
-                    assert result is not None
-                    assert result[0] == mock_ssl_reader
-                    assert result[1] == mock_ssl_writer
+                assert result is not None
+                assert result[0] == mock_ssl_reader
+                assert result[1] == mock_ssl_writer
 
     @pytest.mark.asyncio
     async def test_negotiate_ssl_after_handshake_wrap_fails(self):
@@ -824,22 +820,21 @@ class TestExtensionManagerSSLIntegration:
             connection.extension_manager = manager
             with patch.object(
                 connection, "_send_ssl_extension_message", return_value=None
-            ):
-                with patch.object(
-                    connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
-                ) as mock_wrap:
-                    # Wrapping fails (returns False for ssl_enabled)
-                    mock_wrap.return_value = (AsyncMock(), AsyncMock(), False)
+            ), patch.object(
+                connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
+            ) as mock_wrap:
+                # Wrapping fails (returns False for ssl_enabled)
+                mock_wrap.return_value = (AsyncMock(), AsyncMock(), False)
 
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
+                )
 
-                    # Should return None due to opportunistic mode
-                    assert result is None
+                # Should return None due to opportunistic mode
+                assert result is None
 
     @pytest.mark.asyncio
     async def test_negotiate_ssl_after_handshake_no_opportunistic(self):
@@ -1182,21 +1177,20 @@ class TestExtensionManagerSSLIntegration:
             connection.extension_manager = manager
             with patch.object(
                 connection, "_send_ssl_extension_message", return_value=None
-            ):
-                with patch.object(
-                    connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
-                ) as mock_wrap:
-                    # Wrapping fails (returns False for ssl_enabled)
-                    mock_wrap.return_value = (AsyncMock(), AsyncMock(), False)
+            ), patch.object(
+                connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
+            ) as mock_wrap:
+                # Wrapping fails (returns False for ssl_enabled)
+                mock_wrap.return_value = (AsyncMock(), AsyncMock(), False)
 
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
+                )
 
-                    assert result is None
+                assert result is None
 
     def test_ssl_peer_get_stats(self):
         """Test getting SSL peer statistics."""

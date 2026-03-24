@@ -534,7 +534,11 @@ class AsyncPexManager:
                     self.logger.debug("Error calling PEX callback: %s", e)
 
     async def refresh(self) -> None:
-        """Manually trigger PEX refresh to all supported peers."""
+        """Manually trigger PEX refresh to all supported peers.
+
+        Session code may call this when DHT ``get_peers`` is rate-limited so PEX
+        still drives peer exchange as a complement to throttled DHT lookups.
+        """
         refreshed_count = 0
 
         # Reset last_pex_time for all sessions to allow immediate refresh

@@ -13,14 +13,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
 from ccbt.monitoring.dashboard import (
-    Dashboard,
     DashboardManager,
     DashboardType,
     Widget,
@@ -53,11 +50,11 @@ async def test_create_dashboard(dashboard_manager):
         dashboard_type=DashboardType.OVERVIEW,
         description="Test description",
     )
-    
+
     assert dashboard_id is not None
     assert dashboard_id in dashboard_manager.dashboards
     assert dashboard_manager.stats["dashboards_created"] >= 1
-    
+
     dashboard = dashboard_manager.dashboards[dashboard_id]
     assert dashboard.name == "Test Dashboard"
     assert dashboard.type == DashboardType.OVERVIEW
@@ -77,13 +74,13 @@ async def test_create_dashboard_with_widgets(dashboard_manager):
             position={"x": 0, "y": 0, "width": 6, "height": 4},
         ),
     ]
-    
+
     dashboard_id = dashboard_manager.create_dashboard(
         name="With Widgets",
         dashboard_type=DashboardType.CUSTOM,
         widgets=widgets,
     )
-    
+
     dashboard = dashboard_manager.dashboards[dashboard_id]
     assert len(dashboard.widgets) == 1
     assert dashboard.widgets[0].id == "widget1"
@@ -96,16 +93,16 @@ async def test_add_widget(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     widget = Widget(
         id="new_widget",
         type=WidgetType.GRAPH,
         title="New Widget",
         position={"x": 0, "y": 0, "width": 6, "height": 4},
     )
-    
+
     result = dashboard_manager.add_widget(dashboard_id, widget)
-    
+
     assert result is True
     dashboard = dashboard_manager.dashboards[dashboard_id]
     assert len(dashboard.widgets) == 1
@@ -122,9 +119,9 @@ async def test_add_widget_nonexistent_dashboard(dashboard_manager):
         title="Widget",
         position={"x": 0, "y": 0, "width": 6, "height": 4},
     )
-    
+
     result = dashboard_manager.add_widget("nonexistent", widget)
-    
+
     assert result is False
 
 
@@ -135,7 +132,7 @@ async def test_remove_widget(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     widget = Widget(
         id="to_remove",
         type=WidgetType.METRIC,
@@ -143,9 +140,9 @@ async def test_remove_widget(dashboard_manager):
         position={"x": 0, "y": 0, "width": 6, "height": 4},
     )
     dashboard_manager.add_widget(dashboard_id, widget)
-    
+
     result = dashboard_manager.remove_widget(dashboard_id, "to_remove")
-    
+
     assert result is True
     dashboard = dashboard_manager.dashboards[dashboard_id]
     assert len(dashboard.widgets) == 0
@@ -158,9 +155,9 @@ async def test_remove_widget_nonexistent(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     result = dashboard_manager.remove_widget(dashboard_id, "nonexistent")
-    
+
     assert result is True  # Returns True even if widget not found
 
 
@@ -168,7 +165,7 @@ async def test_remove_widget_nonexistent(dashboard_manager):
 async def test_remove_widget_nonexistent_dashboard(dashboard_manager):
     """Test remove_widget with nonexistent dashboard (lines 228-229)."""
     result = dashboard_manager.remove_widget("nonexistent", "widget_id")
-    
+
     assert result is False
 
 
@@ -179,7 +176,7 @@ async def test_update_widget(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     widget = Widget(
         id="to_update",
         type=WidgetType.METRIC,
@@ -187,13 +184,13 @@ async def test_update_widget(dashboard_manager):
         position={"x": 0, "y": 0, "width": 6, "height": 4},
     )
     dashboard_manager.add_widget(dashboard_id, widget)
-    
+
     result = dashboard_manager.update_widget(
         dashboard_id,
         "to_update",
         {"title": "Updated Title", "refresh_interval": 10},
     )
-    
+
     assert result is True
     updated_widget = dashboard_manager.dashboards[dashboard_id].widgets[0]
     assert updated_widget.title == "Updated Title"
@@ -208,7 +205,7 @@ async def test_update_widget_nonexistent_dashboard(dashboard_manager):
         "widget_id",
         {"title": "New"},
     )
-    
+
     assert result is False
 
 
@@ -219,13 +216,13 @@ async def test_update_widget_nonexistent_widget(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     result = dashboard_manager.update_widget(
         dashboard_id,
         "nonexistent",
         {"title": "New"},
     )
-    
+
     assert result is False
 
 
@@ -236,9 +233,9 @@ async def test_get_dashboard(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     dashboard = dashboard_manager.get_dashboard(dashboard_id)
-    
+
     assert dashboard is not None
     assert dashboard.name == "Test"
 
@@ -247,7 +244,7 @@ async def test_get_dashboard(dashboard_manager):
 async def test_get_dashboard_nonexistent(dashboard_manager):
     """Test get_dashboard with nonexistent ID."""
     dashboard = dashboard_manager.get_dashboard("nonexistent")
-    
+
     assert dashboard is None
 
 
@@ -264,9 +261,9 @@ async def test_get_all_dashboards(dashboard_manager):
         name="Dashboard 2",
         dashboard_type=DashboardType.PERFORMANCE,
     )
-    
+
     all_dashboards = dashboard_manager.get_all_dashboards()
-    
+
     # Verify both dashboards exist (they may have same ID if created too quickly)
     assert dashboard_id1 in all_dashboards or dashboard_id2 in all_dashboards
     # At least one should exist
@@ -280,11 +277,11 @@ async def test_get_dashboard_data(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     await dashboard_manager.update_dashboard_data(dashboard_id, {"metric": 42})
-    
+
     data = dashboard_manager.get_dashboard_data(dashboard_id)
-    
+
     assert data is not None
     assert data.dashboard_id == dashboard_id
     assert data.data["metric"] == 42
@@ -297,11 +294,11 @@ async def test_update_dashboard_data(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     test_data = {"cpu_usage": 45.5, "memory_usage": 60.0}
-    
+
     await dashboard_manager.update_dashboard_data(dashboard_id, test_data)
-    
+
     assert dashboard_id in dashboard_manager.dashboard_data
     assert dashboard_id in dashboard_manager.real_time_data
     assert dashboard_manager.real_time_data[dashboard_id] == test_data
@@ -315,19 +312,19 @@ async def test_update_dashboard_data_with_subscriber(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     received_data = []
-    
+
     async def subscriber(data):
         received_data.append(data)
-    
+
     dashboard_manager.subscribe_to_dashboard(dashboard_id, subscriber)
-    
+
     await dashboard_manager.update_dashboard_data(dashboard_id, {"test": "value"})
-    
+
     # Wait a bit for async notification
     await asyncio.sleep(0.1)
-    
+
     assert len(received_data) >= 1
 
 
@@ -338,18 +335,18 @@ async def test_update_dashboard_data_sync_subscriber(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     received_data = []
-    
+
     def sync_subscriber(data):
         received_data.append(data)
-    
+
     dashboard_manager.subscribe_to_dashboard(dashboard_id, sync_subscriber)
-    
+
     await dashboard_manager.update_dashboard_data(dashboard_id, {"test": "value"})
-    
+
     await asyncio.sleep(0.1)
-    
+
     assert len(received_data) >= 1
 
 
@@ -360,17 +357,17 @@ async def test_update_dashboard_data_subscriber_error(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     def failing_subscriber(_data):
         raise RuntimeError("Subscriber error")
-    
+
     dashboard_manager.subscribe_to_dashboard(dashboard_id, failing_subscriber)
-    
+
     # Should not raise exception
     await dashboard_manager.update_dashboard_data(dashboard_id, {"test": "value"})
-    
+
     await asyncio.sleep(0.1)
-    
+
     # Error should be handled gracefully
     assert True
 
@@ -382,10 +379,10 @@ async def test_subscribe_to_dashboard(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     callback = Mock()
     dashboard_manager.subscribe_to_dashboard(dashboard_id, callback)
-    
+
     assert callback in dashboard_manager.data_subscribers[dashboard_id]
     assert dashboard_manager.stats["subscribers"] >= 1
 
@@ -397,12 +394,12 @@ async def test_unsubscribe_from_dashboard(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     callback = Mock()
     dashboard_manager.subscribe_to_dashboard(dashboard_id, callback)
-    
+
     dashboard_manager.unsubscribe_from_dashboard(dashboard_id, callback)
-    
+
     assert callback not in dashboard_manager.data_subscribers[dashboard_id]
     assert dashboard_manager.stats["subscribers"] >= 0
 
@@ -414,9 +411,9 @@ async def test_unsubscribe_from_dashboard_nonexistent(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     callback = Mock()
-    
+
     # Should not raise error
     dashboard_manager.unsubscribe_from_dashboard(dashboard_id, callback)
 
@@ -428,7 +425,7 @@ async def test_create_grafana_dashboard(dashboard_manager):
         name="Grafana Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     widget = Widget(
         id="grafana_widget",
         type=WidgetType.METRIC,
@@ -437,9 +434,9 @@ async def test_create_grafana_dashboard(dashboard_manager):
         config={"metric": "cpu_usage"},
     )
     dashboard_manager.add_widget(dashboard_id, widget)
-    
+
     grafana = dashboard_manager.create_grafana_dashboard(dashboard_id)
-    
+
     assert "dashboard" in grafana
     assert grafana["dashboard"]["title"] == "Grafana Test"
     assert "panels" in grafana["dashboard"]
@@ -449,7 +446,7 @@ async def test_create_grafana_dashboard(dashboard_manager):
 async def test_create_grafana_dashboard_nonexistent(dashboard_manager):
     """Test create_grafana_dashboard with nonexistent dashboard (lines 368-370)."""
     grafana = dashboard_manager.create_grafana_dashboard("nonexistent")
-    
+
     assert grafana == {}
 
 
@@ -460,9 +457,9 @@ async def test_export_dashboard_json(dashboard_manager):
         name="Export Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     await dashboard_manager.update_dashboard_data(dashboard_id, {"test": "data"})
-    
+
     # JSON export will fail for dataclasses - test that it raises TypeError
     with pytest.raises((TypeError, ValueError)):
         dashboard_manager.export_dashboard(dashboard_id, "json")
@@ -475,9 +472,9 @@ async def test_export_dashboard_grafana(dashboard_manager):
         name="Grafana Export",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     export = dashboard_manager.export_dashboard(dashboard_id, "grafana")
-    
+
     data = json.loads(export)
     assert "dashboard" in data
 
@@ -489,7 +486,7 @@ async def test_export_dashboard_invalid_format(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     with pytest.raises(ValueError, match="Unsupported format"):
         dashboard_manager.export_dashboard(dashboard_id, "invalid")
 
@@ -498,7 +495,7 @@ async def test_export_dashboard_invalid_format(dashboard_manager):
 async def test_export_dashboard_nonexistent(dashboard_manager):
     """Test export_dashboard with nonexistent dashboard (lines 398-400)."""
     export = dashboard_manager.export_dashboard("nonexistent", "json")
-    
+
     assert export == ""
 
 
@@ -509,9 +506,9 @@ async def test_get_dashboard_statistics(dashboard_manager):
         name="Test",
         dashboard_type=DashboardType.OVERVIEW,
     )
-    
+
     stats = dashboard_manager.get_dashboard_statistics()
-    
+
     assert "dashboards_created" in stats
     assert "widgets_created" in stats
     assert "data_updates" in stats
@@ -530,9 +527,9 @@ async def test_widget_to_grafana_panel_metric(dashboard_manager):
         position={"x": 0, "y": 0, "width": 6, "height": 4},
         config={"metric": "cpu_usage"},
     )
-    
+
     panel = dashboard_manager._widget_to_grafana_panel(widget)
-    
+
     assert panel is not None
     assert panel["type"] == "stat"
     assert panel["title"] == "Metric Widget"
@@ -548,9 +545,9 @@ async def test_widget_to_grafana_panel_graph(dashboard_manager):
         position={"x": 0, "y": 0, "width": 6, "height": 4},
         config={"metric": "download_speed", "unit": "bytes/s"},
     )
-    
+
     panel = dashboard_manager._widget_to_grafana_panel(widget)
-    
+
     assert panel is not None
     assert panel["type"] == "graph"
     assert "yAxes" in panel
@@ -566,9 +563,9 @@ async def test_widget_to_grafana_panel_table(dashboard_manager):
         position={"x": 0, "y": 0, "width": 6, "height": 4},
         config={"columns": ["col1", "col2"], "query": "SELECT * FROM metrics"},
     )
-    
+
     panel = dashboard_manager._widget_to_grafana_panel(widget)
-    
+
     assert panel is not None
     assert panel["type"] == "table"
     assert "columns" in panel
@@ -584,9 +581,9 @@ async def test_widget_to_grafana_panel_alert(dashboard_manager):
         position={"x": 0, "y": 0, "width": 6, "height": 4},
         config={"max_items": 20},
     )
-    
+
     panel = dashboard_manager._widget_to_grafana_panel(widget)
-    
+
     assert panel is not None
     assert panel["type"] == "alertlist"
 
@@ -600,9 +597,9 @@ async def test_widget_to_grafana_panel_unsupported(dashboard_manager):
         title="Custom Widget",
         position={"x": 0, "y": 0, "width": 6, "height": 4},
     )
-    
+
     panel = dashboard_manager._widget_to_grafana_panel(widget)
-    
+
     assert panel is None
 
 
@@ -613,7 +610,7 @@ async def test_create_dashboard_from_template(dashboard_manager):
         DashboardType.OVERVIEW,
         "From Template",
     )
-    
+
     assert dashboard_id is not None
     dashboard = dashboard_manager.dashboards[dashboard_id]
     assert dashboard.name == "From Template"
@@ -636,9 +633,9 @@ async def test_validate_torrent_file(dashboard_manager, tmp_path):
     # Create valid torrent file
     torrent_file = tmp_path / "test.torrent"
     torrent_file.write_bytes(b"d4:info")
-    
+
     result = dashboard_manager.validate_torrent_file(str(torrent_file))
-    
+
     assert result["valid"] is True
     assert "path" in result
 
@@ -647,7 +644,7 @@ async def test_validate_torrent_file(dashboard_manager, tmp_path):
 async def test_validate_torrent_file_not_found(dashboard_manager):
     """Test validate_torrent_file file not found (lines 714-715)."""
     result = dashboard_manager.validate_torrent_file("/nonexistent/file.torrent")
-    
+
     assert result["valid"] is False
     assert "not found" in result["error"].lower()
 
@@ -657,9 +654,9 @@ async def test_validate_torrent_file_not_file(dashboard_manager, tmp_path):
     """Test validate_torrent_file not a file (lines 717-718)."""
     directory = tmp_path / "not_a_file.torrent"
     directory.mkdir()
-    
+
     result = dashboard_manager.validate_torrent_file(str(directory))
-    
+
     assert result["valid"] is False
     assert "not a file" in result["error"].lower()
 
@@ -669,9 +666,9 @@ async def test_validate_torrent_file_wrong_extension(dashboard_manager, tmp_path
     """Test validate_torrent_file wrong extension (lines 720-724)."""
     file = tmp_path / "test.txt"
     file.write_text("content")
-    
+
     result = dashboard_manager.validate_torrent_file(str(file))
-    
+
     assert result["valid"] is False
     assert ".torrent" in result["error"]
 
@@ -681,9 +678,9 @@ async def test_validate_torrent_file_empty(dashboard_manager, tmp_path):
     """Test validate_torrent_file empty file (lines 727-728)."""
     torrent_file = tmp_path / "empty.torrent"
     torrent_file.touch()
-    
+
     result = dashboard_manager.validate_torrent_file(str(torrent_file))
-    
+
     assert result["valid"] is False
     assert "empty" in result["error"].lower()
 
@@ -692,9 +689,9 @@ async def test_validate_torrent_file_empty(dashboard_manager, tmp_path):
 async def test_validate_magnet_link_valid(dashboard_manager):
     """Test validate_magnet_link valid link (lines 734-767)."""
     valid_magnet = "magnet:?xt=urn:btih:1234567890123456789012345678901234567890"
-    
+
     result = dashboard_manager.validate_magnet_link(valid_magnet)
-    
+
     assert result["valid"] is True
     assert result["uri"] == valid_magnet
 
@@ -703,9 +700,9 @@ async def test_validate_magnet_link_valid(dashboard_manager):
 async def test_validate_magnet_link_invalid_prefix(dashboard_manager):
     """Test validate_magnet_link invalid prefix (lines 737-741)."""
     invalid_magnet = "notmagnet:?xt=urn:btih:abc"
-    
+
     result = dashboard_manager.validate_magnet_link(invalid_magnet)
-    
+
     assert result["valid"] is False
     assert "magnet:?" in result["error"]
 
@@ -714,9 +711,9 @@ async def test_validate_magnet_link_invalid_prefix(dashboard_manager):
 async def test_validate_magnet_link_missing_btih(dashboard_manager):
     """Test validate_magnet_link missing btih (lines 743-747)."""
     invalid_magnet = "magnet:?dn=filename"
-    
+
     result = dashboard_manager.validate_magnet_link(invalid_magnet)
-    
+
     assert result["valid"] is False
     assert "xt=urn:btih:" in result["error"]
 
@@ -725,9 +722,9 @@ async def test_validate_magnet_link_missing_btih(dashboard_manager):
 async def test_validate_magnet_link_invalid_hash_length(dashboard_manager):
     """Test validate_magnet_link invalid hash length (lines 755-762)."""
     invalid_magnet = "magnet:?xt=urn:btih:short"
-    
+
     result = dashboard_manager.validate_magnet_link(invalid_magnet)
-    
+
     assert result["valid"] is False
     assert "length" in result["error"].lower()
 
@@ -736,13 +733,13 @@ async def test_validate_magnet_link_invalid_hash_length(dashboard_manager):
 async def test_get_add_torrent_options(dashboard_manager):
     """Test get_add_torrent_options (lines 769-800)."""
     options = dashboard_manager.get_add_torrent_options()
-    
+
     assert "output_dir" in options
     assert "resume" in options
     assert "download_limit" in options
     assert "upload_limit" in options
     assert "priority" in options
-    
+
     assert options["resume"]["type"] == "boolean"
     assert options["download_limit"]["type"] == "integer"
 
@@ -753,7 +750,7 @@ async def test_templates_initialized(dashboard_manager):
     assert DashboardType.OVERVIEW in dashboard_manager.templates
     assert DashboardType.PERFORMANCE in dashboard_manager.templates
     assert DashboardType.SECURITY in dashboard_manager.templates
-    
+
     overview = dashboard_manager.templates[DashboardType.OVERVIEW]
     assert overview.name == "Overview"
     assert len(overview.widgets) > 0

@@ -3,8 +3,9 @@
 
 from __future__ import annotations
 
-import pytest
 from typing import Optional
+
+import pytest
 
 from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import (

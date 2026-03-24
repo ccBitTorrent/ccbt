@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from ccbt.core.bencode import BencodeDecoder
 from ccbt.extensions.manager import ExtensionManager, ExtensionStatus
-from ccbt.extensions.pex import PEXPeer, PeerExchange
+from ccbt.extensions.pex import PeerExchange, PEXPeer
 
 
 @pytest.mark.unit

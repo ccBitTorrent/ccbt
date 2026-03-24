@@ -5,7 +5,6 @@ Tests creation, parsing, round-trip, info hash calculation, and file tree encodi
 
 from __future__ import annotations
 
-import hashlib
 import tempfile
 from pathlib import Path
 

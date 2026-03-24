@@ -20,7 +20,6 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock
 
 try:
     import psutil
@@ -31,7 +30,7 @@ except ImportError:
     HAS_PSUTIL = False
 
 try:
-    from aiortc import RTCPeerConnection, RTCDataChannel, RTCSessionDescription
+    from aiortc import RTCDataChannel, RTCPeerConnection, RTCSessionDescription
 
     HAS_AIORTC = True
 except ImportError:
@@ -246,8 +245,7 @@ async def benchmark_memory_usage(
 
             # Check memory periodically
             current_memory = get_memory_usage_mb()
-            if current_memory > peak_memory:
-                peak_memory = current_memory
+            peak_memory = max(peak_memory, current_memory)
 
             await asyncio.sleep(0.01)
 

@@ -1,10 +1,6 @@
 """Tests for CLI advanced commands (performance, security, recover, test)."""
 
-import asyncio
-import json
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -28,10 +24,10 @@ class TestPerformanceCommand:
         config.disk.direct_io = False
         config.disk.enable_io_uring = False
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, ["--analyze"])
-        
+
         assert result.exit_code == 0
         assert "System & Config Analysis" in result.output
         assert "Python" in result.output
@@ -46,12 +42,12 @@ class TestPerformanceCommand:
         config.disk.disk_queue_size = 100
         config.disk.mmap_cache_mb = 64
         mock_get_config.return_value = config
-        
+
         mock_asyncio_run.return_value = {"write_mbps": 100.0, "read_mbps": 80.0}
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, ["--benchmark"])
-        
+
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
 
@@ -71,10 +67,10 @@ class TestPerformanceCommand:
         config.discovery.aggressive_discovery_interval_popular = 30.0
         config.discovery.aggressive_discovery_interval_active = 30.0
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, ["--optimize"])
-        
+
         assert result.exit_code == 0
         assert "Applied Optimizations" in result.output
         # Note: The command now applies optimizations directly instead of just suggesting them
@@ -92,12 +88,12 @@ class TestPerformanceCommand:
         config.disk.disk_queue_size = 100
         config.disk.mmap_cache_mb = 64
         mock_get_config.return_value = config
-        
+
         mock_asyncio_run.return_value = {"write_mbps": 100.0, "read_mbps": 80.0}
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, ["--profile"])
-        
+
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
 
@@ -110,12 +106,12 @@ class TestPerformanceCommand:
         config.disk.disk_queue_size = 100
         config.disk.mmap_cache_mb = 64
         mock_get_config.return_value = config
-        
+
         mock_asyncio_run.return_value = {"write_mbps": 100.0, "read_mbps": 80.0}
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, ["--analyze", "--optimize", "--benchmark", "--profile"])
-        
+
         assert result.exit_code == 0
         mock_asyncio_run.assert_called_once()
 
@@ -128,10 +124,10 @@ class TestPerformanceCommand:
         config.discovery.aggressive_discovery_interval_popular = 30.0
         config.discovery.aggressive_discovery_interval_active = 30.0
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, [])
-        
+
         assert result.exit_code == 0
         assert "No performance action specified" in result.output
 
@@ -149,10 +145,10 @@ class TestSecurityCommand:
         config.network.global_down_kib = 0
         config.network.global_up_kib = 0
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(security, ["--scan"])
-        
+
         assert result.exit_code == 0
         assert "Performing basic configuration scan" in result.output
         assert "Found 3 potential issues" in result.output
@@ -165,10 +161,10 @@ class TestSecurityCommand:
         config.discovery.aggressive_discovery_interval_popular = 30.0
         config.discovery.aggressive_discovery_interval_active = 30.0
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(security, ["--validate"])
-        
+
         assert result.exit_code == 0
         assert "Peer validation hooks are enabled" in result.output
 
@@ -180,10 +176,10 @@ class TestSecurityCommand:
         config.discovery.aggressive_discovery_interval_popular = 30.0
         config.discovery.aggressive_discovery_interval_active = 30.0
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(security, ["--encrypt"])
-        
+
         assert result.exit_code == 0
         assert "Toggle encryption via" in result.output
 
@@ -225,10 +221,10 @@ class TestSecurityCommand:
         config.discovery.aggressive_discovery_interval_popular = 30.0
         config.discovery.aggressive_discovery_interval_active = 30.0
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(security, ["--rate-limit"])
-        
+
         assert result.exit_code == 0
         assert "Set --download-limit" in result.output
 
@@ -236,7 +232,7 @@ class TestSecurityCommand:
         """Test security with all flags."""
         runner = CliRunner()
         result = runner.invoke(security, ["--scan", "--validate", "--encrypt", "--rate-limit"])
-        
+
         assert result.exit_code == 0
         assert "Performing basic configuration scan" in result.output
         assert "Peer validation hooks are enabled" in result.output
@@ -247,7 +243,7 @@ class TestSecurityCommand:
         """Test security with no flags."""
         runner = CliRunner()
         result = runner.invoke(security, [])
-        
+
         assert result.exit_code == 0
         assert "No security action specified" in result.output
 
@@ -260,10 +256,10 @@ class TestRecoverCommand:
         """Test recover --repair."""
         mock_cm = MagicMock()
         mock_checkpoint_manager.return_value = mock_cm
-        
+
         runner = CliRunner()
         result = runner.invoke(recover, ["1234567890123456789012345678901234567890", "--repair"])
-        
+
         assert result.exit_code == 0
         assert "Automatic repair not implemented" in result.output
 
@@ -274,10 +270,10 @@ class TestRecoverCommand:
         mock_cm = MagicMock()
         mock_checkpoint_manager.return_value = mock_cm
         mock_asyncio_run.return_value = True
-        
+
         runner = CliRunner()
         result = runner.invoke(recover, ["1234567890123456789012345678901234567890", "--verify"])
-        
+
         assert result.exit_code == 0
         assert "Checkpoint valid" in result.output
         mock_asyncio_run.assert_called_once()
@@ -287,10 +283,10 @@ class TestRecoverCommand:
         """Test recover --rehash."""
         mock_cm = MagicMock()
         mock_checkpoint_manager.return_value = mock_cm
-        
+
         runner = CliRunner()
         result = runner.invoke(recover, ["1234567890123456789012345678901234567890", "--rehash"])
-        
+
         assert result.exit_code == 0
         assert "Full rehash not implemented" in result.output
 
@@ -301,10 +297,10 @@ class TestRecoverCommand:
         mock_cm = MagicMock()
         mock_checkpoint_manager.return_value = mock_cm
         mock_asyncio_run.return_value = True
-        
+
         runner = CliRunner()
         result = runner.invoke(recover, ["1234567890123456789012345678901234567890", "--repair", "--verify", "--rehash"])
-        
+
         assert result.exit_code == 0
         assert "Checkpoint valid" in result.output
         assert "Automatic repair not implemented" in result.output
@@ -316,10 +312,10 @@ class TestRecoverCommand:
         """Test recover with no flags."""
         mock_cm = MagicMock()
         mock_checkpoint_manager.return_value = mock_cm
-        
+
         runner = CliRunner()
         result = runner.invoke(recover, ["1234567890123456789012345678901234567890"])
-        
+
         assert result.exit_code == 0
         assert "No recover action specified" in result.output
 
@@ -327,7 +323,7 @@ class TestRecoverCommand:
         """Test recover with invalid info hash."""
         runner = CliRunner()
         result = runner.invoke(recover, ["invalid_hash"])
-        
+
         assert result.exit_code == 0
         assert "Invalid info hash format" in result.output
 
@@ -339,10 +335,10 @@ class TestTestCommand:
     def test_test_unit(self, mock_subprocess_run):
         """Test test --unit."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, ["--unit"])
-        
+
         assert result.exit_code == 0
         mock_subprocess_run.assert_called_once()
 
@@ -350,10 +346,10 @@ class TestTestCommand:
     def test_test_integration(self, mock_subprocess_run):
         """Test test --integration."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, ["--integration"])
-        
+
         assert result.exit_code == 0
         mock_subprocess_run.assert_called_once()
 
@@ -361,10 +357,10 @@ class TestTestCommand:
     def test_test_performance(self, mock_subprocess_run):
         """Test test --performance."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, ["--performance"])
-        
+
         assert result.exit_code == 0
         mock_subprocess_run.assert_called_once()
 
@@ -372,10 +368,10 @@ class TestTestCommand:
     def test_test_security(self, mock_subprocess_run):
         """Test test --security."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, ["--security"])
-        
+
         assert result.exit_code == 0
         mock_subprocess_run.assert_called_once()
 
@@ -383,10 +379,10 @@ class TestTestCommand:
     def test_test_all_flags(self, mock_subprocess_run):
         """Test test with all flags."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, ["--unit", "--integration", "--performance", "--security"])
-        
+
         assert result.exit_code == 0
         # Should call subprocess once for all test types
         assert mock_subprocess_run.call_count == 1
@@ -395,10 +391,10 @@ class TestTestCommand:
     def test_test_no_flags(self, mock_subprocess_run):
         """Test test with no flags."""
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, [])
-        
+
         assert result.exit_code == 0
         mock_subprocess_run.assert_called_once()
 
@@ -415,12 +411,12 @@ class TestAdvancedCommandsIntegration:
         config.disk.disk_queue_size = 200
         config.disk.mmap_cache_mb = 128
         mock_get_config.return_value = config
-        
+
         mock_asyncio_run.return_value = {"write_mbps": 150.0, "read_mbps": 120.0}
-        
+
         runner = CliRunner()
         result = runner.invoke(performance, ["--benchmark"])
-        
+
         assert result.exit_code == 0
         mock_get_config.assert_called_once()
 
@@ -434,10 +430,10 @@ class TestAdvancedCommandsIntegration:
         config.network.global_down_kib = 1000
         config.network.global_up_kib = 500
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
         result = runner.invoke(security, ["--scan"])
-        
+
         assert result.exit_code == 0
         assert "Performing basic configuration scan" in result.output
 
@@ -448,10 +444,10 @@ class TestAdvancedCommandsIntegration:
         mock_cm = MagicMock()
         mock_checkpoint_manager.return_value = mock_cm
         mock_asyncio_run.return_value = True
-        
+
         runner = CliRunner()
         result = runner.invoke(recover, ["1234567890123456789012345678901234567890", "--verify"])
-        
+
         assert result.exit_code == 0
         assert "Checkpoint valid" in result.output
         mock_asyncio_run.assert_called_once()
@@ -461,9 +457,9 @@ class TestAdvancedCommandsIntegration:
         """Test unit tests with realistic output."""
         # Mock a realistic test result
         mock_subprocess_run.return_value = MagicMock(returncode=0)
-        
+
         runner = CliRunner()
         result = runner.invoke(test, ["--unit"])
-        
+
         assert result.exit_code == 0
         mock_subprocess_run.assert_called_once()

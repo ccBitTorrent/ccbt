@@ -5,8 +5,6 @@ Tests complete workflows including selective downloading, priorities, and checkp
 from __future__ import annotations
 
 import asyncio
-import time
-from pathlib import Path
 
 import pytest
 
@@ -22,12 +20,12 @@ from tests.conftest import create_test_torrent_dict
 def multi_file_torrent_info():
     """Create multi-file torrent info for testing."""
     piece_length = 16384
-    
+
     file0_length = piece_length * 2
     file1_length = piece_length * 2 + 1000
     file2_length = piece_length - 1000
     total_length = file0_length + file1_length + file2_length
-    
+
     return TorrentInfo(
         name="multi_file_torrent",
         info_hash=b"\x00" * 20,
@@ -108,20 +106,21 @@ class TestFileSelectionEndToEnd:
     async def test_selective_download_basic(self, tmp_path, multi_file_torrent_dict, mock_network_components):
         """Test basic selective downloading workflow."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = False  # Disable for simplicity
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -130,18 +129,17 @@ class TestFileSelectionEndToEnd:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -154,24 +152,24 @@ class TestFileSelectionEndToEnd:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None
                         assert torrent_session.file_selection_manager is not None
-                        
+
                         # Wait for session to initialize components
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         # Deselect file 0
                         file_manager = torrent_session.file_selection_manager
                         await file_manager.deselect_file(0)
-                        
+
                         # Verify only pieces for selected files should be needed
                         missing = torrent_session.piece_manager.get_missing_pieces()
                         # File 0 has pieces 0 and 1, so those should not be in missing
@@ -179,7 +177,7 @@ class TestFileSelectionEndToEnd:
                         assert 1 not in missing
                         # But pieces for files 1 and 2 should still be missing
                         assert len(missing) > 0
-                        
+
                     finally:
                         await session.stop()
 
@@ -192,20 +190,21 @@ class TestFileSelectionEndToEnd:
     ):
         """Test that file priorities affect piece selection priorities."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -214,18 +213,17 @@ class TestFileSelectionEndToEnd:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -238,46 +236,46 @@ class TestFileSelectionEndToEnd:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None
-                        
+
                         # Wait for session to initialize components
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None and
-                                hasattr(torrent_session, 'file_selection_manager') and
+                                hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None
-                        
+
                         # Set priorities
                         await file_manager.set_file_priority(0, FilePriority.MAXIMUM)
                         await file_manager.set_file_priority(1, FilePriority.NORMAL)
                         await file_manager.set_file_priority(2, FilePriority.LOW)
-                        
+
                         # Verify piece priorities are set correctly
                         piece_0 = torrent_session.piece_manager.pieces[0]
                         piece_2 = torrent_session.piece_manager.pieces[2]
                         piece_4 = torrent_session.piece_manager.pieces[4]
-                        
+
                         # Note: Piece priorities are set during AsyncPieceManager initialization.
                         # Setting file priorities after piece manager creation won't update existing piece priorities.
                         # Instead, verify that file priorities are correctly set in the file selection manager
                         assert file_manager.get_file_priority(0) == FilePriority.MAXIMUM
                         assert file_manager.get_file_priority(1) == FilePriority.NORMAL
                         assert file_manager.get_file_priority(2) == FilePriority.LOW
-                        
+
                         # Verify pieces exist and have default priorities (set during init)
                         assert piece_0.priority >= 0
                         assert piece_2.priority >= 0
                         assert piece_4.priority >= 0
-                        
+
                     finally:
                         await session.stop()
 
@@ -290,20 +288,21 @@ class TestFileSelectionEndToEnd:
     ):
         """Test file selection statistics tracking."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -312,18 +311,17 @@ class TestFileSelectionEndToEnd:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -336,28 +334,28 @@ class TestFileSelectionEndToEnd:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None
-                        
+
                         # Wait for session to initialize components
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'file_selection_manager') and
+                            if (hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None
-                        
+
                         # Get initial statistics
                         stats = file_manager.get_statistics()
                         assert stats["total_files"] == 3
                         assert stats["selected_files"] == 3
                         assert stats["deselected_files"] == 0
-                        
+
                         # Deselect one file
                         await file_manager.deselect_file(1)
                         stats = file_manager.get_statistics()
@@ -365,7 +363,7 @@ class TestFileSelectionEndToEnd:
                         assert stats["deselected_files"] == 1
                         assert stats["selected_size"] < stats["total_size"]
                         assert stats["deselected_size"] > 0
-                        
+
                     finally:
                         await session.stop()
 
@@ -378,21 +376,22 @@ class TestFileSelectionCheckpointResume:
     async def test_checkpoint_saves_file_selection(self, tmp_path, multi_file_torrent_dict, mock_network_components):
         """Test that checkpoint saves file selection state."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary format (JSON has bytes serialization issues)
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -401,18 +400,17 @@ class TestFileSelectionCheckpointResume:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     try:
                         await session.start()
-                        
+
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -425,32 +423,32 @@ class TestFileSelectionCheckpointResume:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None, "Torrent session was not created"
-                        
+
                         # Wait for session to initialize components (piece manager, file manager, etc.)
                         # but don't wait for tracker announces or download to start
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None and
-                                hasattr(torrent_session, 'file_selection_manager') and
+                                hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None, "File selection manager was not initialized"
-                        
+
                         # Modify file selection
                         await file_manager.deselect_file(0)
                         await file_manager.set_file_priority(1, FilePriority.HIGH)
-                        
+
                         # Save checkpoint
                         await torrent_session._save_checkpoint()
-                        
+
                         # Verify checkpoint was saved
                         # Access checkpoint manager from torrent session
                         checkpoint_manager = torrent_session.checkpoint_manager
@@ -461,7 +459,7 @@ class TestFileSelectionCheckpointResume:
                         # additional serialization handling for binary format
                         # For now, verify checkpoint was saved successfully
                         assert checkpoint.torrent_name == "multi_file_torrent"
-                        
+
                     finally:
                         await session.stop()
 
@@ -469,21 +467,22 @@ class TestFileSelectionCheckpointResume:
     async def test_resume_restores_file_selection(self, tmp_path, multi_file_torrent_dict, mock_network_components):
         """Test that resuming from checkpoint restores file selection state."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary to avoid JSON serialization issues
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -492,18 +491,17 @@ class TestFileSelectionCheckpointResume:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-        
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -516,68 +514,68 @@ class TestFileSelectionCheckpointResume:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None, "Torrent session was not created"
-                        
+
                         # Wait for session to initialize components (piece manager, file manager, etc.)
                         # but don't wait for tracker announces or download to start
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None and
-                                hasattr(torrent_session, 'file_selection_manager') and
+                                hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None, "File selection manager was not initialized"
-                        
+
                         # Modify file selection
                         await file_manager.deselect_file(0)
                         await file_manager.set_file_priority(1, FilePriority.MAXIMUM)
                         await file_manager.set_file_priority(2, FilePriority.LOW)
-                        
+
                         # Save checkpoint
                         await torrent_session._save_checkpoint()
-                        
+
                         # Stop session
                         await torrent_session.stop()
                         async with session.lock:
                             session.torrents.pop(info_hash_bytes, None)
-                        
+
                         # Restart and resume
                         await session.start()
-                        
+
                         # Create new torrent session and resume from checkpoint
                         new_session = AsyncTorrentSession(
                             multi_file_torrent_dict,
                             output_dir=tmp_path,
                             session_manager=session,
                         )
-                        
+
                         # Simulate resume by loading checkpoint
                         checkpoint_manager = new_session.checkpoint_manager
                         checkpoint = await checkpoint_manager.load_checkpoint(info_hash_bytes)
                         if checkpoint:
                             new_session.resume_from_checkpoint = True
                             await new_session._resume_from_checkpoint(checkpoint)
-                        
+
                         # Verify file selection was restored
                         new_file_manager = new_session.file_selection_manager
                         assert new_file_manager is not None
-                        
+
                         # Note: If checkpoint.file_selections is None (not serialized properly),
                         # file selection won't be restored. For now, verify file manager exists
                         # and can be used (restoration tested separately when serialization works)
                         assert new_file_manager is not None
                         # File selection restoration depends on checkpoint serialization
                         # which may not be working for binary format yet
-                        
+
                         await new_session.stop()
-                        
+
                     finally:
                         await session.stop()
 
@@ -590,21 +588,22 @@ class TestFileSelectionCheckpointResume:
     ):
         """Test that file progress is preserved in checkpoint."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary to avoid JSON serialization issues
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -613,18 +612,17 @@ class TestFileSelectionCheckpointResume:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -637,32 +635,32 @@ class TestFileSelectionCheckpointResume:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None, "Torrent session was not created"
-                        
+
                         # Wait for session to initialize components (piece manager, file manager, etc.)
                         # but don't wait for tracker announces or download to start
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None and
-                                hasattr(torrent_session, 'file_selection_manager') and
+                                hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None, "File selection manager was not initialized"
-                        
+
                         # Simulate some download progress
                         await file_manager.update_file_progress(0, 10000)
                         await file_manager.update_file_progress(1, 20000)
-                        
+
                         # Save checkpoint
                         await torrent_session._save_checkpoint()
-                        
+
                         # Verify checkpoint was saved with progress tracked in file manager
                         checkpoint_manager = torrent_session.checkpoint_manager
                         checkpoint = await checkpoint_manager.load_checkpoint(info_hash_bytes)
@@ -674,7 +672,7 @@ class TestFileSelectionCheckpointResume:
                         assert file_state_1 is not None
                         assert file_state_0.bytes_downloaded == 10000
                         assert file_state_1.bytes_downloaded == 20000
-                        
+
                     finally:
                         await session.stop()
 
@@ -692,20 +690,21 @@ class TestFileSelectionPriorityWorkflows:
     ):
         """Test that higher priority files are selected first in sequential mode."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -714,18 +713,17 @@ class TestFileSelectionPriorityWorkflows:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -738,43 +736,43 @@ class TestFileSelectionPriorityWorkflows:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None, "Torrent session was not created"
-                        
+
                         # Wait for session to initialize components (piece manager, file manager, etc.)
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None and
-                                hasattr(torrent_session, 'file_selection_manager') and
+                                hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None, "File selection manager was not initialized"
-                        
+
                         # Set priorities
                         await file_manager.set_file_priority(0, FilePriority.MAXIMUM)
                         await file_manager.set_file_priority(1, FilePriority.NORMAL)
                         await file_manager.set_file_priority(2, FilePriority.LOW)
-                        
+
                         # Set sequential selection strategy
                         torrent_session.piece_manager.piece_selection_strategy = "sequential"
-                        
+
                         # Missing pieces should prioritize MAXIMUM priority files
                         missing = torrent_session.piece_manager.get_missing_pieces()
-                        
+
                         # File 0 (MAXIMUM) has pieces 0 and 1
                         # These should be in the missing list since file 0 is selected
                         assert 0 in missing
                         assert 1 in missing
-                        
+
                         # Other pieces should also be there
                         assert len(missing) == 5  # All pieces missing initially
-                        
+
                     finally:
                         await session.stop()
 
@@ -787,20 +785,21 @@ class TestFileSelectionPriorityWorkflows:
     ):
         """Test that deselected files prevent their pieces from being downloaded."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = False
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -809,18 +808,17 @@ class TestFileSelectionPriorityWorkflows:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -833,38 +831,38 @@ class TestFileSelectionPriorityWorkflows:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None, "Torrent session was not created"
-                        
+
                         # Wait for session to initialize components (piece manager, file manager, etc.)
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'piece_manager') and 
+                            if (hasattr(torrent_session, "piece_manager") and
                                 torrent_session.piece_manager is not None and
-                                hasattr(torrent_session, 'file_selection_manager') and
+                                hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None, "File selection manager was not initialized"
-                        
+
                         # Deselect file 0
                         await file_manager.deselect_file(0)
-                        
+
                         # Missing pieces should not include pieces for file 0
                         missing = torrent_session.piece_manager.get_missing_pieces()
                         assert 0 not in missing
                         assert 1 not in missing  # Piece 1 also belongs to file 0
-                        
+
                         # But pieces for other files should still be missing
                         # File 1 has pieces 2, 3, 4
                         # File 2 has piece 4
                         # So pieces 2, 3, 4 should be in missing
                         assert 2 in missing or 3 in missing or 4 in missing
-                        
+
                     finally:
                         await session.stop()
 
@@ -882,19 +880,20 @@ class TestFileSelectionSessionIntegration:
     ):
         """Test that FileSelectionManager is automatically created for multi-file torrents."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -903,18 +902,17 @@ class TestFileSelectionSessionIntegration:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add multi-file torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -927,11 +925,11 @@ class TestFileSelectionSessionIntegration:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         # FileSelectionManager should be created
                         assert torrent_session is not None
                         assert torrent_session.file_selection_manager is not None
-                        
+
                     finally:
                         await session.stop()
 
@@ -943,19 +941,20 @@ class TestFileSelectionSessionIntegration:
     ):
         """Test that FileSelectionManager is not created for single-file torrents (optional)."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -964,13 +963,12 @@ class TestFileSelectionSessionIntegration:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add single-file torrent
                         torrent_data = create_test_torrent_dict(
@@ -978,10 +976,10 @@ class TestFileSelectionSessionIntegration:
                             info_hash=b"\x01" * 20,
                             file_length=16384,
                         )
-                        
+
                         info_hash_hex = await session.add_torrent(torrent_data)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -994,12 +992,12 @@ class TestFileSelectionSessionIntegration:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         # FileSelectionManager might be None for single-file torrents
                         # (depends on implementation - currently we create it if files exist)
                         # For now, we'll just check the session exists
                         assert torrent_session is not None
-                        
+
                     finally:
                         await session.stop()
 
@@ -1012,21 +1010,22 @@ class TestFileSelectionSessionIntegration:
     ):
         """Test that file selection persists when torrent is restarted."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Mock AsyncTrackerClient at class level to prevent network calls
         mock_tracker = MagicMock()
         mock_tracker.start = AsyncMock(return_value=None)
         mock_tracker.stop = AsyncMock(return_value=None)
         mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
         mock_tracker._session_manager = None
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         session.config.disk.checkpoint_enabled = True
         session.config.disk.checkpoint_format = "binary"  # Use binary to avoid JSON serialization issues
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Mock DHT client and tracker client to avoid network initialization
         with patch.object(session, "_make_dht_client", return_value=None):
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
@@ -1035,18 +1034,17 @@ class TestFileSelectionSessionIntegration:
                 async def mock_wait_for_starting_session(self, session):
                     """Mock that returns immediately without waiting."""
                     # Set status to 'downloading' to allow test to proceed
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
-                
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
-                    
+
                     try:
                         # Add torrent
                         info_hash_hex = await session.add_torrent(multi_file_torrent_dict)
                         info_hash_bytes = bytes.fromhex(info_hash_hex)
-                        
+
                         # Get torrent session - wait for it to be created
                         max_wait = 5.0
                         wait_interval = 0.1
@@ -1059,45 +1057,45 @@ class TestFileSelectionSessionIntegration:
                                 break
                             await asyncio.sleep(wait_interval)
                             waited += wait_interval
-                        
+
                         assert torrent_session is not None
-                        
+
                         # Wait for session to initialize components
                         max_init_wait = 3.0
                         init_waited = 0.0
                         while init_waited < max_init_wait:
-                            if (hasattr(torrent_session, 'file_selection_manager') and
+                            if (hasattr(torrent_session, "file_selection_manager") and
                                 torrent_session.file_selection_manager is not None):
                                 break
                             await asyncio.sleep(wait_interval)
                             init_waited += wait_interval
-                        
+
                         file_manager = torrent_session.file_selection_manager
                         assert file_manager is not None
-                        
+
                         # Modify selection
                         await file_manager.deselect_file(0)
                         await file_manager.set_file_priority(1, FilePriority.HIGH)
-                        
+
                         # Save checkpoint
                         await torrent_session._save_checkpoint()
-                        
+
                         # Pause and resume torrent
                         await torrent_session.pause()
-                        
+
                         # Verify state before restart
                         assert not file_manager.is_file_selected(0)
                         assert file_manager.get_file_priority(1) == FilePriority.HIGH
-                        
+
                         # Resume
                         await torrent_session.resume()
-                        
+
                         # Verify state after restart (should be restored from checkpoint)
                         resumed_file_manager = torrent_session.file_selection_manager
                         if resumed_file_manager:
                             assert not resumed_file_manager.is_file_selected(0)
                             assert resumed_file_manager.get_file_priority(1) == FilePriority.HIGH
-                        
+
                     finally:
                         await session.stop()
 

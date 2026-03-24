@@ -1,7 +1,7 @@
 """Comprehensive unit tests for uTP covering all methods and edge cases."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -147,7 +147,7 @@ class TestPacketHandling:
         """Test handling RESET packet."""
         connection.state = UTPConnectionState.CONNECTED
         connection.transport = MagicMock()
-        
+
         reset_packet = UTPPacket(
             type=UTPPacketType.ST_RESET,
             connection_id=12345,
@@ -160,7 +160,7 @@ class TestPacketHandling:
 
         # Should transition to RESET
         assert connection.state == UTPConnectionState.RESET
-        
+
         # Give async close task time to complete
         await asyncio.sleep(0.1)
 
@@ -180,10 +180,10 @@ class TestPacketHandling:
 
         # Should handle gracefully (possible collision)
         connection._handle_reset_packet(reset_packet)
-        
+
         # Should transition to RESET state
         assert connection.state == UTPConnectionState.RESET
-        
+
         # Give async close task time to complete
         await asyncio.sleep(0.1)
 
@@ -251,7 +251,6 @@ class TestSendRateCalculation:
         connection.last_timestamp_diff = 30000  # 30ms (below target)
 
         # Mock time
-        import time
 
         with patch("time.perf_counter", return_value=0.2):
             rate = connection._calculate_send_rate()
@@ -445,7 +444,7 @@ class TestSequenceNumberHandling:
         assert connection._is_sequence_acked(50, 100) is True
         # Normal case - seq after ack_nr
         assert connection._is_sequence_acked(150, 100) is False
-        
+
         # Test wraparound logic
         # When ack_nr is 0x0001, sequences 0xFFFF and 0x0000 are acked
         # (wrapped around)
@@ -521,7 +520,10 @@ class TestExtensionNegotiation:
 
     def test_process_extension_not_supported(self, connection):
         """Test processing extension we don't support."""
-        from ccbt.transport.utp_extensions import WindowScalingExtension, UTPExtensionType
+        from ccbt.transport.utp_extensions import (
+            UTPExtensionType,
+            WindowScalingExtension,
+        )
 
         # Remove window scaling from supported
         connection.supported_extensions.discard(UTPExtensionType.WINDOW_SCALING)
@@ -529,10 +531,10 @@ class TestExtensionNegotiation:
         assert UTPExtensionType.WINDOW_SCALING not in connection.supported_extensions
 
         peer_extensions = [WindowScalingExtension(scale_factor=2)]
-        
+
         # Store initial negotiated extensions
         initial_negotiated = connection.negotiated_extensions.copy()
-        
+
         connection._process_extension_negotiation(peer_extensions)
 
         # Should not negotiate (we don't support it)

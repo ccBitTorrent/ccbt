@@ -7,12 +7,9 @@ Tests the new config methods in:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-import aiohttp
 import pytest
 
 from ccbt.executor.session_adapter import DaemonSessionAdapter, LocalSessionAdapter

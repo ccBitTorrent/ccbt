@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -34,11 +34,10 @@ class TestCheckpointsD100Fix:
         """Test that source code has module docstring (D100 fix verification)."""
         # Read source file to verify fix
         import ccbt.cli.checkpoints as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
+
         # Check that module docstring exists (should be at the top, after __future__ import)
         lines = source.splitlines()
         found_docstring = False
@@ -47,7 +46,7 @@ class TestCheckpointsD100Fix:
                 if '"""' in line or "'''" in line:
                     found_docstring = True
                     break
-        
+
         assert found_docstring, "Module should have docstring at the top (D100 fix)"
 
 
@@ -58,11 +57,10 @@ class TestCheckpointsTC001TC002Fixes:
         """Test that ConfigManager is in TYPE_CHECKING block (TC001 fix)."""
         # Read source file to verify fix
         import ccbt.cli.checkpoints as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
+
         # Check that ConfigManager is imported inside TYPE_CHECKING block
         lines = source.splitlines()
         in_type_checking = False
@@ -79,18 +77,17 @@ class TestCheckpointsTC001TC002Fixes:
                 # Check if we've left the TYPE_CHECKING block
                 if not line.startswith(" ") and not line.startswith("\t"):
                     in_type_checking = False
-        
+
         assert found_config_manager, "ConfigManager import should exist (TC001 fix)"
 
     def test_console_in_type_checking_block(self):
         """Test that Console is in TYPE_CHECKING block (TC002 fix)."""
         # Read source file to verify fix
         import ccbt.cli.checkpoints as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
+
         # Check that Console is imported inside TYPE_CHECKING block
         lines = source.splitlines()
         in_type_checking = False
@@ -98,7 +95,7 @@ class TestCheckpointsTC001TC002Fixes:
         for i, line in enumerate(lines):
             if "if TYPE_CHECKING:" in line:
                 in_type_checking = True
-            elif "from rich.console import Console" in line or "Console" in line and "rich.console" in line:
+            elif "from rich.console import Console" in line or ("Console" in line and "rich.console" in line):
                 found_console = True
                 assert in_type_checking, \
                     "Console should be imported inside TYPE_CHECKING block (TC002 fix)"
@@ -107,15 +104,14 @@ class TestCheckpointsTC001TC002Fixes:
                 # Check if we've left the TYPE_CHECKING block
                 if not line.startswith(" ") and not line.startswith("\t"):
                     in_type_checking = False
-        
+
         assert found_console, "Console import should exist (TC002 fix)"
 
     def test_type_checking_imports_not_available_at_runtime(self):
         """Test that TYPE_CHECKING imports are not available at module level (TC001/TC002 fix)."""
         # ConfigManager and Console should not be directly importable from module
         # They should only be available as type hints
-        import ccbt.cli.checkpoints as mod
-        
+
         # These should not be in the module's __dict__ at runtime
         # (They're only available for type checking)
         # However, we can't easily test this without type checking tools
@@ -187,12 +183,12 @@ class TestCheckpointsD103Fixes:
             checkpoints_mod.restore_checkpoint,
             checkpoints_mod.migrate_checkpoint,
         ]
-        
+
         functions_without_docstrings = []
         for func in functions_to_check:
             if not func.__doc__ or not func.__doc__.strip():
                 functions_without_docstrings.append(func.__name__)
-        
+
         assert len(functions_without_docstrings) == 0, \
             f"All functions should have docstrings (D103 fix). Missing: {functions_without_docstrings}"
 
@@ -204,11 +200,11 @@ class TestCheckpointsFunctionCompatibility:
         """Test that list_checkpoints function signature is correct after fixes."""
         sig = inspect.signature(checkpoints_mod.list_checkpoints)
         params = list(sig.parameters.keys())
-        
+
         # Verify expected parameters exist
         assert "config_manager" in params
         assert "console" in params
-        
+
         # Verify type hints use string literals (from TYPE_CHECKING)
         config_manager_param = sig.parameters["config_manager"]
         assert isinstance(config_manager_param.annotation, str) or "ConfigManager" in str(config_manager_param.annotation), \
@@ -219,7 +215,7 @@ class TestCheckpointsFunctionCompatibility:
     def test_list_checkpoints_execution(self, mock_checkpoint_manager_class, mock_asyncio_run):
         """Test that list_checkpoints executes correctly after fixes."""
         from types import SimpleNamespace
-        
+
         # Mock checkpoint manager
         mock_checkpoint_manager = MagicMock()
         mock_checkpoint = SimpleNamespace(
@@ -231,17 +227,17 @@ class TestCheckpointsFunctionCompatibility:
         )
         mock_asyncio_run.return_value = [mock_checkpoint]
         mock_checkpoint_manager_class.return_value = mock_checkpoint_manager
-        
+
         # Mock config manager
         mock_config_manager = MagicMock()
         mock_config_manager.config.disk = MagicMock()
-        
+
         # Mock console
         mock_console = MagicMock()
-        
+
         # Call function
         checkpoints_mod.list_checkpoints(mock_config_manager, mock_console)
-        
+
         # Verify it was called
         mock_checkpoint_manager_class.assert_called_once()
         mock_asyncio_run.assert_called_once()
@@ -258,7 +254,7 @@ class TestCheckpointsFunctionCompatibility:
             checkpoints_mod.restore_checkpoint,
             checkpoints_mod.migrate_checkpoint,
         ]
-        
+
         for func in functions:
             assert callable(func), f"{func.__name__} should be callable"
 

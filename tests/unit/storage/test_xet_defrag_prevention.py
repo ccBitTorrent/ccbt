@@ -6,13 +6,11 @@ Tests fragmentation detection, prevention, and optimization.
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 
 import pytest
 
-from ccbt.storage.xet_defrag_prevention import XetDefragPrevention
 from ccbt.storage.xet_deduplication import XetDeduplication
-
+from ccbt.storage.xet_defrag_prevention import XetDefragPrevention
 
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 

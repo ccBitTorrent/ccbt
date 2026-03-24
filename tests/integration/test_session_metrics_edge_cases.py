@@ -18,13 +18,13 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_start_stop_without_torrents(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics lifecycle when session has no torrents."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
 
@@ -44,7 +44,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_multiple_start_calls(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
@@ -55,10 +55,10 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         Also ensure proper cleanup between starts to prevent port conflicts.
         """
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # First start
         await session.start()
         metrics1 = session.metrics
@@ -82,13 +82,13 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_multiple_stop_calls(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test behavior when stop() is called multiple times."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
 
@@ -105,13 +105,13 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_metrics_after_exception_during_stop(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics state after exception during torrent stop."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
 
@@ -120,7 +120,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         # Check that remove_torrent handles errors gracefully
         # We'll test by trying to remove a non-existent torrent
         # which should not affect metrics shutdown
-        
+
         # Metrics should be initialized if enabled
         initial_metrics = session.metrics
 
@@ -133,22 +133,22 @@ class TestAsyncSessionManagerMetricsEdgeCases:
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_config_dynamic_change(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics when config changes between start/stop."""
-        from ccbt.monitoring import shutdown_metrics
         import ccbt.monitoring as monitoring_module
+        from ccbt.monitoring import shutdown_metrics
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Ensure clean state
         await shutdown_metrics()
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Start with metrics enabled
         mock_config_enabled.observability.enable_metrics = True
         await session.start()
@@ -162,38 +162,38 @@ class TestAsyncSessionManagerMetricsEdgeCases:
         await session.stop()
         # Wait for ports to be released
         await asyncio.sleep(0.5)
-        
+
         # Reset singleton so new config is read
         await shutdown_metrics()
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
-        
+
         # CRITICAL: Update session's config reference to reflect the changed mock config
         # The session reads config in __init__, so we need to update it
         session.config = mock_config_enabled
-        
+
         # Re-apply network mocks before second start
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         await session.start()
 
         # Metrics should reflect new config (disabled)
         assert session.metrics is None
 
         await session.stop()
-        
+
         # Final cleanup
         await shutdown_metrics()
 
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_metrics_accessible_after_partial_failure(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics accessibility even if some components fail."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
 
@@ -223,6 +223,7 @@ class TestAsyncSessionManagerMetricsEdgeCases:
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test
@@ -244,16 +245,16 @@ def mock_config_enabled(monkeypatch):
     mock_observability.event_bus_throttle_monitoring_heartbeat = 1.0
     mock_observability.event_bus_throttle_global_metrics_update = 0.5
     mock_config.observability = mock_observability
-    
+
     # Network config
     mock_config.network = Mock()
     mock_config.network.max_global_peers = 100
     mock_config.network.connection_timeout = 30.0
-    
+
     # NAT config
     mock_config.nat = Mock()
     mock_config.nat.auto_map_ports = False
-    
+
     # Discovery config
     mock_config.discovery = Mock()
     mock_config.discovery.enable_dht = False

@@ -276,7 +276,7 @@ class TestEndToEndScrapeHTTP:
         self, session_manager
     ):
         """Test scrape flow with TorrentInfo model."""
-        from ccbt.models import TorrentInfo, FileInfo
+        from ccbt.models import FileInfo, TorrentInfo
         from ccbt.session.session import AsyncTorrentSession
 
         info_hash = b"x" * 20

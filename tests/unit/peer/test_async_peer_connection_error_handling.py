@@ -18,7 +18,6 @@ Covers missing lines:
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,10 +29,9 @@ pytestmark = [pytest.mark.unit, pytest.mark.peer]
 from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
-    ConnectionState,
     PeerConnectionError,
 )
-from ccbt.peer.peer import Handshake, PeerInfo
+from ccbt.peer.peer import PeerInfo
 from ccbt.protocols.bittorrent_v2 import (
     FileTreeRequest,
     FileTreeResponse,
@@ -312,7 +310,7 @@ class TestEncryptionHandshake:
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
         mock_encryption_mode_class = MagicMock(return_value=EncryptionMode.REQUIRED)
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
@@ -346,7 +344,7 @@ class TestEncryptionHandshake:
 
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
@@ -369,19 +367,18 @@ class TestEncryptionHandshake:
 
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
-        ):
-            with pytest.raises(PeerConnectionError, match="Encryption required but failed"):
-                try:
-                    await mock_mse.initiate_as_initiator(None, None, None)
-                except Exception as e:
-                    # Test the exception path for REQUIRED mode
-                    if EncryptionMode.REQUIRED != EncryptionMode.DISABLED:
-                        err_text = f"Encryption required but failed: {e}"
-                        raise PeerConnectionError(err_text) from e
+        ), pytest.raises(PeerConnectionError, match="Encryption required but failed"):
+            try:
+                await mock_mse.initiate_as_initiator(None, None, None)
+            except Exception as e:
+                # Test the exception path for REQUIRED mode
+                if EncryptionMode.REQUIRED != EncryptionMode.DISABLED:
+                    err_text = f"Encryption required but failed: {e}"
+                    raise PeerConnectionError(err_text) from e
 
     @pytest.mark.asyncio
     async def test_encryption_preferred_exception(self, async_peer_manager):
@@ -394,7 +391,7 @@ class TestEncryptionHandshake:
 
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
@@ -402,7 +399,7 @@ class TestEncryptionHandshake:
             # PREFERRED mode should log and continue
             try:
                 await mock_mse.initiate_as_initiator(None, None, None)
-            except Exception as e:
+            except Exception:
                 # Test the exception path for PREFERRED mode (should not raise)
                 if EncryptionMode.PREFERRED != EncryptionMode.REQUIRED:
                     # Should log and continue, not raise

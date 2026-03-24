@@ -551,13 +551,20 @@ class StatusLoop:
                                 hash_verification_failures,
                                 self.s.info.name,
                             )
-                    if peer_manager and hasattr(
-                        peer_manager, "_schedule_pending_resume"
-                    ):
+                    request_resume = (
+                        getattr(peer_manager, "request_pending_resume", None)
+                        if peer_manager is not None
+                        else None
+                    )
+                    if callable(request_resume):
                         with contextlib.suppress(Exception):
-                            peer_manager._schedule_pending_resume(  # noqa: SLF001
-                                reason="status_loop_stall"
-                            )
+                            request_resume(reason="status_loop_stall")
+
+                with contextlib.suppress(Exception):
+                    self.s._touch_swarm_usefulness_latency_metrics(  # noqa: SLF001
+                        int(requestable_peers or 0),
+                        int(productive_peers or 0),
+                    )
 
                 # Update cached status (canonical keys; preserve byte counters)
                 # Use setattr to avoid SLF001 for internal cache

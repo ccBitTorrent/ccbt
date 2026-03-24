@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -1155,7 +1155,6 @@ class TestAsyncTrackerClient:
         # This test is covered by test_parse_scrape_response_success which tests the parsing logic
         # The scrape method's async HTTP context manager is difficult to mock, so we test
         # the parsing logic separately
-        pass
 
     @pytest.mark.asyncio
     async def test_scrape_non_200_status(self, client, torrent_data):
@@ -1188,7 +1187,7 @@ class TestAsyncTrackerClient:
                 # Mock the session.get to raise exception during context manager entry
                 # This will trigger the general exception handler (line 693-695)
                 mock_get = AsyncMock(side_effect=Exception("Network error"))
-                
+
                 with patch.object(client.session, "get", mock_get):
                     with patch.object(client.logger, "exception") as mock_log:
                         result = await client.scrape(torrent_data)
@@ -1645,9 +1644,8 @@ class TestTrackerClientExpanded:
     def test_make_request_http_error(self, mock_request, mock_urlopen):
         """Test _make_request handles HTTPError (lines 649-650)."""
         import urllib.error
-
         from email.message import Message
-        
+
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url="http://example.com",
             code=404,

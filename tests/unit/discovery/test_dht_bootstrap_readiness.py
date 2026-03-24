@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from types import SimpleNamespace
@@ -71,6 +72,61 @@ async def test_zero_node_rebootstrap_suppresses_duplicate_inflight() -> None:
 
     await asyncio.sleep(0.08)
     assert client._zero_node_rebootstrap_task is None
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_lock_serializes_concurrent_bootstrap_calls() -> None:
+    client = _make_stub_client()
+    client._bootstrap_lock = asyncio.Lock()
+    active = 0
+    max_active = 0
+    call_reasons: list[str] = []
+
+    async def _bootstrap_core(reason: str = "bootstrap") -> None:
+        nonlocal active, max_active
+        call_reasons.append(reason)
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+
+    client._bootstrap_core = _bootstrap_core  # type: ignore[method-assign]
+
+    await asyncio.gather(
+        client._bootstrap(reason="unit:first"),
+        client._bootstrap(reason="unit:second"),
+    )
+
+    assert max_active == 1
+    assert sorted(call_reasons) == ["unit:first", "unit:second"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_loop_empty_routing_uses_bounded_scheduler() -> None:
+    client = AsyncDHTClient()
+    client.routing_table.nodes.clear()
+
+    with patch.object(
+        client,
+        "_calculate_adaptive_interval",
+        return_value=0.01,
+    ), patch.object(
+        client,
+        "_schedule_zero_node_rebootstrap",
+        return_value=True,
+    ) as schedule_mock, patch.object(
+        client,
+        "rebootstrap",
+        new_callable=AsyncMock,
+    ) as rebootstrap_mock:
+        task = asyncio.create_task(client._refresh_loop())
+        await asyncio.sleep(0.03)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    assert schedule_mock.called
+    rebootstrap_mock.assert_not_awaited()
 
 
 def test_bootstrap_outer_wait_budget_uses_client_wall_clock() -> None:

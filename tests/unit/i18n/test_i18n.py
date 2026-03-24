@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-
-import pytest
 
 from ccbt.i18n import (
     DEFAULT_LOCALE,
@@ -22,7 +19,7 @@ def test_get_locale_default() -> None:
     # Clear environment
     old_locale = os.environ.pop("CCBT_LOCALE", None)
     old_lang = os.environ.pop("LANG", None)
-    
+
     try:
         locale = get_locale()
         assert locale == DEFAULT_LOCALE or len(locale) == 2
@@ -36,7 +33,7 @@ def test_get_locale_default() -> None:
 def test_set_locale() -> None:
     """Test setting locale."""
     old_locale = os.environ.get("CCBT_LOCALE")
-    
+
     try:
         set_locale("es")
         assert os.environ.get("CCBT_LOCALE") == "es"
@@ -59,13 +56,13 @@ def test_translation_manager() -> None:
     """Test TranslationManager."""
     manager = TranslationManager(None)
     assert manager.config is None
-    
+
     # Test with mock config
     class MockConfig:
         class UI:
             locale = "es"
         ui = UI()
-    
+
     manager = TranslationManager(MockConfig())
     assert get_locale() == "es" or True  # May not persist due to module-level state
 

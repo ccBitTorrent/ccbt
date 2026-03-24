@@ -376,10 +376,10 @@ async def test_announce_loop_handles_exception_gracefully(monkeypatch):
     # Create new event that is NOT set
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
-    
+
     # Note: Ensure session.info exists and has proper structure
     # The announce loop needs valid session state
-    if not hasattr(session, 'info') or session.info is None:
+    if not hasattr(session, "info") or session.info is None:
         from ccbt.session.session import TorrentSessionInfo
         session.info = TorrentSessionInfo(
             info_hash=b"1" * 20,
@@ -428,20 +428,20 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
     session.download_manager = _DM()
     session.on_status_update = _cb
     session._stop_event = asyncio.Event()
-    
+
     # Note: StatusLoop uses get_status() method on session (async method)
     # Mock get_status to return status dict
     async def mock_get_status():
         return {"progress": 0.5, "peers": 0, "connected_peers": 0, "download_rate": 0.0, "upload_rate": 0.0}
     session.get_status = mock_get_status
-    
+
     # Note: Ensure peer_manager doesn't cause AttributeError
     # StatusLoop checks: getattr(self.s.download_manager, "peer_manager", None) or self.s.peer_manager
     # Set it to None to avoid AttributeError
     session.peer_manager = None
     # Also ensure download_manager doesn't have peer_manager
-    if hasattr(session.download_manager, 'peer_manager'):
-        delattr(session.download_manager, 'peer_manager')
+    if hasattr(session.download_manager, "peer_manager"):
+        delattr(session.download_manager, "peer_manager")
 
     task = asyncio.create_task(session._status_loop())
     await asyncio.sleep(0.15)  # Allow more time for loop to run
@@ -513,18 +513,11 @@ async def test_announce_loop_prioritizes_tracker_replacement_peers(monkeypatch):
 
     connected_peer_lists = []
 
-    class _MockPeerConnectionHelper:
-        def __init__(self, _session):  # noqa: ARG002
-            # keep lightweight helper stub
-            pass
+    async def capture_ingress(peers, **_kwargs):
+        connected_peer_lists.append(peers)
+        return len(peers)
 
-        async def connect_peers_to_download(self, peers):
-            connected_peer_lists.append(peers)
-
-    monkeypatch.setattr(
-        "ccbt.session.peers.PeerConnectionHelper",
-        _MockPeerConnectionHelper,
-    )
+    session._ingest_tracker_discovery_peers = capture_ingress  # type: ignore[method-assign]
 
     session.download_manager = SimpleNamespace(
         peer_manager=SimpleNamespace(),
@@ -541,7 +534,7 @@ async def test_announce_loop_prioritizes_tracker_replacement_peers(monkeypatch):
 
     loop = AnnounceLoop(session)
     task = asyncio.create_task(loop.run())
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.08)
     session._stop_event.set()
     task.cancel()
     try:

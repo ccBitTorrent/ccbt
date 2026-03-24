@@ -404,7 +404,7 @@ class TestSSLPeerConnectionWrap:
                     if obj is asyncio and attr == "start_tls":
                         return None
                     return original_getattr(obj, attr, default)
-                
+
                 with patch("ccbt.peer.ssl_peer.getattr", side_effect=mock_getattr):
                     reader, writer, ssl_enabled = await connection.wrap_connection(
                         mock_reader, mock_writer, "127.0.0.1", 6881, opportunistic=True
@@ -447,7 +447,7 @@ class TestSSLPeerConnectionWrap:
                     if obj is asyncio and attr == "start_tls":
                         return None
                     return original_getattr(obj, attr, default)
-                
+
                 with patch("ccbt.peer.ssl_peer.getattr", side_effect=mock_getattr):
                     with pytest.raises(RuntimeError, match="asyncio.start_tls not available"):
                         await connection.wrap_connection(
@@ -542,7 +542,7 @@ class TestSSLPeerConnectionWrap:
             mock_writer = AsyncMock(spec=asyncio.StreamWriter)
 
             # Mock the method to return None since SSL extension is disabled by default
-            with patch.object(connection.config.security, 'ssl', None):
+            with patch.object(connection.config.security, "ssl", None):
                 result = await connection.negotiate_ssl_after_handshake(
                     mock_reader, mock_writer, "peer_id_123", "127.0.0.1", 6881
                 )
@@ -592,7 +592,7 @@ class TestSSLPeerConnectionNegotiation:
             config = MagicMock()
             config.security.ssl.enable_ssl_peers = False
             mock_get_config.return_value = config
-            
+
             connection = SSLPeerConnection()
             connection.config = config
 

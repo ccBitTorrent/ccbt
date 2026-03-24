@@ -24,7 +24,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.security]
 @pytest_asyncio.fixture
 async def mock_config_with_encryption():
     """Create mock config with encryption enabled."""
-    from ccbt.config.config import get_config
     from unittest.mock import MagicMock
 
     mock_config = MagicMock()
@@ -423,7 +422,6 @@ class TestEncryptionFullFlow:
     @pytest.mark.asyncio
     async def test_full_encrypted_peer_connection_flow(self):
         """Test full encrypted peer connection flow."""
-        from ccbt.security.ciphers.rc4 import RC4Cipher
         from ccbt.security.dh_exchange import DHPeerExchange
         from ccbt.security.mse_handshake import MSEHandshake
 

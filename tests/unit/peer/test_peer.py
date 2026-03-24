@@ -8,26 +8,26 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
 from ccbt.peer.peer import (
+    AsyncMessageDecoder,
     BitfieldMessage,
     CancelMessage,
     ChokeMessage,
     Handshake,
     HandshakeError,
-    ParsedInboundPlainHandshake,
-    parse_plaintext_bittorrent_handshake,
     HaveMessage,
     InterestedMessage,
     KeepAliveMessage,
-    AsyncMessageDecoder,
     MessageError,
     MessageType,
     NotInterestedMessage,
+    ParsedInboundPlainHandshake,
     PeerInfoModel,
     PeerState,
     PieceMessage,
     RequestMessage,
     UnchokeMessage,
     create_message,
+    parse_plaintext_bittorrent_handshake,
 )
 
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 import contextlib
+from typing import Any
 
 # Functions removed from manager_startup - test disabled
 # from ccbt.session.manager_startup import (

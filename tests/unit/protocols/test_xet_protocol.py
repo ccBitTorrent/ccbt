@@ -6,14 +6,13 @@ and hybrid integration.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import ProtocolState, ProtocolType
 from ccbt.protocols.xet import XetProtocol
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 
@@ -39,7 +38,7 @@ class TestXetProtocol:
         # Mock DHT client so cas_client gets initialized
         mock_dht = AsyncMock()
         protocol.dht_client = mock_dht
-        
+
         with patch("ccbt.protocols.xet.P2PCASClient") as mock_cas_class:
             mock_cas = AsyncMock()
             mock_cas_class.return_value = mock_cas
@@ -111,8 +110,6 @@ class TestXetProtocol:
         """Test announcing torrent with Xet metadata."""
         # Create torrent info with Xet metadata
         from ccbt.models import XetTorrentMetadata
-
-        from ccbt.models import XetPieceMetadata
 
         xet_metadata = XetTorrentMetadata(
             chunk_hashes=[b"A" * 32, b"B" * 32],
@@ -588,7 +585,7 @@ class TestXetProtocol:
     @pytest.mark.asyncio
     async def test_scrape_from_dht_with_xet_metadata(self, protocol):
         """Test scraping from DHT with Xet metadata."""
-        from ccbt.models import XetTorrentMetadata, XetPieceMetadata
+        from ccbt.models import XetTorrentMetadata
 
         xet_metadata = XetTorrentMetadata(
             chunk_hashes=[b"C" * 32, b"D" * 32],

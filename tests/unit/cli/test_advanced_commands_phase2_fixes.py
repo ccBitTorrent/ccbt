@@ -31,16 +31,16 @@ class TestAdvancedCommandsD401Fix:
             func = cmd.callback
         else:
             func = cmd
-        
+
         # Check docstring
         docstring = func.__doc__
         assert docstring is not None, "performance function should have a docstring"
-        
+
         # Verify it's in imperative mood (starts with verb, not "Performance tuning")
         first_line = docstring.strip().split("\n")[0]
         assert first_line.startswith("Tune"), \
             f"Docstring should start with imperative verb (D401 fix). Got: {first_line}"
-        
+
         # Verify it doesn't end with period (imperative mood pattern)
         # Actually, imperative mood can have periods, but the key is it should be a command
         assert "tune" in first_line.lower() or "optimize" in first_line.lower(), \
@@ -50,16 +50,15 @@ class TestAdvancedCommandsD401Fix:
         """Test that source code has correct docstring (D401 fix verification)."""
         # Read source file to verify fix
         import ccbt.cli.advanced_commands as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
+
         # Find the performance function docstring (around line 255)
         lines = source.splitlines()
         for i, line in enumerate(lines):
             if i > 240 and i < 260:  # Around line 255
-                if 'def performance' in line:
+                if "def performance" in line:
                     # Check next few lines for docstring
                     for j in range(i + 1, min(i + 5, len(lines))):
                         if '"""' in lines[j]:
@@ -80,16 +79,16 @@ class TestAdvancedCommandsSIM102Fix:
         config = MagicMock()
         mock_get_config.return_value = config
         mock_apply.return_value = True
-        
+
         runner = CliRunner()
-        
+
         # Mock Confirm.ask to return True (user confirms)
         with patch.object(Confirm, "ask", return_value=True):
             result = runner.invoke(
                 advanced_commands_mod.performance,
                 ["--optimize", "--preset", "balanced", "--save"],
             )
-        
+
         # Should proceed with optimization
         assert "Applying" in result.output or "optimizations" in result.output.lower()
         mock_apply.assert_called_once()
@@ -100,16 +99,16 @@ class TestAdvancedCommandsSIM102Fix:
         """Test performance --optimize --save with cancellation (SIM102 fix logic)."""
         config = MagicMock()
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
-        
+
         # Mock Confirm.ask to return False (user cancels)
         with patch.object(Confirm, "ask", return_value=False):
             result = runner.invoke(
                 advanced_commands_mod.performance,
                 ["--optimize", "--preset", "balanced", "--save"],
             )
-        
+
         # Should cancel and not apply optimizations
         assert "cancelled" in result.output.lower() or "Cancelled" in result.output
         mock_apply.assert_not_called()
@@ -121,15 +120,15 @@ class TestAdvancedCommandsSIM102Fix:
         config = MagicMock()
         mock_get_config.return_value = config
         mock_apply.return_value = True
-        
+
         runner = CliRunner()
-        
+
         # No --save flag, so confirmation should not be asked
         result = runner.invoke(
             advanced_commands_mod.performance,
             ["--optimize", "--preset", "balanced"],
         )
-        
+
         # Should proceed without asking for confirmation (save=False, so combined if is False)
         mock_apply.assert_called_once()
 
@@ -137,11 +136,10 @@ class TestAdvancedCommandsSIM102Fix:
         """Test that source code has SIM102 fix (combined if statements)."""
         # Read source file to verify fix
         import ccbt.cli.advanced_commands as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
+
         # Find the SIM102 fix around line 278
         lines = source.splitlines()
         found_combined_if = False
@@ -151,10 +149,10 @@ class TestAdvancedCommandsSIM102Fix:
                 if "if save and not Confirm.ask" in line or "if save and not" in line:
                     found_combined_if = True
                     # Verify it's not nested (should be single if)
-                    assert "if save:" not in lines[i-1] or "if save:" not in lines[i], \
+                    assert "if save:" not in lines[i-1] or "if save:" not in line, \
                         "Should use combined if statement, not nested ifs (SIM102 fix)"
                     break
-        
+
         assert found_combined_if, \
             "Should find combined if statement (SIM102 fix) around line 278"
 
@@ -165,9 +163,9 @@ class TestAdvancedCommandsSIM102Fix:
         config = MagicMock()
         mock_get_config.return_value = config
         mock_apply.return_value = True
-        
+
         runner = CliRunner()
-        
+
         # Test case 1: save=True, confirm=True -> should apply
         with patch.object(Confirm, "ask", return_value=True):
             result1 = runner.invoke(
@@ -176,7 +174,7 @@ class TestAdvancedCommandsSIM102Fix:
             )
             mock_apply.assert_called()
             mock_apply.reset_mock()
-        
+
         # Test case 2: save=True, confirm=False -> should cancel
         with patch.object(Confirm, "ask", return_value=False):
             result2 = runner.invoke(
@@ -186,7 +184,7 @@ class TestAdvancedCommandsSIM102Fix:
             mock_apply.assert_not_called()
             assert "cancelled" in result2.output.lower()
             mock_apply.reset_mock()
-        
+
         # Test case 3: save=False -> should apply without asking
         result3 = runner.invoke(
             advanced_commands_mod.performance,
@@ -206,10 +204,10 @@ class TestAdvancedCommandsFunctionCompatibility:
             func = cmd.callback
         else:
             func = cmd
-        
+
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
-        
+
         # Verify expected parameters exist
         expected_params = [
             "analyze",
@@ -234,15 +232,15 @@ class TestAdvancedCommandsFunctionCompatibility:
         config.disk.direct_io = False
         config.disk.enable_io_uring = False
         mock_get_config.return_value = config
-        
+
         runner = CliRunner()
-        
+
         # Test analyze mode
         result = runner.invoke(
             advanced_commands_mod.performance,
             ["--analyze"],
         )
-        
+
         assert result.exit_code == 0
         assert "System & Config Analysis" in result.output
 

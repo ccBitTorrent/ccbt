@@ -177,7 +177,7 @@ class TestSimpleFunctionality:
 
     def test_tracker_response_creation(self):
         """Test tracker response creation."""
-        from ccbt.discovery.tracker_udp_client import TrackerResponse, TrackerAction
+        from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
 
         response = TrackerResponse(
             action=TrackerAction.ANNOUNCE,
@@ -278,12 +278,12 @@ class TestSimpleFunctionality:
 
         from ccbt.config.config import Config
         from ccbt.discovery.dht import AsyncDHTClient
+        from ccbt.discovery.pex import AsyncPexManager, PexPeer
+        from ccbt.discovery.tracker import TrackerResponse
+        from ccbt.peer.peer import PeerInfo, SocketOptimizer
         from ccbt.storage.disk_io import WriteRequest
         from ccbt.storage.file_assembler import FileSegment
         from ccbt.utils.metrics import MetricsCollector, PeerMetrics, TorrentMetrics
-        from ccbt.peer.peer import PeerInfo, SocketOptimizer
-        from ccbt.discovery.pex import AsyncPexManager, PexPeer
-        from ccbt.discovery.tracker import TrackerResponse
 
         # Create instances
         config = Config()

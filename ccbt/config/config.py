@@ -1,7 +1,10 @@
 """Configuration management for ccBitTorrent.
 
 Provides centralized configuration with TOML support, validation, hot-reload,
-and hierarchical loading from defaults → config file → environment → CLI → per-torrent.
+and deterministic effective precedence for static loads:
+file (base) → optimization profile overlay → environment → platform (Windows) clamp
+→ validated :class:`~ccbt.models.Config`. CLI and per-torrent overrides apply at
+their respective layers after this.
 """
 
 from __future__ import annotations
@@ -65,6 +68,7 @@ from ccbt.models import (
     Config,
     DiscoveryConfig,
     DiskConfig,
+    MaxPeersPerTorrentProvenance,
     NetworkConfig,
     ObservabilityConfig,
     OptimizationProfile,
@@ -85,6 +89,105 @@ IS_MACOS = sys.platform == "darwin"
 
 # Global configuration instance
 _config_manager: Optional[ConfigManager] = None
+
+
+def _optimization_profile_overlays() -> dict[
+    OptimizationProfile, dict[str, dict[str, Any]]
+]:
+    """Return optimization profile overlays merged during load (after file, before env)."""
+    return {
+        OptimizationProfile.BALANCED: {
+            "strategy": {
+                "piece_selection": "rarest_first",
+                "pipeline_capacity": 4,
+                "endgame_duplicates": 2,
+            },
+            "network": {
+                "max_peers_per_torrent": 50,
+                "max_global_peers": 200,
+            },
+            "discovery": {
+                "tracker_announce_interval": 60.0,
+            },
+            "optimization": {
+                "enable_adaptive_intervals": True,
+                "enable_performance_based_recycling": True,
+                "enable_bandwidth_aware_scheduling": True,
+            },
+        },
+        OptimizationProfile.SPEED: {
+            "strategy": {
+                "piece_selection": "bandwidth_weighted_rarest",
+                "pipeline_capacity": 8,
+                "endgame_duplicates": 3,
+            },
+            "network": {
+                "max_peers_per_torrent": 100,
+                "max_global_peers": 500,
+            },
+            "discovery": {
+                "tracker_announce_interval": 30.0,
+            },
+            "optimization": {
+                "enable_adaptive_intervals": True,
+                "enable_performance_based_recycling": True,
+                "speed_aggressive_peer_recycling": True,
+                "enable_bandwidth_aware_scheduling": True,
+            },
+        },
+        OptimizationProfile.EFFICIENCY: {
+            "strategy": {
+                "piece_selection": "adaptive_hybrid",
+                "pipeline_capacity": 6,
+                "endgame_duplicates": 2,
+            },
+            "network": {
+                "max_peers_per_torrent": 30,
+                "max_global_peers": 150,
+            },
+            "discovery": {
+                "tracker_announce_interval": 90.0,
+            },
+            "optimization": {
+                "enable_adaptive_intervals": True,
+                "enable_performance_based_recycling": True,
+                "efficiency_connection_limit_multiplier": 0.8,
+                "enable_bandwidth_aware_scheduling": True,
+            },
+        },
+        OptimizationProfile.LOW_RESOURCE: {
+            "strategy": {
+                "piece_selection": "rarest_first",
+                "pipeline_capacity": 2,
+                "endgame_duplicates": 1,
+            },
+            "network": {
+                "max_peers_per_torrent": 10,
+                "max_global_peers": 50,
+            },
+            "discovery": {
+                "tracker_announce_interval": 120.0,
+            },
+            "optimization": {
+                "enable_adaptive_intervals": False,
+                "enable_performance_based_recycling": False,
+                "low_resource_max_connections": 20,
+                "enable_bandwidth_aware_scheduling": False,
+            },
+        },
+        OptimizationProfile.CUSTOM: {},
+    }
+
+
+def resolve_effective_max_peers_per_torrent(
+    *,
+    network_cap: int,
+    per_torrent: Optional[int],
+) -> int:
+    """Return peer cap after global config; per-torrent option replaces when set (>= 0)."""
+    if per_torrent is not None and int(per_torrent) >= 0:
+        return int(per_torrent)
+    return int(network_cap)
 
 
 def _strip_inline_comment_suffix(text: str) -> str:
@@ -170,6 +273,14 @@ def _try_coerce_network_int(value: Any) -> Optional[int]:
     return None
 
 
+def _snapshot_max_peers_per_torrent(config_data: dict[str, Any]) -> Optional[int]:
+    """Return coerced ``network.max_peers_per_torrent`` from raw load data, if present."""
+    net = config_data.get("network")
+    if not isinstance(net, dict):
+        return None
+    return _try_coerce_network_int(net.get("max_peers_per_torrent"))
+
+
 class ConfigManager:
     """Manages configuration loading, validation, and hot-reload."""
 
@@ -184,11 +295,10 @@ class ConfigManager:
         self._hot_reload_task: Optional[asyncio.Task] = None
         self._encryption_key: Optional[bytes] = None
         self.config_file = self._find_config_file(config_file)
+        self.max_peers_per_torrent_provenance: Optional[
+            MaxPeersPerTorrentProvenance
+        ] = None
         self.config = self._load_config()
-
-        # Apply optimization profile if specified (after config is loaded)
-        if self.config.optimization.profile != OptimizationProfile.CUSTOM:
-            self.apply_profile()
 
         self._setup_logging()
 
@@ -330,24 +440,40 @@ class ConfigManager:
                     logging.warning("Failed to decrypt proxy password: %s", e)
 
     def _apply_env_windows_and_build_config(
-        self, config_data: dict[str, Any]
+        self,
+        config_data: dict[str, Any],
+        *,
+        provenance_profile: Optional[OptimizationProfile] = None,
+        provenance_after_file_mpt: Optional[int] = None,
+        provenance_after_profile_mpt: Optional[int] = None,
     ) -> Config:
-        """Merge env, apply Windows network caps, and construct ``Config``."""
+        """Merge env, apply Windows network caps, construct ``Config``, record MPT provenance.
+
+        Precedence before this step: file (base) → optimization profile overlay →
+        (this method) environment → Windows compatibility clamp → ``Config`` validation.
+        Per-torrent caps are applied later in session/peer setup, not here.
+        """
         env_config = self._get_env_config()
         config_data = self._merge_config(config_data, env_config)
         _strip_inline_comments_deep(config_data)
         _prune_empty_string_config_values(config_data)
 
+        mpt_after_env = _snapshot_max_peers_per_torrent(config_data)
+        env_ccbt_mpt_set = "CCBT_MAX_PEERS_PER_TORRENT" in os.environ
+
+        win_strict_effective = False
         if IS_WINDOWS and "network" in config_data:
             network_config = config_data.get("network", {})
             strict_raw = os.environ.get("CCBT_WINDOWS_NETWORK_COMPAT_STRICT", "true")
-            win_strict = str(strict_raw).strip().lower() not in (
+            win_strict_effective = str(strict_raw).strip().lower() not in (
                 "0",
                 "false",
                 "no",
                 "off",
             )
-            if win_strict:
+            # Windows caps apply here during env merge. Additional network limit tweaks may
+            # run later via config_conditional (e.g. interface-count-based max_global_peers).
+            if win_strict_effective:
                 mgp_raw = network_config.get("max_global_peers", 600)
                 mgp = _try_coerce_network_int(mgp_raw)
                 if mgp is not None and mgp > 200:
@@ -380,11 +506,40 @@ class ConfigManager:
                 )
             config_data["network"] = network_config
 
+        mpt_after_platform = _snapshot_max_peers_per_torrent(config_data)
+        win_clamp_mpt = (
+            IS_WINDOWS
+            and "network" in config_data
+            and win_strict_effective
+            and mpt_after_env is not None
+            and mpt_after_platform is not None
+            and mpt_after_env != mpt_after_platform
+        )
+
+        profile_value = (
+            provenance_profile.value
+            if provenance_profile is not None
+            else OptimizationProfile.BALANCED.value
+        )
+
         try:
-            return Config(**config_data)
+            cfg = Config(**config_data)
         except Exception as e:
+            self.max_peers_per_torrent_provenance = None
             msg = f"Invalid configuration: {e}"
             raise ConfigurationError(msg) from e
+
+        self.max_peers_per_torrent_provenance = MaxPeersPerTorrentProvenance(
+            optimization_profile=profile_value,
+            value_after_file=provenance_after_file_mpt,
+            value_after_profile=provenance_after_profile_mpt,
+            value_after_env=mpt_after_env,
+            value_after_platform_clamp=mpt_after_platform,
+            final=cfg.network.max_peers_per_torrent,
+            env_ccbt_max_peers_per_torrent_set=env_ccbt_mpt_set,
+            windows_platform_clamp_applied_to_mpt=win_clamp_mpt,
+        )
+        return cfg
 
     def simulate_load_from_file_dict(self, file_dict: dict[str, Any]) -> Config:
         """Validate effective config as if the TOML file were ``file_dict``.
@@ -404,10 +559,100 @@ class ConfigManager:
         """
         config_data = dict(file_dict)
         self._normalize_loaded_config_data(config_data)
-        return self._apply_env_windows_and_build_config(config_data)
+        file_mpt = _snapshot_max_peers_per_torrent(config_data)
+        profile_enum = self._parse_optimization_profile_from_config_data(config_data)
+        self._merge_optimization_profile_into_config_data(config_data)
+        after_prof_mpt = _snapshot_max_peers_per_torrent(config_data)
+        return self._apply_env_windows_and_build_config(
+            config_data,
+            provenance_profile=profile_enum,
+            provenance_after_file_mpt=file_mpt,
+            provenance_after_profile_mpt=after_prof_mpt,
+        )
+
+    @staticmethod
+    def _parse_optimization_profile_from_config_data(
+        config_data: dict[str, Any],
+    ) -> OptimizationProfile:
+        """Read ``[optimization].profile`` from raw config before :class:`Config` exists."""
+        opt = config_data.get("optimization")
+        if not isinstance(opt, dict):
+            return OptimizationProfile.BALANCED
+        raw = opt.get("profile")
+        if raw is None:
+            return OptimizationProfile.BALANCED
+        if isinstance(raw, OptimizationProfile):
+            return raw
+        if isinstance(raw, str):
+            try:
+                return OptimizationProfile(raw.lower())
+            except ValueError as e:
+                msg = (
+                    f"Invalid optimization profile: {raw!r}. "
+                    f"Must be one of: {[p.value for p in OptimizationProfile]}"
+                )
+                raise ConfigurationError(msg) from e
+        msg = f"Invalid optimization profile type: {type(raw)!r}"
+        raise ConfigurationError(msg)
+
+    @staticmethod
+    def _merge_optimization_profile_into_config_data(
+        config_data: dict[str, Any],
+    ) -> None:
+        """Apply built-in profile overlays to ``config_data`` (file base already merged)."""
+        profile = ConfigManager._parse_optimization_profile_from_config_data(
+            config_data
+        )
+        if profile == OptimizationProfile.CUSTOM:
+            return
+
+        profile_config = _optimization_profile_overlays().get(profile)
+        if not profile_config:
+            msg = f"Profile {profile} not found in profile definitions"
+            raise ConfigurationError(msg)
+
+        for section, settings in profile_config.items():
+            if section == "strategy":
+                sec = config_data.setdefault("strategy", {})
+                if not isinstance(sec, dict):
+                    msg = (
+                        f"Invalid [strategy] section: expected dict, got {type(sec)!r}"
+                    )
+                    raise ConfigurationError(msg)
+                for key, value in settings.items():
+                    sec[key] = value
+            elif section == "network":
+                sec = config_data.setdefault("network", {})
+                if not isinstance(sec, dict):
+                    msg = f"Invalid [network] section: expected dict, got {type(sec)!r}"
+                    raise ConfigurationError(msg)
+                for key, value in settings.items():
+                    sec[key] = value
+            elif section == "discovery":
+                sec = config_data.setdefault("discovery", {})
+                if not isinstance(sec, dict):
+                    msg = (
+                        f"Invalid [discovery] section: expected dict, got {type(sec)!r}"
+                    )
+                    raise ConfigurationError(msg)
+                for key, value in settings.items():
+                    sec[key] = value
+            elif section == "optimization":
+                sec = config_data.setdefault("optimization", {})
+                if not isinstance(sec, dict):
+                    msg = f"Invalid [optimization] section: expected dict, got {type(sec)!r}"
+                    raise ConfigurationError(msg)
+                for key, value in settings.items():
+                    sec[key] = value
+
+        opt = config_data.setdefault("optimization", {})
+        if not isinstance(opt, dict):
+            msg = f"Invalid [optimization] section: expected dict, got {type(opt)!r}"
+            raise ConfigurationError(msg)
+        opt["profile"] = profile.value
 
     def _load_config(self) -> Config:
-        """Load configuration from file and environment."""
+        """Load configuration: file → profile overlay → env (+ Windows clamp) → ``Config``."""
         config_data: dict[str, Any] = {}
 
         if self.config_file and self.config_file.exists():
@@ -421,7 +666,16 @@ class ConfigManager:
                     "Failed to load config file %s: %s", self.config_file, e
                 )
 
-        return self._apply_env_windows_and_build_config(config_data)
+        file_mpt = _snapshot_max_peers_per_torrent(config_data)
+        profile_enum = self._parse_optimization_profile_from_config_data(config_data)
+        self._merge_optimization_profile_into_config_data(config_data)
+        after_prof_mpt = _snapshot_max_peers_per_torrent(config_data)
+        return self._apply_env_windows_and_build_config(
+            config_data,
+            provenance_profile=profile_enum,
+            provenance_after_file_mpt=file_mpt,
+            provenance_after_profile_mpt=after_prof_mpt,
+        )
 
     def _get_env_config(self) -> dict[str, Any]:
         """Get configuration from environment variables."""
@@ -468,6 +722,9 @@ class ConfigManager:
             "CCBT_SEND_BITFIELD_AFTER_METADATA": "network.send_bitfield_after_metadata",
             "CCBT_SEND_INTERESTED_AFTER_METADATA": "network.send_interested_after_metadata",
             "CCBT_MAX_CONCURRENT_CONNECTION_ATTEMPTS": "network.max_concurrent_connection_attempts",
+            "CCBT_MSE_INITIATOR_TIMEOUT_SCALE_ZERO_ACTIVE": (
+                "network.mse_initiator_timeout_scale_zero_active"
+            ),
             "CCBT_ENABLE_FAIL_FAST_DHT": "network.enable_fail_fast_dht",
             "CCBT_FAIL_FAST_DHT_TIMEOUT": "network.fail_fast_dht_timeout",
             "CCBT_KEEP_ALIVE_INTERVAL": "network.keep_alive_interval",
@@ -540,6 +797,9 @@ class ConfigManager:
             "CCBT_INBOUND_PROBATION_WAIT_QUEUE_MAX_TOTAL": (
                 "network.inbound_probation_wait_queue_max_total"
             ),
+            "CCBT_INBOUND_PROBATION_QUEUED_MAX_WAIT_S": (
+                "network.inbound_probation_queued_max_wait_s"
+            ),
             "CCBT_CHOKE_ONLY_SLOT_REPLACEMENT_ENABLED": (
                 "network.choke_only_slot_replacement_enabled"
             ),
@@ -576,6 +836,13 @@ class ConfigManager:
             "CCBT_PEER_CHOKED_SOLO_GRACE_ZERO_BYTES_CAP_SECONDS": (
                 "network.peer_choked_solo_grace_zero_bytes_cap_seconds"
             ),
+            "CCBT_PEER_QUALITY_PROBATION_SPARSE_CHOKE_GRACE_SECONDS": (
+                "network.peer_quality_probation_sparse_choke_grace_seconds"
+            ),
+            "CCBT_PEER_RECYCLE_SPARSE_BACKOFF_CAP_SECONDS": (
+                "network.peer_recycle_sparse_backoff_cap_seconds"
+            ),
+            "CCBT_RECYCLE_PRESSURE_THRESHOLD": "network.recycle_pressure_threshold",
             "CCBT_TRACKER_TIMEOUT": "network.tracker_timeout",
             "CCBT_DNS_CACHE_TTL": "network.dns_cache_ttl",
             # Connection pool
@@ -792,6 +1059,21 @@ class ConfigManager:
                 "discovery.requestable_force_dht_when_zero"
             ),
             "CCBT_MAX_CONNECT_BURST_PER_TICK": "discovery.max_connect_burst_per_tick",
+            "CCBT_TRACKER_IMMEDIATE_CONNECT_BURST_TOTAL": (
+                "discovery.tracker_immediate_connect_burst_total"
+            ),
+            "CCBT_TRACKER_IMMEDIATE_CONNECT_BURST_PER_SOURCE": (
+                "discovery.tracker_immediate_connect_burst_per_source"
+            ),
+            "CCBT_TRACKER_IMMEDIATE_CONNECT_WINDOW_S": (
+                "discovery.tracker_immediate_connect_window_s"
+            ),
+            "CCBT_TRACKER_IMMEDIATE_CONNECT_WINDOW_CAP": (
+                "discovery.tracker_immediate_connect_window_cap"
+            ),
+            "CCBT_TRACKER_IMMEDIATE_PER_SOURCE_CAP_MODE": (
+                "discovery.tracker_immediate_per_source_cap_mode"
+            ),
             # XET chunk discovery
             "CCBT_XET_CHUNK_QUERY_BATCH_SIZE": "discovery.xet_chunk_query_batch_size",
             "CCBT_XET_CHUNK_QUERY_MAX_CONCURRENT": "discovery.xet_chunk_query_max_concurrent",
@@ -1427,98 +1709,11 @@ class ConfigManager:
                 )
                 raise ConfigurationError(msg) from e
 
-        # Profile definitions
-        profiles = {
-            OptimizationProfile.BALANCED: {
-                "strategy": {
-                    "piece_selection": "rarest_first",
-                    "pipeline_capacity": 4,
-                    "endgame_duplicates": 2,
-                },
-                "network": {
-                    "max_peers_per_torrent": 50,
-                    "max_global_peers": 200,
-                },
-                "discovery": {
-                    "tracker_announce_interval": 60.0,
-                },
-                "optimization": {
-                    "enable_adaptive_intervals": True,
-                    "enable_performance_based_recycling": True,
-                    "enable_bandwidth_aware_scheduling": True,
-                },
-            },
-            OptimizationProfile.SPEED: {
-                "strategy": {
-                    "piece_selection": "bandwidth_weighted_rarest",
-                    "pipeline_capacity": 8,
-                    "endgame_duplicates": 3,
-                },
-                "network": {
-                    "max_peers_per_torrent": 100,
-                    "max_global_peers": 500,
-                },
-                "discovery": {
-                    "tracker_announce_interval": 30.0,
-                },
-                "optimization": {
-                    "enable_adaptive_intervals": True,
-                    "enable_performance_based_recycling": True,
-                    "speed_aggressive_peer_recycling": True,
-                    "enable_bandwidth_aware_scheduling": True,
-                },
-            },
-            OptimizationProfile.EFFICIENCY: {
-                "strategy": {
-                    "piece_selection": "adaptive_hybrid",
-                    "pipeline_capacity": 6,
-                    "endgame_duplicates": 2,
-                },
-                "network": {
-                    "max_peers_per_torrent": 30,
-                    "max_global_peers": 150,
-                },
-                "discovery": {
-                    "tracker_announce_interval": 90.0,
-                },
-                "optimization": {
-                    "enable_adaptive_intervals": True,
-                    "enable_performance_based_recycling": True,
-                    "efficiency_connection_limit_multiplier": 0.8,
-                    "enable_bandwidth_aware_scheduling": True,
-                },
-            },
-            OptimizationProfile.LOW_RESOURCE: {
-                "strategy": {
-                    "piece_selection": "rarest_first",
-                    "pipeline_capacity": 2,
-                    "endgame_duplicates": 1,
-                },
-                "network": {
-                    "max_peers_per_torrent": 10,
-                    "max_global_peers": 50,
-                },
-                "discovery": {
-                    "tracker_announce_interval": 120.0,
-                },
-                "optimization": {
-                    "enable_adaptive_intervals": False,
-                    "enable_performance_based_recycling": False,
-                    "low_resource_max_connections": 20,
-                    "enable_bandwidth_aware_scheduling": False,
-                },
-            },
-            OptimizationProfile.CUSTOM: {
-                # CUSTOM profile doesn't override anything
-                # User has full control via config file
-            },
-        }
-
         if profile == OptimizationProfile.CUSTOM:
             # Don't apply any overrides for CUSTOM profile
             return
 
-        profile_config = profiles.get(profile)
+        profile_config = _optimization_profile_overlays().get(profile)
         if not profile_config:
             msg = f"Profile {profile} not found in profile definitions"
             raise ConfigurationError(msg)
@@ -1571,6 +1766,13 @@ def get_config() -> Config:
     if _config_manager is None:
         _config_manager = ConfigManager()
     return _config_manager.config
+
+
+def get_max_peers_per_torrent_provenance() -> Optional[MaxPeersPerTorrentProvenance]:
+    """Return last recorded ``max_peers_per_torrent`` resolution chain, if config was loaded here."""
+    if _config_manager is None:
+        return None
+    return _config_manager.max_peers_per_torrent_provenance
 
 
 def init_config(config_file: Optional[Union[str, Path]] = None) -> ConfigManager:

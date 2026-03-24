@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -33,7 +33,7 @@ def test_config_command_shows_table(monkeypatch):
         observability=SimpleNamespace(log_level=SimpleNamespace(value="INFO"), enable_metrics=False),
     )
     monkeypatch.setattr(cli_main, "ConfigManager", lambda *_a, **_k: SimpleNamespace(config=config))
-    result = runner.invoke(cli_main.cli, ["config", "--help"]) 
+    result = runner.invoke(cli_main.cli, ["config", "--help"])
     assert result.exit_code == 0
 
 
@@ -95,7 +95,7 @@ def test_status_command_happy_and_error(monkeypatch):
         raise RuntimeError("stat-err")
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
-    err = runner.invoke(cli_main.cli, ["status"]) 
+    err = runner.invoke(cli_main.cli, ["status"])
     assert err.exit_code != 0
     assert "Error: stat-err" in err.output
 

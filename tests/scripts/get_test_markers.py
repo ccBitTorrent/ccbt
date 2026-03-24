@@ -5,6 +5,10 @@ This script reads changed file paths from stdin (provided by pre-commit)
 and outputs a pytest marker expression that should be used to run only
 tests relevant to the changed files.
 
+Selection notes:
+- returns an empty expression to signal all-tests fallback on critical changes
+- supports alias translation when codecov flag vocabulary differs from pytest markers
+
 Enhanced with:
 - Dependency-aware marker detection (finds modules that depend on changed files)
 - Cross-cutting concern detection (config, models, events affect multiple modules)
@@ -38,11 +42,14 @@ logger = logging.getLogger(__name__)
 
 # Critical files that should always trigger all tests
 CRITICAL_FILES = {
-    "ccbt/config.py",
+    "ccbt/config/config.py",
     "tests/conftest.py",
     "dev/pytest.ini",
     "dev/.codecov.yml",
     "dev/pre-commit-config.yaml",
+    "tests/scripts/run_pytest_selective.py",
+    "tests/scripts/get_test_markers.py",
+    "tests/scripts/get_dependent_modules.py",
 }
 
 # Cross-cutting concern patterns: (file_pattern, [markers])
@@ -52,6 +59,12 @@ CRITICAL_PATTERNS = [
     ("ccbt/models.py", ["core", "piece", "tracker"]),
     ("ccbt/utils/events.py", []),  # Empty = all tests
 ]
+
+# Coverage flag -> pytest marker aliases when nomenclature diverges.
+FLAG_TO_MARKER_ALIASES = {
+    "nat": "network",
+    "proxy": "network",
+}
 
 
 def load_codecov_config(config_path: Path = Path("dev/.codecov.yml")) -> dict[str, Any]:
@@ -288,7 +301,8 @@ def format_marker_expression(markers: set[str]) -> str:
     if not markers:
         return ""  # Empty means run all tests
 
-    sorted_markers = sorted(markers)
+    normalized_markers = {FLAG_TO_MARKER_ALIASES.get(marker, marker) for marker in markers}
+    sorted_markers = sorted(normalized_markers)
     return " or ".join(sorted_markers)
 
 

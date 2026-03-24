@@ -68,7 +68,7 @@ def test_fill_english_script_main_accepts_po_file_argument(tmp_path: Path) -> No
             "--po-file",
             str(po_file),
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         cwd=str(Path(__file__).resolve().parents[3]),
     )

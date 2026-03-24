@@ -311,18 +311,18 @@ class TestTrackerClient:
     def test_announce_tracker_error(self, mock_make_request):
         """Test tracker announce with tracker error response."""
         # Ensure clean state - reset any cached state
-        if hasattr(self.client, '_last_announce'):
-            delattr(self.client, '_last_announce')
-        
+        if hasattr(self.client, "_last_announce"):
+            delattr(self.client, "_last_announce")
+
         # Clear tracker sessions to avoid state pollution
         self.client.sessions.clear()
-        
+
         # Ensure torrent_data has required fields (may be modified by other tests)
         if "peer_id" not in self.torrent_data:
             self.torrent_data["peer_id"] = b"-CC0101-" + b"x" * 12
         if "info_hash" not in self.torrent_data:
             self.torrent_data["info_hash"] = b"x" * 20
-        
+
         # Mock failure response
         response_data = encode(
             {
@@ -333,7 +333,7 @@ class TestTrackerClient:
 
         with pytest.raises(TrackerError, match="Tracker failure"):
             self.client.announce(self.torrent_data)
-        
+
         # Verify the mock was called
         assert mock_make_request.called, "Tracker request was not made"
 

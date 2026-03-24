@@ -4,7 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 from ccbt.transport.utp_extensions import (
     UTPExtensionType,
     WindowScalingExtension,
@@ -25,12 +30,11 @@ class TestWindowScaling:
     def test_window_scaling_negotiation(self, connection):
         """Test window scaling extension negotiation."""
         # Ensure window scaling is supported
-        from ccbt.transport.utp_extensions import UTPExtensionType
         connection.supported_extensions.add(UTPExtensionType.WINDOW_SCALING)
-        
+
         # Set our window scale before negotiation
         connection.window_scale = 4  # Our advertised scale
-        
+
         # Simulate receiving SYN with window scaling
         peer_extensions = [WindowScalingExtension(scale_factor=3)]
         connection._process_extension_negotiation(peer_extensions)

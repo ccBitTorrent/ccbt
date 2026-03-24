@@ -18,13 +18,13 @@ class TestTrackerServiceCoverage:
     async def test_scrape_from_udp_tracker(self):
         """Test scrape_from_tracker with UDP tracker (lines 324-343)."""
         service = TrackerService()
-        
+
         # Mock UDP client - patch at the import location
         mock_client = AsyncMock()
         mock_client.start = AsyncMock()
         mock_client.stop = AsyncMock()
         mock_client.scrape = AsyncMock(return_value={"seeders": 10, "leechers": 5})
-        
+
         with patch(
             "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             return_value=mock_client,
@@ -33,7 +33,7 @@ class TestTrackerServiceCoverage:
                 "udp://tracker.example.com:6969",
                 b"x" * 20,
             )
-            
+
             assert result == {"seeders": 10, "leechers": 5}
             mock_client.start.assert_called_once()
             mock_client.stop.assert_not_called()
@@ -42,13 +42,13 @@ class TestTrackerServiceCoverage:
     async def test_scrape_from_http_tracker(self):
         """Test scrape_from_tracker with HTTP tracker (lines 344-359)."""
         service = TrackerService()
-        
+
         # Mock HTTP client - patch at the import location
         mock_client = AsyncMock()
         mock_client.start = AsyncMock()
         mock_client.stop = AsyncMock()
         mock_client.scrape = AsyncMock(return_value={"seeders": 20, "leechers": 10})
-        
+
         with patch(
             "ccbt.discovery.tracker.AsyncTrackerClient",
             return_value=mock_client,
@@ -57,7 +57,7 @@ class TestTrackerServiceCoverage:
                 "http://tracker.example.com/announce",
                 b"x" * 20,
             )
-            
+
             assert result == {"seeders": 20, "leechers": 10}
             mock_client.start.assert_called_once()
             mock_client.stop.assert_called_once()
@@ -66,13 +66,13 @@ class TestTrackerServiceCoverage:
     async def test_scrape_from_tracker_exception_handling(self):
         """Test scrape_from_tracker exception handling (lines 361-364)."""
         service = TrackerService()
-        
+
         # Mock client that raises exception
         mock_client = AsyncMock()
         mock_client.start = AsyncMock()
         mock_client.stop = AsyncMock()
         mock_client.scrape = AsyncMock(side_effect=RuntimeError("Scrape failed"))
-        
+
         with patch(
             "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             return_value=mock_client,
@@ -81,7 +81,7 @@ class TestTrackerServiceCoverage:
                 "udp://tracker.example.com:6969",
                 b"x" * 20,
             )
-            
+
             # Should return empty dict on error
             assert result == {}
             assert service.failed_scrapes > 0

@@ -14,11 +14,11 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer, pytest.mark.network]
 
+from ccbt.models import PeerInfo
 from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
 )
-from ccbt.models import PeerInfo
 
 
 @pytest.fixture

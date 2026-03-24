@@ -17,7 +17,7 @@ class TestAsyncSessionManagerMetricsCoverage:
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_start_with_metrics_initialized_executes_log_line(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
@@ -35,20 +35,20 @@ class TestAsyncSessionManagerMetricsCoverage:
         which guarantees line 310 is True and line 311 executes.
         """
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
-        
+
         # Verify metrics were initialized (line 309 executed)
         assert session.metrics is not None, "Metrics should be initialized when enabled in config"
-        
+
         # This guarantees:
         # - Line 309 executed: self.metrics = await init_metrics() -> not None
         # - Line 310 evaluated to True: if self.metrics: -> True
         # - Line 311 executed: self.logger.info("Metrics collection initialized")
-        
+
         # Coverage tools will confirm line 311 was executed
 
         await session.stop()
@@ -56,8 +56,8 @@ class TestAsyncSessionManagerMetricsCoverage:
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_start_with_metrics_disabled_no_log_message(
-        self, 
-        mock_config_disabled, 
+        self,
+        mock_config_disabled,
         caplog,
         mock_network_components
     ):
@@ -68,40 +68,40 @@ class TestAsyncSessionManagerMetricsCoverage:
         """
         from ccbt.monitoring import shutdown_metrics
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Ensure clean state
         await shutdown_metrics()
-        
+
         import logging
         caplog.set_level(logging.INFO)
-        
+
         session = AsyncSessionManager()
         session.config = mock_config_disabled
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         await session.start()
-        
+
         # When metrics are disabled, self.metrics should be None
         assert session.metrics is None
-        
+
         # Line 396 executed (self.metrics = await init_metrics() returns None)
         # Line 397 evaluated to False (if self.metrics: ...)
         # Line 398 did NOT execute (skipped because if condition is False)
-        
+
         # Verify the log message was NOT emitted
         log_messages = [record.message for record in caplog.records]
         assert not any("Metrics collection initialized" in msg for msg in log_messages)
 
         await session.stop()
-        
+
         # Verify metrics still None after stop
         assert session.metrics is None
 
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_stop_with_metrics_shutdown_sets_to_none(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
@@ -113,27 +113,27 @@ class TestAsyncSessionManagerMetricsCoverage:
             self.metrics = None
         """
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         apply_network_mocks_to_session(session, mock_network_components)
 
         await session.start()
-        
+
         # Ensure metrics were initialized
         if session.metrics is not None:
             # Verify metrics exists before stop
             assert session.metrics is not None
-            
+
             # Stop should set metrics to None
             await session.stop()
-            
+
             # Metrics should be None after stop (line 339)
             assert session.metrics is None
 
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_stop_with_no_metrics_skips_shutdown(
-        self, 
+        self,
         mock_config_disabled,
         mock_network_components
     ):
@@ -144,24 +144,24 @@ class TestAsyncSessionManagerMetricsCoverage:
         """
         from ccbt.monitoring import shutdown_metrics
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Ensure clean state
         await shutdown_metrics()
-        
+
         session = AsyncSessionManager()
         session.config = mock_config_disabled
         # Use network mocks instead of disabling features
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         await session.start()
-        
+
         # Metrics should be None when disabled
         assert session.metrics is None
-        
+
         # Stop should complete without calling shutdown_metrics
         # (because the if condition at line 457 is False)
         await session.stop()
-        
+
         # Metrics should still be None
         assert session.metrics is None
 
@@ -170,6 +170,7 @@ class TestAsyncSessionManagerMetricsCoverage:
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test
@@ -191,16 +192,16 @@ def mock_config_enabled(monkeypatch):
     mock_observability.event_bus_throttle_monitoring_heartbeat = 1.0
     mock_observability.event_bus_throttle_global_metrics_update = 0.5
     mock_config.observability = mock_observability
-    
+
     # Network config
     mock_config.network = Mock()
     mock_config.network.max_global_peers = 100
     mock_config.network.connection_timeout = 30.0
-    
+
     # NAT config
     mock_config.nat = Mock()
     mock_config.nat.auto_map_ports = False
-    
+
     # Discovery config
     mock_config.discovery = Mock()
     mock_config.discovery.enable_dht = False
@@ -216,6 +217,7 @@ def mock_config_enabled(monkeypatch):
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test
@@ -237,16 +239,16 @@ def mock_config_disabled(monkeypatch):
     mock_observability.event_bus_throttle_monitoring_heartbeat = 1.0
     mock_observability.event_bus_throttle_global_metrics_update = 0.5
     mock_config.observability = mock_observability
-    
+
     # Network config
     mock_config.network = Mock()
     mock_config.network.max_global_peers = 100
     mock_config.network.connection_timeout = 30.0
-    
+
     # NAT config
     mock_config.nat = Mock()
     mock_config.nat.auto_map_ports = False
-    
+
     # Discovery config
     mock_config.discovery = Mock()
     mock_config.discovery.enable_dht = False

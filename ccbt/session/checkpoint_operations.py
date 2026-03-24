@@ -327,11 +327,22 @@ class CheckpointOperations:
                                 for peer_data in checkpoint.connected_peers
                             ]
                             if peer_list:
-                                await peer_manager.connect_to_peers(peer_list)
-                                self.logger.info(
-                                    "Refreshed %d peers from checkpoint",
-                                    len(peer_list),
-                                )
+                                submit = await peer_manager.connect_to_peers(peer_list)
+                                if (
+                                    getattr(submit, "status", None)
+                                    == "queued_reentrant"
+                                ):
+                                    self.logger.info(
+                                        "Checkpoint refresh queued %d peers "
+                                        "(queue_depth=%s)",
+                                        len(peer_list),
+                                        getattr(submit, "queue_depth_after", None),
+                                    )
+                                else:
+                                    self.logger.info(
+                                        "Refreshed %d peers from checkpoint",
+                                        len(peer_list),
+                                    )
 
                 # Optionally refresh trackers
                 if reload_trackers and checkpoint.tracker_health:
@@ -412,7 +423,16 @@ class CheckpointOperations:
                                 for peer_data in checkpoint.connected_peers
                             ]
                             if peer_list:
-                                await peer_manager.connect_to_peers(peer_list)
+                                submit = await peer_manager.connect_to_peers(peer_list)
+                                if (
+                                    getattr(submit, "status", None)
+                                    == "queued_reentrant"
+                                ):
+                                    self.logger.debug(
+                                        "Quick reload queued %d peers (queue_depth=%s)",
+                                        len(peer_list),
+                                        getattr(submit, "queue_depth_after", None),
+                                    )
 
                 # Restore tracker state
                 restore_method = getattr(

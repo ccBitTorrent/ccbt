@@ -85,7 +85,7 @@ class TestUDPTrackerRouting:
         mock_udp_client._started = True  # Client has been started
         mock_udp_client._cleanup_task = None  # No cleanup task running
         mock_udp_client.start = AsyncMock()  # Mock start method
-        
+
         # Mock announce_to_tracker_full which is the actual method called
         # Returns tuple: (peers, interval, seeders, leechers) - all must be proper types
         mock_udp_client.announce_to_tracker_full = AsyncMock(
@@ -229,7 +229,7 @@ class TestUDPTrackerRouting:
         mock_udp_client.transport = mock_transport
         mock_udp_client.socket_ready = True  # Socket is ready
         mock_udp_client.start = AsyncMock()
-        
+
         # Mock announce_to_tracker_full which is now used internally
         mock_udp_client.announce_to_tracker_full = AsyncMock(
             return_value=([], 1800, 0, 0)  # (peers, interval, seeders, leechers)
@@ -401,11 +401,11 @@ class TestUDPTrackerRouting:
         # Should get responses from both trackers (or at least attempts)
         # Note: Some may fail, but both should be attempted
         assert len(responses) >= 0  # May have 0, 1, or 2 depending on success
-        
+
         # If we have responses, verify they're TrackerResponse objects
         for response in responses:
             assert isinstance(response, TrackerResponse)
-        
+
         # Verify UDP client was called for UDP tracker
         # (HTTP tracker may or may not succeed depending on mock setup)
         assert mock_udp_client.announce_to_tracker_full.called or tracker_client._make_request_async.called

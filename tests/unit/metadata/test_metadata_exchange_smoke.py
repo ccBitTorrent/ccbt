@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import builtins
-from typing import Any
-
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.metadata]
@@ -18,7 +15,7 @@ def test_metadata_exchange_importable_and_functions_exist():
     mod = __import__("ccbt.piece.metadata_exchange", fromlist=["*"])  # type: ignore[arg-type]
 
     assert hasattr(mod, "fetch_metadata_from_peers")
-    fn = getattr(mod, "fetch_metadata_from_peers")
+    fn = mod.fetch_metadata_from_peers
     assert callable(fn)
 
 

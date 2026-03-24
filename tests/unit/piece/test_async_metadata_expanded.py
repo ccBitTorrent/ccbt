@@ -9,13 +9,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import struct
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.metadata]
 
-from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
+from ccbt.core.bencode import BencodeEncoder
 from ccbt.piece.async_metadata_exchange import (
     AsyncMetadataExchange,
     MetadataCache,
