@@ -36,6 +36,7 @@ def _config(
         adaptive_timeout_health_peer_source=health_source,
         adaptive_timeout_desperation_max_peers=desperation_max,
         adaptive_timeout_normal_max_peers=normal_max,
+        handshake_timeout_desperation_interpolate=False,
     )
     discovery = SimpleNamespace(
         dht_adaptive_timeout_enabled=dht_adaptive,
@@ -47,6 +48,59 @@ def _config(
         dht_timeout_healthy_max=30.0,
     )
     return SimpleNamespace(network=network, discovery=discovery)
+
+
+def test_handshake_desperation_interpolates_when_enabled() -> None:
+    """Zero effective peers use min timeout; mid-desperation scales toward max."""
+
+    class _PM:
+        def get_swarm_timeout_signals(self) -> SwarmTimeoutSignals:
+            return SwarmTimeoutSignals(
+                active_post_handshake_count=0,
+                transport_live_count=0,
+                requestable_count=0,
+                total_connections=0,
+            )
+
+    cfg = _config()
+    cfg.network.handshake_timeout_desperation_interpolate = True
+    cfg.network.handshake_timeout_desperation_min = 25.0
+    cfg.network.handshake_timeout_desperation_max = 45.0
+    calc = AdaptiveTimeoutCalculator(cfg, peer_manager=_PM())
+    assert calc.calculate_handshake_timeout() == pytest.approx(25.0)
+
+    class _PM2:
+        def get_swarm_timeout_signals(self) -> SwarmTimeoutSignals:
+            return SwarmTimeoutSignals(
+                active_post_handshake_count=2,
+                transport_live_count=0,
+                requestable_count=0,
+                total_connections=2,
+            )
+
+    calc2 = AdaptiveTimeoutCalculator(cfg, peer_manager=_PM2())
+    # desperation_max=5 -> span=4, effective=2 -> ratio 0.5 -> 25 + 20*0.5 = 35
+    assert calc2.calculate_handshake_timeout() == pytest.approx(35.0)
+
+
+def test_handshake_desperation_interpolate_false_uses_band_max_only() -> None:
+    """Interpolate=False uses desperation max only (legacy band behavior)."""
+
+    class _PM:
+        def get_swarm_timeout_signals(self) -> SwarmTimeoutSignals:
+            return SwarmTimeoutSignals(
+                active_post_handshake_count=0,
+                transport_live_count=0,
+                requestable_count=0,
+                total_connections=0,
+            )
+
+    cfg = _config()
+    cfg.network.handshake_timeout_desperation_interpolate = False
+    cfg.network.handshake_timeout_desperation_min = 25.0
+    cfg.network.handshake_timeout_desperation_max = 55.0
+    calc = AdaptiveTimeoutCalculator(cfg, peer_manager=_PM())
+    assert calc.calculate_handshake_timeout() == pytest.approx(55.0)
 
 
 def test_handshake_timeout_uses_transport_when_effective() -> None:

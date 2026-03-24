@@ -227,7 +227,13 @@ class _MSEInboundSessionResolver:
 
 
 class IncomingPeerServer:
-    """TCP server for accepting incoming BitTorrent peer connections."""
+    """TCP server for accepting incoming BitTorrent peer connections.
+
+    Unknown-info-hash storms (wrong swarm, stale magnets, port scanners) are bounded via
+    ``network.inbound_max_probation_inflight_per_hash``, ``inbound_probation_wait_queue_max_total``,
+    ``inbound_probation_queued_max_wait_s``, and ``inbound_unknown_hash_storm_threshold``.
+    Tune those on multi-torrent hosts when global probation depth grows without loaded torrents.
+    """
 
     def __init__(
         self, session_manager: AsyncSessionManager, config: Optional[Any] = None

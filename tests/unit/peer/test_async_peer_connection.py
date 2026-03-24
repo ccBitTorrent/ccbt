@@ -18,6 +18,8 @@ from ccbt.peer.async_peer_connection import (
     AsyncPeerConnectionManager,
     ConnectionState,
     MsePlainFallbackRetrySlot,
+    RequestInfo,
+    _connect_batch_max_duration_s,
 )
 from ccbt.peer.peer import (
     BitfieldMessage,
@@ -85,6 +87,34 @@ async def peer_manager(mock_torrent_data, mock_piece_manager):
         from ccbt.utils.network_optimizer import reset_network_optimizer
 
         reset_network_optimizer()
+
+
+@pytest.mark.asyncio
+async def test_effective_bitfield_have_wait_timeout_metadata_multiplier(
+    mock_piece_manager,
+) -> None:
+    """Magnets extend bitfield/HAVE wait; multiplier 1.0 leaves base unchanged."""
+    td = {
+        "info_hash": b"test_info_hash_20byt",
+        "pieces_info": {"num_pieces": 100},
+        "file_info": {"total_length": 1},
+    }
+    mock_piece_manager._metadata_incomplete = True
+    mock_piece_manager.num_pieces = 0
+    manager = AsyncPeerConnectionManager(
+        torrent_data=td,
+        piece_manager=mock_piece_manager,
+        max_peers_per_torrent=10,
+    )
+    manager.config.network.bitfield_have_wait_timeout_s = 100.0
+    manager.config.network.bitfield_have_wait_metadata_incomplete_multiplier = 2.0
+    assert manager._effective_bitfield_have_wait_timeout_s() == 200.0
+    manager.config.network.bitfield_have_wait_metadata_incomplete_multiplier = 1.0
+    assert manager._effective_bitfield_have_wait_timeout_s() == 100.0
+    mock_piece_manager._metadata_incomplete = False
+    mock_piece_manager.num_pieces = 100
+    assert manager._effective_bitfield_have_wait_timeout_s() == 100.0
+    await manager.stop()
 
 
 @pytest.mark.asyncio
@@ -1888,7 +1918,9 @@ async def test_prune_probation_peers_sparse_choked_swarm_uses_extra_grace(
 
     peer = PeerInfo(ip="127.0.0.31", port=7131)
     peer_key = str(peer)
-    connection = AsyncPeerConnection(peer_info=peer, torrent_data=peer_manager.torrent_data)
+    connection = AsyncPeerConnection(
+        peer_info=peer, torrent_data=peer_manager.torrent_data
+    )
     connection.state = ConnectionState.CHOKED
     connection.peer_choking = True
     connection.am_interested = True
@@ -1924,7 +1956,9 @@ async def test_prune_probation_peers_sparse_choked_swarm_not_sticky(
 
     peer = PeerInfo(ip="127.0.0.32", port=7132)
     peer_key = str(peer)
-    connection = AsyncPeerConnection(peer_info=peer, torrent_data=peer_manager.torrent_data)
+    connection = AsyncPeerConnection(
+        peer_info=peer, torrent_data=peer_manager.torrent_data
+    )
     connection.state = ConnectionState.CHOKED
     connection.peer_choking = True
     connection.am_interested = True
@@ -1961,7 +1995,9 @@ async def test_prune_probation_peers_sparse_warmup_grace_applies_when_not_choked
 
     peer = PeerInfo(ip="127.0.0.33", port=7133)
     peer_key = str(peer)
-    connection = AsyncPeerConnection(peer_info=peer, torrent_data=peer_manager.torrent_data)
+    connection = AsyncPeerConnection(
+        peer_info=peer, torrent_data=peer_manager.torrent_data
+    )
     connection.state = ConnectionState.ACTIVE
     connection.peer_choking = False
     connection.am_interested = True
@@ -2002,7 +2038,9 @@ async def test_prune_probation_peers_uses_pool_capacity_for_sparse_warmup_grace(
 
     peer = PeerInfo(ip="127.0.0.34", port=7134)
     peer_key = str(peer)
-    connection = AsyncPeerConnection(peer_info=peer, torrent_data=peer_manager.torrent_data)
+    connection = AsyncPeerConnection(
+        peer_info=peer, torrent_data=peer_manager.torrent_data
+    )
     connection.state = ConnectionState.ACTIVE
     connection.peer_choking = False
     connection.am_interested = True
@@ -2017,7 +2055,9 @@ async def test_prune_probation_peers_uses_pool_capacity_for_sparse_warmup_grace(
 
 
 @pytest.mark.asyncio
-async def test_should_recycle_peer_retains_useful_peer_under_slot_pressure(peer_manager):
+async def test_should_recycle_peer_retains_useful_peer_under_slot_pressure(
+    peer_manager,
+):
     """Useful peers should be retained even when replacement pressure is high."""
     peer_manager.max_peers_per_torrent = 10
     now = time.time()
@@ -2045,7 +2085,9 @@ async def test_should_recycle_peer_retains_useful_peer_under_slot_pressure(peer_
     candidate.stats.last_activity = now - 5.0
     peer_manager.connections[str(candidate.peer_info)] = candidate
 
-    assert peer_manager._should_recycle_peer(candidate, new_peer_available=True) is False
+    assert (
+        peer_manager._should_recycle_peer(candidate, new_peer_available=True) is False
+    )
 
 
 @pytest.mark.asyncio
@@ -2512,7 +2554,10 @@ async def test_reconnect_plaintext_after_mse_failure_uses_fresh_socket(
     assert writer is new_writer
     assert connection.reader is new_reader
     assert connection.writer is new_writer
-    assert peer_manager._connection_stage_counters["plain_reconnect_after_mse_failure"] >= 1
+    assert (
+        peer_manager._connection_stage_counters["plain_reconnect_after_mse_failure"]
+        >= 1
+    )
 
 
 @pytest.mark.asyncio
@@ -2600,7 +2645,9 @@ async def test_connect_to_peer_mse_success_skips_plaintext_handshake_write(
     writer.wait_closed = AsyncMock()
     writer.is_closing = MagicMock(return_value=False)
 
-    monkeypatch.setattr(asyncio, "open_connection", AsyncMock(return_value=(reader, writer)))
+    monkeypatch.setattr(
+        asyncio, "open_connection", AsyncMock(return_value=(reader, writer))
+    )
     monkeypatch.setattr(
         peer_manager,
         "_read_plaintext_handshake_payload",
@@ -2681,6 +2728,7 @@ async def test_connect_to_peer_mse_preferred_fallback_resends_plaintext_handshak
         "open_connection",
         AsyncMock(return_value=(initial_reader, initial_writer)),
     )
+
     async def reconnect_side_effect(
         reconnect_peer_info,
         connection,
@@ -2724,7 +2772,9 @@ async def test_connect_to_peer_mse_preferred_fallback_resends_plaintext_handshak
     outgoing_handshake = peer_manager._build_outgoing_handshake_payload(info_hash)
     reconnect_mock.assert_awaited_once()
     handshake_writes = [
-        call for call in fallback_writer.write.call_args_list if call.args[0] == outgoing_handshake
+        call
+        for call in fallback_writer.write.call_args_list
+        if call.args[0] == outgoing_handshake
     ]
     assert len(handshake_writes) == 1
     initial_writer.write.assert_not_called()
@@ -3251,7 +3301,9 @@ async def test_rank_peers_ml_blend_uses_peer_selector_scores(peer_manager):
     peer_manager.config.strategy.peer_selector_ml_ranking_weight = 0.99
 
     class _FakeSel:
-        async def rank_peers(self, peers: list[PeerInfo]) -> list[tuple[PeerInfo, float]]:
+        async def rank_peers(
+            self, peers: list[PeerInfo]
+        ) -> list[tuple[PeerInfo, float]]:
             scored = [(p, 0.99 if p.port == 7002 else 0.01) for p in peers]
             scored.sort(key=lambda x: -x[1])
             return scored
@@ -3260,6 +3312,41 @@ async def test_rank_peers_ml_blend_uses_peer_selector_scores(peer_manager):
     ranked = await peer_manager._rank_peers_for_connection([p_a, p_b])
     assert ranked[0] == p_b
     assert ranked[1] == p_a
+
+
+@pytest.mark.asyncio
+async def test_notify_ml_peer_performance_updates_peer_selector(peer_manager):
+    """Piece / stats path should push metrics into the shared PeerSelector."""
+    from ccbt.ml.peer_selector import PeerSelector, peer_selector_cache_key
+
+    pinfo = PeerInfo(ip="10.8.0.9", port=7099, peer_id=None, peer_source="dht")
+    conn = AsyncPeerConnection(pinfo, peer_manager.torrent_data)
+    conn.state = ConnectionState.ACTIVE
+    key = str(pinfo)
+    peer_manager.connections[key] = conn
+
+    peer_manager.config.strategy.peer_selector_ml_ranking_weight = 0.2
+    peer_manager._ml_peer_selector = PeerSelector()
+    with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
+        await peer_manager._ml_peer_selector.predict_peer_quality(pinfo)
+
+    cache_key = peer_selector_cache_key(pinfo)
+    before_speed = peer_manager._ml_peer_selector.get_peer_features(
+        cache_key
+    ).avg_download_speed
+
+    await peer_manager.notify_ml_peer_performance(
+        key,
+        {
+            "download_speed": 8 * 1024 * 1024,
+            "quality_score": 0.9,
+            "actual_quality": 0.85,
+        },
+    )
+    after_speed = peer_manager._ml_peer_selector.get_peer_features(
+        cache_key
+    ).avg_download_speed
+    assert after_speed > before_speed
 
 
 @pytest.mark.asyncio
@@ -3693,3 +3780,160 @@ async def test_tracker_peer_cache_reconnect_invokes_connect_to_peers(
     assert len(batches[0]) == 2
     ports = {int(p["port"]) for p in batches[0]}
     assert ports == {5001, 5002}
+
+
+def test_notify_requestable_peer_deficit_is_hysteresis_gated(peer_manager) -> None:
+    """Deficit notifications should be throttled by minimum interval."""
+    peer_manager._pending_peer_queue = [PeerInfo(ip="198.51.100.1", port=6881)]  # noqa: SLF001
+    peer_manager._running = True  # noqa: SLF001
+    peer_manager._requestable_deficit_notify_min_interval_s = 60.0  # noqa: SLF001
+    peer_manager._requestable_deficit_last_notified_at = time.monotonic()  # noqa: SLF001
+    with patch.object(peer_manager, "_schedule_pending_resume") as schedule_mock:
+        peer_manager.notify_requestable_peer_deficit()
+    schedule_mock.assert_not_called()
+
+
+def test_order_peer_scores_tracker_before_dht_preserves_intra_bucket_order(
+    peer_manager,
+) -> None:
+    """Tracker-class peers lead; order within each bucket follows score sort input."""
+    peer_scores = [
+        (PeerInfo(ip="10.0.0.1", port=1, peer_source="dht"), 1.0),
+        (PeerInfo(ip="10.0.0.2", port=2, peer_source="tracker"), 0.1),
+        (PeerInfo(ip="10.0.0.3", port=3, peer_source="tracker_udp"), 0.2),
+        (PeerInfo(ip="10.0.0.4", port=4, peer_source="pex"), 0.5),
+    ]
+    ordered = peer_manager._order_peer_scores_tracker_before_dht(peer_scores)
+    assert [p.ip for p in ordered] == [
+        "10.0.0.2",
+        "10.0.0.3",
+        "10.0.0.4",
+        "10.0.0.1",
+    ]
+
+
+def test_peer_source_connect_priority_rank(peer_manager) -> None:
+    """Rank integers order tracker before incoming before pex before dht."""
+    assert peer_manager._peer_source_connect_priority_rank(
+        PeerInfo(ip="a", port=1, peer_source="tracker")
+    ) < peer_manager._peer_source_connect_priority_rank(
+        PeerInfo(ip="b", port=2, peer_source="dht")
+    )
+    assert peer_manager._peer_source_connect_priority_rank(
+        PeerInfo(ip="c", port=3, peer_source="pex")
+    ) < peer_manager._peer_source_connect_priority_rank(
+        PeerInfo(ip="d", port=4, peer_source="dht_node")
+    )
+
+
+class TestConnectBatchMaxDuration:
+    """_connect_batch_max_duration_s: patience when few actives, bounded on large swarms."""
+
+    def test_few_active_peers_get_long_budget(self) -> None:
+        assert _connect_batch_max_duration_s(0) == 45.0
+        assert _connect_batch_max_duration_s(1) == 45.0
+        assert _connect_batch_max_duration_s(2) == 45.0
+
+    def test_mid_swarm_uses_short_budget(self) -> None:
+        assert _connect_batch_max_duration_s(3) == 20.0
+        assert _connect_batch_max_duration_s(49) == 20.0
+
+    def test_mid_swarm_short_when_no_extension_signals(self) -> None:
+        assert (
+            _connect_batch_max_duration_s(
+                10,
+                requestable_peer_count=0,
+                pending_queue_depth=47,
+                inflight_peer_connects=2,
+            )
+            == 20.0
+        )
+
+    def test_mid_swarm_extends_when_requestable_zero_and_backlog(self) -> None:
+        assert (
+            _connect_batch_max_duration_s(
+                10,
+                requestable_peer_count=0,
+                pending_queue_depth=48,
+                inflight_peer_connects=0,
+            )
+            == 45.0
+        )
+        assert (
+            _connect_batch_max_duration_s(
+                10,
+                requestable_peer_count=0,
+                pending_queue_depth=0,
+                inflight_peer_connects=3,
+            )
+            == 45.0
+        )
+        assert (
+            _connect_batch_max_duration_s(
+                10,
+                requestable_peer_count=1,
+                pending_queue_depth=100,
+                inflight_peer_connects=10,
+            )
+            == 20.0
+        )
+
+    def test_many_active_peers_use_long_budget(self) -> None:
+        assert _connect_batch_max_duration_s(50) == 45.0
+        assert _connect_batch_max_duration_s(200) == 45.0
+
+
+def test_apply_strict_tracker_dht_pex_pending_boost(peer_manager) -> None:
+    """Strict ordering splices PEX/DHT peers after an 8-wide tracker prefix."""
+    peer_manager.config.discovery.strict_tracker_pending_tracker_prefix = 8
+    peer_manager.config.discovery.strict_tracker_pending_dht_pex_boost = 2
+    ordered = [
+        PeerInfo(ip=f"10.0.0.{i + 1}", port=6881, peer_source="tracker")
+        for i in range(10)
+    ]
+    ordered.append(PeerInfo(ip="10.0.1.1", port=1, peer_source="dht"))
+    ordered.append(PeerInfo(ip="10.0.1.2", port=1, peer_source="pex"))
+    out = peer_manager._apply_strict_tracker_dht_pex_pending_boost(ordered)
+    assert [p.ip for p in out[:8]] == [f"10.0.0.{i + 1}" for i in range(8)]
+    assert out[8].ip == "10.0.1.1"
+    assert out[9].ip == "10.0.1.2"
+    assert [p.ip for p in out[10:]] == ["10.0.0.9", "10.0.0.10"]
+
+
+def test_apply_strict_tracker_dht_pex_pending_boost_zero_disabled(peer_manager) -> None:
+    peer_manager.config.discovery.strict_tracker_pending_dht_pex_boost = 0
+    ordered = [
+        PeerInfo(ip="10.0.0.1", port=1, peer_source="tracker"),
+        PeerInfo(ip="10.0.1.1", port=1, peer_source="dht"),
+    ]
+    out = peer_manager._apply_strict_tracker_dht_pex_pending_boost(ordered)
+    assert out == ordered
+
+
+@pytest.mark.asyncio
+async def test_maybe_cancel_sparse_stale_outstanding(peer_manager) -> None:
+    """Sparse single-supplier path cancels a slice of oldest outstanding requests."""
+    peer_manager.config.network.sparse_pipeline_stale_payload_cancel_s = 60.0
+    conn = AsyncPeerConnection(
+        peer_info=PeerInfo(ip="1.2.3.4", port=6881, peer_source="tracker"),
+        torrent_data={},
+    )
+    conn.state = ConnectionState.ACTIVE
+    conn.peer_choking = False
+    conn.max_pipeline_depth = 6
+    conn.stats.last_piece_payload_time = time.time() - 100.0
+    t0 = time.time()
+    for i in range(6):
+        conn.outstanding_requests[(i, 0, 16384)] = RequestInfo(
+            piece_index=i, begin=0, length=16384, timestamp=t0 - 200.0
+        )
+
+    async def _send(_c: Any, _msg: Any) -> None:
+        return None
+
+    peer_manager._send_message = _send  # type: ignore[method-assign]
+    peer_manager.connections = {"k": conn}
+
+    n = await peer_manager._maybe_cancel_sparse_stale_outstanding(conn, time.time())
+    assert n >= 1
+    assert len(conn.outstanding_requests) == 6 - n

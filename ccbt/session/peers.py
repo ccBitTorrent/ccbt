@@ -564,15 +564,36 @@ class PeerConnectionHelper:
             # Factor 5: Source quality (0.0-1.0, weight: 0.2)
             # DHT and tracker peers are generally more reliable than PEX
             source = peer.get("peer_source", "unknown")
-            source_scores = {
-                "tracker": 1.0,
-                "dht": 0.9,
-                "pex": 0.7,
-                "incoming": 0.8,
-                "dht_node": 0.6,
-                "unknown": 0.5,
-            }
-            source_score = source_scores.get(source, 0.5)
+            discovery_cfg = getattr(self.session.config, "discovery", None)
+            strict_tp = bool(
+                getattr(discovery_cfg, "strict_tracker_source_connect_priority", True)
+            )
+            if strict_tp:
+                source_scores = {
+                    "tracker": 1.0,
+                    "dht": 0.55,
+                    "pex": 0.65,
+                    "incoming": 0.78,
+                    "dht_node": 0.45,
+                    "unknown": 0.5,
+                }
+            else:
+                # DEPRECATED: legacy source weights when strict_tracker_source_connect_priority
+                # is False (see DiscoveryConfig field description).
+                source_scores = {
+                    "tracker": 1.0,
+                    "dht": 0.9,
+                    "pex": 0.7,
+                    "incoming": 0.8,
+                    "dht_node": 0.6,
+                    "unknown": 0.5,
+                }
+            src_norm = str(source).strip().lower()
+            if src_norm == "tracker" or src_norm.startswith("tracker_"):
+                lookup = "tracker"
+            else:
+                lookup = src_norm if src_norm in source_scores else "unknown"
+            source_score = source_scores[lookup]
             score += source_score * source_weight
             factors.append(f"source={source}")
 

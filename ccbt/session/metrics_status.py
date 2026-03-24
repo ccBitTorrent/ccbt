@@ -178,6 +178,19 @@ class StatusLoop:
                                 connection_summary.get("requestable_connections", 0)
                                 or 0
                             )
+                            status["terminal_disconnected_connections"] = int(
+                                connection_summary.get(
+                                    "terminal_disconnected_connections", 0
+                                )
+                                or 0
+                            )
+                            status["error_state_connections"] = int(
+                                connection_summary.get("error_state_connections", 0)
+                                or 0
+                            )
+                            status["no_stream_connections"] = int(
+                                connection_summary.get("no_stream_connections", 0) or 0
+                            )
                         else:
                             actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
                             status["connected_peers"] = actual_peer_count
@@ -222,9 +235,29 @@ class StatusLoop:
                         piece_metrics = (
                             self.s.piece_manager.get_piece_selection_metrics()
                         )
+                swarm_state: Optional[dict[str, Any]] = None
                 if hasattr(self.s, "_get_swarm_recovery_state"):
                     with contextlib.suppress(Exception):
                         swarm_state = await self.s._get_swarm_recovery_state()  # noqa: SLF001
+                if swarm_state is not None:
+                    pd_metrics = getattr(self.s, "_peer_discovery_metrics", None)
+                    if isinstance(pd_metrics, dict):
+                        status["peer_discovery_queued_reentrant_cycles"] = int(
+                            pd_metrics.get("queued_reentrant_non_progress_cycles", 0)
+                            or 0
+                        )
+                        status["peer_discovery_outbound_pending_depth"] = int(
+                            pd_metrics.get("outbound_pending_peer_queue_depth", 0) or 0
+                        )
+                    if bool(swarm_state.get("peer_manager_swarm_inputs")):
+                        summary_active = int(
+                            swarm_state.get("summary_active_connections", 0) or 0
+                        )
+                        transport_live = int(
+                            swarm_state.get("transport_live_peers", 0) or 0
+                        )
+                        status["summary_active_connections"] = summary_active
+                        status["transport_live_peers"] = transport_live
                         connected_from_swarm = int(
                             swarm_state.get("active_peers", 0) or 0
                         )
@@ -252,12 +285,12 @@ class StatusLoop:
                         piece_info_from_swarm = int(
                             swarm_state.get("peers_with_piece_info", 0) or 0
                         )
-                        if connected_from_swarm > 0 or connected_peers == 0:
-                            connected_peers = connected_from_swarm
+                        # Transport-aligned peer count (matches piece pipeline).
+                        connected_peers = connected_from_swarm
                         if productive_from_swarm > 0 or productive_peers == 0:
                             productive_peers = productive_from_swarm
-                        remote_choked_peers += remote_choked_from_swarm
-                        pipeline_saturated_peers += pipeline_saturated_from_swarm
+                        remote_choked_peers = remote_choked_from_swarm
+                        pipeline_saturated_peers = pipeline_saturated_from_swarm
                         requestable_peers = max(
                             int(requestable_peers or 0),
                             int(local_requestable_from_summary or 0),
@@ -291,6 +324,19 @@ class StatusLoop:
                     if hasattr(self.s, "_metadata_is_incomplete")
                     else False
                 )
+                dht_client = getattr(
+                    getattr(self.s, "session_manager", None), "dht_client", None
+                )
+                routing_table_size = 0
+                if dht_client is not None:
+                    with contextlib.suppress(Exception):
+                        routing_table_size = len(
+                            getattr(
+                                getattr(dht_client, "routing_table", None),
+                                "nodes",
+                                [],
+                            )
+                        )
                 tracker_anomalies = 0
                 tracker = getattr(self.s, "tracker", None)
                 if tracker and hasattr(tracker, "get_session_metrics"):
@@ -491,19 +537,6 @@ class StatusLoop:
                                 hash_verification_failures,
                                 self.s.info.name,
                             )
-                    dht_client = getattr(
-                        getattr(self.s, "session_manager", None), "dht_client", None
-                    )
-                    routing_table_size = 0
-                    if dht_client is not None:
-                        with contextlib.suppress(Exception):
-                            routing_table_size = len(
-                                getattr(
-                                    getattr(dht_client, "routing_table", None),
-                                    "nodes",
-                                    [],
-                                )
-                            )
                     if (
                         metadata_incomplete
                         and routing_table_size == 0
@@ -565,6 +598,75 @@ class StatusLoop:
                         int(requestable_peers or 0),
                         int(productive_peers or 0),
                     )
+                # Track sustained active/requestable divergence for collapse diagnostics.
+                if int(connected_peers or 0) > 0 and int(requestable_peers or 0) == 0:
+                    started = float(
+                        getattr(
+                            self.s, "_active_requestable_divergence_started_at", 0.0
+                        )
+                        or 0.0
+                    )
+                    if started <= 0.0:
+                        vars(self.s)["_active_requestable_divergence_started_at"] = (
+                            time.monotonic()
+                        )
+                    divergence_s = max(
+                        0.0,
+                        time.monotonic()
+                        - float(
+                            getattr(
+                                self.s, "_active_requestable_divergence_started_at", 0.0
+                            )
+                            or 0.0
+                        ),
+                    )
+                else:
+                    vars(self.s)["_active_requestable_divergence_started_at"] = 0.0
+                    divergence_s = 0.0
+                status["active_requestable_divergence_s"] = float(divergence_s)
+                inbound_probation_depth = int(
+                    getattr(peer_manager, "_inbound_probation_wait_queue_depth", 0) or 0
+                )
+                status["inbound_probation_queue_depth"] = inbound_probation_depth
+                status["outbound_pending_depth"] = int(
+                    (
+                        getattr(peer_manager, "_pending_peer_queue", None)
+                        and len(getattr(peer_manager, "_pending_peer_queue", []))
+                    )
+                    or 0
+                )
+                status["inbound_outbound_fairness_pressure"] = float(
+                    inbound_probation_depth
+                ) / max(1.0, float(status["outbound_pending_depth"] or 0.0))
+                suppressed_cycles = int(
+                    getattr(peer_manager, "_reconnection_suppressed_cycles_total", 0)
+                    or 0
+                )
+                forced_cycles = int(
+                    getattr(
+                        peer_manager, "_reconnection_forced_overlap_cycles_total", 0
+                    )
+                    or 0
+                )
+                duty_denom = max(1, suppressed_cycles + forced_cycles)
+                status["backlog_suppression_duty_cycle"] = float(
+                    suppressed_cycles / duty_denom
+                )
+                zero_node_start = float(
+                    getattr(self.s, "_zero_node_dht_started_at", 0.0) or 0.0
+                )
+                if routing_table_size == 0 and metadata_incomplete:
+                    if zero_node_start <= 0.0:
+                        vars(self.s)["_zero_node_dht_started_at"] = time.monotonic()
+                        zero_node_start = float(
+                            getattr(self.s, "_zero_node_dht_started_at", 0.0) or 0.0
+                        )
+                    status["dht_zero_node_duration_s"] = max(
+                        0.0, time.monotonic() - zero_node_start
+                    )
+                else:
+                    vars(self.s)["_zero_node_dht_started_at"] = 0.0
+                    status["dht_zero_node_duration_s"] = 0.0
 
                 # Update cached status (canonical keys; preserve byte counters)
                 # Use setattr to avoid SLF001 for internal cache
@@ -586,6 +688,21 @@ class StatusLoop:
                     "progress": progress,
                     "download_complete": download_complete,
                     "tracker_resolution_anomalies": tracker_anomalies,
+                    "summary_active_connections": status.get(
+                        "summary_active_connections", 0
+                    ),
+                    "transport_live_peers": status.get("transport_live_peers", 0),
+                    "terminal_disconnected_connections": status.get(
+                        "terminal_disconnected_connections", 0
+                    ),
+                    "error_state_connections": status.get("error_state_connections", 0),
+                    "no_stream_connections": status.get("no_stream_connections", 0),
+                    "peer_discovery_queued_reentrant_cycles": status.get(
+                        "peer_discovery_queued_reentrant_cycles", 0
+                    ),
+                    "peer_discovery_outbound_pending_depth": status.get(
+                        "peer_discovery_outbound_pending_depth", 0
+                    ),
                 }
                 self.s._cached_status = cached_status  # noqa: SLF001
 

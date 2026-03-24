@@ -263,7 +263,9 @@ async def test_peer_connection_helper_ranks_using_reputation_success_rate() -> N
 
 
 @pytest.mark.asyncio
-async def test_peer_connection_helper_prioritizes_requestable_transition_signals() -> None:
+async def test_peer_connection_helper_prioritizes_requestable_transition_signals() -> (
+    None
+):
     """Ranking should prefer peers likely to become requestable/productive quickly."""
     from ccbt.session.peers import PeerConnectionHelper
     from ccbt.session.session import AsyncTorrentSession
@@ -317,6 +319,60 @@ async def test_peer_connection_helper_prioritizes_requestable_transition_signals
 
 
 @pytest.mark.asyncio
+async def test_peer_connection_helper_strict_tp_lowers_dht_relative_to_pex() -> None:
+    """With strict tracker priority, DHT source weight is reduced vs PEX for quality rank."""
+    from ccbt.session.peers import PeerConnectionHelper
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "strict-tp-source-test",
+        "info_hash": b"\x06" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session.config.network.peer_quality_performance_weight = 0.0
+    session.config.network.peer_quality_success_rate_weight = 0.0
+    session.config.network.peer_quality_proximity_weight = 0.0
+    session.config.network.peer_quality_source_weight = 1.0
+    session.download_manager.security_manager = SimpleNamespace(
+        get_peer_reputation=lambda *_a, **_k: None
+    )
+    session.download_manager.peer_manager = SimpleNamespace(connections={})
+
+    helper = PeerConnectionHelper(session)
+    session.config.discovery = session.config.discovery.model_copy(
+        update={"strict_tracker_source_connect_priority": True}
+    )
+    ranked_strict = helper._rank_peers_by_quality(
+        [
+            {"ip": "198.51.100.60", "port": 6881, "peer_source": "dht"},
+            {"ip": "198.51.100.61", "port": 6881, "peer_source": "pex"},
+        ]
+    )
+    assert ranked_strict[0]["ip"] == "198.51.100.61"
+    assert ranked_strict[1]["ip"] == "198.51.100.60"
+
+    session.config.discovery = session.config.discovery.model_copy(
+        update={"strict_tracker_source_connect_priority": False}
+    )
+    ranked_legacy = helper._rank_peers_by_quality(
+        [
+            {"ip": "198.51.100.60", "port": 6881, "peer_source": "dht"},
+            {"ip": "198.51.100.61", "port": 6881, "peer_source": "pex"},
+        ]
+    )
+    assert ranked_legacy[0]["ip"] == "198.51.100.60"
+    assert ranked_legacy[1]["ip"] == "198.51.100.61"
+
+
+@pytest.mark.asyncio
 async def test_peer_ranking_diagnostics_use_per_ranking_normalized_metrics() -> None:
     """Quality diagnostics should remain comparable regardless of batch size."""
     from ccbt.session.peers import PeerConnectionHelper
@@ -365,7 +421,9 @@ async def test_peer_ranking_diagnostics_use_per_ranking_normalized_metrics() -> 
 
 
 @pytest.mark.asyncio
-async def test_peer_ranking_cold_peer_tiebreakers_prefer_fresher_corroborated_peer() -> None:
+async def test_peer_ranking_cold_peer_tiebreakers_prefer_fresher_corroborated_peer() -> (
+    None
+):
     from ccbt.session.peers import PeerConnectionHelper
     from ccbt.session.session import AsyncTorrentSession
 
@@ -429,7 +487,9 @@ async def test_tracker_metadata_status_tracks_starvation_seconds() -> None:
     }
     session = AsyncTorrentSession(td, ".")
     session.handle_magnet_metadata_exchange = AsyncMock(return_value=False)
-    session._peer_discovery_metrics["metadata_starvation_started_at"] = time.time() - 2.0
+    session._peer_discovery_metrics["metadata_starvation_started_at"] = (
+        time.time() - 2.0
+    )
 
     loop = AnnounceLoop(session)
     await loop._maybe_trigger_tracker_metadata_exchange(
@@ -494,7 +554,9 @@ def test_session_peer_source_metrics_use_ingress_and_live_connections() -> None:
     assert session._peer_discovery_metrics["peers_discovered_by_source"]["dht"] == 1
     assert session._peer_discovery_metrics["peers_returned_by_source"]["tracker"] == 2
     assert session._peer_discovery_metrics["peers_returned_by_source"]["dht"] == 1
-    assert session._peer_discovery_metrics["usable_live_peers_by_source"]["tracker"] == 1
+    assert (
+        session._peer_discovery_metrics["usable_live_peers_by_source"]["tracker"] == 1
+    )
     assert session._peer_discovery_metrics["usable_live_peers_by_source"]["dht"] == 0
     assert (
         session._peer_discovery_metrics["payload_capable_live_peers_by_source"][
@@ -502,11 +564,15 @@ def test_session_peer_source_metrics_use_ingress_and_live_connections() -> None:
         ]
         == 1
     )
-    assert session._peer_discovery_metrics["usable_peers_formed_by_source"]["tracker"] == 1
+    assert (
+        session._peer_discovery_metrics["usable_peers_formed_by_source"]["tracker"] == 1
+    )
 
 
 @pytest.mark.asyncio
-async def test_swarm_recovery_state_uses_live_bitfield_counts_not_event_totals() -> None:
+async def test_swarm_recovery_state_uses_live_bitfield_counts_not_event_totals() -> (
+    None
+):
     """Swarm state should use live bitfield-complete connections, not lifetime event counters."""
     from ccbt.session.session import AsyncTorrentSession
 
@@ -720,7 +786,7 @@ async def test_immediate_tracker_connection_enforces_batch_caps(monkeypatch) -> 
 async def test_immediate_tracker_connection_from_single_udp_announce_can_exceed_default_source_cap(
     monkeypatch,
 ) -> None:
-    """Single-URL announce responses should pass a larger batch to the connection helper."""
+    """Single-URL announce responses should fill the tracker immediate burst batch (default 16)."""
     from ccbt.session.session import AsyncTorrentSession
 
     td = {
@@ -767,8 +833,9 @@ async def test_immediate_tracker_connection_from_single_udp_announce_can_exceed_
             break
 
     connect_to_download.assert_awaited_once()
-    assert len(connect_to_download.await_args.args[0]) >= 20
-    assert len(connect_to_download.await_args.args[0]) <= 24
+    # Default discovery.tracker_immediate_connect_burst_* is 16; bounded batch cannot exceed that.
+    batch = connect_to_download.await_args.args[0]
+    assert len(batch) == 16
 
 
 @pytest.mark.asyncio
@@ -883,7 +950,9 @@ async def test_immediate_tracker_connection_fallback_clears_in_progress_on_failu
         "file_info": None,
     }
     session = AsyncTorrentSession(td, ".")
-    session.handle_magnet_metadata_exchange = AsyncMock(side_effect=RuntimeError("boom"))
+    session.handle_magnet_metadata_exchange = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
     session.download_manager.peer_manager = SimpleNamespace(connections={})
     session.piece_manager._metadata_incomplete = True
 
@@ -1090,12 +1159,16 @@ async def test_selector_premarked_piece_still_issues_initial_request(
     """Selector pre-marking must not suppress the first real piece request."""
     import time
 
-
     torrent_data = {
         "info_hash": b"5" * 20,
         "name": "request-race-test",
         "announce": "http://tracker.example.com/announce",
-        "file_info": {"type": "single", "length": 16384, "name": "x", "total_length": 16384},
+        "file_info": {
+            "type": "single",
+            "length": 16384,
+            "name": "x",
+            "total_length": 16384,
+        },
         "pieces_info": {
             "piece_length": 16384,
             "num_pieces": 1,
@@ -1112,9 +1185,7 @@ async def test_selector_premarked_piece_still_issues_initial_request(
     piece.request_count = 1
     piece.last_request_time = time.time()
     piece_manager._pending_piece_requests.add(0)
-    piece_manager.peer_availability["198.51.100.10:6881"] = SimpleNamespace(
-        pieces={0}
-    )
+    piece_manager.peer_availability["198.51.100.10:6881"] = SimpleNamespace(pieces={0})
 
     peer_manager = SimpleNamespace(get_active_peers=list, connections={})
     request_calls: list[tuple[int, int]] = []
@@ -1176,10 +1247,14 @@ async def test_emergency_tracker_path_attempts_metadata_exchange() -> None:
         is_private=False,
     )
     handler = TorrentAdditionHandler(
-        SimpleNamespace(logger=SimpleNamespace(info=lambda *a, **k: None,
-                                               warning=lambda *a, **k: None,
-                                               debug=lambda *a, **k: None),
-                        config=SimpleNamespace())
+        SimpleNamespace(
+            logger=SimpleNamespace(
+                info=lambda *a, **k: None,
+                warning=lambda *a, **k: None,
+                debug=lambda *a, **k: None,
+            ),
+            config=SimpleNamespace(),
+        )
     )
 
     await handler._setup_emergency_peer_discovery(session)

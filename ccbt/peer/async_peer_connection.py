@@ -13,6 +13,7 @@ import logging
 import math
 import random
 import time
+import warnings
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
@@ -77,6 +78,38 @@ from ccbt.utils.shutdown import is_shutting_down
 
 # Error message constants
 _ERROR_READER_NOT_INITIALIZED = "Reader is not initialized"
+_CAN_REQUEST_LOG = logging.getLogger(f"{__name__}.can_request")
+_FIRST_REQUEST_INFO_LOG_INTERVAL_S = 2.0
+
+# Process-wide: avoid spamming DeprecationWarning when many torrents disable strict priority.
+_LEGACY_STRICT_TRACKER_SOURCE_PRIORITY_FALSE_WARN_STATE: dict[str, bool] = {
+    "emitted": False,
+}
+
+
+def _warn_deprecated_legacy_tracker_source_connect_priority(config: Any) -> None:
+    """Emit a single DeprecationWarning when strict tracker-first ordering is disabled.
+
+    ``discovery.strict_tracker_source_connect_priority=False`` preserves pre-2025 behavior
+    (legacy source bonuses, desperate round-robin interleave, FIFO pending queue). That
+    path exists for short-term compatibility and may be removed after a deprecation window.
+    """
+    if _LEGACY_STRICT_TRACKER_SOURCE_PRIORITY_FALSE_WARN_STATE["emitted"]:
+        return
+    disc = getattr(config, "discovery", None)
+    if disc is None or bool(
+        getattr(disc, "strict_tracker_source_connect_priority", True),
+    ):
+        return
+    _LEGACY_STRICT_TRACKER_SOURCE_PRIORITY_FALSE_WARN_STATE["emitted"] = True
+    warnings.warn(
+        "discovery.strict_tracker_source_connect_priority=False is deprecated: legacy "
+        "peer ordering (DHT/PEX interleave, legacy source bonuses, unordered pending "
+        "queue) is retained for compatibility only; remove CCBT_STRICT_TRACKER_SOURCE_"
+        "CONNECT_PRIORITY=false after migration.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 def _apply_peer_choked_solo_grace(
@@ -157,6 +190,7 @@ class PeerStats:
     request_latency: float = 0.0  # average latency in seconds
     last_activity: float = field(default_factory=time.time)
     last_rate_sample_time: float = field(default_factory=time.time)
+    last_piece_payload_time: float = 0.0
     snub_count: int = 0
     consecutive_failures: int = 0
     performance_score: float = (
@@ -248,6 +282,7 @@ class AsyncPeerConnection:
     metadata_exchange_started_at: float = 0.0
     metadata_exchange_completed_at: float = 0.0
     last_disconnect_stage: str = ""
+    logged_first_outbound_request: bool = False
 
     # Per-peer rate limiting (upload throttling)
     per_peer_upload_limit_kib: int = 0  # KiB/s, 0 = unlimited
@@ -401,6 +436,7 @@ class AsyncPeerConnection:
         self,
         *,
         require_recent_piece_availability: bool = False,
+        effective_pipeline_cap: Optional[int] = None,
     ) -> bool:
         """Check if we can make new requests.
 
@@ -408,13 +444,19 @@ class AsyncPeerConnection:
         but we don't block requests here - we send "interested" proactively during handshake.
         This allows downloads to start even if "interested" message was delayed or failed.
         """
+        cap = (
+            self.max_pipeline_depth
+            if effective_pipeline_cap is None
+            else min(int(effective_pipeline_cap), int(self.max_pipeline_depth))
+        )
         block_reason = self.get_request_block_reason(
-            require_recent_piece_availability=require_recent_piece_availability
+            require_recent_piece_availability=require_recent_piece_availability,
+            effective_pipeline_cap=effective_pipeline_cap,
         )
         can_req = block_reason is None
         is_active = self.is_active()
         not_choking = not self.peer_choking
-        pipeline_available = len(self.outstanding_requests) < self.max_pipeline_depth
+        pipeline_available = len(self.outstanding_requests) < cap
 
         if require_recent_piece_availability:
             confidence_window = float(
@@ -434,11 +476,14 @@ class AsyncPeerConnection:
 
         # Log when can_request() returns False to help diagnose issues
         if not can_req:
+            counts = getattr(self, "_request_block_reason_counts", None)
+            if not isinstance(counts, dict):
+                counts = {}
+                self._request_block_reason_counts = counts
+            key = str(block_reason or "unknown")
+            counts[key] = int(counts.get(key, 0) or 0) + 1
             # Only log at debug level to avoid spam, but include all details
-            import logging
-
-            logger = logging.getLogger(f"{__name__}.can_request")
-            logger.debug(
+            _CAN_REQUEST_LOG.debug(
                 "can_request() returned False for %s: block_reason=%s, is_active=%s, not_choking=%s "
                 "(peer_choking=%s), pipeline_available=%s (outstanding=%d/%d), state=%s",
                 self.peer_info,
@@ -448,9 +493,17 @@ class AsyncPeerConnection:
                 self.peer_choking,
                 pipeline_available,
                 len(self.outstanding_requests),
-                self.max_pipeline_depth,
+                cap,
                 self.state.value,
             )
+            if counts[key] % 50 == 0:
+                _CAN_REQUEST_LOG.info(
+                    "can_request sustained block for %s: reason=%s hits=%d state=%s",
+                    self.peer_info,
+                    key,
+                    counts[key],
+                    self.state.value,
+                )
 
         return can_req
 
@@ -458,6 +511,7 @@ class AsyncPeerConnection:
         self,
         *,
         require_recent_piece_availability: bool = False,
+        effective_pipeline_cap: Optional[int] = None,
     ) -> Optional[str]:
         """Return the request-block reason for this peer, if any.
 
@@ -468,7 +522,12 @@ class AsyncPeerConnection:
             return "inactive"
         if self.peer_choking:
             return "remote_choked"
-        if len(self.outstanding_requests) >= self.max_pipeline_depth:
+        cap = (
+            self.max_pipeline_depth
+            if effective_pipeline_cap is None
+            else min(int(effective_pipeline_cap), int(self.max_pipeline_depth))
+        )
+        if len(self.outstanding_requests) >= cap:
             return "pipeline_saturated"
         if require_recent_piece_availability:
             confidence_window = float(
@@ -724,6 +783,61 @@ class AsyncPeerConnection:
         self._upload_last_update = current_time
 
 
+# When active peer count is in the mid band (3..49), default batch budget is short (20s).
+# Extend to the patient window if nobody can accept requests yet but work remains queued
+# or handshakes are in flight — avoids mass cancel/requeue while still hunting peers.
+_MID_SWARM_PATIENCE_PENDING_MIN = 48
+_MID_SWARM_PATIENCE_INFLIGHT_MIN = 3
+
+
+def _mid_swarm_patience_extension_applies(
+    active_peer_count: int,
+    *,
+    requestable_peer_count: int,
+    pending_queue_depth: int,
+    inflight_peer_connects: int,
+) -> bool:
+    """True when the 3..49 active band should use the 45s batch budget like sparse swarms."""
+    return (
+        3 <= active_peer_count < 50
+        and requestable_peer_count == 0
+        and (
+            pending_queue_depth >= _MID_SWARM_PATIENCE_PENDING_MIN
+            or inflight_peer_connects >= _MID_SWARM_PATIENCE_INFLIGHT_MIN
+        )
+    )
+
+
+def _connect_batch_max_duration_s(
+    active_peer_count: int,
+    *,
+    requestable_peer_count: int = 0,
+    pending_queue_depth: int = 0,
+    inflight_peer_connects: int = 0,
+) -> float:
+    """Seconds budget for one ``connect_to_peers`` batch before re-queueing remainder.
+
+    Few post-handshake actives get a longer window even when discovery returns many
+    candidates; otherwise slow handshakes exhaust the short budget and churn cancels.
+    Many actives use a shorter mid-swarm window so DHT deferral is not blocked too long.
+
+    In the 3..49 active band, if no peer is requestable but the pending queue is deep or
+    several connects are in flight, use the same 45s patience as the sparse-active case.
+    """
+    if active_peer_count <= 2:
+        return 45.0
+    if active_peer_count < 50:
+        if _mid_swarm_patience_extension_applies(
+            active_peer_count,
+            requestable_peer_count=requestable_peer_count,
+            pending_queue_depth=pending_queue_depth,
+            inflight_peer_connects=inflight_peer_connects,
+        ):
+            return 45.0
+        return 20.0
+    return 45.0
+
+
 class AsyncPeerConnectionManager:
     """Async peer connection manager with advanced features."""
 
@@ -804,13 +918,19 @@ class AsyncPeerConnectionManager:
         else:
             self.circuit_breaker_manager = None
 
-        # Connection management
+        # Connection management. Teardown sets ERROR/DISCONNECTED first; ``connections``
+        # removal happens after the message loop exits (see ``del self.connections[...]``
+        # in disconnect/cleanup paths). Short windows with terminal keys still present
+        # are normal—``get_connection_summary`` exposes terminal_disconnected_connections,
+        # error_state_connections, and no_stream_connections for diagnostics.
         self.connections: dict[str, AsyncPeerConnection] = {}
         self.connection_lock = asyncio.Lock()
         self._last_connection_state_debug_log_monotonic = 0.0
-        # Single-flight connect: owner vs DHT deferral (see _connection_batches_in_progress)
+        self._first_outbound_request_info_last_monotonic: float = 0.0
+        # Connect batches: count of concurrent connect_to_peers owners (see
+        # network.connect_to_peers_parallel_batches, default 1 = legacy single-flight).
         self._connect_to_peers_lock = asyncio.Lock()
-        self._batch_owner_active: bool = False
+        self._connect_batch_active_count: int = 0
         self._dht_connect_deferral_active: bool = False
         # Pending peer queue for deferred batches
         self._pending_peer_queue: list[PeerInfo] = []
@@ -821,6 +941,19 @@ class AsyncPeerConnectionManager:
         self._pending_resume_task: Optional[asyncio.Task[None]] = None
         self._pending_resume_requested: bool = False
         self._pending_resume_retry_task: Optional[asyncio.Task[None]] = None
+        self._requestable_deficit_last_notified_at: float = 0.0
+        self._requestable_deficit_notify_min_interval_s: float = float(
+            getattr(
+                self.config.discovery,
+                "requestable_deficit_notify_min_interval_s",
+                5.0,
+            )
+        )
+        self._reconnection_non_progress_cycles: int = 0
+        self._reconnection_forced_overlap_period: int = 4
+        self._reconnection_forced_overlap_counter: int = 0
+        self._reconnection_suppressed_cycles_total: int = 0
+        self._reconnection_forced_overlap_cycles_total: int = 0
         self._pending_peer_queue_max_age_s: float = float(
             getattr(self.config.network, "pending_peer_queue_max_age_s", 120.0)
         )
@@ -1087,6 +1220,19 @@ class AsyncPeerConnectionManager:
         self.event_bus: Optional[Any] = None  # Optional[EventBus]
 
     @property
+    def _batch_owner_active(self) -> bool:
+        """True while at least one connect_to_peers batch is active."""
+        return self._connect_batch_active_count > 0
+
+    @_batch_owner_active.setter
+    def _batch_owner_active(self, value: bool) -> None:
+        """Compatibility: tests and legacy paths set the bool directly."""
+        if value:
+            self._connect_batch_active_count = max(1, self._connect_batch_active_count)
+        else:
+            self._connect_batch_active_count = 0
+
+    @property
     def _connection_batches_in_progress(self) -> bool:
         """True while connect owner runs or DHT should defer (compatibility shim)."""
         return self._batch_owner_active or self._dht_connect_deferral_active
@@ -1094,10 +1240,10 @@ class AsyncPeerConnectionManager:
     @_connection_batches_in_progress.setter
     def _connection_batches_in_progress(self, value: bool) -> None:
         if value:
-            self._batch_owner_active = True
+            self._connect_batch_active_count = max(1, self._connect_batch_active_count)
             self._dht_connect_deferral_active = True
         else:
-            self._batch_owner_active = False
+            self._connect_batch_active_count = 0
             self._dht_connect_deferral_active = False
 
     def set_security_manager(self, security_manager: Union[Any, None]) -> None:
@@ -1333,6 +1479,12 @@ class AsyncPeerConnectionManager:
         self._ensure_pending_queue_initialized()
         if not self._pending_peer_queue:
             return
+        now = time.monotonic()
+        min_interval = max(0.0, self._requestable_deficit_notify_min_interval_s)
+        elapsed = now - float(self._requestable_deficit_last_notified_at or 0.0)
+        if elapsed < min_interval:
+            return
+        self._requestable_deficit_last_notified_at = now
         self.logger.debug(
             "Requestable peer deficit: scheduling pending resume (pending=%d)",
             len(self._pending_peer_queue),
@@ -1397,6 +1549,61 @@ class AsyncPeerConnectionManager:
         )
         self.add_background_task(self._pending_resume_retry_task)
 
+    def _apply_strict_tracker_dht_pex_pending_boost(
+        self, ordered: list[PeerInfo]
+    ) -> list[PeerInfo]:
+        """After strict source sort, splice PEX/DHT peers after a tracker prefix window."""
+        boost_n = int(
+            getattr(
+                self.config.discovery,
+                "strict_tracker_pending_dht_pex_boost",
+                2,
+            )
+            or 0
+        )
+        prefix_n = int(
+            getattr(
+                self.config.discovery,
+                "strict_tracker_pending_tracker_prefix",
+                8,
+            )
+            or 0
+        )
+        if boost_n <= 0 or not ordered:
+            return ordered
+
+        trackers_in_order = [
+            p for p in ordered if self._peer_source_connect_priority_rank(p) == 0
+        ]
+        prefix = trackers_in_order[:prefix_n]
+        prefix_keys = {self._get_peer_key(p) for p in prefix}
+
+        dht_pex_pool = [
+            p for p in ordered if 2 <= self._peer_source_connect_priority_rank(p) <= 3
+        ]
+        boost = dht_pex_pool[:boost_n]
+        if not boost:
+            return ordered
+
+        boost_keys = {self._get_peer_key(p) for p in boost}
+        out: list[PeerInfo] = []
+        out.extend(prefix)
+        out.extend(boost)
+        for p in ordered:
+            k = self._get_peer_key(p)
+            if k in prefix_keys or k in boost_keys:
+                continue
+            out.append(p)
+
+        old_keys = tuple(self._get_peer_key(p) for p in ordered)
+        new_keys = tuple(self._get_peer_key(p) for p in out)
+        if old_keys != new_keys:
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "peer_pending_strict_dht_pex_boost_reorder_total"
+                )
+        return out
+
     async def _queue_pending_peers(
         self,
         peers: Iterable[PeerInfo],
@@ -1421,6 +1628,26 @@ class AsyncPeerConnectionManager:
 
             if enqueued == 0:
                 return 0
+
+            if enqueued > 0 and getattr(
+                self.config.discovery,
+                "strict_tracker_source_connect_priority",
+                True,
+            ):
+                indexed = list(enumerate(self._pending_peer_queue))
+                indexed.sort(
+                    key=lambda iv: (
+                        self._peer_source_connect_priority_rank(iv[1]),
+                        iv[0],
+                    )
+                )
+                self._pending_peer_queue = (
+                    self._apply_strict_tracker_dht_pex_pending_boost(
+                        [p for _i, p in indexed]
+                    )
+                )
+            # When strict_tracker_source_connect_priority is False (deprecated), pending
+            # peers stay in arrival order after this merge (no source-priority resort).
 
             pending_total = len(self._pending_peer_queue)
             queue_edge = queue_was_empty and pending_total > 0
@@ -1834,8 +2061,8 @@ class AsyncPeerConnectionManager:
             )
         if not hasattr(self, "_connect_to_peers_lock"):
             self._connect_to_peers_lock = asyncio.Lock()
-        if not hasattr(self, "_batch_owner_active"):
-            self._batch_owner_active = False
+        if not hasattr(self, "_connect_batch_active_count"):
+            self._connect_batch_active_count = 0
         if not hasattr(self, "_dht_connect_deferral_active"):
             self._dht_connect_deferral_active = False
 
@@ -2291,6 +2518,28 @@ class AsyncPeerConnectionManager:
             )
         return False
 
+    def _effective_bitfield_have_wait_timeout_s(self) -> float:
+        """Seconds to wait after handshake for bitfield or HAVE (longer while metadata incomplete)."""
+        net = getattr(self.config, "network", None)
+        base = 120.0
+        if net is not None:
+            base = float(getattr(net, "bitfield_have_wait_timeout_s", 120.0) or 120.0)
+        base = max(30.0, min(600.0, base))
+        if not self._metadata_is_incomplete():
+            return base
+        mult = 1.0
+        if net is not None:
+            mult = float(
+                getattr(
+                    net,
+                    "bitfield_have_wait_metadata_incomplete_multiplier",
+                    2.0,
+                )
+                or 1.0
+            )
+        mult = max(1.0, min(5.0, mult))
+        return max(base, min(600.0, base * mult))
+
     def _connection_is_metadata_only(self, connection: AsyncPeerConnection) -> bool:
         """Return whether a connection is currently useful only for metadata."""
         return self._connection_supports_metadata(
@@ -2637,6 +2886,9 @@ class AsyncPeerConnectionManager:
             "inactive_connections": 0,
             "availability_stale_connections": 0,
             "request_blocked_unknown_connections": 0,
+            "terminal_disconnected_connections": 0,
+            "error_state_connections": 0,
+            "no_stream_connections": 0,
             "connect_attempts": int(
                 self._connection_stage_counters.get("connect_attempts", 0)
             ),
@@ -2715,6 +2967,12 @@ class AsyncPeerConnectionManager:
         async with self.connection_lock:
             summary["total_connections"] = len(self.connections)
             for peer_key, connection in self.connections.items():
+                if connection.state == ConnectionState.DISCONNECTED:
+                    summary["terminal_disconnected_connections"] += 1
+                if connection.state == ConnectionState.ERROR:
+                    summary["error_state_connections"] += 1
+                if connection.reader is None or connection.writer is None:
+                    summary["no_stream_connections"] += 1
                 if connection.state in (
                     ConnectionState.CONNECTING,
                     ConnectionState.HANDSHAKE_SENT,
@@ -3743,6 +4001,7 @@ class AsyncPeerConnectionManager:
 
             # Mark as running after all tasks are started
             self._running = True
+            _warn_deprecated_legacy_tracker_source_connect_priority(self.config)
 
             self.logger.debug(
                 "Async peer connection manager started (connection_pool=%s, "
@@ -4867,8 +5126,37 @@ class AsyncPeerConnectionManager:
         await self._prune_probation_peers("pre_batch")
 
         submit_upstream = len(peer_list)
+        batch_telemetry_start = False
         async with self._connect_to_peers_lock:
-            if self._batch_owner_active:
+            raw_parallel = getattr(
+                self.config.network,
+                "connect_to_peers_parallel_batches",
+                1,
+            )
+            try:
+                max_parallel = int(raw_parallel)
+            except (TypeError, ValueError):
+                max_parallel = 1
+            max_parallel = max(1, min(8, max_parallel))
+
+            if max_parallel > 1:
+                _mc = int(
+                    getattr(
+                        self.config.network,
+                        "max_concurrent_connection_attempts",
+                        20,
+                    )
+                    or 20
+                )
+                self.logger.debug(
+                    "Parallel connect batches: max_parallel=%d (all batches share "
+                    "_global_connection_semaphore limit=%d)",
+                    max_parallel,
+                    _mc,
+                )
+
+            if self._connect_batch_active_count >= max_parallel:
+                # Pending queue skips duplicate keys vs existing pending/connected (_queue_pending_peers).
                 enqueued = await self.enqueue_peer_dicts_pending(
                     peer_list,
                     reason="connect_reentrant",
@@ -4894,18 +5182,22 @@ class AsyncPeerConnectionManager:
                     queued_peer_count=enqueued,
                     queue_depth_after=depth,
                 )
-            self._batch_owner_active = True
-            self._dht_connect_deferral_active = True
+            prev_batches = self._connect_batch_active_count
+            self._connect_batch_active_count = prev_batches + 1
+            if prev_batches == 0:
+                self._dht_connect_deferral_active = True
+                batch_telemetry_start = True
 
         from ccbt.session.peer_discovery_telemetry import (
             record_batch_and_deferral_transition,
         )
 
-        record_batch_and_deferral_transition(
-            self,
-            batch_owner_active=True,
-            deferral_active=True,
-        )
+        if batch_telemetry_start:
+            record_batch_and_deferral_transition(
+                self,
+                batch_owner_active=True,
+                deferral_active=True,
+            )
 
         batch_start_time = time.time()
         batch_id = self._next_connection_batch_id()
@@ -4965,22 +5257,32 @@ class AsyncPeerConnectionManager:
                     1 for conn in self.connections.values() if conn.can_request()
                 )
 
-            # Recovery-mode tuning: when active peers are already very low, be more
-            # patient during batch attempts to avoid aggressive churn from timeout
-            # cycling before useful peers can fully negotiate.
-            low_peer_recovery_mode = active_peer_count <= 2 and len(peer_list) <= 30
+            async with self._pending_peer_queue_lock:
+                _pending_depth_for_batch_budget = len(self._pending_peer_queue)
+            _inflight_n_for_batch_budget = len(self._inflight_peer_connects)
 
-            # Connection batch: reduce max batch duration to prevent blocking DHT discovery
-            # With 199 peers and batch_size=20, that's 10 batches. If each batch takes 25s,
-            # sequential processing would take 250s. We need to clear the flag sooner to
-            # allow DHT discovery to start. Use 20s for low peer count, 45s otherwise.
-            # This ensures batches don't block DHT discovery indefinitely on popular torrents.
-            # NOTE: Must be calculated AFTER active_peer_count is set (line 2178)
-            max_batch_duration = (
-                45.0
-                if low_peer_recovery_mode
-                else (20.0 if active_peer_count < 50 else 45.0)
-            )  # Reduced from 60.0
+            # Connection batch: cap wall time per batch so DHT deferral does not stick forever.
+            # Budget scales with post-handshake active count (not len(peer_list)): a large
+            # tracker peer list with 0-2 actives still needs patience for handshakes.
+            # NOTE: Must be calculated AFTER active_peer_count is set above.
+            max_batch_duration = _connect_batch_max_duration_s(
+                active_peer_count,
+                requestable_peer_count=requestable_peer_count,
+                pending_queue_depth=_pending_depth_for_batch_budget,
+                inflight_peer_connects=_inflight_n_for_batch_budget,
+            )
+            if _mid_swarm_patience_extension_applies(
+                active_peer_count,
+                requestable_peer_count=requestable_peer_count,
+                pending_queue_depth=_pending_depth_for_batch_budget,
+                inflight_peer_connects=_inflight_n_for_batch_budget,
+            ):
+                with contextlib.suppress(Exception):
+                    get_metrics_collector().increment_counter(
+                        "peer_connect_batch_mid_swarm_patience_total"
+                    )
+            # Few post-handshake actives: longer batch gather timeout and fail-fast delay below.
+            low_peer_recovery_mode = active_peer_count <= 2
 
             # Connection batch: when many peers are discovered, allow more connections
             # Don't limit to len(peer_list) when we have many discovered peers - connect to as many as possible
@@ -6872,18 +7174,24 @@ class AsyncPeerConnectionManager:
             )
             raise
         finally:
+            became_idle = False
             async with self._connect_to_peers_lock:
-                self._batch_owner_active = False
-                self._dht_connect_deferral_active = False
+                self._connect_batch_active_count = max(
+                    0, self._connect_batch_active_count - 1
+                )
+                became_idle = self._connect_batch_active_count == 0
+                if became_idle:
+                    self._dht_connect_deferral_active = False
             from ccbt.session.peer_discovery_telemetry import (
                 record_batch_and_deferral_transition,
             )
 
-            record_batch_and_deferral_transition(
-                self,
-                batch_owner_active=False,
-                deferral_active=False,
-            )
+            if became_idle:
+                record_batch_and_deferral_transition(
+                    self,
+                    batch_owner_active=False,
+                    deferral_active=False,
+                )
 
     def _is_webrtc_peer(self, peer_info: PeerInfo) -> bool:
         """Check if peer should use WebRTC connection.
@@ -9472,9 +9780,7 @@ class AsyncPeerConnectionManager:
                 # However, most peers send bitfield immediately after handshake
                 # We allow HAVE messages as an alternative to bitfield (protocol-compliant)
                 # Only disconnect if no bitfield AND no HAVE messages after extended timeout
-                bitfield_timeout = (
-                    120.0  # 120 seconds timeout (increased from 60s for leniency)
-                )
+                bitfield_timeout = self._effective_bitfield_have_wait_timeout_s()
                 handshake_time = time.time()
 
                 async def bitfield_timeout_monitor():
@@ -13806,6 +14112,7 @@ class AsyncPeerConnectionManager:
         # Update download stats
 
         connection.stats.bytes_downloaded += len(message.block)
+        connection.stats.last_piece_payload_time = time.time()
 
         peer_key = self._get_peer_key(connection)
 
@@ -14718,9 +15025,9 @@ class AsyncPeerConnectionManager:
                     1 for conn in self.connections.values() if conn.is_active()
                 )
 
-        if active_remaining == 0 and not self._pending_peer_queue:
-            self._batch_owner_active = False
-            self._dht_connect_deferral_active = False
+        # Note: Do not clear _batch_owner_active / _dht_connect_deferral_active here.
+        # connect_to_peers() finally is authoritative; clearing on last disconnect
+        # races in-flight batches and can release the owner lock early.
 
         self.logger.debug(
             "PEER_DISCONNECT: %s removed at stage=%s (state=%s, outstanding_requests=%d, metadata_started=%s, metadata_completed=%s)",
@@ -14910,6 +15217,57 @@ class AsyncPeerConnectionManager:
                     active_peer_count = len(self.get_active_peers())
 
                     if active_peer_count < 3:
+                        pending_depth = len(getattr(self, "_pending_peer_queue", []))
+                        pending_oldest_age = 0.0
+                        enq = getattr(self, "_pending_peer_enqueued_at", None)
+                        if isinstance(enq, dict) and enq:
+                            with contextlib.suppress(Exception):
+                                pending_oldest_age = max(
+                                    0.0,
+                                    time.monotonic()
+                                    - min(float(t) for t in enq.values()),
+                                )
+                        queue_critical = (
+                            pending_depth >= 200 or pending_oldest_age >= 60.0
+                        )
+                        if queue_critical:
+                            self._reconnection_non_progress_cycles += 1
+                            self._reconnection_forced_overlap_counter += 1
+                        else:
+                            self._reconnection_non_progress_cycles = 0
+                            self._reconnection_forced_overlap_counter = 0
+                        if self._reconnection_non_progress_cycles >= 2:
+                            force_every = max(
+                                2, int(self._reconnection_forced_overlap_period or 4)
+                            )
+                            if (
+                                self._reconnection_forced_overlap_counter % force_every
+                            ) != 0:
+                                self._reconnection_suppressed_cycles_total += 1
+                                self.logger.warning(
+                                    "Reconnection loop [%s]: suppressing overlap due to non-progress backlog "
+                                    "(active=%d pending=%d oldest_age=%.1fs cycles=%d suppressed=%d forced=%d)",
+                                    tlabel,
+                                    active_peer_count,
+                                    pending_depth,
+                                    pending_oldest_age,
+                                    self._reconnection_non_progress_cycles,
+                                    self._reconnection_suppressed_cycles_total,
+                                    self._reconnection_forced_overlap_cycles_total,
+                                )
+                                await asyncio.sleep(5.0)
+                                continue
+                            self._reconnection_forced_overlap_cycles_total += 1
+                            self.logger.warning(
+                                "Reconnection loop [%s]: backlog remains critical; allowing bounded forced overlap "
+                                "(active=%d pending=%d oldest_age=%.1fs cycles=%d forced=%d)",
+                                tlabel,
+                                active_peer_count,
+                                pending_depth,
+                                pending_oldest_age,
+                                self._reconnection_non_progress_cycles,
+                                self._reconnection_forced_overlap_cycles_total,
+                            )
                         # Ultra-low peer count: allow reconnection even during batches
 
                         # This is critical to prevent downloads from stalling
@@ -17034,6 +17392,84 @@ class AsyncPeerConnectionManager:
 
         return stats.performance_score
 
+    def _peer_source_connect_priority_rank(self, peer_info: PeerInfo) -> int:
+        """Lower rank = connect earlier when strict tracker priority is enabled."""
+        raw = getattr(peer_info, "peer_source", None) or "unknown"
+        src = str(raw).strip().lower()
+        if src == "tracker" or src.startswith("tracker_"):
+            return 0
+        if src == "incoming":
+            return 1
+        if src == "pex":
+            return 2
+        if src in ("dht", "dht_node"):
+            return 3
+        return 4
+
+    def _order_peer_scores_tracker_before_dht(
+        self,
+        peer_scores: list[tuple[PeerInfo, float]],
+    ) -> list[PeerInfo]:
+        """Preserve score order within each discovery bucket; emit tracker-class peers first."""
+        order_keys = ("tracker", "incoming", "pex", "dht", "unknown")
+        buckets: dict[str, list[PeerInfo]] = {k: [] for k in order_keys}
+        for peer_info, _score in peer_scores:
+            raw = getattr(peer_info, "peer_source", None) or "unknown"
+            src = str(raw).strip().lower()
+            if src == "tracker" or src.startswith("tracker_"):
+                key = "tracker"
+            elif src == "incoming":
+                key = "incoming"
+            elif src == "pex":
+                key = "pex"
+            elif src in ("dht", "dht_node"):
+                key = "dht"
+            else:
+                key = "unknown"
+            buckets[key].append(peer_info)
+        out: list[PeerInfo] = []
+        for k in order_keys:
+            out.extend(buckets[k])
+        return out
+
+    async def notify_ml_peer_performance(
+        self,
+        peer_key: str,
+        performance_data: dict[str, Any],
+    ) -> None:
+        """Feed ``PeerSelector`` when ``peer_selector_ml_ranking_weight`` is enabled.
+
+        Uses the same feature-cache key as :meth:`_rank_peers_for_connection`
+        (handshake ``peer_id`` when known, else ``anon:ip:port``).
+        """
+        ml_weight = float(
+            getattr(self.config.strategy, "peer_selector_ml_ranking_weight", 0.0)
+            or 0.0,
+        )
+        if ml_weight <= 0.0:
+            return
+        try:
+            from ccbt.ml.peer_selector import (
+                PeerSelector,
+                peer_selector_cache_key,
+                peer_selector_cache_key_for_piece_peer_key,
+            )
+
+            if self._ml_peer_selector is None:
+                self._ml_peer_selector = PeerSelector()
+            connection = self.connections.get(peer_key)
+            pinfo = getattr(connection, "peer_info", None) if connection else None
+            if pinfo is not None:
+                ml_cache_key = peer_selector_cache_key(pinfo)
+            else:
+                ml_cache_key = peer_selector_cache_key_for_piece_peer_key(peer_key)
+            await self._ml_peer_selector.update_peer_performance(
+                ml_cache_key,
+                performance_data,
+            )
+        except Exception as e:
+            self.logger.debug("ML peer performance update skipped: %s", e)
+
     async def _rank_peers_for_connection(
         self, peer_list: list[PeerInfo]
     ) -> list[PeerInfo]:
@@ -17339,23 +17775,32 @@ class AsyncPeerConnectionManager:
             source_bonus = 0.0
 
             peer_source = peer_info.peer_source or "unknown"
-
-            if peer_source == "tracker":
-                source_bonus = (
-                    0.15  # Increased from 0.1 to 0.15 - tracker peers are more reliable
-                )
-
-                # Note: Tracker peers are more likely to have bitfields, so prioritize them
-
-                # This helps avoid connecting to peers with pieces=0 (no bitfield)
-
-            elif peer_source == "dht":
-                source_bonus = 0.05  # DHT peers get 5% bonus
-
-            elif peer_source == "pex":
-                source_bonus = (
-                    0.02  # Reduced from 0.03 to 0.02 - PEX peers are less reliable
-                )
+            strict_tp = getattr(
+                self.config.discovery,
+                "strict_tracker_source_connect_priority",
+                True,
+            )
+            ps_lower = str(peer_source).strip().lower()
+            is_tracker_class = ps_lower == "tracker" or ps_lower.startswith("tracker_")
+            if strict_tp:
+                if is_tracker_class:
+                    source_bonus = 0.22
+                elif ps_lower in ("dht", "dht_node", "pex"):
+                    source_bonus = 0.02
+                elif ps_lower == "incoming":
+                    source_bonus = 0.08
+                else:
+                    source_bonus = 0.04
+            elif is_tracker_class:
+                # DEPRECATED (strict_tracker_source_connect_priority=False): legacy source
+                # bonuses before tracker-first tuning; kept for compatibility only.
+                source_bonus = 0.15
+            elif ps_lower == "dht":
+                source_bonus = 0.05
+            elif ps_lower == "pex":
+                source_bonus = 0.02
+            else:
+                source_bonus = 0.0
 
             score += source_bonus
 
@@ -17533,7 +17978,16 @@ class AsyncPeerConnectionManager:
         # Return ranked peer list
 
         ranked_peers = [peer_info for peer_info, _ in peer_scores]
-        if zero_requestable_recovery and len(ranked_peers) >= 6:
+        strict_tp = getattr(
+            self.config.discovery,
+            "strict_tracker_source_connect_priority",
+            True,
+        )
+        if strict_tp:
+            ranked_peers = self._order_peer_scores_tracker_before_dht(peer_scores)
+        elif zero_requestable_recovery and len(ranked_peers) >= 6:
+            # DEPRECATED (strict_tracker_source_connect_priority=False): desperate-mode
+            # round-robin interleave across sources; strict=True uses tracker-first buckets.
             source_order = ("tracker", "dht", "pex", "unknown")
             buckets: dict[str, list[PeerInfo]] = {source: [] for source in source_order}
             for peer_info in ranked_peers:
@@ -17562,6 +18016,91 @@ class AsyncPeerConnectionManager:
 
         return ranked_peers
 
+    async def _maybe_cancel_sparse_stale_outstanding(
+        self,
+        connection: AsyncPeerConnection,
+        current_time: float,
+    ) -> int:
+        """Cancel oldest in-flight requests when a single supplier stalls with a full pipeline."""
+        sparse_s = float(
+            getattr(
+                self.config.network,
+                "sparse_pipeline_stale_payload_cancel_s",
+                0.0,
+            )
+            or 0.0
+        )
+        if sparse_s <= 0.0:
+            return 0
+        outstanding = connection.outstanding_requests
+        if len(outstanding) < 4:
+            return 0
+        pipeline_utilization = len(outstanding) / max(connection.max_pipeline_depth, 1)
+        if pipeline_utilization < 0.95:
+            return 0
+        requestable_n = sum(1 for c in self.connections.values() if c.can_request())
+        if requestable_n > 1:
+            return 0
+        last_payload = float(
+            getattr(connection.stats, "last_piece_payload_time", 0.0) or 0.0
+        )
+        if last_payload <= 0.0 or current_time - last_payload < sparse_s:
+            return 0
+
+        items = sorted(
+            outstanding.items(),
+            key=lambda kv: kv[1].timestamp,
+        )
+        n = len(items)
+        take = max(1, min(8, (n + 3) // 4))
+        to_cancel = items[:take]
+
+        cancelled_count = 0
+        for request_key, request_info in to_cancel:
+            try:
+                cancel_msg = CancelMessage(
+                    request_info.piece_index,
+                    request_info.begin,
+                    request_info.length,
+                )
+                await self._send_message(connection, cancel_msg)
+                if request_key in connection.outstanding_requests:
+                    del connection.outstanding_requests[request_key]
+                    cancelled_count += 1
+                    connection.stats.blocks_failed += 1
+            except Exception as e:
+                self.logger.warning(
+                    "Sparse-stale cancel failed %d:%d:%d from %s: %s",
+                    request_info.piece_index,
+                    request_info.begin,
+                    request_info.length,
+                    connection.peer_info,
+                    e,
+                )
+                if request_key in connection.outstanding_requests:
+                    del connection.outstanding_requests[request_key]
+                    cancelled_count += 1
+                    connection.stats.blocks_failed += 1
+
+        if cancelled_count > 0:
+            self.logger.info(
+                "Sparse pipeline stale payload: cancelled %d oldest request(s) from %s "
+                "(pipeline %d/%d, no payload for %.1fs, requestable_peers=%d)",
+                cancelled_count,
+                connection.peer_info,
+                len(connection.outstanding_requests),
+                connection.max_pipeline_depth,
+                current_time - last_payload,
+                requestable_n,
+            )
+            with contextlib.suppress(Exception):
+                get_metrics_collector().increment_counter(
+                    "peer_sparse_stale_outstanding_cancel_total", cancelled_count
+                )
+            with contextlib.suppress(Exception):
+                self.request_pending_resume(reason="sparse_stale_outstanding_cancel")
+        return cancelled_count
+
     async def _cleanup_timed_out_requests(self, connection: AsyncPeerConnection) -> int:
         """Clean up timed-out outstanding requests to free pipeline slots.
 
@@ -17589,6 +18128,8 @@ class AsyncPeerConnectionManager:
 
         """
         current_time = time.time()
+        with contextlib.suppress(Exception):
+            await self._maybe_cancel_sparse_stale_outstanding(connection, current_time)
 
         # Default timeout: 60 seconds (configurable via network.request_timeout)
 
@@ -18343,6 +18884,21 @@ class AsyncPeerConnectionManager:
                 request_info.length,
                 connection.peer_info,
             )
+            if not connection.logged_first_outbound_request:
+                connection.logged_first_outbound_request = True
+                now_m = time.monotonic()
+                if (
+                    now_m - self._first_outbound_request_info_last_monotonic
+                    >= _FIRST_REQUEST_INFO_LOG_INTERVAL_S
+                ):
+                    self._first_outbound_request_info_last_monotonic = now_m
+                    self.logger.info(
+                        "First BitTorrent REQUEST on wire to %s (piece=%d, begin=%d, length=%d)",
+                        connection.peer_info,
+                        request_info.piece_index,
+                        request_info.begin,
+                        request_info.length,
+                    )
 
         return requests_sent
 

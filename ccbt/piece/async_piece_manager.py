@@ -1395,6 +1395,9 @@ class AsyncPieceManager:
                 )
                 self.is_downloading = True
 
+            if not self._metadata_incomplete and self.num_pieces > 0 and self.pieces:
+                self._reconcile_endgame_mode_from_counts()
+
     def _ensure_piece_list_matches_metadata(self, *, log_fallback: bool) -> None:
         """Align ``self.pieces`` length with ``num_pieces`` via fallback init when needed.
 
@@ -2803,6 +2806,8 @@ class AsyncPieceManager:
             piece_index,
         )
         if not available_peers:
+            # Empty available_peers with live connections is often remote_choked / can_request
+            # gating (tit-for-tat), not a missing queue—see docs/en/network-troubleshooting.md.
             # Note: Log detailed information about why no peers are available
             # This helps diagnose why downloads aren't starting
             has_choked_peers_with_piece = False
@@ -2846,11 +2851,19 @@ class AsyncPieceManager:
                 from ccbt.utils.shutdown import is_shutting_down
 
                 if not is_shutting_down():
+                    confidence_band = "low"
+                    if tx_counts["request_ready"] > 0:
+                        confidence_band = "high"
+                    elif (
+                        tx_counts["pipeline_blocked"] > 0
+                        or tx_counts["remote_choked"] > 0
+                    ):
+                        confidence_band = "medium"
                     self._warn_piece_manager(
                         f"piece_no_available_peers:{piece_index}",
                         "No available peers for piece %d: active_peers=%d, peers_with_bitfield=%d, "
                         "remote_unchoked=%d, request_ready=%d, pipeline_blocked=%d, remote_choked=%d, "
-                        "choked_with_piece=%d (peer_manager=%s)",
+                        "choked_with_piece=%d, confidence_band=%s (peer_manager=%s)",
                         piece_index,
                         len(active_peers) if active_peers else 0,
                         len(peers_with_bitfield),
@@ -2859,11 +2872,15 @@ class AsyncPieceManager:
                         tx_counts["pipeline_blocked"],
                         tx_counts["remote_choked"],
                         len(choked_peers_with_piece),
+                        confidence_band,
                         peer_manager is not None,
                     )
                     if (
                         peer_manager is not None
-                        and tx_counts["pipeline_blocked"] > 0
+                        and (
+                            tx_counts["pipeline_blocked"] > 0
+                            or tx_counts["remote_choked"] > 0
+                        )
                         and tx_counts["request_ready"] == 0
                     ):
                         deficit_fn = getattr(
@@ -2900,18 +2917,45 @@ class AsyncPieceManager:
                     and piece.requests_dispatched == 0
                     and not self._piece_has_real_request_history(piece_index, piece)
                 ):
-                    # No requestable peers for this attempt; keep in REQUESTED for deferred retry.
-                    self.logger.debug(
-                        "No requestable peers for piece %d this attempt; keeping REQUESTED state for deferred retry",
-                        piece_index,
+                    no_dispatch_epoch_s = max(
+                        15.0,
+                        float(
+                            getattr(
+                                self.config.network,
+                                "pending_peer_queue_max_age_s",
+                                120.0,
+                            )
+                        )
+                        * 0.25,
                     )
-                    self._piece_selection_metrics["no_requestable_peers"] += 1
-                    # Anchor scheduling epoch once (e.g. tests or paths without selector pre-mark).
-                    # Do not refresh on every retry — that prevents stale-reset / timeout recovery
-                    # during choke or no-dispatch storms.
-                    if float(getattr(piece, "last_request_time", 0.0) or 0.0) <= 0.0:
-                        piece.last_request_time = time.time()
-                    piece.requests_dispatched = 0
+                    last_request_time = float(
+                        getattr(piece, "last_request_time", 0.0) or 0.0
+                    )
+                    no_dispatch_age = (
+                        0.0
+                        if last_request_time <= 0.0
+                        else time.time() - last_request_time
+                    )
+                    if no_dispatch_age >= no_dispatch_epoch_s:
+                        self.logger.debug(
+                            "No requestable peers for piece %d for %.1fs with no dispatch; resetting to MISSING",
+                            piece_index,
+                            no_dispatch_age,
+                        )
+                        self._reset_piece_to_missing(piece)
+                    else:
+                        # No requestable peers for this attempt; keep in REQUESTED for deferred retry.
+                        self.logger.debug(
+                            "No requestable peers for piece %d this attempt; keeping REQUESTED state for deferred retry",
+                            piece_index,
+                        )
+                        self._piece_selection_metrics["no_requestable_peers"] += 1
+                        # Anchor scheduling epoch once (e.g. tests or paths without selector pre-mark).
+                        # Do not refresh on every retry — that prevents stale-reset / timeout recovery
+                        # during choke or no-dispatch storms.
+                        if last_request_time <= 0.0:
+                            piece.last_request_time = time.time()
+                        piece.requests_dispatched = 0
                 elif (
                     piece.state == PieceState.REQUESTED
                     and piece.requests_dispatched > 0
@@ -3157,6 +3201,38 @@ class AsyncPieceManager:
         )
         return False
 
+    @staticmethod
+    def _high_pipeline_utilization_filter_threshold(
+        active_peer_count: int,
+        requestable_for_filter: int,
+    ) -> float:
+        """Utilization ratio above which a peer is treated as pipeline-saturated for piece pick.
+
+        Sparse swarms (several connections but at most one requestable peer) use a
+        slightly relaxed cap (0.98) so a lone supplier is not skipped near-full pipeline.
+        """
+        very_low_peer_context = active_peer_count <= 2
+        sparse_requestable_swarm = (
+            3 <= active_peer_count <= 24 and requestable_for_filter <= 1
+        )
+        if very_low_peer_context:
+            return 1.0
+        if sparse_requestable_swarm:
+            return 0.98
+        return 0.9
+
+    @staticmethod
+    def _sparse_swarm_effective_pipeline_cap(
+        connection: Any, *, active_peer_count: int
+    ) -> Optional[int]:
+        """Optional lower pipeline ceiling when at most two active peers (liveness tradeoff)."""
+        if active_peer_count > 2:
+            return None
+        mp = int(getattr(connection, "max_pipeline_depth", 10) or 10)
+        if mp <= 32:
+            return None
+        return max(24, (mp * 2) // 5)
+
     async def _get_peers_for_piece(
         self,
         piece_index: int,
@@ -3308,8 +3384,18 @@ class AsyncPieceManager:
         known_requestable_peers: list[AsyncPeerConnection] = []
         unknown_probe_candidates: list[AsyncPeerConnection] = []
         unknown_probe_limit = 1
+        requestable_for_filter = 0
+        for _c in active_peers:
+            if _c is not None and hasattr(_c, "can_request") and _c.can_request():
+                requestable_for_filter += 1
+        high_pipeline_filter_threshold = (
+            self._high_pipeline_utilization_filter_threshold(
+                active_peer_count,
+                requestable_for_filter,
+            )
+        )
+
         very_low_peer_context = active_peer_count <= 2
-        high_pipeline_filter_threshold = 1.0 if very_low_peer_context else 0.9
 
         for connection in active_peers:
             peer_key = self._normalize_peer_key(connection)
@@ -3338,9 +3424,18 @@ class AsyncPieceManager:
             )
             if enforce_piece_availability_confidence:
                 has_piece = has_piece_fresh
+            sparse_pipeline_cap = self._sparse_swarm_effective_pipeline_cap(
+                connection, active_peer_count=active_peer_count
+            )
+            eff_pipeline_depth = (
+                min(int(sparse_pipeline_cap), int(connection.max_pipeline_depth))
+                if sparse_pipeline_cap is not None
+                else int(connection.max_pipeline_depth)
+            )
             can_req = connection.can_request(
                 require_recent_piece_availability=enforce_piece_availability_confidence
                 and has_piece,
+                effective_pipeline_cap=sparse_pipeline_cap,
             )
 
             # Log detailed peer availability info (suppress during shutdown)
@@ -3380,14 +3475,13 @@ class AsyncPieceManager:
                     pieces_from_bitfield,
                     pieces_from_have,
                     len(connection.outstanding_requests),
-                    connection.max_pipeline_depth,
+                    eff_pipeline_depth,
                 )
 
             # IMPROVEMENT: Enhanced filtering - check pipeline availability more strictly
-            pipeline_utilization = len(connection.outstanding_requests) / max(
-                connection.max_pipeline_depth, 1
-            )
-            available_pipeline_slots = connection.get_available_pipeline_slots()
+            outstanding_for_pipe = len(connection.outstanding_requests)
+            pipeline_utilization = outstanding_for_pipe / max(eff_pipeline_depth, 1)
+            available_pipeline_slots = max(0, eff_pipeline_depth - outstanding_for_pipe)
 
             # Note: Check if piece is already being requested from this peer
             # This prevents duplicate requests to the same peer
@@ -3541,7 +3635,7 @@ class AsyncPieceManager:
                     reasons.append("inactive")
                 if available_pipeline_slots == 0:
                     reasons.append(
-                        f"pipeline_full({len(connection.outstanding_requests)}/{connection.max_pipeline_depth})"
+                        f"pipeline_full({outstanding_for_pipe}/{eff_pipeline_depth})"
                     )
 
                 self.logger.debug(
@@ -3561,8 +3655,8 @@ class AsyncPieceManager:
                     peer_key,
                     piece_index,
                     pipeline_utilization * 100,
-                    len(connection.outstanding_requests),
-                    connection.max_pipeline_depth,
+                    outstanding_for_pipe,
+                    eff_pipeline_depth,
                 )
                 continue
 
@@ -3573,8 +3667,8 @@ class AsyncPieceManager:
                     "Filtering peer %s for piece %d: no pipeline slots available (%d/%d)",
                     peer_key,
                     piece_index,
-                    len(connection.outstanding_requests),
-                    connection.max_pipeline_depth,
+                    outstanding_for_pipe,
+                    eff_pipeline_depth,
                 )
                 continue
 
@@ -3601,7 +3695,7 @@ class AsyncPieceManager:
                 peer_key,
                 piece_index,
                 available_pipeline_slots,
-                connection.max_pipeline_depth,
+                eff_pipeline_depth,
                 pipeline_utilization * 100,
             )
 
@@ -4218,6 +4312,13 @@ class AsyncPieceManager:
                     # This prevents overwhelming peers when peer count is low
                     throttle_factor = 1.0
                     effective_max_pipeline = max_pipeline
+                    sparse_send_cap = self._sparse_swarm_effective_pipeline_cap(
+                        peer_connection, active_peer_count=active_peer_count
+                    )
+                    if sparse_send_cap is not None:
+                        effective_max_pipeline = min(
+                            int(effective_max_pipeline), int(sparse_send_cap)
+                        )
                     if throttle_requests:
                         # Reduce effective pipeline depth to 50-70% when peer count is low
                         # Note: Ensure throttle_factor is at least 0.5, but don't go below 1 request
@@ -4227,8 +4328,8 @@ class AsyncPieceManager:
                             else 0.5
                         )  # 0.5 for 1 peer, 1.0 for 10+ peers
                         effective_max_pipeline = max(
-                            1, int(max_pipeline * throttle_factor)
-                        )  # Ensure at least 1 slot
+                            1, int(effective_max_pipeline * throttle_factor)
+                        )  # Compound on sparse cap when present
                         # Parallel piece tasks can push outstanding above effective_max_pipeline before any
                         # task observes the cap; max(1, effective - outstanding) then lies about capacity and
                         # the throttled slot check below refuses all sends while can_request() is still True.
@@ -4304,7 +4405,10 @@ class AsyncPieceManager:
                         if throttle_requests and idx > 0:
                             await asyncio.sleep(request_delay)
                         # IMPROVEMENT: Double-check peer can still request (pipeline might have filled)
-                        if not peer_connection.can_request():
+                        _req_kw: dict[str, Any] = {}
+                        if throttle_requests:
+                            _req_kw["effective_pipeline_cap"] = effective_max_pipeline
+                        if not peer_connection.can_request(**_req_kw):
                             if getattr(peer_connection, "peer_choking", False):
                                 self.logger.debug(
                                     "Skipping request to peer %s: peer is choking us "
@@ -4322,12 +4426,11 @@ class AsyncPieceManager:
                                 )
                             continue
 
-                        # Note: When throttling, use effective_max_pipeline instead of original max_pipeline_depth
-                        # This ensures we don't block requests when throttling reduces pipeline depth
+                        # Note: When throttling, use effective_max_pipeline consistently with can_request()
                         if throttle_requests:
                             # Use throttled pipeline depth when we are at or below the soft cap; if concurrent
                             # piece tasks already exceeded it, fall back to real pipeline slots so we do not
-                            # deadlock (can_request() still uses max_pipeline_depth).
+                            # deadlock.
                             _out = len(peer_connection.outstanding_requests)
                             if _out <= effective_max_pipeline:
                                 available_slots_throttled = max(
@@ -4648,6 +4751,30 @@ class AsyncPieceManager:
                             continue
 
         return requests_sent
+
+    def _reconcile_endgame_mode_from_counts(
+        self, *, remaining_pieces: Optional[int] = None
+    ) -> bool:
+        """Set ``endgame_mode`` from download progress (same threshold as piece selection).
+
+        Checkpoint restore can persist ``endgame_mode`` from disk while progress does not
+        justify it; selection previously only turned the flag on, never off.
+        """
+        if self._metadata_incomplete or self.num_pieces <= 0:
+            self.endgame_mode = False
+            return False
+        if not self.pieces or len(self.pieces) != self.num_pieces:
+            self.endgame_mode = False
+            return False
+        rem = (
+            remaining_pieces
+            if remaining_pieces is not None
+            else len(self.get_missing_pieces())
+        )
+        total = self.num_pieces
+        in_endgame = rem <= total * (1.0 - self.endgame_threshold)
+        self.endgame_mode = in_endgame
+        return in_endgame
 
     def _calculate_adaptive_endgame_duplicates(self) -> int:
         """Calculate adaptive duplicate count for endgame mode.
@@ -6918,6 +7045,27 @@ class AsyncPieceManager:
 
                 await self._select_pieces()
 
+                if self._metadata_incomplete:
+                    # Magnets: content selection is intentionally idle until ut_metadata completes.
+                    # Do not count cycles toward the no-progress stall gate (avoids misleading `unknown`).
+                    consecutive_no_pieces = 0
+                    base_interval = 1.0
+                    self._no_progress_streak = 0
+                    self._no_progress_gate_streak = 0
+                    self._piece_selection_metrics["selection_no_progress_streak"] = 0
+                    self._piece_selection_metrics[
+                        "selection_skipped_metadata_incomplete_cycles"
+                    ] = (
+                        int(
+                            self._piece_selection_metrics.get(
+                                "selection_skipped_metadata_incomplete_cycles", 0
+                            )
+                            or 0
+                        )
+                        + 1
+                    )
+                    continue
+
                 # Check if we made progress
                 async with self.lock:
                     new_active_downloads = sum(
@@ -7626,14 +7774,13 @@ class AsyncPieceManager:
                 state_corrected_count,
             )
 
-        # Check if we should enter endgame mode
+        # Reconcile endgame with missing-piece count (checkpoint may leave stale True).
         remaining_pieces = missing_pieces_count
-        total_pieces = self.num_pieces
-        if (
-            remaining_pieces <= total_pieces * (1.0 - self.endgame_threshold)
-            and not self.endgame_mode
-        ):
-            self.endgame_mode = True
+        was_endgame = self.endgame_mode
+        now_endgame = self._reconcile_endgame_mode_from_counts(
+            remaining_pieces=remaining_pieces
+        )
+        if now_endgame and not was_endgame:
             # Calculate and log adaptive duplicate count when entering endgame
             adaptive_duplicates = self._calculate_adaptive_endgame_duplicates()
             # Get actual active peer count from peer manager for accurate logging
@@ -7966,6 +8113,25 @@ class AsyncPieceManager:
             download_time,
             piece.primary_peer,
         )
+
+        peer_mgr = self._peer_manager
+        if peer_mgr is not None and hasattr(peer_mgr, "notify_ml_peer_performance"):
+            for raw_pk in piece.peer_block_counts:
+                peer_key = self._normalize_peer_key(raw_pk)
+                if not peer_key or peer_key not in self.peer_availability:
+                    continue
+                peer_avail = self.peer_availability[peer_key]
+                with contextlib.suppress(Exception):
+                    await peer_mgr.notify_ml_peer_performance(
+                        peer_key,
+                        {
+                            "download_speed": float(peer_avail.average_download_speed),
+                            "quality_score": float(peer_avail.connection_quality_score),
+                            "actual_quality": float(
+                                peer_avail.connection_quality_score
+                            ),
+                        },
+                    )
 
     async def _on_piece_completed(self, piece_index: int) -> None:
         """Handle piece completion."""
@@ -10170,7 +10336,6 @@ class AsyncPieceManager:
         Uses config.strategy.progressive_rarest_transition_threshold to determine when to switch.
         """
         async with self.lock:
-            # Calculate current progress
             total_pieces = len(self.pieces)
             if total_pieces == 0:
                 return
@@ -10178,27 +10343,29 @@ class AsyncPieceManager:
             completed_pieces = len(self.completed_pieces)
             progress = completed_pieces / total_pieces if total_pieces > 0 else 0.0
 
-            # Get transition threshold from config
             transition_threshold = (
                 self.config.strategy.progressive_rarest_transition_threshold
             )
+            use_sequential = progress < transition_threshold
 
-            if progress < transition_threshold:
-                # Early phase: use sequential download
+            if use_sequential:
                 self.logger.debug(
                     "Progressive rarest: Using sequential mode (progress=%.2f < threshold=%.2f)",
                     progress,
                     transition_threshold,
                 )
-                await self._select_sequential()
             else:
-                # Later phase: use rarest-first
                 self.logger.debug(
                     "Progressive rarest: Using rarest-first mode (progress=%.2f >= threshold=%.2f)",
                     progress,
                     transition_threshold,
                 )
-                await self._select_rarest_first()
+
+        # Child selectors acquire self.lock; must not hold lock here (non-reentrant).
+        if use_sequential:
+            await self._select_sequential()
+        else:
+            await self._select_rarest_first()
 
     async def _select_adaptive_hybrid(self) -> None:
         """Select pieces using adaptive hybrid algorithm.
@@ -10239,28 +10406,24 @@ class AsyncPieceManager:
             use_sequential = False
 
             if progress < 0.3:
-                # Early phase: sequential for faster initial download
                 use_sequential = True
                 self.logger.debug(
                     "Adaptive hybrid: Early phase (progress=%.2f), using sequential",
                     progress,
                 )
             elif progress > 0.7:
-                # Late phase: sequential for faster completion
                 use_sequential = True
                 self.logger.debug(
                     "Adaptive hybrid: Late phase (progress=%.2f), using sequential",
                     progress,
                 )
             elif avg_availability < 2.0:
-                # Low swarm health: rarest-first to improve availability
                 use_sequential = False
                 self.logger.debug(
                     "Adaptive hybrid: Low swarm health (avg_availability=%.2f), using rarest-first",
                     avg_availability,
                 )
             else:
-                # Mid phase with good swarm health: rarest-first
                 use_sequential = False
                 self.logger.debug(
                     "Adaptive hybrid: Mid phase with good swarm (progress=%.2f, avg_availability=%.2f), using rarest-first",
@@ -10268,11 +10431,11 @@ class AsyncPieceManager:
                     avg_availability,
                 )
 
-            # Execute selected strategy
-            if use_sequential:
-                await self._select_sequential()
-            else:
-                await self._select_rarest_first()
+        # Child selectors acquire self.lock; must not hold lock here (non-reentrant).
+        if use_sequential:
+            await self._select_sequential()
+        else:
+            await self._select_rarest_first()
 
     async def start_download(self, peer_manager: Any) -> None:
         """Start the download process.
@@ -11022,6 +11185,7 @@ class AsyncPieceManager:
                     checkpoint.total_pieces,
                     checkpoint.piece_length,
                 )
+                self._reconcile_endgame_mode_from_counts()
                 return
 
             # Note: Validate checkpoint data before restoring
@@ -11072,6 +11236,7 @@ class AsyncPieceManager:
                     self.num_pieces,
                     self.piece_length,
                 )
+                self._reconcile_endgame_mode_from_counts()
                 return
 
             restored_count, skipped_count, state_corrected_count = (
@@ -11086,6 +11251,7 @@ class AsyncPieceManager:
                 skipped_count,
                 state_corrected_count,
             )
+            self._reconcile_endgame_mode_from_counts()
 
     async def update_download_stats(
         self, bytes_downloaded: int

@@ -66,6 +66,8 @@ def test_maybe_load_dotenv_from_env_respects_flag(tmp_path, monkeypatch) -> None
     monkeypatch.setenv("CCBT_LOAD_DOTENV", "1")
     maybe_load_dotenv_from_env()
     assert os.environ.get("CCBT_ENABLE_ENCRYPTION") == "true"
+    assert os.environ.get("CCBT_DOTENV_LOADED") == "1"
+    assert os.environ.get("CCBT_DOTENV_PATH_EFFECTIVE", "").endswith(".env")
     os.environ.pop("CCBT_ENABLE_ENCRYPTION", None)
 
 

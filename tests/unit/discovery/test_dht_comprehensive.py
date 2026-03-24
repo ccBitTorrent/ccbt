@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+import ccbt.discovery.dht as dht_module
 from ccbt.core.bencode import BencodeEncoder
 from ccbt.discovery.dht import (
     AsyncDHTClient,
@@ -31,7 +32,6 @@ from ccbt.discovery.dht import (
     init_dht,
     shutdown_dht,
 )
-import ccbt.discovery.dht as dht_module
 
 pytestmark = [pytest.mark.unit]
 
@@ -1365,8 +1365,7 @@ class TestDHTGlobalFunctions:
             "stop",
             new_callable=AsyncMock,
             side_effect=RuntimeError("stop failed"),
-        ):
-            with pytest.raises(RuntimeError, match="stop failed"):
-                await shutdown_dht()
+        ), pytest.raises(RuntimeError, match="stop failed"):
+            await shutdown_dht()
 
         assert dht_module._dht_client is None

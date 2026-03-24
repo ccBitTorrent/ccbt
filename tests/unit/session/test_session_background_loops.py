@@ -255,6 +255,86 @@ async def test_status_loop_logs_tracker_resolution_anomaly(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout_fast
+async def test_status_loop_routing_table_size_non_stalled_path(monkeypatch):
+    """DHT zero-node duration must not raise UnboundLocalError when download is not stall-flagged."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "routing-table-metrics",
+        "info_hash": b"8" * 20,
+        "pieces_info": {
+            "num_pieces": 0,
+            "piece_length": 16384,
+            "piece_hashes": [],
+            "total_length": 0,
+        },
+        "file_info": {"total_length": 0},
+    }
+
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+    session.download_manager = SimpleNamespace(_download_started=True, file_assembler=None)
+    session.session_manager = None
+
+    async def mock_summary() -> dict[str, int]:
+        return {
+            "active_connections": 1,
+            "total_connections": 1,
+            "requestable_connections": 0,
+            "remote_choked_connections": 0,
+            "pipeline_saturated_connections": 0,
+            "productive_connections": 1,
+            "handshake_complete_connections": 1,
+            "extension_capable_connections": 0,
+            "metadata_capable_connections": 0,
+        }
+
+    session.peer_manager = SimpleNamespace(
+        connections={},
+        get_connection_summary=AsyncMock(side_effect=mock_summary),
+        _inbound_probation_wait_queue_depth=0,
+        _pending_peer_queue=[],
+        _reconnection_suppressed_cycles_total=0,
+        _reconnection_forced_overlap_cycles_total=0,
+    )
+    session.piece_manager = SimpleNamespace(
+        peer_availability={},
+        verified_pieces=[],
+        num_pieces=0,
+        get_piece_selection_metrics=lambda: {
+            "active_block_requests": 0,
+            "hash_verification_failures": 0,
+        },
+    )
+
+    async def mock_get_status() -> dict:
+        return {
+            "progress": 0.0,
+            "connected_peers": 1,
+            "productive_peers": 1,
+            "requestable_peers": 0,
+            "download_rate": 1024.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float) -> None:
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert session.logger.exception.call_count == 0
+    assert hasattr(session, "_cached_status")
+    assert isinstance(session._cached_status, dict)
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_session_stop_cancels_metadata_tasks() -> None:
     """Session stop should cancel tracked metadata tasks before shutdown completes."""
     from ccbt.session.session import AsyncTorrentSession
@@ -454,6 +534,91 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
         pass
 
     assert len(callback_called) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_status_loop_cached_status_prefers_swarm_transport(monkeypatch):
+    """connected_peers in cache should follow transport-aligned swarm active_peers."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "transport-status",
+        "info_hash": b"7" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+
+    async def mock_summary() -> dict[str, int]:
+        return {
+            "active_connections": 9,
+            "total_connections": 9,
+            "requestable_connections": 0,
+            "remote_choked_connections": 0,
+            "pipeline_saturated_connections": 0,
+            "productive_connections": 0,
+            "handshake_complete_connections": 0,
+            "extension_capable_connections": 0,
+            "metadata_capable_connections": 0,
+            "terminal_disconnected_connections": 1,
+            "error_state_connections": 0,
+            "no_stream_connections": 2,
+        }
+
+    peer_manager = SimpleNamespace(
+        connections={},
+        get_connection_summary=AsyncMock(side_effect=mock_summary),
+        get_active_peers=lambda: [object()],
+        _schedule_pending_resume=MagicMock(),
+        _pending_peer_queue=[],
+        _reconnection_suppressed_cycles_total=0,
+        _reconnection_forced_overlap_cycles_total=0,
+        _inbound_probation_wait_queue_depth=0,
+    )
+    session.download_manager = SimpleNamespace(
+        peer_manager=peer_manager,
+        _download_started=True,
+    )
+    session._peer_discovery_metrics = {
+        "queued_reentrant_non_progress_cycles": 2,
+        "outbound_pending_peer_queue_depth": 50,
+    }
+
+    async def mock_get_status():
+        return {
+            "progress": 0.1,
+            "connected_peers": 9,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float):
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert session._cached_status["connected_peers"] == 1
+    assert session._cached_status["summary_active_connections"] == 9
+    assert session._cached_status["transport_live_peers"] == 1
+    assert session._cached_status["terminal_disconnected_connections"] == 1
+    assert session._cached_status["no_stream_connections"] == 2
+    assert session._cached_status["peer_discovery_queued_reentrant_cycles"] == 2
+    assert session._cached_status["peer_discovery_outbound_pending_depth"] == 50
 
 
 @pytest.mark.asyncio

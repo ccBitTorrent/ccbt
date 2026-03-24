@@ -123,6 +123,7 @@ def maybe_load_dotenv_from_env() -> None:
     """If ``CCBT_LOAD_DOTENV`` is truthy, merge ``.env`` into the process environment."""
     raw_flag = os.getenv(_LOAD_DOTENV_FLAG)
     if not _truthy_env(raw_flag):
+        os.environ.setdefault("CCBT_DOTENV_LOADED", "0")
         logger.debug(
             "Skipping dotenv load: %s is not truthy (value=%r)",
             _LOAD_DOTENV_FLAG,
@@ -133,6 +134,9 @@ def maybe_load_dotenv_from_env() -> None:
     raw_path = os.getenv(_DOTENV_PATH_VAR)
     path = Path(raw_path).expanduser() if raw_path else Path.cwd() / ".env"
     n = load_dotenv_file(path)
+    os.environ["CCBT_DOTENV_LOADED"] = "1"
+    os.environ["CCBT_DOTENV_PATH_EFFECTIVE"] = str(path)
+    os.environ["CCBT_DOTENV_KEYS_LOADED"] = str(int(n))
     logger.debug(
         "Loaded %d variable(s) from dotenv (path=%s, CCBT_LOAD_DOTENV set)",
         n,

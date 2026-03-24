@@ -8,6 +8,7 @@ import pytest
 
 from ccbt.session.peer_discovery_telemetry import (
     attach_peer_discovery_metrics_ref,
+    observe_pending_peer_queue,
     record_batch_and_deferral_transition,
     record_connect_submit_peer_manager,
     record_connect_submit_session,
@@ -55,3 +56,17 @@ def test_batch_and_deferral_transitions_increment() -> None:
     assert metrics["batch_owner_state_transition_total"]["to_idle"] == 1
     assert metrics["dht_deferral_state_transition_total"]["to_active"] == 1
     assert metrics["dht_deferral_state_transition_total"]["to_idle"] == 1
+
+
+def test_observe_pending_peer_queue_emits_slo_primitives() -> None:
+    """Pending queue observer should populate p95 age and 10s drain-rate gauges."""
+    metrics: dict = {}
+    pm = SimpleNamespace(
+        _pending_peer_queue=[object(), object(), object()],
+        _pending_peer_enqueued_at={"a": 1.0, "b": 2.0, "c": 3.0},
+    )
+    attach_peer_discovery_metrics_ref(pm, metrics)
+    observe_pending_peer_queue(pm)
+    assert "pending_connect_queue_depth_gauge" in metrics
+    assert "pending_age_p95_s" in metrics
+    assert "pending_drain_rate_per_10s" in metrics

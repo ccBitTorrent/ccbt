@@ -201,13 +201,13 @@ async def test_queue_edge_triggers_public_pending_resume_request() -> None:
     )
     await manager.start()
     try:
-        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign] # noqa: SLF001
+        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign]
         enq = await manager.enqueue_peer_dicts_pending(
             [{"ip": "192.0.2.21", "port": 6881}],
             reason="contract_queue_edge",
         )
         assert enq == 1
-        manager.request_pending_resume.assert_called_once_with(  # type: ignore[attr-defined] # noqa: SLF001
+        manager.request_pending_resume.assert_called_once_with(  # type: ignore[attr-defined]
             reason="contract_queue_edge:queue_edge"
         )
     finally:
@@ -224,13 +224,13 @@ async def test_inflight_drain_with_pending_queue_triggers_resume() -> None:
     )
     await manager.start()
     try:
-        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign] # noqa: SLF001
+        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign]
         manager._pending_peer_queue = [  # noqa: SLF001
             SimpleNamespace(ip="192.0.2.22", port=6882)
         ]
         manager._inflight_peer_connects = set()  # noqa: SLF001
         manager._on_inflight_peer_discarded(reason="contract_drain")  # noqa: SLF001
-        manager.request_pending_resume.assert_called_once_with(  # type: ignore[attr-defined] # noqa: SLF001
+        manager.request_pending_resume.assert_called_once_with(  # type: ignore[attr-defined]
             reason="inflight_drained:contract_drain"
         )
     finally:
@@ -323,7 +323,7 @@ async def test_resume_pending_batches_drains_bounded_slice_then_retriggers(
         assert enq == 12
         connect_mock = AsyncMock()
         monkeypatch.setattr(manager, "connect_to_peers", connect_mock)
-        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign] # noqa: SLF001
+        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign]
 
         await manager._resume_pending_batches(reason="bounded_resume_contract")  # noqa: SLF001
 
@@ -331,7 +331,7 @@ async def test_resume_pending_batches_drains_bounded_slice_then_retriggers(
         resumed_peer_dicts = connect_mock.await_args.args[0]
         assert len(resumed_peer_dicts) == 8
         assert len(manager._pending_peer_queue) == 4  # noqa: SLF001
-        manager.request_pending_resume.assert_called_once_with(  # type: ignore[attr-defined] # noqa: SLF001
+        manager.request_pending_resume.assert_called_once_with(  # type: ignore[attr-defined]
             reason="post_batch_completion"
         )
     finally:
@@ -387,7 +387,7 @@ async def test_resume_pending_batches_continues_until_queue_drained(
         assert enq == 12
         connect_mock = AsyncMock()
         monkeypatch.setattr(manager, "connect_to_peers", connect_mock)
-        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign] # noqa: SLF001
+        manager.request_pending_resume = MagicMock()  # type: ignore[method-assign]
 
         await manager._resume_pending_batches(reason="first_pass")  # noqa: SLF001
         await manager._resume_pending_batches(reason="second_pass")  # noqa: SLF001

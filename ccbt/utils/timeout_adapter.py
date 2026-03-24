@@ -270,14 +270,8 @@ class AdaptiveTimeoutCalculator:
             max_timeout = getattr(
                 self.config.network,
                 "handshake_timeout_desperation_max",
-                20.0,  # CRITICAL: Default to 20.0, not 60.0 - config should override if needed
+                20.0,
             )
-            # Note: Reduced from 60s to 20s max - 60s was causing connections to hang
-            # 20s is sufficient for slow peers/NAT traversal without blocking batch processing
-            # BitTorrent spec recommends 10-30s for handshake timeouts
-            timeout = max(
-                min_timeout, max_timeout
-            )  # Use configured values, ensure at least min_timeout
         elif mode == "normal":
             min_timeout = getattr(
                 self.config.network,
@@ -301,14 +295,35 @@ class AdaptiveTimeoutCalculator:
                 40.0,
             )
 
-        # Use max timeout in desperation mode, scale for others
         if mode == "desperation":
-            timeout = max_timeout
+            if getattr(
+                self.config.network,
+                "handshake_timeout_desperation_interpolate",
+                False,
+            ):
+                desperation_max = max(
+                    1,
+                    int(
+                        getattr(
+                            self.config.network,
+                            "adaptive_timeout_desperation_max_peers",
+                            5,
+                        )
+                    ),
+                )
+                span = max(1, desperation_max - 1)
+                ratio = min(
+                    1.0,
+                    max(0.0, float(effective_count) / float(span)),
+                )
+                timeout = min_timeout + (max_timeout - min_timeout) * ratio
+            else:
+                # DEPRECATED path: handshake_timeout_desperation_interpolate=False (always max in band).
+                timeout = max_timeout
         elif mode == "normal":
             peer_ratio = self._normal_mode_peer_ratio(effective_count)
             timeout = min_timeout + (max_timeout - min_timeout) * peer_ratio
         else:  # healthy
-            # Use longer timeout for healthy swarms
             timeout = max_timeout
 
         # Clamp to config bounds

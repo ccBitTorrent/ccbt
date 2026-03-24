@@ -4,7 +4,7 @@ import asyncio
 import socket
 import struct
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -169,6 +169,15 @@ class TestAsyncUDPTrackerClientBasics:
         urls = client._extract_tracker_urls(torrent_data)
         assert len(urls) == 0
 
+    def test_adaptive_wait_timeout_applies_congestion_floor(self):
+        """High queue pressure should respect hysteresis floor (avoid over-shrinking)."""
+        client = AsyncUDPTrackerClient(test_mode=True)
+        timeout = client._get_adaptive_wait_timeout(
+            30.0, "tracker.example.com", pending_count=10_000
+        )
+        # Floor scale defaults toward >=0.65 and hard min is 0.5s.
+        assert timeout >= 19.0
+
 
 class TestAsyncUDPTrackerClientStartStop:
     """Test UDP tracker client start/stop lifecycle."""
@@ -240,8 +249,9 @@ class TestAsyncUDPTrackerClientConnection:
     async def test_wait_for_response_enforces_pending_request_cap(self) -> None:
         """Incoming requests beyond cap should drop oldest pending requests."""
         client = AsyncUDPTrackerClient(test_mode=True)
-        client._max_pending_requests = 1
         await client.start()
+        # start() reloads caps from config; override after bind.
+        client._max_pending_requests = 1
 
         old_future = asyncio.Future()
         client.pending_requests[333] = old_future
@@ -265,28 +275,27 @@ class TestAsyncUDPTrackerClientConnection:
 
     @pytest.mark.asyncio
     async def test_connect_timeout(self):
-        """Test connection timeout handling."""
+        """Failed handshake (no CONNECT response) raises ConnectionError without long UDP waits."""
         client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
-        # Use a non-existent tracker
         session = TrackerSession(
             url="udp://127.0.0.1:65535",
             host="127.0.0.1",
             port=65535,
         )
 
-        # Should timeout and raise
-        with pytest.raises(ConnectionError):
-            await client._connect_to_tracker(
-                session, max_retries=2, retry_delay=0.0, base_timeout=0.05
-            )
+        with patch.object(client, "_wait_for_response", new_callable=AsyncMock, return_value=None):
+            with pytest.raises(ConnectionError):
+                await client._connect_to_tracker(
+                    session, max_retries=1, retry_delay=0.01, base_timeout=0.05
+                )
 
         await client.stop()
 
     @pytest.mark.asyncio
     async def test_connect_invalid_response(self):
-        """Test connection with invalid response."""
+        """Non-CONNECT response during handshake raises ConnectionError (no real network I/O)."""
         client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
@@ -296,18 +305,20 @@ class TestAsyncUDPTrackerClientConnection:
             port=65535,
         )
 
-        # Mock response handler to return invalid response
-        original_handler = client.handle_response
+        bad = TrackerResponse(
+            action=TrackerAction.ERROR,
+            transaction_id=1,
+            error_message="invalid",
+        )
 
-        def mock_handler(data, addr):
-            # Send invalid response (wrong action)
-            invalid_data = struct.pack("!IIQ", TrackerAction.ERROR.value, 123, 0)
-            original_handler(invalid_data, addr)
-
-        client.handle_response = mock_handler
-
-        with pytest.raises(ConnectionError):
-            await client._connect_to_tracker(session)
+        with patch.object(client, "_wait_for_response", new_callable=AsyncMock, return_value=bad):
+            with pytest.raises(ConnectionError):
+                await client._connect_to_tracker(
+                    session,
+                    max_retries=1,
+                    retry_delay=0.01,
+                    base_timeout=0.05,
+                )
 
         await client.stop()
 
@@ -328,7 +339,7 @@ class TestAsyncUDPTrackerClientAnnounce:
 
     @pytest.mark.asyncio
     async def test_announce_connection_failure(self):
-        """Test announce with connection failure."""
+        """Announce returns no peers when tracker connect fails (no long real-network wait)."""
         client = AsyncUDPTrackerClient(test_mode=True)
         await client.start()
 
@@ -338,7 +349,12 @@ class TestAsyncUDPTrackerClientAnnounce:
             "file_info": {"total_length": 1000},
         }
 
-        result = await client.announce(torrent_data)
+        with patch.object(
+            client,
+            "_connect_to_tracker",
+            AsyncMock(side_effect=ConnectionError("fail")),
+        ):
+            result = await client.announce(torrent_data)
         assert result == []
 
         await client.stop()
@@ -857,6 +873,22 @@ class TestAsyncUDPTrackerClientWaitForResponse:
         assert captured_timeout["value"] < 20.0
 
     @pytest.mark.asyncio
+    async def test_wait_for_response_respects_per_host_soft_cap(self):
+        """Per-host pending soft cap should short-circuit additional waits."""
+        client = AsyncUDPTrackerClient(test_mode=True)
+        client._pending_request_soft_cap_per_host = 2
+        client._pending_request_host_by_tid = {
+            1: "tracker.example.com",
+            2: "tracker.example.com",
+        }
+        result = await client._wait_for_response(
+            3,
+            timeout=0.2,
+            tracker_host="tracker.example.com",
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_wait_for_response_records_tracker_response_time_ema(self):
         """Successful waits should update per-host response EWMA."""
         client = AsyncUDPTrackerClient(test_mode=True)
@@ -864,7 +896,8 @@ class TestAsyncUDPTrackerClientWaitForResponse:
         host = "tracker.example.com"
 
         async def set_response():
-            await asyncio.sleep(0.01)
+            # Ensure elapsed > 0 so _record_tracker_response_time does not no-op.
+            await asyncio.sleep(0.05)
             response = TrackerResponse(
                 TrackerAction.CONNECT,
                 transaction_id,

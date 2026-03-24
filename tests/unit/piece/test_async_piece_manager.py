@@ -532,6 +532,52 @@ class TestAsyncPieceManagerPieceSelector:
         assert piece_manager._piece_selection_metrics["no_progress_gate_events"] >= 1
 
     @pytest.mark.asyncio
+    async def test_piece_selector_skips_no_progress_gate_when_metadata_incomplete(
+        self, piece_manager
+    ):
+        """Incomplete magnet metadata must not drive the unknown no-progress stall gate."""
+        piece_manager.is_downloading = True
+        piece_manager._metadata_incomplete = True
+        piece_manager._peer_manager = SimpleNamespace(get_active_peers=list)
+        piece_manager._no_progress_stall_threshold = 1
+        piece_manager._no_progress_pause_s = 0.01
+        piece_manager._piece_selection_metrics["no_progress_gate_events"] = 0
+        piece_manager._piece_selection_metrics[
+            "selection_skipped_metadata_incomplete_cycles"
+        ] = 0
+
+        select_calls = 0
+        sleep_calls = 0
+        original_sleep = asyncio.sleep
+
+        async def fake_select_pieces() -> None:
+            nonlocal select_calls
+            select_calls += 1
+
+        async def fast_sleep(_seconds: float) -> None:
+            nonlocal sleep_calls
+            sleep_calls += 1
+            await original_sleep(0.001)
+            if sleep_calls > 40:
+                piece_manager._stopping = True
+
+        piece_manager._select_pieces = fake_select_pieces
+
+        with patch("ccbt.piece.async_piece_manager.asyncio.sleep", new=fast_sleep):
+            task = asyncio.create_task(piece_manager._piece_selector())
+            await asyncio.sleep(0)
+            await asyncio.wait_for(task, timeout=1.0)
+
+        assert select_calls >= 2
+        assert piece_manager._piece_selection_metrics["no_progress_gate_events"] == 0
+        assert (
+            piece_manager._piece_selection_metrics[
+                "selection_skipped_metadata_incomplete_cycles"
+            ]
+            >= 2
+        )
+
+    @pytest.mark.asyncio
     async def test_piece_selector_no_progress_gate_counts_request_timeout_reason(
         self, piece_manager
     ):
@@ -836,7 +882,9 @@ class TestAsyncPieceManagerPieceSelector:
         await piece_manager._clear_stale_requested_pieces(timeout=60.0)
         assert not piece.blocks[0].requested_from
         assert (
-            piece_manager._piece_selection_metrics["orphan_requested_from_cleared_total"]
+            piece_manager._piece_selection_metrics[
+                "orphan_requested_from_cleared_total"
+            ]
             > before
         )
 
@@ -3389,6 +3437,75 @@ class TestAsyncPieceManagerEdgeCases:
         assert piece_manager.pieces[0].state == PieceState.MISSING
 
     @pytest.mark.asyncio
+    async def test_deferred_checkpoint_restore_clears_stale_endgame_from_checkpoint(self):
+        """Magnet deferral must not keep endgame_mode True from a bogus checkpoint."""
+        torrent_data = {
+            "info_hash": b"\x0e" * 20,
+            "name": "endgame-defer.bin",
+            "announce": "http://tracker.example.com/announce",
+            "_metadata_incomplete": True,
+            "file_info": None,
+            "pieces_info": None,
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        checkpoint = TorrentCheckpoint(
+            info_hash=b"\x0e" * 20,
+            torrent_name="endgame-defer.bin",
+            total_pieces=100,
+            piece_length=16384,
+            total_length=1638400,
+            verified_pieces=[],
+            piece_states={},
+            download_stats=DownloadStats(),
+            output_dir=".",
+            endgame_mode=True,
+        )
+
+        await piece_manager.restore_from_checkpoint(checkpoint)
+
+        assert piece_manager.endgame_mode is False
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_restore_reconciles_stale_endgame_when_layout_ready(self):
+        """Full restore must clear endgame_mode when verified progress is far below threshold."""
+        torrent_data = {
+            "info_hash": b"\x0f" * 20,
+            "name": "endgame-reconcile.bin",
+            "announce": "http://tracker.example.com/announce",
+            "_metadata_incomplete": False,
+            "file_info": {
+                "name": "endgame-reconcile.bin",
+                "type": "single",
+                "total_length": 10 * 16384,
+            },
+            "pieces_info": {
+                "num_pieces": 10,
+                "piece_length": 16384,
+                "piece_hashes": [b"\x55" * 20 for _ in range(10)],
+                "total_length": 10 * 16384,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.start()
+        try:
+            checkpoint = TorrentCheckpoint(
+                info_hash=b"\x0f" * 20,
+                torrent_name="endgame-reconcile.bin",
+                total_pieces=10,
+                piece_length=16384,
+                total_length=10 * 16384,
+                verified_pieces=[],
+                piece_states={},
+                download_stats=DownloadStats(),
+                output_dir=".",
+                endgame_mode=True,
+            )
+            await piece_manager.restore_from_checkpoint(checkpoint)
+            assert piece_manager.endgame_mode is False
+        finally:
+            await piece_manager.stop()
+
+    @pytest.mark.asyncio
     async def test_checkpoint_restore_normalizes_transient_piece_states(self):
         """Checkpoint restore should clear transient REQUESTED/DOWNLOADING states."""
         torrent_data = {
@@ -3527,3 +3644,49 @@ class TestAsyncPieceManagerEdgeCases:
         assert piece.add_block(first_block.begin, b"x" * first_block.length) is True
         assert piece.state != PieceState.COMPLETE
         assert piece.is_complete() is False
+
+
+class TestAsyncPieceManagerPipelineThreshold:
+    """Sparse-swarm vs dense pipeline utilization caps for _get_peers_for_piece."""
+
+    def test_high_pipeline_threshold_very_low_peer_count(self) -> None:
+        assert (
+            AsyncPieceManager._high_pipeline_utilization_filter_threshold(2, 0) == 1.0
+        )
+
+    def test_high_pipeline_threshold_sparse_requestable_swarm(self) -> None:
+        assert (
+            AsyncPieceManager._high_pipeline_utilization_filter_threshold(10, 1) == 0.98
+        )
+        assert (
+            AsyncPieceManager._high_pipeline_utilization_filter_threshold(3, 0) == 0.98
+        )
+
+    def test_high_pipeline_threshold_dense_swarm(self) -> None:
+        assert (
+            AsyncPieceManager._high_pipeline_utilization_filter_threshold(30, 5) == 0.9
+        )
+        assert (
+            AsyncPieceManager._high_pipeline_utilization_filter_threshold(25, 1) == 0.9
+        )
+
+    def test_sparse_swarm_pipeline_cap_only_when_few_actives_and_deep_config(
+        self,
+    ) -> None:
+        conn = SimpleNamespace(max_pipeline_depth=96)
+        assert AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
+            conn, active_peer_count=1
+        ) == max(24, (96 * 2) // 5)
+        assert (
+            AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
+                conn, active_peer_count=3
+            )
+            is None
+        )
+        shallow = SimpleNamespace(max_pipeline_depth=16)
+        assert (
+            AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
+                shallow, active_peer_count=1
+            )
+            is None
+        )

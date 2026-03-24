@@ -694,6 +694,9 @@ class ConfigManager:
             "CCBT_XET_MULTICAST_ADDRESS": "network.xet_multicast_address",
             "CCBT_XET_MULTICAST_PORT": "network.xet_multicast_port",
             "CCBT_PIPELINE_DEPTH": "network.pipeline_depth",
+            "CCBT_SPARSE_PIPELINE_STALE_PAYLOAD_CANCEL_S": (
+                "network.sparse_pipeline_stale_payload_cancel_s"
+            ),
             "CCBT_BLOCK_SIZE_KIB": "network.block_size_kib",
             "CCBT_CONNECTION_TIMEOUT": "network.connection_timeout",
             "CCBT_HANDSHAKE_TIMEOUT": "network.handshake_timeout",
@@ -704,6 +707,10 @@ class ConfigManager:
             "CCBT_HANDSHAKE_TIMEOUT_HEALTHY_MIN": "network.handshake_timeout_healthy_min",
             "CCBT_HANDSHAKE_TIMEOUT_HEALTHY_MAX": "network.handshake_timeout_healthy_max",
             "CCBT_HANDSHAKE_ADAPTIVE_TIMEOUT_ENABLED": "network.handshake_adaptive_timeout_enabled",
+            # false = deprecated legacy (always max timeout in desperation band)
+            "CCBT_HANDSHAKE_TIMEOUT_DESPERATION_INTERPOLATE": (
+                "network.handshake_timeout_desperation_interpolate"
+            ),
             "CCBT_ADAPTIVE_TIMEOUT_HEALTH_PEER_SOURCE": (
                 "network.adaptive_timeout_health_peer_source"
             ),
@@ -716,12 +723,19 @@ class ConfigManager:
             "CCBT_METADATA_EXCHANGE_TIMEOUT": "network.metadata_exchange_timeout",
             "CCBT_PEER_QUALITY_PROBATION_TIMEOUT": "network.peer_quality_probation_timeout",
             "CCBT_METADATA_PIECE_TIMEOUT": "network.metadata_piece_timeout",
+            "CCBT_BITFIELD_HAVE_WAIT_TIMEOUT_S": "network.bitfield_have_wait_timeout_s",
+            "CCBT_BITFIELD_HAVE_WAIT_METADATA_INCOMPLETE_MULTIPLIER": (
+                "network.bitfield_have_wait_metadata_incomplete_multiplier"
+            ),
             "CCBT_CONNECTION_HEALTH_CHECK_INTERVAL": "network.connection_health_check_interval",
             "CCBT_CONNECTION_VALIDATION_ENABLED": "network.connection_validation_enabled",
             "CCBT_PEER_VALIDATION_ENABLED": "network.peer_validation_enabled",
             "CCBT_SEND_BITFIELD_AFTER_METADATA": "network.send_bitfield_after_metadata",
             "CCBT_SEND_INTERESTED_AFTER_METADATA": "network.send_interested_after_metadata",
             "CCBT_MAX_CONCURRENT_CONNECTION_ATTEMPTS": "network.max_concurrent_connection_attempts",
+            "CCBT_CONNECT_TO_PEERS_PARALLEL_BATCHES": (
+                "network.connect_to_peers_parallel_batches"
+            ),
             "CCBT_MSE_INITIATOR_TIMEOUT_SCALE_ZERO_ACTIVE": (
                 "network.mse_initiator_timeout_scale_zero_active"
             ),
@@ -981,6 +995,28 @@ class ConfigManager:
             "CCBT_TRACKER_PEER_COUNT_WEIGHT": "discovery.tracker_peer_count_weight",
             "CCBT_TRACKER_PERFORMANCE_WEIGHT": "discovery.tracker_performance_weight",
             "CCBT_DEFAULT_TRACKERS": "discovery.default_trackers",
+            "CCBT_TRACKER_UDP_PENDING_SOFT_CAP_PER_HOST": (
+                "discovery.tracker_udp_pending_soft_cap_per_host"
+            ),
+            "CCBT_TRACKER_UDP_MAX_PENDING_REQUESTS": (
+                "discovery.tracker_udp_max_pending_requests"
+            ),
+            "CCBT_TRACKER_UDP_WAIT_PACING_LOAD_RATIO": (
+                "discovery.tracker_udp_wait_pacing_load_ratio"
+            ),
+            "CCBT_TRACKER_INGRESS_HOLD_PENDING_QUEUE_THRESHOLD": (
+                "discovery.tracker_ingress_hold_pending_queue_threshold"
+            ),
+            # Deprecated to set false: legacy peer ordering; default true is supported path.
+            "CCBT_STRICT_TRACKER_SOURCE_CONNECT_PRIORITY": (
+                "discovery.strict_tracker_source_connect_priority"
+            ),
+            "CCBT_STRICT_TRACKER_PENDING_DHT_PEX_BOOST": (
+                "discovery.strict_tracker_pending_dht_pex_boost"
+            ),
+            "CCBT_STRICT_TRACKER_PENDING_TRACKER_PREFIX": (
+                "discovery.strict_tracker_pending_tracker_prefix"
+            ),
             "CCBT_PEX_INTERVAL": "discovery.pex_interval",
             "CCBT_STRICT_PRIVATE_MODE": "discovery.strict_private_mode",
             # BEP 32: IPv6 Extension for DHT
@@ -1073,6 +1109,13 @@ class ConfigManager:
             ),
             "CCBT_TRACKER_IMMEDIATE_PER_SOURCE_CAP_MODE": (
                 "discovery.tracker_immediate_per_source_cap_mode"
+            ),
+            "CCBT_TRACKER_IMMEDIATE_PER_TRACKER_COOLDOWN_ENABLED": (
+                "discovery.tracker_immediate_per_tracker_cooldown_enabled"
+            ),
+            "CCBT_MAX_TRACKER_URLS_PER_TORRENT": "discovery.max_tracker_urls_per_torrent",
+            "CCBT_ANNOUNCE_MAX_TRACKERS_PER_ROUND": (
+                "discovery.announce_max_trackers_per_round"
             ),
             # XET chunk discovery
             "CCBT_XET_CHUNK_QUERY_BATCH_SIZE": "discovery.xet_chunk_query_batch_size",
@@ -1377,6 +1420,42 @@ class ConfigManager:
             return yaml.safe_dump(data, sort_keys=False)  # pragma: no cover
         msg = f"Unsupported export format: {fmt}"  # pragma: no cover
         raise ConfigurationError(msg)  # pragma: no cover
+
+    def get_runtime_env_diagnostics(self) -> dict[str, Any]:
+        """Return runtime env + dotenv provenance diagnostics for support reports."""
+        import os
+
+        return {
+            "dotenv_loader_requested": str(os.getenv("CCBT_LOAD_DOTENV", "")).strip(),
+            "dotenv_loaded": str(os.getenv("CCBT_DOTENV_LOADED", "0")).strip(),
+            "dotenv_path_effective": str(
+                os.getenv("CCBT_DOTENV_PATH_EFFECTIVE", "")
+            ).strip(),
+            "dotenv_keys_loaded": str(
+                os.getenv("CCBT_DOTENV_KEYS_LOADED", "0")
+            ).strip(),
+            "max_peers_per_torrent_effective": int(
+                getattr(self.config.network, "max_peers_per_torrent", 0) or 0
+            ),
+            "tracker_immediate_connect_burst_total": int(
+                getattr(
+                    self.config.discovery,
+                    "tracker_immediate_connect_burst_total",
+                    0,
+                )
+                or 0
+            ),
+            "tracker_immediate_per_tracker_cooldown_enabled": bool(
+                getattr(
+                    self.config.discovery,
+                    "tracker_immediate_per_tracker_cooldown_enabled",
+                    True,
+                )
+            ),
+            "target_requestable_peers": int(
+                getattr(self.config.discovery, "target_requestable_peers", 0) or 0
+            ),
+        }
 
     def save_config(self) -> None:
         """Save current configuration to file.

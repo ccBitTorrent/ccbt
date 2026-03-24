@@ -2890,20 +2890,36 @@ class DHTDiscoverySetup:
                         current_peer_count <= self._low_peer_threshold
                         and current_requestable_peers == 0
                     ):
+                        recheck_count = int(
+                            getattr(self.session, "_dht_short_path_recheck_count", 0)
+                            or 0
+                        )
+                        recheck_count += 1
+                        self.session._dht_short_path_recheck_count = recheck_count  # noqa: SLF001
+                        short_timeout = 10.0 if recheck_count <= 2 else 20.0
                         self.logger.warning(
-                            "🧭 DHT DISCOVERY: Active peer count is severely low (%d <= %d) with 0 requestable peers. Running short-path bootstrap recheck.",
+                            "🧭 DHT DISCOVERY: Active peer count is severely low (%d <= %d) with 0 requestable peers. Running short-path bootstrap recheck (attempt=%d timeout=%.1fs).",
                             current_peer_count,
                             self._low_peer_threshold,
+                            recheck_count,
+                            short_timeout,
                         )
                         routing_table_size = await self._ensure_bootstrap_ready(
                             dht_client,
                             reason=(f"short_path_recovery:{self.session.info.name}"),
-                            timeout=10.0,
+                            timeout=short_timeout,
                             min_nodes=1,
                         )
                         dht_started = routing_table_size >= 1
                         if dht_started:
+                            self.session._dht_short_path_recheck_count = 0  # noqa: SLF001
                             continue
+                        if recheck_count >= 3:
+                            fail_fast_low_peers = True
+                            self.logger.warning(
+                                "🧭 DHT DISCOVERY: Escalating to fail-fast startup after repeated short-path recheck failures (attempts=%d).",
+                                recheck_count,
+                            )
 
                     low_peer_wait_s = (
                         self._low_peer_suppression_window_s

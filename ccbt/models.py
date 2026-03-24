@@ -802,6 +802,17 @@ class NetworkConfig(BaseModel):
         le=128,
         description="Request pipeline depth",
     )
+    sparse_pipeline_stale_payload_cancel_s: float = Field(
+        default=120.0,
+        ge=0.0,
+        le=600.0,
+        description=(
+            "When at most one peer can accept requests and a connection's pipeline is "
+            "nearly full, cancel the oldest outstanding block requests if no piece payload "
+            "arrived for this many seconds (0 disables). Conservative recovery for stalled "
+            "single-supplier swarms."
+        ),
+    )
     block_size_kib: int = Field(
         default=16,
         ge=1,
@@ -946,13 +957,13 @@ class NetworkConfig(BaseModel):
         description="Enable adaptive handshake timeouts based on peer health",
     )
     handshake_timeout_desperation_min: float = Field(
-        default=30.0,
+        default=25.0,
         ge=10.0,
         le=120.0,
         description="Minimum handshake timeout in seconds for desperation mode (< 5 peers)",
     )
     handshake_timeout_desperation_max: float = Field(
-        default=60.0,
+        default=45.0,
         ge=30.0,
         le=180.0,
         description="Maximum handshake timeout in seconds for desperation mode (< 5 peers)",
@@ -980,6 +991,15 @@ class NetworkConfig(BaseModel):
         ge=20.0,
         le=180.0,
         description="Maximum handshake timeout in seconds for healthy mode (20+ peers)",
+    )
+    # Legacy removal tracked under project todo legacy-markers-deprecation (False = old band max).
+    handshake_timeout_desperation_interpolate: bool = Field(
+        default=True,
+        description=(
+            "When True (recommended), scale desperation handshake timeout between min and max using "
+            "effective peer count within the desperation band. False uses max only in that band "
+            "(legacy compatibility; deprecated for new deployments)."
+        ),
     )
     adaptive_timeout_health_peer_source: AdaptiveTimeoutHealthPeerSource = Field(
         default=AdaptiveTimeoutHealthPeerSource.EFFECTIVE,
@@ -1070,6 +1090,24 @@ class NetworkConfig(BaseModel):
         default=True,
         description="Send INTERESTED message after metadata exchange completes (BEP 3 compliant)",
     )
+    bitfield_have_wait_timeout_s: float = Field(
+        default=120.0,
+        ge=30.0,
+        le=600.0,
+        description=(
+            "Seconds to wait after handshake for bitfield or HAVE before disconnecting "
+            "idle post-handshake peers."
+        ),
+    )
+    bitfield_have_wait_metadata_incomplete_multiplier: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=5.0,
+        description=(
+            "Multiply bitfield/HAVE wait when torrent metadata is incomplete (magnets). "
+            "1.0 disables extension (same timeout as complete metadata)."
+        ),
+    )
     graceful_disconnect_enabled: bool = Field(
         default=True,
         description="Enable graceful disconnection with proper protocol messages",
@@ -1085,6 +1123,15 @@ class NetworkConfig(BaseModel):
         ge=5,
         le=100,
         description="Maximum concurrent connection attempts to prevent OS socket exhaustion (BitTorrent spec compliant)",
+    )
+    connect_to_peers_parallel_batches: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        description=(
+            "Maximum concurrent connect_to_peers batches per torrent (1 = legacy single-flight). "
+            "Values above 1 reduce discovery callback queueing but increase parallel handshake load."
+        ),
     )
     mse_initiator_timeout_scale_zero_active: float = Field(
         default=1.0,
@@ -2403,7 +2450,10 @@ class StrategyConfig(BaseModel):
         le=0.5,
         description=(
             "Blend weight for ccbt.ml.peer_selector.PeerSelector scores in outbound peer "
-            "ranking; 0 disables (default). Experimental — heuristics dominate below ~0.2."
+            "ranking; 0 disables (default). Cold-start scores are deterministic (hashed "
+            "ip:port); piece-completion metrics update the same PeerSelector when > 0. "
+            "Heuristics dominate below ~0.2. Tie-break ordering in the peer manager may "
+            "still use random noise."
         ),
     )
 
@@ -2614,7 +2664,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_connect_burst_total: int = Field(
-        default=24,
+        default=16,
         ge=1,
         le=512,
         description=(
@@ -2623,7 +2673,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_connect_burst_per_source: int = Field(
-        default=24,
+        default=16,
         ge=1,
         le=512,
         description=(
@@ -2653,6 +2703,32 @@ class DiscoveryConfig(BaseModel):
         description=(
             "half_max_peers: per-source limit min(burst, max(1, max_peers_per_torrent//2)). "
             "full_max_peers: min(burst_per_source, max_peers_per_torrent)."
+        ),
+    )
+    tracker_immediate_per_tracker_cooldown_enabled: bool = Field(
+        default=True,
+        description=(
+            "Scope immediate tracker debounce cooldown by tracker URL. "
+            "When false, a single global cooldown timestamp is shared."
+        ),
+    )
+    max_tracker_urls_per_torrent: int = Field(
+        default=0,
+        ge=0,
+        le=10000,
+        description=(
+            "After host:port dedupe in session tracker collection, cap URL count (0 = unlimited). "
+            "Limits concurrent announces on torrents with very large tracker lists."
+        ),
+    )
+    announce_max_trackers_per_round: int = Field(
+        default=0,
+        ge=0,
+        le=2048,
+        description=(
+            "Per announce loop iteration, contact at most this many tracker URLs from the "
+            "deduped list, rotating the window each round (0 = contact all in one round). "
+            "Private torrents always use the full list. Reduces simultaneous UDP/HTTP tracker load."
         ),
     )
 
@@ -2807,6 +2883,69 @@ class DiscoveryConfig(BaseModel):
             "udp://tracker.openbittorrent.com:80/announce",
         ],
         description="Default trackers to use for magnet links without tr= parameters",
+    )
+    tracker_udp_pending_soft_cap_per_host: int = Field(
+        default=24,
+        ge=4,
+        le=256,
+        description=(
+            "Max in-flight UDP tracker waits per tracker host on the shared UDP client "
+            "(BEP 15 multiplex)."
+        ),
+    )
+    tracker_udp_max_pending_requests: int = Field(
+        default=128,
+        ge=16,
+        le=512,
+        description="Hard cap on pending UDP tracker response futures process-wide.",
+    )
+    tracker_udp_wait_pacing_load_ratio: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=0.95,
+        description=(
+            "When pending exceeds this fraction of the adaptive cap, pace registering "
+            "new UDP tracker waits (reduces thundering herd under multi-torrent load)."
+        ),
+    )
+    tracker_ingress_hold_pending_queue_threshold: int = Field(
+        default=200,
+        ge=0,
+        le=100000,
+        description=(
+            "Per-torrent pending peer queue depth at which new tracker ingress merges "
+            "are held (0 disables). Session applies min(config, max(64, 2*MPT+3*burst)) "
+            "so large values still engage on low max_peers_per_torrent."
+        ),
+    )
+    # Legacy removal tracked under project todo legacy-markers-deprecation (do not drop silently).
+    strict_tracker_source_connect_priority: bool = Field(
+        default=True,
+        description=(
+            "When True (recommended), tracker-sourced peers are ordered before DHT/PEX for "
+            "outbound connect ranking and pending-queue drain (within each group, score order "
+            "is preserved). False restores legacy interleave/source weights and FIFO pending "
+            "merge order; deprecated for compatibility and may be removed in a future release."
+        ),
+    )
+    strict_tracker_pending_dht_pex_boost: int = Field(
+        default=2,
+        ge=0,
+        le=32,
+        description=(
+            "Under strict tracker connect priority, splice up to this many PEX/DHT pending "
+            "peers immediately after the tracker prefix window so deep tracker tails do not "
+            "starve alternate discovery paths (0 disables)."
+        ),
+    )
+    strict_tracker_pending_tracker_prefix: int = Field(
+        default=8,
+        ge=0,
+        le=256,
+        description=(
+            "Tracker-class pending peers to connect before boosted PEX/DHT slots when "
+            "strict_tracker_pending_dht_pex_boost is greater than zero."
+        ),
     )
 
     # PEX
@@ -2998,6 +3137,18 @@ class DiscoveryConfig(BaseModel):
         le=100,
         description="Maximum number of samples per index key (BEP 51). Default 8 samples.",
     )
+
+    @model_validator(mode="after")
+    def _dedupe_default_tracker_urls(self) -> DiscoveryConfig:
+        from ccbt.discovery.tracker_dedupe import dedupe_tracker_urls_by_host_port
+
+        if self.default_trackers:
+            object.__setattr__(
+                self,
+                "default_trackers",
+                dedupe_tracker_urls_by_host_port(list(self.default_trackers)),
+            )
+        return self
 
     @field_validator("tracker_immediate_per_source_cap_mode")
     @classmethod

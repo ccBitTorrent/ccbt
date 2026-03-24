@@ -1,6 +1,7 @@
 """Tests for ML peer selector."""
 
 import time
+import warnings
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from ccbt.ml.peer_selector import (
     PeerPrediction,
     PeerQuality,
     PeerSelector,
+    peer_selector_cache_key,
 )
 from ccbt.models import PeerInfo
 
@@ -34,7 +36,7 @@ class TestPeerSelector:
     @pytest.mark.asyncio
     async def test_predict_peer_quality(self, peer_selector, sample_peer_info):
         """Test peer quality prediction."""
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             prediction = await peer_selector.predict_peer_quality(sample_peer_info)
 
         assert isinstance(prediction, PeerPrediction)
@@ -52,10 +54,10 @@ class TestPeerSelector:
             port=6881,
         )
 
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             prediction = await peer_selector.predict_peer_quality(peer_info)
 
-        assert prediction.peer_id == ""
+        assert prediction.peer_id == "anon:192.168.1.100:6881"
         assert isinstance(prediction.predicted_quality, PeerQuality)
 
     @pytest.mark.asyncio
@@ -67,7 +69,7 @@ class TestPeerSelector:
     @pytest.mark.asyncio
     async def test_rank_peers_single_peer(self, peer_selector, sample_peer_info):
         """Test ranking single peer."""
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             result = await peer_selector.rank_peers([sample_peer_info])
 
         assert len(result) == 1
@@ -92,7 +94,7 @@ class TestPeerSelector:
             ),
         ]
 
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             result = await peer_selector.rank_peers(peers)
 
         assert len(result) == 2
@@ -113,7 +115,7 @@ class TestPeerSelector:
         )
         peer_selector.peer_features[peer_id] = features
 
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             result = await peer_selector.rank_peers([sample_peer_info])
 
         assert len(result) == 1
@@ -141,7 +143,7 @@ class TestPeerSelector:
         peer_id = sample_peer_info.peer_id.hex()
 
         # First predict quality to create features
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             await peer_selector.predict_peer_quality(sample_peer_info)
 
         performance_data = {
@@ -159,6 +161,7 @@ class TestPeerSelector:
         features = peer_selector.get_peer_features(peer_id)
         assert features is not None
         assert features.successful_connections == 2  # 1 initial + 1 from update
+        assert features.connection_count == 2  # 1 initial + 1 attempt recorded
         assert features.avg_download_speed > 0
         assert features.avg_upload_speed > 0
 
@@ -183,7 +186,7 @@ class TestPeerSelector:
             ),
         ]
 
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             best_peers = await peer_selector.get_best_peers(peers, count=2)
 
         assert len(best_peers) == 2
@@ -192,7 +195,7 @@ class TestPeerSelector:
     @pytest.mark.asyncio
     async def test_get_best_peers_count_larger_than_available(self, peer_selector, sample_peer_info):
         """Test getting best peers when count is larger than available."""
-        with patch("ccbt.events.emit_event", new_callable=AsyncMock):
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
             best_peers = await peer_selector.get_best_peers([sample_peer_info], count=5)
 
         assert len(best_peers) == 1
@@ -386,6 +389,7 @@ class TestPeerSelector:
         features = PeerFeatures(
             peer_id="peer1",
             ip="192.168.1.1",
+            connection_count=1,
             successful_connections=1,
             avg_download_speed=1000.0,
             avg_upload_speed=500.0,
@@ -406,6 +410,7 @@ class TestPeerSelector:
             await peer_selector._update_features(features, performance_data)
 
         assert features.successful_connections == 2
+        assert features.connection_count == 2
         assert features.avg_download_speed > 1000.0  # Should be updated
         assert features.avg_upload_speed > 500.0  # Should be updated
         assert features.error_rate > 0.0  # Should have some error rate
@@ -421,8 +426,10 @@ class TestPeerSelector:
             connection_count=10,
             successful_connections=9,
             avg_download_speed=5 * 1024 * 1024,  # 5MB/s
+            avg_upload_speed=2 * 1024 * 1024,
+            bandwidth=5 * 1024 * 1024,
             error_rate=0.1,
-            latency=50.0,  # 50ms
+            latency=0.05,  # 50ms as seconds
             activity_duration=1800.0,  # 30 minutes
         )
 
@@ -431,13 +438,17 @@ class TestPeerSelector:
         assert 0.0 <= score <= 1.0
         assert score > 0.5  # Should be good with these features
 
+    @pytest.mark.legacy_peer_selector
     def test_quality_to_score(self, peer_selector):
-        """Test quality enum to score conversion."""
-        assert peer_selector._quality_to_score(PeerQuality.EXCELLENT) == 0.9
-        assert peer_selector._quality_to_score(PeerQuality.GOOD) == 0.7
-        assert peer_selector._quality_to_score(PeerQuality.AVERAGE) == 0.5
-        assert peer_selector._quality_to_score(PeerQuality.POOR) == 0.3
-        assert peer_selector._quality_to_score(PeerQuality.BAD) == 0.1
+        """Test quality enum to score conversion (deprecated API)."""
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always")
+            assert peer_selector._quality_to_score(PeerQuality.EXCELLENT) == 0.9
+            assert peer_selector._quality_to_score(PeerQuality.GOOD) == 0.7
+            assert peer_selector._quality_to_score(PeerQuality.AVERAGE) == 0.5
+            assert peer_selector._quality_to_score(PeerQuality.POOR) == 0.3
+            assert peer_selector._quality_to_score(PeerQuality.BAD) == 0.1
+        assert sum(1 for w in rec if issubclass(w.category, DeprecationWarning)) == 5
 
     def test_update_average(self, peer_selector):
         """Test running average update."""
@@ -451,17 +462,21 @@ class TestPeerSelector:
 
     @pytest.mark.asyncio
     async def test_estimate_latency(self, peer_selector):
-        """Test latency estimation."""
+        """Test latency estimation (deterministic per IP)."""
         latency = await peer_selector._estimate_latency("192.168.1.1")
+        again = await peer_selector._estimate_latency("192.168.1.1")
 
-        assert 0.01 <= latency <= 0.5  # Should be between 10ms and 500ms
+        assert 0.01 <= latency <= 0.5  # seconds
+        assert latency == again
 
     @pytest.mark.asyncio
     async def test_estimate_bandwidth(self, peer_selector):
-        """Test bandwidth estimation."""
+        """Test bandwidth estimation (deterministic per IP)."""
         bandwidth = await peer_selector._estimate_bandwidth("192.168.1.1")
+        again = await peer_selector._estimate_bandwidth("192.168.1.1")
 
-        assert 100 * 1024 <= bandwidth <= 10 * 1024 * 1024  # Should be between 100KB/s and 10MB/s
+        assert 100 * 1024 <= bandwidth <= 10 * 1024 * 1024
+        assert bandwidth == again
 
     @pytest.mark.asyncio
     async def test_online_learning_insufficient_samples(self, peer_selector):
@@ -535,3 +550,66 @@ class TestPeerSelector:
         # Check that weights are reasonable
         for weight in peer_selector.feature_weights.values():
             assert -1.0 <= weight <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_rank_peers_anon_peers_distinct_cache(self, peer_selector):
+        """Peers without ``peer_id`` must not share one ``peer_features`` slot."""
+        peer_a = PeerInfo(peer_id=None, ip="10.0.0.1", port=5001)
+        peer_b = PeerInfo(peer_id=None, ip="10.0.0.2", port=5001)
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
+            await peer_selector.rank_peers([peer_a, peer_b])
+        key_a = peer_selector_cache_key(peer_a)
+        key_b = peer_selector_cache_key(peer_b)
+        assert key_a != key_b
+        assert peer_selector.peer_features[key_a].ip == "10.0.0.1"
+        assert peer_selector.peer_features[key_b].ip == "10.0.0.2"
+
+    @pytest.mark.asyncio
+    async def test_rank_peers_reproducible(self, peer_selector):
+        """Identical inputs and clock produce identical ML ranking."""
+        peers = [
+            PeerInfo(peer_id=b"11111111111111111111", ip="192.168.55.1", port=5001),
+            PeerInfo(peer_id=b"22222222222222222222", ip="192.168.55.2", port=5002),
+        ]
+        fixed_t = 1_700_000_000.0
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock), patch(
+            "ccbt.ml.peer_selector.time.time",
+            return_value=fixed_t,
+        ):
+            first = await peer_selector.rank_peers(peers)
+        other = PeerSelector()
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock), patch(
+            "ccbt.ml.peer_selector.time.time",
+            return_value=fixed_t,
+        ):
+            second = await other.rank_peers(peers)
+        assert [(p.ip, p.port, s) for p, s in first] == [(p.ip, p.port, s) for p, s in second]
+
+    @pytest.mark.asyncio
+    async def test_rank_uncached_matches_stored_quality_score(
+        self,
+        peer_selector,
+        sample_peer_info,
+    ):
+        """Returned tuple score must match stored continuous ``quality_score``."""
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
+            out = await peer_selector.rank_peers([sample_peer_info])
+        key = peer_selector_cache_key(sample_peer_info)
+        assert abs(out[0][1] - peer_selector.peer_features[key].quality_score) < 1e-9
+
+    @pytest.mark.asyncio
+    async def test_success_rate_stays_bounded_after_updates(self, peer_selector, sample_peer_info):
+        """``successful_connections / connection_count`` must not exceed 1."""
+        with patch("ccbt.ml.peer_selector.emit_event", new_callable=AsyncMock):
+            await peer_selector.predict_peer_quality(sample_peer_info)
+        key = peer_selector_cache_key(sample_peer_info)
+        for _ in range(5):
+            await peer_selector.update_peer_performance(
+                key,
+                {"connection_success": True},
+            )
+        feats = peer_selector.get_peer_features(key)
+        assert feats is not None
+        assert feats.successful_connections <= feats.connection_count
+        score = await peer_selector._calculate_quality_score(feats)
+        assert 0.0 <= score <= 1.0

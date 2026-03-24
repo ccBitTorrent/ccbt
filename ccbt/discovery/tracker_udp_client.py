@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
 from urllib.parse import urlparse
 
 from ccbt.config.config import get_config
+from ccbt.session.peer_discovery_telemetry import observe_udp_tracker_pending_window
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo
@@ -166,6 +167,11 @@ class AsyncUDPTrackerClient:
         self._timeout_warning_host_state: dict[str, tuple[float, int]] = {}
         self._tracker_response_timeout_alpha: float = 0.25
         self._tracker_response_timeout_ema: dict[str, float] = {}
+        self._tracker_timeout_floor_scale: dict[str, float] = {}
+        self._pending_request_host_by_tid: dict[int, str] = {}
+        self._pending_request_soft_cap_per_host: int = 24
+        self._udp_wait_pacing_load_ratio: float = 0.5
+        self._last_udp_pending_gauge_monotonic: float = 0.0
 
         # Background tasks
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -195,6 +201,7 @@ class AsyncUDPTrackerClient:
         self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
 
         self.logger = logging.getLogger(__name__)
+        self._refresh_udp_pending_settings_from_config()
         if not test_mode and not _udp_singleton_construct_in_progress():
             msg = (
                 "AsyncUDPTrackerClient must be obtained via get_udp_tracker_client() "
@@ -202,6 +209,29 @@ class AsyncUDPTrackerClient:
                 "test_mode=True."
             )
             raise RuntimeError(msg)
+
+    def _refresh_udp_pending_settings_from_config(self) -> None:
+        """Apply discovery.* limits for the process-wide UDP tracker singleton."""
+        disc = getattr(self.config, "discovery", None)
+        if disc is None:
+            return
+        with contextlib.suppress(Exception):
+            self._pending_request_soft_cap_per_host = int(
+                getattr(disc, "tracker_udp_pending_soft_cap_per_host", 24)
+            )
+            self._max_pending_requests = int(
+                getattr(disc, "tracker_udp_max_pending_requests", 128)
+            )
+            self._udp_wait_pacing_load_ratio = float(
+                getattr(disc, "tracker_udp_wait_pacing_load_ratio", 0.5)
+            )
+
+    def _maybe_emit_udp_pending_gauge(self) -> None:
+        now = time.monotonic()
+        if now - self._last_udp_pending_gauge_monotonic < 0.25:
+            return
+        self._last_udp_pending_gauge_monotonic = now
+        observe_udp_tracker_pending_window(len(self.pending_requests))
 
     @property
     def socket_ready(self) -> bool:
@@ -380,10 +410,16 @@ class AsyncUDPTrackerClient:
         queue_pressure = pending_count / effective_cap if effective_cap > 0 else 0.0
         queue_pressure = max(0.0, min(1.0, queue_pressure))
 
-        # When there is queue pressure, reduce per-request timeout to avoid long stalls.
-        queue_scale = 1.0 - (0.45 * queue_pressure)
-
+        # Queue pressure scaling with congestion floor + hysteresis.
+        # Slightly steeper than legacy 0.45 to shorten waits under multiplex load.
+        queue_scale = 1.0 - (0.55 * queue_pressure)
         host_key = self._get_tracker_host(tracker_host)
+        previous_floor = float(self._tracker_timeout_floor_scale.get(host_key, 0.65))
+        target_floor = 0.65 if queue_pressure < 0.7 else 0.8
+        floor_scale = (0.85 * previous_floor) + (0.15 * target_floor)
+        self._tracker_timeout_floor_scale[host_key] = floor_scale
+        queue_scale = max(floor_scale, queue_scale)
+
         host_ema = self._tracker_response_timeout_ema.get(host_key)
         host_scale = 1.0
         if host_ema is not None and host_ema > 0:
@@ -636,6 +672,7 @@ class AsyncUDPTrackerClient:
         CRITICAL: Socket must be initialized during daemon startup via start_udp_tracker_client().
         Socket recreation is not supported as it breaks session logic.
         """
+        self._refresh_udp_pending_settings_from_config()
         # Note: Assert socket should never be recreated during runtime
         # If socket is already initialized and healthy, return immediately
         # Socket recreation breaks session logic and causes WinError 10022 on Windows
@@ -2446,6 +2483,7 @@ class AsyncUDPTrackerClient:
             future = self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
             self.pending_immediate_callbacks.pop(transaction_id, None)
+            self._pending_request_host_by_tid.pop(transaction_id, None)
             if future is not None and not future.done():
                 future.cancel()
             self._mark_stale_transaction(transaction_id, now=now)
@@ -2468,6 +2506,7 @@ class AsyncUDPTrackerClient:
                 future = self.pending_requests.pop(transaction_id, None)
                 self._pending_request_timestamps.pop(transaction_id, None)
                 self.pending_immediate_callbacks.pop(transaction_id, None)
+                self._pending_request_host_by_tid.pop(transaction_id, None)
                 if future is not None and not future.done():
                     future.cancel()
                 self._mark_stale_transaction(transaction_id, now=now)
@@ -2493,6 +2532,29 @@ class AsyncUDPTrackerClient:
         future = asyncio.Future()
         now = time.time()
         start_wait = now
+        host_pending = sum(
+            1 for h in self._pending_request_host_by_tid.values() if h == host
+        )
+        if host_pending >= self._pending_request_soft_cap_per_host:
+            self.logger.debug(
+                "Tracker host pending soft cap reached: host=%s pending=%d cap=%d",
+                host,
+                host_pending,
+                self._pending_request_soft_cap_per_host,
+            )
+            return None
+        effective_cap_pre = self._get_effective_pending_request_cap()
+        pending_pre = len(self.pending_requests)
+        pace_threshold = self._udp_wait_pacing_load_ratio * effective_cap_pre
+        if effective_cap_pre > 0 and pending_pre > int(pace_threshold):
+            # Pace new waits when the shared UDP client is heavily loaded so responses
+            # can drain before adding more in-flight transactions.
+            half_span = max(1.0, pace_threshold)
+            pressure = min(
+                1.0,
+                (pending_pre - pace_threshold) / half_span,
+            )
+            await asyncio.sleep(0.04 + 0.12 * pressure)
         pruned_count = self._prune_stale_pending_requests(
             now=now, timeout=timeout, additional_new=1
         )
@@ -2523,10 +2585,13 @@ class AsyncUDPTrackerClient:
         )
         self.pending_requests[transaction_id] = future
         self._pending_request_timestamps[transaction_id] = now
+        self._pending_request_host_by_tid[transaction_id] = host
         if immediate_peers_callback is not None:
             self.pending_immediate_callbacks[transaction_id] = immediate_peers_callback
         else:
             self.pending_immediate_callbacks.pop(transaction_id, None)
+
+        self._maybe_emit_udp_pending_gauge()
 
         try:
             response = await asyncio.wait_for(future, timeout=adaptive_timeout)
@@ -2566,6 +2631,7 @@ class AsyncUDPTrackerClient:
             self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
             self.pending_immediate_callbacks.pop(transaction_id, None)
+            self._pending_request_host_by_tid.pop(transaction_id, None)
             self._cleanup_stale_response_transaction_ids(now=time.time())
 
     @staticmethod

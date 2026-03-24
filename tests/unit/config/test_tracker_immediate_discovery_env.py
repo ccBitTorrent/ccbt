@@ -15,10 +15,10 @@ config_module = importlib.import_module("ccbt.config.config")
 
 @pytest.mark.unit
 def test_discovery_defaults_tracker_immediate_burst() -> None:
-    """New discovery fields default to 24 for backward-compatible behavior."""
+    """Immediate burst defaults limit tracker-callback connect pressure."""
     cfg = Config()
-    assert cfg.discovery.tracker_immediate_connect_burst_total == 24
-    assert cfg.discovery.tracker_immediate_connect_burst_per_source == 24
+    assert cfg.discovery.tracker_immediate_connect_burst_total == 16
+    assert cfg.discovery.tracker_immediate_connect_burst_per_source == 16
 
 
 @pytest.mark.unit
@@ -61,6 +61,18 @@ def test_env_maps_tracker_immediate_window_fields(
     assert cfg.discovery.tracker_immediate_connect_window_cap == 8
     assert cfg.discovery.tracker_immediate_per_source_cap_mode == "full_max_peers"
     assert cfg.network.mse_initiator_timeout_scale_zero_active == 0.5
+
+
+@pytest.mark.unit
+def test_env_maps_tracker_per_tracker_cooldown_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-tracker immediate cooldown flag should map via env merge."""
+    monkeypatch.setattr(config_module, "IS_WINDOWS", False)
+    monkeypatch.setenv("CCBT_TRACKER_IMMEDIATE_PER_TRACKER_COOLDOWN_ENABLED", "false")
+    manager = ConfigManager.__new__(ConfigManager)
+    cfg = manager.simulate_load_from_file_dict({})
+    assert cfg.discovery.tracker_immediate_per_tracker_cooldown_enabled is False
 
 
 @pytest.mark.unit

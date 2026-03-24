@@ -35,6 +35,7 @@ async def mock_session_manager(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_shutdown_contract_accepted_triggers_event(mock_session_manager):
     """Accepted shutdown request should trigger daemon shutdown event."""
     api_key = "test-api-key-12345"
@@ -69,6 +70,7 @@ async def test_shutdown_contract_accepted_triggers_event(mock_session_manager):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_shutdown_contract_rejected_without_bridge(mock_session_manager):
     """Shutdown request should be rejected when no bridge is configured."""
     api_key = "test-api-key-12345"
@@ -94,6 +96,7 @@ async def test_shutdown_contract_rejected_without_bridge(mock_session_manager):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_shutdown_contract_duplicate_is_idempotent(mock_session_manager):
     """Duplicate shutdown requests should stay accepted and idempotent."""
     api_key = "test-api-key-12345"

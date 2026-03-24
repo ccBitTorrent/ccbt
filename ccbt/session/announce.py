@@ -22,6 +22,28 @@ except Exception:  # pragma: no cover - typing fallback
     TrackerResponse = Any  # type: ignore[misc,assignment]
 
 
+def slice_trackers_for_announce_round(
+    tracker_urls: list[str],
+    *,
+    cap: int,
+    offset: int,
+) -> tuple[list[str], int]:
+    """Select up to ``cap`` tracker URLs starting at ``offset`` (wraps).
+
+    Returns the selected URLs and the next offset for the following round.
+    When ``cap`` is 0 or the list fits in ``cap``, returns the full list and offset 0.
+    """
+    if not tracker_urls:
+        return [], 0
+    if cap <= 0 or len(tracker_urls) <= cap:
+        return list(tracker_urls), 0
+    n = len(tracker_urls)
+    start = int(offset) % n
+    selected = [tracker_urls[(start + i) % n] for i in range(cap)]
+    next_offset = (start + cap) % n
+    return selected, next_offset
+
+
 def _normalize_tracker_peer(
     peer: Any, utility_signal: float = 0.0
 ) -> Optional[dict[str, Any]]:
@@ -445,6 +467,21 @@ class AnnounceController:
                 final_seen.add(u)
                 final_trackers.append(u)
 
+        max_urls = 0
+        if self._config and getattr(self._config, "discovery", None) is not None:
+            max_urls = int(
+                getattr(self._config.discovery, "max_tracker_urls_per_torrent", 0) or 0
+            )
+        if max_urls > 0 and len(final_trackers) > max_urls:
+            if self._logger:
+                self._logger.warning(
+                    "Tracker announce URL list truncated from %d to %d "
+                    "(discovery.max_tracker_urls_per_torrent)",
+                    len(final_trackers),
+                    max_urls,
+                )
+            final_trackers = final_trackers[:max_urls]
+
         return final_trackers
 
 
@@ -678,6 +715,39 @@ class AnnounceLoop:
                     )
                     await asyncio.sleep(base_announce_interval)
                     continue
+
+                cap = 0
+                if getattr(self.s.config, "discovery", None) is not None:
+                    cap = int(
+                        getattr(
+                            self.s.config.discovery,
+                            "announce_max_trackers_per_round",
+                            0,
+                        )
+                        or 0
+                    )
+                if (
+                    cap > 0
+                    and len(tracker_urls) > cap
+                    and not getattr(self.s, "is_private", False)
+                ):
+                    prev = int(
+                        getattr(self.s, "_announce_per_round_slice_offset", 0) or 0
+                    )
+                    sliced, next_off = slice_trackers_for_announce_round(
+                        tracker_urls,
+                        cap=cap,
+                        offset=prev,
+                    )
+                    vars(self.s)["_announce_per_round_slice_offset"] = next_off
+                    self.s.logger.debug(
+                        "Announce per-round budget: contacting %d/%d tracker URL(s) "
+                        "(next_slice_offset=%d)",
+                        len(sliced),
+                        len(tracker_urls),
+                        next_off,
+                    )
+                    tracker_urls = sliced
 
                 # Keep single announce_url for backward compatibility with events
                 announce_url = tracker_urls[0] if tracker_urls else ""

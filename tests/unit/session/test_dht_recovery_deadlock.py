@@ -1310,17 +1310,77 @@ async def test_get_swarm_recovery_state_projects_block_reasons(tmp_path) -> None
         peer_manager=SimpleNamespace(
             get_connection_summary=AsyncMock(side_effect=_connection_summary),
             connections={},
-            get_active_peers=list,
+            get_active_peers=lambda: [object(), object()],
         )
     )
 
     state = await session._get_swarm_recovery_state()  # type: ignore[attr-defined]
 
     assert state["active_peers"] == 2
+    assert state["peer_manager_swarm_inputs"] is True
+    assert state["summary_active_connections"] == 2
+    assert state["transport_live_peers"] == 2
     assert state["remote_choked_peers"] == 1
     assert state["pipeline_saturated_peers"] == 1
     assert state["requestable_peers"] == 0
     assert state["productive_peers"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_swarm_recovery_state_prefers_transport_live_over_summary_active(
+    tmp_path,
+) -> None:
+    """When summary active_connections is inflated vs live streams, use transport count."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "recovery-transport-skew",
+        "info_hash": b"\x0E" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.piece_manager = SimpleNamespace(
+        _metadata_incomplete=False,
+        peer_availability={"a": object()},
+    )
+
+    async def _skewed_summary() -> dict[str, int]:
+        return {
+            "active_connections": 3,
+            "remote_choked_connections": 0,
+            "pipeline_saturated_connections": 0,
+            "requestable_connections": 0,
+            "productive_connections": 0,
+            "handshake_complete_connections": 3,
+            "extension_capable_connections": 0,
+            "metadata_capable_connections": 0,
+            "metadata_exchange_active": 0,
+            "peers_with_piece_info": 0,
+            "bitfield_complete_connections": 0,
+        }
+
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(
+            get_connection_summary=AsyncMock(side_effect=_skewed_summary),
+            connections={},
+            get_active_peers=lambda: [object()],
+        )
+    )
+
+    state = await session._get_swarm_recovery_state()  # type: ignore[attr-defined]
+
+    assert state["summary_active_connections"] == 3
+    assert state["transport_live_peers"] == 1
+    assert state["peer_manager_swarm_inputs"] is True
+    assert state["active_peers"] == 1
+    assert state["peer_availability_entries"] == 1
+    assert state["peers_with_piece_info"] == 0
 
 
 @pytest.mark.asyncio
