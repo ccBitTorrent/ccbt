@@ -188,7 +188,7 @@ All development configuration files are located in [dev/](dev/):
 - Runs all checks identically to main, including:
   - All linting and type checking
   - Full test suite with coverage
-  - All benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml)
+  - All benchmark checks from [.github/workflows/benchmark.yml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/.github/workflows/benchmark.yml) (CI only; pre-commit validates script syntax via `validate-benchmark-scripts`)
   - Documentation builds
 
 ### Feature Branches

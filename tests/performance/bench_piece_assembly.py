@@ -131,12 +131,12 @@ def main() -> int:
 		default="auto",
 		help="Recording mode: auto (detect), pre-commit, commit, both, or none",
 	)
-    parser.add_argument(
-        "--json-out",
-        type=Path,
-        default=None,
-        help="Write benchmark JSON artifact to this path (or directory) for CI",
-    )
+	parser.add_argument(
+		"--json-out",
+		type=Path,
+		default=None,
+		help="Write benchmark JSON artifact to this path (or directory) for CI",
+	)
 
 	args = parser.parse_args()
 	piece_sizes = [parse_size(s) for s in args.piece_sizes]

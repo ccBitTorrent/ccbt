@@ -95,5 +95,13 @@ repos:
         files: ^(ccbt/.*\.py|tests/.*\.py|dev/.*\.py)$
         pass_filenames: false
         stages: [pre-commit]
+      - id: validate-benchmark-scripts
+        name: validate-benchmark-scripts
+        entry: uv run python dev/scripts/validate_benchmark_scripts.py
+        language: system
+        types: [python]
+        files: ^tests/performance/bench_.*\.py$
+        pass_filenames: false
+        stages: [pre-commit]
 
 

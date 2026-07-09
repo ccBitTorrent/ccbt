@@ -149,6 +149,15 @@ def test_flatten_numeric_samples_nested_lists() -> None:
     ]
 
 
+def test_benchmark_scripts_validate() -> None:
+    """Benchmark runner scripts must compile before CI executes them."""
+    validate_module = _load_script_module(
+        "validate_benchmark_scripts",
+        Path("dev/scripts/validate_benchmark_scripts.py").resolve(),
+    )
+    assert validate_module.validate_benchmark_scripts() == []
+
+
 def test_summarize_results_for_docs_duplicate_scenarios() -> None:
     """Duplicate scenario rows aggregate without breaking ``statistics.mean``."""
     rows = [
