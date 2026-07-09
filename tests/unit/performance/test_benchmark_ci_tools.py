@@ -158,6 +158,68 @@ def test_benchmark_scripts_validate() -> None:
     assert validate_module.validate_benchmark_scripts() == []
 
 
+def test_run_benchmark_suite_legacy_fallback(tmp_path: Path) -> None:
+    """Older benchmark CLIs without --json-out still produce normalized artifacts."""
+    import sys
+
+    scripts_dir = Path("dev/scripts").resolve()
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import run_benchmark_suite as suite_module
+
+    workdir = tmp_path / "repo"
+    legacy_dir = workdir / "site" / "reports" / "benchmarks" / "artifacts"
+    legacy_dir.mkdir(parents=True)
+    script_path = workdir / "tests" / "performance" / "bench_legacy.py"
+    script_path.parent.mkdir(parents=True)
+    script_path.write_text(
+        """
+import argparse
+import json
+from pathlib import Path
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", default="site/reports/benchmarks/artifacts")
+    parser.add_argument("--record-mode", default="none")
+    parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--config-file", default=None)
+    args = parser.parse_args()
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "meta": {"benchmark": "hash_verify", "config": "performance"},
+        "results": [{"elapsed_s": 1.0, "throughput_bytes_per_s": 2.0}],
+    }
+    path = out / "hash_verify-performance-Linux-6.8.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+""",
+        encoding="utf-8",
+    )
+
+    spec = suite_module.BenchmarkSpec(
+        script="tests/performance/bench_legacy.py",
+        benchmark_key="hash_verify",
+        output_name="bench_hash_verify.json",
+    )
+    output_dir = tmp_path / "ci"
+    written = suite_module._run_benchmark(
+        spec,
+        workdir=workdir,
+        output_dir=output_dir,
+        config_file="docs/examples/example-config-performance.toml",
+        record_mode="none",
+        quick=False,
+        runner="python",
+    )
+    assert written == output_dir / "bench_hash_verify.json"
+    assert written.exists()
+
+
 def test_summarize_results_for_docs_duplicate_scenarios() -> None:
     """Duplicate scenario rows aggregate without breaking ``statistics.mean``."""
     rows = [

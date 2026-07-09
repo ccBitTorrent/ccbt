@@ -54,36 +54,17 @@ jobs:
       - name: Run head benchmark suite
         run: |
           mkdir -p "${BENCH_HEAD_DIR}"
+          QUICK_ARG=""
           if [ "${BENCH_QUICK}" = "1" ]; then
             QUICK_ARG="--quick"
-          else
-            QUICK_ARG=""
           fi
-
-          uv run python tests/performance/bench_hash_verify.py ${QUICK_ARG} \
-            --record-mode=none \
+          uv run python dev/scripts/run_benchmark_suite.py \
+            --output-dir "${BENCH_HEAD_DIR}" \
+            --workdir "${{ github.workspace }}" \
             --config-file "${BENCH_CONFIG_FILE}" \
-            --json-out "${BENCH_HEAD_DIR}/bench_hash_verify.json"
-
-          uv run python tests/performance/bench_disk_io.py ${QUICK_ARG} --sizes 256KiB 1MiB \
-            --record-mode=none \
-            --config-file "${BENCH_CONFIG_FILE}" \
-            --json-out "${BENCH_HEAD_DIR}/bench_disk_io.json"
-
-          uv run python tests/performance/bench_piece_assembly.py ${QUICK_ARG} \
-            --record-mode=none \
-            --config-file "${BENCH_CONFIG_FILE}" \
-            --json-out "${BENCH_HEAD_DIR}/bench_piece_assembly.json"
-
-          uv run python tests/performance/bench_loopback_throughput.py ${QUICK_ARG} \
-            --record-mode=none \
-            --config-file "${BENCH_CONFIG_FILE}" \
-            --json-out "${BENCH_HEAD_DIR}/bench_loopback_throughput.json"
-
-          uv run python tests/performance/bench_encryption.py ${QUICK_ARG} \
-            --record-mode=none \
-            --config-file "${BENCH_CONFIG_FILE}" \
-            --json-out "${BENCH_HEAD_DIR}/bench_encryption.json"
+            --record-mode none \
+            --runner python \
+            ${QUICK_ARG}
 
       - name: Prepare base checkout
         run: |
@@ -99,41 +80,18 @@ jobs:
       - name: Run base benchmark suite
         run: |
           mkdir -p "${BENCH_BASE_DIR}"
+          QUICK_ARG=""
           if [ "${BENCH_QUICK}" = "1" ]; then
             QUICK_ARG="--quick"
-          else
-            QUICK_ARG=""
           fi
-
-          (cd "${BENCH_BASE_DIR}" && \
-            uv run python tests/performance/bench_hash_verify.py ${QUICK_ARG} \
-              --record-mode=none \
-              --config-file "${BENCH_CONFIG_FILE}" \
-              --json-out "${BENCH_BASE_DIR}/bench_hash_verify.json")
-
-          (cd "${BENCH_BASE_DIR}" && \
-            uv run python tests/performance/bench_disk_io.py ${QUICK_ARG} --sizes 256KiB 1MiB \
-              --record-mode=none \
-              --config-file "${BENCH_CONFIG_FILE}" \
-              --json-out "${BENCH_BASE_DIR}/bench_disk_io.json")
-
-          (cd "${BENCH_BASE_DIR}" && \
-            uv run python tests/performance/bench_piece_assembly.py ${QUICK_ARG} \
-              --record-mode=none \
-              --config-file "${BENCH_CONFIG_FILE}" \
-              --json-out "${BENCH_BASE_DIR}/bench_piece_assembly.json")
-
-          (cd "${BENCH_BASE_DIR}" && \
-            uv run python tests/performance/bench_loopback_throughput.py ${QUICK_ARG} \
-              --record-mode=none \
-              --config-file "${BENCH_CONFIG_FILE}" \
-              --json-out "${BENCH_BASE_DIR}/bench_loopback_throughput.json")
-
-          (cd "${BENCH_BASE_DIR}" && \
-            uv run python tests/performance/bench_encryption.py ${QUICK_ARG} \
-              --record-mode=none \
-              --config-file "${BENCH_CONFIG_FILE}" \
-              --json-out "${BENCH_BASE_DIR}/bench_encryption.json")
+          (cd "${BENCH_BASE_DIR}" && uv sync --dev)
+          uv run python dev/scripts/run_benchmark_suite.py \
+            --output-dir "${BENCH_BASE_DIR}" \
+            --workdir "${BENCH_BASE_DIR}" \
+            --config-file "${BENCH_CONFIG_FILE}" \
+            --record-mode none \
+            --runner uv \
+            ${QUICK_ARG}
 
       - name: Compare and render benchmark reports
         run: |

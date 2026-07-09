@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "benchmark": "loopback_throughput",
+    "config": "performance",
+    "timestamp": "2026-07-09T06:26:16.483317+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "10",
+      "python": "3.11.4"
+    },
+    "git": {
+      "commit_hash": "031a52ebbb9a1a27a11235cc51798b60d91a5a9f",
+      "commit_hash_short": "031a52e",
+      "branch": "addsreact",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "payload_bytes": 16384,
+      "pipeline_depth": 8,
+      "duration_s": 1.0000381999998353,
+      "bytes_transferred": 6524633088,
+      "throughput_bytes_per_s": 6524383856.537755,
+      "stall_percent": 11.11088790230597
+    }
+  ],
+  "summary": {
+    "benchmark": "loopback_throughput",
+    "config": "performance",
+    "generated_at": "2026-07-09T06:26:16.498988+00:00",
+    "meta": {
+      "git": {
+        "commit_hash": "031a52ebbb9a1a27a11235cc51798b60d91a5a9f",
+        "commit_hash_short": "031a52e",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "platform": {
+        "system": "Windows",
+        "release": "10",
+        "python": "3.11.4"
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "payload_bytes=16384,pipeline_depth=8",
+        "dimensions": {
+          "payload_bytes": 16384,
+          "pipeline_depth": 8
+        },
+        "metrics": {
+          "duration_s": {
+            "count": 1,
+            "mean": 1.0000381999998353,
+            "min": 1.0000381999998353,
+            "max": 1.0000381999998353
+          },
+          "bytes_transferred": {
+            "count": 1,
+            "mean": 6524633088.0,
+            "min": 6524633088.0,
+            "max": 6524633088.0
+          },
+          "throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 6524383856.537755,
+            "min": 6524383856.537755,
+            "max": 6524383856.537755
+          },
+          "stall_percent": {
+            "count": 1,
+            "mean": 11.11088790230597,
+            "min": 11.11088790230597,
+            "max": 11.11088790230597
+          }
+        }
+      }
+    ]
+  }
+}

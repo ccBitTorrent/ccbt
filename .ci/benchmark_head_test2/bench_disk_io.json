@@ -1,0 +1,124 @@
+{
+  "meta": {
+    "benchmark": "disk_io",
+    "config": "example-config-performance",
+    "timestamp": "2026-07-09T06:26:10.828688+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "10",
+      "python": "3.11.4"
+    },
+    "git": {
+      "commit_hash": "031a52ebbb9a1a27a11235cc51798b60d91a5a9f",
+      "commit_hash_short": "031a52e",
+      "branch": "addsreact",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "size_bytes": 262144,
+      "iterations": 5,
+      "write_elapsed_s": 0.5352569999959087,
+      "read_elapsed_s": 0.0014493000053334981,
+      "write_throughput_bytes_per_s": 2448767.60137657,
+      "read_throughput_bytes_per_s": 904381422.1875963
+    },
+    {
+      "size_bytes": 1048576,
+      "iterations": 5,
+      "write_elapsed_s": 0.016659100001561455,
+      "read_elapsed_s": 0.003319399998872541,
+      "write_throughput_bytes_per_s": 314715680.889639,
+      "read_throughput_bytes_per_s": 1579466169.1211615
+    }
+  ],
+  "summary": {
+    "benchmark": "disk_io",
+    "config": "example-config-performance",
+    "generated_at": "2026-07-09T06:26:10.828688+00:00",
+    "meta": {
+      "git": {
+        "commit_hash": "031a52ebbb9a1a27a11235cc51798b60d91a5a9f",
+        "commit_hash_short": "031a52e",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "platform": {
+        "system": "Windows",
+        "release": "10",
+        "python": "3.11.4"
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "iterations=5,size_bytes=262144",
+        "dimensions": {
+          "size_bytes": 262144,
+          "iterations": 5
+        },
+        "metrics": {
+          "write_elapsed_s": {
+            "count": 1,
+            "mean": 0.5352569999959087,
+            "min": 0.5352569999959087,
+            "max": 0.5352569999959087
+          },
+          "read_elapsed_s": {
+            "count": 1,
+            "mean": 0.0014493000053334981,
+            "min": 0.0014493000053334981,
+            "max": 0.0014493000053334981
+          },
+          "write_throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 2448767.60137657,
+            "min": 2448767.60137657,
+            "max": 2448767.60137657
+          },
+          "read_throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 904381422.1875963,
+            "min": 904381422.1875963,
+            "max": 904381422.1875963
+          }
+        }
+      },
+      {
+        "scenario": "iterations=5,size_bytes=1048576",
+        "dimensions": {
+          "size_bytes": 1048576,
+          "iterations": 5
+        },
+        "metrics": {
+          "write_elapsed_s": {
+            "count": 1,
+            "mean": 0.016659100001561455,
+            "min": 0.016659100001561455,
+            "max": 0.016659100001561455
+          },
+          "read_elapsed_s": {
+            "count": 1,
+            "mean": 0.003319399998872541,
+            "min": 0.003319399998872541,
+            "max": 0.003319399998872541
+          },
+          "write_throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 314715680.889639,
+            "min": 314715680.889639,
+            "max": 314715680.889639
+          },
+          "read_throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 1579466169.1211615,
+            "min": 1579466169.1211615,
+            "max": 1579466169.1211615
+          }
+        }
+      }
+    ]
+  }
+}
