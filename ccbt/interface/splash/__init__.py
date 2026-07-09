@@ -13,19 +13,27 @@ from ccbt.interface.splash.animation_helpers import (
 
 # Optional import for SplashScreen (may not exist)
 try:
-    from ccbt.interface.splash.splash_screen import SplashScreen, run_splash_screen
-    from ccbt.interface.splash.splash_manager import SplashManager
-    from ccbt.interface.splash.sequence_generator import SequenceGenerator, generate_random_sequence
     from ccbt.interface.splash.animation_adapter import AnimationAdapter
     from ccbt.interface.splash.message_overlay import MessageOverlay
+    from ccbt.interface.splash.sequence_generator import (
+        SequenceGenerator,
+        generate_random_sequence,
+    )
+    from ccbt.interface.splash.splash_manager import SplashManager
+    from ccbt.interface.splash.splash_screen import SplashScreen, run_splash_screen
+    from ccbt.interface.splash.templates import (
+        Template,
+        TemplateRegistry,
+        get_template,
+        load_default_templates,
+    )
     from ccbt.interface.splash.transitions import (
-        Transition,
         ColorTransition,
+        CrossfadeTransition,
         FadeTransition,
         SlideTransition,
-        CrossfadeTransition,
+        Transition,
     )
-    from ccbt.interface.splash.templates import Template, TemplateRegistry, get_template, load_default_templates
 except ImportError:
     SplashScreen = None  # type: ignore[assignment, misc]
     run_splash_screen = None  # type: ignore[assignment, misc]
@@ -52,22 +60,22 @@ __all__ = [
 
 if SplashScreen is not None:
     __all__.extend([
-        "SplashScreen",
-        "run_splash_screen",
-        "SplashManager",
-        "SequenceGenerator",
-        "generate_random_sequence",
         "AnimationAdapter",
-        "MessageOverlay",
-        "Transition",
         "ColorTransition",
-        "FadeTransition",
-        "SlideTransition",
         "CrossfadeTransition",
+        "FadeTransition",
+        "MessageOverlay",
+        "SequenceGenerator",
+        "SlideTransition",
+        "SplashManager",
+        "SplashScreen",
         "Template",
         "TemplateRegistry",
+        "Transition",
+        "generate_random_sequence",
         "get_template",
         "load_default_templates",
+        "run_splash_screen",
     ])
 
 

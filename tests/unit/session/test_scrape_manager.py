@@ -25,6 +25,7 @@ class TestScrapeManager:
         manager.scrape_cache_lock = asyncio.Lock()
         manager.logger = Mock()
         manager.config = Mock()
+        manager._manager_shutting_down = False
         manager.config.discovery = Mock()
         manager.config.discovery.tracker_scrape_interval = 300.0
         return manager
@@ -55,8 +56,6 @@ class TestScrapeManager:
     @pytest.mark.asyncio
     async def test_force_scrape_success(self, scrape_manager, mock_manager):
         """Test successful force_scrape."""
-        import asyncio
-
         info_hash = b"x" * 20
         info_hash_hex = info_hash.hex()
 
@@ -86,8 +85,6 @@ class TestScrapeManager:
     @pytest.mark.asyncio
     async def test_force_scrape_zero_stats(self, scrape_manager, mock_manager):
         """Test force_scrape with zero stats."""
-        import asyncio
-
         info_hash = b"y" * 20
         info_hash_hex = info_hash.hex()
 
@@ -142,8 +139,9 @@ class TestScrapeManager:
 
     def test_is_stale(self, scrape_manager, mock_manager):
         """Test is_stale method."""
-        from ccbt.models import ScrapeResult
         import time
+
+        from ccbt.models import ScrapeResult
 
         info_hash = b"stale" * 5
 

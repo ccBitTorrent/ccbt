@@ -20,7 +20,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Union
+from typing import List
 
 from ccbt.storage.disk_io import DiskIOManager  # type: ignore
 
@@ -56,7 +56,7 @@ def parse_size(size_str: str) -> int:
     return int(s)
 
 
-def format_bytes(n: Union[int, float]) -> str:
+def format_bytes(n: float) -> str:
     value: float = float(n)
     for unit in ("B", "KiB", "MiB", "GiB"):
         if value < 1024.0 or unit == "GiB":  # type: ignore[comparison-overlap]
@@ -72,12 +72,12 @@ async def run_case(size_bytes: int, iterations: int) -> BenchmarkResult:
     """Run a disk I/O benchmark case."""
     manager = DiskIOManager()
     await manager.start()
-    
+
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             test_file = Path(tmpdir) / "bench.bin"
             data = b"X" * size_bytes
-            
+
             # Write benchmark
             write_start = time.perf_counter()
             write_total = 0
@@ -86,7 +86,7 @@ async def run_case(size_bytes: int, iterations: int) -> BenchmarkResult:
                 await future  # Ensure write completes
                 write_total += size_bytes
             write_elapsed = time.perf_counter() - write_start
-            
+
             # Read benchmark
             read_start = time.perf_counter()
             read_total = 0
@@ -94,10 +94,10 @@ async def run_case(size_bytes: int, iterations: int) -> BenchmarkResult:
                 chunk = await manager.read_block(test_file, 0, size_bytes)
                 read_total += len(chunk)
             read_elapsed = time.perf_counter() - read_start
-            
+
             write_throughput = write_total / max(write_elapsed, 1e-9)
             read_throughput = read_total / max(read_elapsed, 1e-9)
-            
+
             result = BenchmarkResult(
                 size_bytes=size_bytes,
                 iterations=iterations,
@@ -106,23 +106,23 @@ async def run_case(size_bytes: int, iterations: int) -> BenchmarkResult:
                 write_throughput_bytes_per_s=write_throughput,
                 read_throughput_bytes_per_s=read_throughput,
             )
-            
-            # CRITICAL FIX: Stop manager and close all file handles BEFORE temp directory cleanup
+
+            # Note: Stop manager and close all file handles BEFORE temp directory cleanup
             # This prevents Windows file locking issues (PermissionError [WinError 32])
             # Force flush all pending operations first
-            if hasattr(manager, '_flush_all_writes'):
+            if hasattr(manager, "_flush_all_writes"):
                 try:
                     await asyncio.wait_for(manager._flush_all_writes(), timeout=2.0)
                 except asyncio.TimeoutError:
                     pass  # Continue with stop() anyway
-            
+
             # Stop the manager to close all file handles
             await manager.stop()
-            
+
             # Windows-specific: Give file handles additional time to close
             if sys.platform == "win32":
                 await asyncio.sleep(0.2)
-            
+
             # Explicitly delete the test file to ensure it's released
             # This is a safety measure - the file should already be closed by manager.stop()
             try:
@@ -130,11 +130,11 @@ async def run_case(size_bytes: int, iterations: int) -> BenchmarkResult:
                     test_file.unlink()
             except Exception:
                 pass  # File may already be deleted or locked, which is fine
-            
+
             # Additional wait for Windows to fully release file handles
             if sys.platform == "win32":
                 await asyncio.sleep(0.1)
-            
+
             return result
     finally:
         # Ensure manager is stopped even if an exception occurs
@@ -207,9 +207,15 @@ def main() -> int:
         choices=["auto", "pre-commit", "commit", "both", "none"],
         help="Recording mode for benchmark results",
     )
-    
+    parser.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="Write benchmark JSON artifact to this path (or directory) for CI",
+    )
+
     args = parser.parse_args()
-    
+
     # Quick mode adjustments
     if args.quick:
         sizes = ["256KiB", "1MiB"]
@@ -217,40 +223,41 @@ def main() -> int:
     else:
         sizes = args.sizes
         iterations = args.iterations
-    
+
     # Parse sizes
     size_bytes_list = [parse_size(s) for s in sizes]
-    
+
     # Run benchmarks
     results: List[BenchmarkResult] = []
     for size_bytes in size_bytes_list:
         result = asyncio.run(run_case(size_bytes, iterations))
         results.append(result)
-    
+
     # Print results
     print_table(results)
-    
+
     # Record results
     config_name = "default"
     if args.config_file:
         config_name = Path(args.config_file).stem
-    
+
     per_run_path, timeseries_path = record_benchmark_results(
         benchmark_name="disk_io",
         config_name=config_name,
         results=results,
         record_mode=args.record_mode,
+        json_out=args.json_out,
     )
-    
+
     # Also write legacy format for compatibility
     legacy_output_dir = Path("site/reports/benchmarks/artifacts")
     if legacy_output_dir.exists() or args.record_mode != "none":
         legacy_path = write_json(legacy_output_dir, "disk_io", config_name, results)
         print(f"\nWrote (legacy): {legacy_path}")
-    
+
     if per_run_path:
         print(f"Recorded per-run: {per_run_path}")
-    
+
     return 0
 
 

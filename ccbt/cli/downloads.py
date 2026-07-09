@@ -559,14 +559,12 @@ async def start_basic_magnet_download(
                 if hasattr(torrent_status, "status"):
                     current_status = torrent_status.status
                     current_progress = getattr(torrent_status, "progress", 0.0)
-                    connected_peers = getattr(torrent_status, "num_peers", 0)
+                    connected_peers = int(getattr(torrent_status, "connected_peers", 0))
                     download_rate = getattr(torrent_status, "download_rate", 0.0)
                 elif isinstance(torrent_status, dict):
                     current_status = torrent_status.get("status", "unknown")
                     current_progress = torrent_status.get("progress", 0.0)
-                    connected_peers = torrent_status.get(
-                        "connected_peers", torrent_status.get("num_peers", 0)
-                    )
+                    connected_peers = int(torrent_status.get("connected_peers", 0) or 0)
                     download_rate = torrent_status.get("download_rate", 0.0)
                 else:
                     current_status = "unknown"
@@ -596,7 +594,7 @@ async def start_basic_magnet_download(
                             )
                         )
 
-                # CRITICAL FIX: Add user-facing warning if no peers connect after reasonable time
+                # Note: Add user-facing warning if no peers connect after reasonable time
                 if current_status == "downloading" and connected_peers == 0:
                     import time
 
@@ -686,7 +684,7 @@ async def start_basic_magnet_download(
                     ).format(error=e)
                 )
 
-            # CRITICAL FIX: Ensure session is properly stopped on KeyboardInterrupt
+            # Note: Ensure session is properly stopped on KeyboardInterrupt
             # This prevents "Unclosed client session" warnings
             try:
                 await session.stop()
@@ -698,7 +696,7 @@ async def start_basic_magnet_download(
                 )
             raise
         finally:
-            # CRITICAL FIX: Always try to stop session in finally block
+            # Note: Always try to stop session in finally block
             # This ensures cleanup even if an exception occurs
             try:
                 result = await executor.execute(

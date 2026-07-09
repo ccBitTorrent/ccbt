@@ -21,7 +21,7 @@ class BackgroundConfig:
     bg_color_start: Optional[Union[str, list[str]]] = None  # Single color or gradient start
     bg_color_finish: Optional[Union[str, list[str]]] = None  # Single color or gradient end
     bg_color_palette: Optional[list[str]] = None  # Full color palette for animated backgrounds
-    
+
     # Text color (separate from background)
     text_color: Optional[Union[str, list[str]]] = None  # Text color (overrides main color_start for text)
 
@@ -82,7 +82,7 @@ class AnimationConfig:
     color_palette: Optional[list[str]] = None  # Full color palette
 
     # Direction/flow
-    direction: str = "left_to_right"  # left_to_right, right_to_left, top_to_bottom, 
+    direction: str = "left_to_right"  # left_to_right, right_to_left, top_to_bottom,
                                       # bottom_to_top, radiant_center_out, radiant_center_in
 
     # Timing
@@ -98,7 +98,7 @@ class AnimationConfig:
     wave_amplitude: float = 2.0
     particle_density: float = 0.1
     glitch_intensity: float = 0.1
-    
+
     # New animation options
     snake_length: int = 10
     snake_thickness: int = 1  # Thickness of snake perpendicular to direction
@@ -109,7 +109,7 @@ class AnimationConfig:
 
     # Background configuration
     background: BackgroundConfig = field(default_factory=BackgroundConfig)
-    
+
     # Logo animation style when using background animations
     logo_animation_style: str = "rainbow"  # Style for logo when background is animated
 
@@ -128,10 +128,10 @@ class AnimationConfig:
         """Validate and set defaults."""
         if not self.name:
             self.name = f"{self.style}_{self.direction}"
-        
+
         # Validate configuration
         self._validate_config()
-    
+
     def _validate_config(self) -> None:
         """Validate animation configuration.
         
@@ -140,26 +140,26 @@ class AnimationConfig:
         """
         if self.duration <= 0:
             raise ValueError(f"Animation duration must be positive, got {self.duration}")
-        
+
         if self.speed <= 0:
             raise ValueError(f"Animation speed must be positive, got {self.speed}")
-        
+
         if self.steps <= 0:
             raise ValueError(f"Animation steps must be positive, got {self.steps}")
-        
+
         # Validate style-specific options
         if self.style == "reveal" and not self.reveal_char:
             raise ValueError("Reveal animation requires reveal_char")
-        
+
         if self.style in ["snake_reveal", "snake_disappear"]:
             if self.snake_length <= 0:
                 raise ValueError(f"Snake length must be positive, got {self.snake_length}")
             if self.snake_thickness <= 0:
                 raise ValueError(f"Snake thickness must be positive, got {self.snake_thickness}")
-        
+
         if self.style == "glitch" and not (0.0 <= self.glitch_intensity <= 1.0):
             raise ValueError(f"Glitch intensity must be between 0.0 and 1.0, got {self.glitch_intensity}")
-    
+
     def adapt_speed_to_duration(self) -> None:
         """Adapt speed and steps based on sequence total duration.
         
@@ -168,11 +168,11 @@ class AnimationConfig:
         """
         if self.sequence_total_duration is None:
             return
-        
+
         # Calculate adaptive speed based on sequence length
         # Longer sequences should have slower speeds to maintain visual consistency
         duration_ratio = self.duration / self.sequence_total_duration if self.sequence_total_duration > 0 else 1.0
-        
+
         # Adapt speed: longer sequences need slower speeds
         # Base speed of 8.0 for 3.0s duration, scale inversely with duration ratio
         if duration_ratio < 0.1:
@@ -184,11 +184,11 @@ class AnimationConfig:
         else:
             # Normal segments: keep base speed
             self.speed = 8.0
-        
+
         # Adapt steps: ensure smooth animation regardless of duration
         # Base steps of 30 for 3.0s, scale with duration
         self.steps = max(10, int(30 * (self.duration / 3.0)))
-        
+
         # Adapt background speeds if background is configured
         if self.background:
             # Background speed should scale with segment duration

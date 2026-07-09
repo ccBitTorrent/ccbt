@@ -4,11 +4,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 from ccbt.transport.utp_extensions import (
     ECNExtension,
-    SACKExtension,
     SACKBlock,
+    SACKExtension,
     WindowScalingExtension,
 )
 

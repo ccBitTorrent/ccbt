@@ -1,0 +1,144 @@
+{
+  "meta": {
+    "benchmark": "hash_verify",
+    "config": "performance",
+    "timestamp": "2026-07-09T06:01:36.371659+00:00",
+    "platform": {
+      "system": "Windows",
+      "release": "10",
+      "python": "3.11.4"
+    },
+    "git": {
+      "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+      "commit_hash_short": "846c6d3",
+      "branch": "addsreact",
+      "author": "Joseph Pollack",
+      "is_dirty": true
+    }
+  },
+  "results": [
+    {
+      "size_bytes": 1048576,
+      "iterations": 8,
+      "elapsed_s": 5.129999772179872e-05,
+      "bytes_processed": 8388608,
+      "throughput_bytes_per_s": 163520631043.52655
+    },
+    {
+      "size_bytes": 4194304,
+      "iterations": 8,
+      "elapsed_s": 3.060000017285347e-05,
+      "bytes_processed": 33554432,
+      "throughput_bytes_per_s": 1096550059165.2783
+    },
+    {
+      "size_bytes": 16777216,
+      "iterations": 8,
+      "elapsed_s": 3.359999391250312e-05,
+      "bytes_processed": 134217728,
+      "throughput_bytes_per_s": 3994575961814.5444
+    }
+  ],
+  "summary": {
+    "benchmark": "hash_verify",
+    "config": "performance",
+    "generated_at": "2026-07-09T06:01:36.371659+00:00",
+    "meta": {
+      "git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "platform": {
+        "system": "Windows",
+        "release": "10",
+        "python": "3.11.4"
+      }
+    },
+    "scenarios": [
+      {
+        "scenario": "iterations=8,size_bytes=1048576",
+        "dimensions": {
+          "size_bytes": 1048576,
+          "iterations": 8
+        },
+        "metrics": {
+          "elapsed_s": {
+            "count": 1,
+            "mean": 5.129999772179872e-05,
+            "min": 5.129999772179872e-05,
+            "max": 5.129999772179872e-05
+          },
+          "bytes_processed": {
+            "count": 1,
+            "mean": 8388608.0,
+            "min": 8388608.0,
+            "max": 8388608.0
+          },
+          "throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 163520631043.52655,
+            "min": 163520631043.52655,
+            "max": 163520631043.52655
+          }
+        }
+      },
+      {
+        "scenario": "iterations=8,size_bytes=4194304",
+        "dimensions": {
+          "size_bytes": 4194304,
+          "iterations": 8
+        },
+        "metrics": {
+          "elapsed_s": {
+            "count": 1,
+            "mean": 3.060000017285347e-05,
+            "min": 3.060000017285347e-05,
+            "max": 3.060000017285347e-05
+          },
+          "bytes_processed": {
+            "count": 1,
+            "mean": 33554432.0,
+            "min": 33554432.0,
+            "max": 33554432.0
+          },
+          "throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 1096550059165.2783,
+            "min": 1096550059165.2783,
+            "max": 1096550059165.2783
+          }
+        }
+      },
+      {
+        "scenario": "iterations=8,size_bytes=16777216",
+        "dimensions": {
+          "size_bytes": 16777216,
+          "iterations": 8
+        },
+        "metrics": {
+          "elapsed_s": {
+            "count": 1,
+            "mean": 3.359999391250312e-05,
+            "min": 3.359999391250312e-05,
+            "max": 3.359999391250312e-05
+          },
+          "bytes_processed": {
+            "count": 1,
+            "mean": 134217728.0,
+            "min": 134217728.0,
+            "max": 134217728.0
+          },
+          "throughput_bytes_per_s": {
+            "count": 1,
+            "mean": 3994575961814.5444,
+            "min": 3994575961814.5444,
+            "max": 3994575961814.5444
+          }
+        }
+      }
+    ]
+  }
+}

@@ -46,6 +46,7 @@ class EventType(str, Enum):
     PEER_DISCONNECTED = "peer_disconnected"
     PEER_HANDSHAKE_COMPLETE = "peer_handshake_complete"
     PEER_BITFIELD_RECEIVED = "peer_bitfield_received"
+    PEER_QUALITY_RANKED = "peer_quality_ranked"
     # Seeding events
     SEEDING_STARTED = "seeding_started"
     SEEDING_STOPPED = "seeding_stopped"
@@ -93,6 +94,13 @@ class StatusResponse(BaseModel):
     version: str = Field(..., description="Daemon version")
     num_torrents: int = Field(0, description="Number of active torrents")
     ipc_url: str = Field(..., description="IPC server URL")
+    inbound_unknown_info_hash_metrics_top: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Top unknown inbound info-hash prefixes (16-char hex) by count across TCP listeners; "
+            "empty when none. See GET /api/v1/status and network troubleshooting docs."
+        ),
+    )
 
 
 class XetSyncModeRequest(BaseModel):
@@ -135,6 +143,14 @@ class XetDiscoveryBackendStatus(BaseModel):
     last_success: Optional[float] = Field(
         None,
         description="Timestamp of last successful backend operation",
+    )
+    udp_tracker_client_ready: Optional[bool] = Field(
+        None,
+        description="UDP BEP-15 client running (tracker backend only)",
+    )
+    udp_tracker_client_init_failed: Optional[bool] = Field(
+        None,
+        description="UDP tracker client failed to start (tracker backend only)",
     )
 
 
@@ -217,6 +233,27 @@ class TorrentStatusResponse(BaseModel):
     )
     pieces_completed: int = Field(0, description="Number of completed pieces")
     pieces_total: int = Field(0, description="Total number of pieces")
+    tracker_status: Optional[str] = Field(None, description="Tracker health state")
+    last_tracker_error: Optional[str] = Field(
+        None, description="Last tracker-specific error"
+    )
+    last_error: Optional[str] = Field(None, description="Last torrent/session error")
+    productive_peers: int = Field(0, description="Peers currently making progress")
+    requestable_peers: int = Field(
+        0, description="Peers currently eligible for requests"
+    )
+    handshake_complete_peers: int = Field(
+        0, description="Peers that completed the base BitTorrent handshake"
+    )
+    extension_capable_peers: int = Field(
+        0, description="Peers that advertised BEP 10 extension support"
+    )
+    metadata_capable_peers: int = Field(
+        0, description="Peers that advertised ut_metadata support"
+    )
+    hash_verification_failures: int = Field(
+        0, description="Pieces rejected after hash verification"
+    )
 
 
 class TorrentListResponse(BaseModel):
@@ -778,6 +815,32 @@ class GlobalStatsResponse(BaseModel):
     )
 
 
+# UI Snapshot (first-paint hydration)
+class UISnapshotResponse(BaseModel):
+    """Single response for dashboard first-paint: global stats, torrent list, services, and minimal rate history."""
+
+    global_stats: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Global session statistics (same shape as session/stats)",
+    )
+    torrents: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of torrent status dicts (same shape as GET /torrents)",
+    )
+    services_status: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Coarse status of dht, nat, tcp_server, peer_service, ipc_server",
+    )
+    rate_samples: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Recent rate samples for graph (timestamp, download_rate, upload_rate); may be truncated",
+    )
+    peers: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Aggregated peer rows across torrents (capped) for first-paint peer panels; same shape as GET /torrents/{ih}/peers rows",
+    )
+
+
 # Protocol Models
 class ProtocolInfo(BaseModel):
     """Protocol information."""
@@ -1003,6 +1066,39 @@ class DetailedGlobalMetricsResponse(BaseModel):
     total_bytes_uploaded: int = Field(
         0, description="Total bytes uploaded to all peers"
     )
+    swarm_auth_gate_total: int = Field(
+        0, description="Total swarm-auth gate evaluations"
+    )
+    swarm_auth_gate_by_mode_strict_total: int = Field(
+        0, description="Swarm-auth gate decisions in strict mode"
+    )
+    swarm_auth_gate_by_mode_opportunistic_total: int = Field(
+        0, description="Swarm-auth gate decisions in opportunistic mode"
+    )
+    swarm_auth_gate_by_mode_off_total: int = Field(
+        0, description="Swarm-auth gate decisions when mode is off"
+    )
+    swarm_auth_gate_allow_total: int = Field(0, description="Swarm-auth allows")
+    swarm_auth_gate_deny_total: int = Field(0, description="Swarm-auth denies")
+    swarm_auth_gate_reason_invalid_signature_total: int = Field(
+        0, description="Swarm-auth invalid signature denies"
+    )
+    swarm_auth_opportunistic_verify_failed_total: int = Field(
+        0,
+        description="Swarm-auth opportunistic verification failures in non-blocking mode",
+    )
+    swarm_auth_strict_ltep_timeout_total: int = Field(
+        0, description="Swarm-auth strict LTEP timeout rejections"
+    )
+    swarm_auth_truststore_reload_total: int = Field(
+        0, description="Swarm-auth truststore reload events"
+    )
+    swarm_auth_revocation_hits_total: int = Field(
+        0, description="Swarm-auth revocation hits"
+    )
+    swarm_auth_discovery_suppressed_total: int = Field(
+        0, description="Swarm-auth discovery suppression events"
+    )
     peer_efficiency_distribution: dict[str, int] = Field(
         default_factory=dict,
         description="Distribution of peer efficiency (tier -> count)",
@@ -1059,6 +1155,58 @@ class DHTQueryMetricsResponse(BaseModel):
     last_query_depth: int = Field(0, description="Query depth of last query")
     last_query_nodes_queried: int = Field(0, description="Nodes queried in last query")
     routing_table_size: int = Field(0, description="Current DHT routing table size")
+    bootstrap_success_count: int = Field(
+        0, description="Number of successful bootstrap or rebootstrap attempts"
+    )
+    bootstrap_failure_count: int = Field(
+        0, description="Number of failed bootstrap or rebootstrap attempts"
+    )
+    bootstrap_recovery_attempts: int = Field(
+        0,
+        description="Number of bootstrap recovery attempts (including rebootstrap and fallback)",
+    )
+    bootstrap_health_state: str = Field(
+        "unknown", description="Current bootstrap health state"
+    )
+    bootstrap_zero_state_count: int = Field(
+        0,
+        description="Count of times bootstrap completed with zero routing-table nodes",
+    )
+    bootstrap_zero_nodes_last_reason: str = Field(
+        "", description="Reason from the last zero-node bootstrap outcome"
+    )
+    rebootstrap_attempt_count: int = Field(
+        0, description="Number of rebootstrap attempts"
+    )
+    rebootstrap_success_count: int = Field(
+        0, description="Number of successful rebootstrap attempts"
+    )
+    rebootstrap_failure_count: int = Field(
+        0, description="Number of failed rebootstrap attempts"
+    )
+    rebootstrap_last_outcome: str = Field(
+        "not_attempted", description="Last rebootstrap attempt outcome"
+    )
+    rebootstrap_last_reason: str = Field(
+        "", description="Reason label for last rebootstrap attempt"
+    )
+    rebootstrap_last_source: str = Field("", description="Source of last rebootstrap")
+    rebootstrap_health_state: str = Field(
+        "unknown", description="Current rebootstrap health state"
+    )
+    rebootstrap_consecutive_failures: int = Field(
+        0, description="Consecutive rebootstrap failures"
+    )
+    last_bootstrap_reason: str = Field(
+        "", description="Reason label for the last bootstrap attempt"
+    )
+    last_bootstrap_failure_reason: str = Field(
+        "", description="Last recorded bootstrap failure reason"
+    )
+    last_zero_node_lookup_at: float = Field(
+        0.0,
+        description="Timestamp of the last lookup that queried zero nodes",
+    )
 
 
 class PeerQualityMetricsResponse(BaseModel):

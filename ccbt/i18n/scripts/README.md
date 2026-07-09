@@ -2,297 +2,186 @@
 
 This directory contains scripts for managing translations in ccBitTorrent.
 
+Extraction lives in [`ccbt/i18n/extract.py`](../extract.py) and is run as `python -m ccbt.i18n.extract` (not under `scripts/`).
+
+## Local vs CI
+
+- **Local (optional):** Run extract when you change user-facing strings; run `validate_po` when `.po` files change; merge catalogs with `msgmerge` or `translation_workflow --step update` (requires GNU gettext on `PATH`).
+- **CI (approval-required):** The `i18n` job in `.github/workflows/ci.yml` runs extract, `validate_po`, and `check_completeness`. There is no automated gate that every `_()` in source appears in the `.pot`; use extract before committing template changes.
+- **Manual full pipeline:** `.github/workflows/i18n-manual.yml` (`workflow_dispatch`) runs extract, `msgmerge` on all locales, `fill_english`, validate, completeness report, and `compile_all`.
+
 ## Available Scripts
 
-### 1. `generate_translations_hi_ur_fa_arc.py`
-Generates complete translation files for Hindi, Urdu, Persian, and Aramaic.
+### 1. `generate_hi_ur_fa_arc_translations.py`
+
+Generates translation files for Hindi, Urdu, Persian, and Aramaic from project dictionaries.
 
 **Usage:**
+
 ```bash
-python -m ccbt.i18n.scripts.generate_translations_hi_ur_fa_arc
+python -m ccbt.i18n.scripts.generate_hi_ur_fa_arc_translations
 ```
 
-**What it does:**
-- Reads the English .po file
-- Applies translations from the translation dictionaries
-- Creates/updates .po files for hi, ur, fa, arc
-- Preserves Rich markup and format strings
+### 2. Merging catalogs (`msgmerge`)
 
-### 2. `check_string_coverage.py`
-Checks that every translatable string in the source (`_()`, `_n()`, `_p()`) appears in the .pot template. Used by pre-commit on `ccbt/cli/*.py` to avoid committing new strings without updating the template.
+There is no Python `update_translations` module in this tree. After regenerating `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot` with extract, merge it into every `*/LC_MESSAGES/ccbt.po`:
 
-**Usage:**
 ```bash
-# From repo root (default: source ccbt, template ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot)
-uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt
-
-# Fail CI if any string is missing from template
-uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --fail-on-gap
-
-# Custom paths
-uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --pot path/to/ccbt.pot
-
-# Show strings in template that are no longer in code (obsolete)
-uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --show-obsolete
+POT=ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
+for po in ccbt/i18n/locales/*/LC_MESSAGES/ccbt.po; do
+  msgmerge --update --backup=none --sort-output "$po" "$POT"
+done
 ```
 
-**What it reports:** Counts of strings in code, in template, covered; list of uncovered (first 20). With `--fail-on-gap`, exit code 1 if any uncovered. Run `extract` then `update_translations` to fix gaps.
+Or run `python -m ccbt.i18n.scripts.translation_workflow` (or `--step update` after extract).
 
-### 3. `update_translations.py`
-Updates translation files when new strings are added to the codebase.
+**Requirements:** GNU gettext (`msgmerge` on `PATH`). Windows: [gettext for Windows](https://mlocati.github.io/articles/gettext-iconv-windows.html); Linux: `sudo apt install gettext`; macOS: `brew install gettext`.
 
-**Usage:**
-```bash
-# Update all translations
-python -m ccbt.i18n.scripts.update_translations
+### 3. `check_completeness.py`
 
-# Specify source directory
-python -m ccbt.i18n.scripts.update_translations --source-dir /path/to/ccbt
-```
-
-**What it does:**
-1. Extracts translatable strings from source code
-2. Updates the .pot template file
-3. Merges new strings into existing .po files using `msgmerge`
-
-**Requirements:**
-- GNU gettext tools (`msgmerge` command)
-  - Windows: https://mlocati.github.io/articles/gettext-iconv-windows.html
-  - Linux: `sudo apt-get install gettext`
-  - macOS: `brew install gettext`
-
-### 4. `check_completeness.py`
-Checks translation completeness for all languages.
+Reports translation completeness per locale against the canonical `.pot` msgids.
 
 **Usage:**
+
 ```bash
-# Check all languages
 python -m ccbt.i18n.scripts.check_completeness
-
-# Show untranslated strings for a specific language
 python -m ccbt.i18n.scripts.check_completeness --lang hi
 ```
 
-**What it reports:**
-- Total strings
-- Translated strings
-- Untranslated strings
-- Fuzzy translations (need review)
-- Completion percentage
+### 4. `fill_english.py`
 
-### 5. `validate_po.py`
-Validates .po file format.
+Fills empty English `msgstr` entries with their `msgid`. The canonical entry point is `python -m ccbt.i18n.fill_english`; `ccbt.i18n.scripts.fill_english` remains a compatibility wrapper.
 
 **Usage:**
+
+```bash
+python -m ccbt.i18n.fill_english
+python -m ccbt.i18n.scripts.fill_english
+```
+
+### 5. `validate_po.py`
+
+Validates `.po` file structure and headers.
+
+**Usage:**
+
 ```bash
 python -m ccbt.i18n.scripts.validate_po
 ```
 
-**What it checks:**
-- Required header fields
-- Valid msgid/msgstr pairs
-- Proper string escaping
-- No syntax errors
-
 ### 6. `compile_all.py`
-Compiles all .po files to .mo files.
+
+Compiles each `.po` to `.mo` using `msgfmt`.
 
 **Usage:**
+
 ```bash
 python -m ccbt.i18n.scripts.compile_all
 ```
 
-**What it does:**
-- Compiles each .po file to .mo using `msgfmt`
-- Reports success/failure for each language
-
-**Requirements:**
-- GNU gettext tools (`msgfmt` command)
-  - Windows: https://mlocati.github.io/articles/gettext-iconv-windows.html
-  - Linux: `sudo apt-get install gettext`
-  - macOS: `brew install gettext`
-
-**.mo and version control:** The project ignores `*.mo` in `.gitignore`. Run `compile_all` after pulling or after updating .po files so the app can use translations. For source distributions (sdist), include .po (and optionally .mo) so installed apps can use translations without gettext tools.
+**.mo and version control:** The project may ignore `*.mo` in `.gitignore`. Run `compile_all` locally after updating `.po` files so the app can load translations.
 
 ### 7. `translation_workflow.py`
-Orchestrates the complete translation workflow.
+
+Orchestrates extract → msgmerge → check_completeness → validate_po → compile_all.
 
 **Usage:**
+
 ```bash
-# Run full workflow
 python -m ccbt.i18n.scripts.translation_workflow
-
-# Skip extraction (if .pot is already up to date)
 python -m ccbt.i18n.scripts.translation_workflow --skip-extract
-
-# Run specific step
-python -m ccbt.i18n.scripts.translation_workflow --step check
+python -m ccbt.i18n.scripts.translation_workflow --step update
 ```
 
 **Workflow steps:**
-1. Extract strings from codebase
-2. Update translation files
+
+1. Extract strings (`extract.py` under `ccbt/i18n/`)
+2. Merge `.pot` into each locale `.po` (`msgmerge`)
 3. Check completeness
-4. Validate .po files
-5. Compile .mo files
+4. Validate `.po` files
+5. Compile `.mo` files
 
-### 8. `setup_language.py`
-Creates a new locale from the template: creates `locales/<lang_code>/LC_MESSAGES/`, copies `locales/en/LC_MESSAGES/ccbt.pot` to `locales/<lang_code>/LC_MESSAGES/ccbt.po`, and sets the header `Language:` and `Plural-Forms` (from a built-in table for common languages).
+### Other generators
 
-**Usage:**
-```bash
-uv run python -m ccbt.i18n.scripts.setup_language <lang_code> [language_name] [team_name]
-```
+- `generate_translations.py` (es, eu, fr) — merges hand-maintained data with `ccbt/i18n/locale_data/{es,eu,fr}_supplement.json`.
+- `comprehensive_translations.py` (ja, ko, th, zh)
+- `generate_african_translations.py` (sw, ha, yo)
+- `add_rich_markup_translations.py`
 
-**Examples:**
-```bash
-uv run python -m ccbt.i18n.scripts.setup_language de
-uv run python -m ccbt.i18n.scripts.setup_language hi Hindi
-uv run python -m ccbt.i18n.scripts.setup_language fr French "French team"
-```
+### Legacy: `check_coverage.py`
 
-**Requirements:** The template `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot` must exist (run extract first).
+Small standalone script for rough per-file counts; it is **not** the same as a source-vs-template coverage tool and uses paths that may not match the current tree. Prefer `check_completeness` for workflow use.
 
 ## Translation Workflow
 
 ### Adding a New Language
 
-1. **Setup the language:**
-   ```bash
-   python -m ccbt.i18n.scripts.setup_language <lang_code> <language_name>
-   ```
+1. Create `ccbt/i18n/locales/<lang>/LC_MESSAGES/` and copy `locales/en/LC_MESSAGES/ccbt.pot` to `ccbt.po` (or copy `en/ccbt.po` as a starting point). Set `Language:` and `Plural-Forms` in the header.
+2. Translate strings in `ccbt.po`; preserve Rich markup and `{named}` placeholders.
+3. `python -m ccbt.i18n.scripts.check_completeness --lang <lang_code>`
+4. `python -m ccbt.i18n.scripts.validate_po`
+5. `python -m ccbt.i18n.scripts.compile_all`
 
-2. **Translate strings:**
-   - Edit `ccbt/i18n/locales/<lang>/LC_MESSAGES/ccbt.po`
-   - Fill in `msgstr` fields with translations
-   - Preserve Rich markup tags: `[green]`, `[yellow]`, etc.
-   - Preserve format strings: `{count}`, `{name}`, etc.
+### Updating Translations After Code Changes
 
-3. **Check completeness:**
-   ```bash
-   python -m ccbt.i18n.scripts.check_completeness --lang <lang_code>
-   ```
-
-4. **Validate:**
-   ```bash
-   python -m ccbt.i18n.scripts.validate_po
-   ```
-
-5. **Compile:**
-   ```bash
-   python -m ccbt.i18n.scripts.compile_all
-   ```
-
-### Updating Translations
-
-When new strings are added to the codebase:
-
-1. **Run update workflow:**
-   ```bash
-   python -m ccbt.i18n.scripts.translation_workflow
-   ```
-
-2. **Review new strings:**
-   - Check for untranslated strings marked with `#, fuzzy`
-   - Translate new strings in .po files
-   - Remove fuzzy markers after translation
-
-3. **Re-compile:**
-   ```bash
-   python -m ccbt.i18n.scripts.compile_all
-   ```
+1. `python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`
+2. Merge: `translation_workflow --step update` or the `msgmerge` loop above
+3. `python -m ccbt.i18n.fill_english` (for `en`)
+4. Run the appropriate generator if applicable, or translate new msgids manually
+5. `validate_po`, `check_completeness`, then `compile_all`
 
 ## Translation Guidelines
 
 ### Preserving Rich Markup
 
-Rich markup tags must be preserved in translations:
-
 ```po
 msgid "[green]Download completed[/green]"
-msgstr "[green]डाउनलोड पूर्ण[/green]"  # Hindi - markup preserved
+msgstr "[green]डाउनलोड पूर्ण[/green]"
 ```
 
 ### Format Strings
 
-Use named parameters in format strings:
-
-```po
-msgid "Downloaded {count} files"
-msgstr "{count} फ़ाइलें डाउनलोड की गईं"  # Hindi - parameter preserved
-```
-
-### Pluralization
-
-Plural forms are handled automatically by gettext based on the `Plural-Forms` header in each .po file.
+Use named parameters: `_("Downloaded {count} files").format(count=n)`.
 
 ### RTL Languages
 
-RTL locales in scope: **ur** (Urdu), **fa** (Persian), **arc** (Aramaic). For these:
-- Terminal may not reverse layout; text may display LTR in some terminals.
-- Rich/Textual widgets may need testing for alignment and prompts.
-- Preserve markup and placeholders in translations; run `check_completeness` and visual QA.
-
-### Per-language setup
-
-Supported locales: en, es, eu, fr, ja, ko, hi, ur, fa, th, zh, arc, sw, ha, yo. For each language:
-- Use `setup_language.py` to create a new locale from the template.
-- Run the appropriate generator if available: `generate_translations.py` (es, eu), `comprehensive_translations.py` (ja, ko, th, zh), `generate_hi_ur_fa_arc_translations.py` (hi, ur, fa, arc), `generate_african_translations.py` (sw, ha, yo).
-- After code changes: `update_translations.py` then re-run generator or translate new msgids manually.
-- Ensure `Language:` and `Plural-Forms` headers are correct (see `setup_language.py` PLURAL_FORMS table).
-- Run `check_completeness --lang <code>` for QA. See `docs/en/implementation-plans/i18n-implementation-plan.md` for full per-language tasks.
+**ur**, **fa**, **arc**: test terminals and Rich/Textual layout; run `check_completeness` and visual QA.
 
 ## Troubleshooting
 
-### msgmerge/msgfmt not found
+### msgmerge / msgfmt not found
 
-Install GNU gettext tools:
-- **Windows**: Download from https://mlocati.github.io/articles/gettext-iconv-windows.html
-- **Linux**: `sudo apt-get install gettext`
-- **macOS**: `brew install gettext`
+Install GNU gettext (see requirements under **Merging catalogs**).
 
 ### Translation not appearing
 
-1. Check that .mo file is compiled: `python -m ccbt.i18n.scripts.compile_all`
-2. Verify locale is set: `export CCBT_LOCALE=<lang>`
-3. Check .po file has translations (not empty `msgstr`)
-
-### Encoding issues
-
-All .po files use UTF-8 encoding. Ensure your editor is configured for UTF-8.
+1. Compile: `python -m ccbt.i18n.scripts.compile_all`
+2. `export CCBT_LOCALE=<lang>`
+3. Ensure `msgstr` is non-empty where expected
 
 ## Template (.pot) location
 
-All scripts use the single path `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`. The project may have `*.pot` in `.gitignore`; if so, run the extract step (or full workflow) before running `update_translations` or `check_string_coverage`.
+Canonical template: `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`. Run extract before msgmerge if the template may be stale.
 
-## File Structure
+## File Structure (scripts subset)
 
 ```
 ccbt/i18n/
+├── extract.py
 ├── locales/
-│   ├── en/LC_MESSAGES/
-│   │   ├── ccbt.po      # English (source)
-│   │   └── ccbt.pot     # Template (generate with extract)
-│   ├── hi/LC_MESSAGES/
-│   │   ├── ccbt.po      # Hindi translations
-│   │   └── ccbt.mo      # Compiled binary
-│   ├── ur/LC_MESSAGES/
-│   │   ├── ccbt.po      # Urdu translations
-│   │   └── ccbt.mo      # Compiled binary
-│   └── ...
+│   └── <lang>/LC_MESSAGES/ccbt.po
 └── scripts/
-    ├── check_string_coverage.py
-    ├── generate_hi_ur_fa_arc_translations.py
-    ├── update_translations.py
     ├── check_completeness.py
-    ├── validate_po.py
+    ├── check_coverage.py          # legacy
     ├── compile_all.py
+    ├── fill_english.py
+    ├── generate_hi_ur_fa_arc_translations.py
     ├── translation_workflow.py
-    └── setup_language.py
+    ├── validate_po.py
+    └── ...
 ```
 
 ## See Also
 
-- [Translation Plan](../docs/translation-plan-hi-ur-fa-arc.md)
-- [i18n Documentation](../../docs/i18n.md)
-
+- [i18n patterns](../../../.cursor/rules/i18n-patterns.mdc) (Cursor rule)
+- Project docs under `docs/en/implementation-plans/` for language plans

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import AsyncMock, Mock, patch
+import time
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
@@ -16,6 +17,7 @@ from ccbt.discovery.tracker_udp_client import (
     AsyncUDPTrackerClient,
     TrackerAction,
     TrackerResponse,
+    TrackerSession,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
@@ -24,7 +26,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 @pytest.fixture
 def client():
     """Create AsyncUDPTrackerClient instance for testing."""
-    return AsyncUDPTrackerClient()
+    return AsyncUDPTrackerClient(test_mode=True)
 
 
 @pytest.fixture
@@ -330,7 +332,7 @@ class TestHandleResponseScrape:
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
 
-        # CRITICAL FIX: Set socket ready flag so handle_response processes the response
+        # Note: Set socket ready flag so handle_response processes the response
         # Without this, the response is dropped with "socket not ready" warning
         client._socket_ready = True
 
@@ -359,4 +361,37 @@ class TestHandleResponseScrape:
 
         # Future should not be done (response too short)
         assert not future.done()
+
+    def test_handle_response_unmatched_foreign_tracker_category(self, client, caplog):
+        """Unmatched responses from unknown addresses should be categorized as foreign_tracker."""
+        transaction_id = 54321
+        data = struct.pack("!II", TrackerAction.CONNECT.value, transaction_id) + (b"\x00" * 8)
+        client._socket_ready = True
+
+        with caplog.at_level("WARNING"):
+            client.handle_response(data, ("203.0.113.50", 9999))
+
+        assert client._udp_tracker_stale_response_by_category["foreign_tracker"] == 1
+        assert client._udp_tracker_stale_response_total == 1
+
+    def test_handle_response_unmatched_id_collision_category(self, client, caplog):
+        """Unmatched responses against a known tracker with active pending IDs should flag id_collision."""
+        transaction_id = 11111
+        pending_tx = 22222
+        data = struct.pack("!II", TrackerAction.CONNECT.value, transaction_id) + (b"\x00" * 8)
+        client._socket_ready = True
+        client.sessions["127.0.0.1:6969"] = TrackerSession(
+            url="udp://127.0.0.1:6969",
+            host="127.0.0.1",
+            port=6969,
+            is_connected=True,
+        )
+        client.pending_requests[pending_tx] = asyncio.Future()
+        client._pending_request_timestamps[pending_tx] = time.time() - 1.5
+
+        with caplog.at_level("WARNING"):
+            client.handle_response(data, ("127.0.0.1", 6969))
+
+        assert client._udp_tracker_stale_response_by_category["id_collision"] == 1
+        assert client._udp_tracker_stale_response_total == 1
 

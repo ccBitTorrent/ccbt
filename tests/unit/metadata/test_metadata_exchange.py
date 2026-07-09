@@ -9,11 +9,11 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.metadata]
 
 from ccbt.piece.metadata_exchange import (
-    fetch_metadata_from_peers,
     _handshake,
     _read_exact,
-    _send_extended_handshake,
     _recv_message,
+    _send_extended_handshake,
+    fetch_metadata_from_peers,
 )
 
 

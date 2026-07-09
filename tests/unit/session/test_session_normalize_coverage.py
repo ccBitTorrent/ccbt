@@ -31,7 +31,7 @@ class TestNormalizeTorrentData:
             piece_layers={"file1.txt": [b"y" * 32]},
             file_tree={"": {"file1.txt": {"length": 16384}}},
         )
-        
+
         td = {
             "name": "test",
             "info_hash": b"x" * 20,
@@ -43,10 +43,10 @@ class TestNormalizeTorrentData:
             },
             "file_info": {"total_length": 16384},
         }
-        
+
         session = AsyncTorrentSession(td, str(tmp_path))
         result = session._normalize_torrent_data(torrent_info)
-        
+
         assert result["meta_version"] == 2
         assert "piece_layers" in result
         assert "file_tree" in result
@@ -63,10 +63,10 @@ class TestNormalizeTorrentData:
             "total_length": 16384,
             "file_info": {"total_length": 16384},
         }
-        
+
         session = AsyncTorrentSession(td, str(tmp_path))
         result = session._normalize_torrent_data(td)
-        
+
         assert "pieces_info" in result
         assert result["pieces_info"]["piece_hashes"] == [b"x" * 20]
         assert result["pieces_info"]["piece_length"] == 16384
@@ -83,10 +83,10 @@ class TestNormalizeTorrentData:
             "total_length": 16384,
             "file_info": {"total_length": 16384},
         }
-        
+
         session = AsyncTorrentSession(td, str(tmp_path))
         result = session._normalize_torrent_data(td)
-        
+
         # Should rebuild pieces_info with all required fields
         assert "pieces_info" in result
         assert "piece_length" in result["pieces_info"]
@@ -105,10 +105,10 @@ class TestNormalizeTorrentData:
             },
             # Missing file_info
         }
-        
+
         session = AsyncTorrentSession(td, str(tmp_path))
         result = session._normalize_torrent_data(td)
-        
+
         assert "file_info" in result
         assert result["file_info"]["total_length"] == 16384
 

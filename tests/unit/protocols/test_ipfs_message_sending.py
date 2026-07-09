@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,7 +24,7 @@ def mock_ipfs_client():
 def ipfs_protocol(mock_ipfs_client):
     """Create IPFS protocol instance with mocked client."""
     protocol = IPFSProtocol()
-    
+
     # Mock connection
     with patch(
         "ccbt.protocols.ipfs.ipfshttpclient.connect",
@@ -33,7 +32,7 @@ def ipfs_protocol(mock_ipfs_client):
     ):
         protocol._ipfs_client = mock_ipfs_client
         protocol._ipfs_connected = True
-    
+
     return protocol
 
 
@@ -52,7 +51,7 @@ async def test_format_bitswap_message_basic(ipfs_protocol):
     """Test basic Bitswap message formatting."""
     message = b"test message"
     formatted = ipfs_protocol._format_bitswap_message(message)
-    
+
     # Should be JSON encoded
     parsed = json.loads(formatted.decode("utf-8"))
     assert "payload" in parsed
@@ -65,7 +64,7 @@ async def test_format_bitswap_message_with_want_list(ipfs_protocol):
     message = b"test message"
     want_list = ["QmTestCID1", "QmTestCID2"]
     formatted = ipfs_protocol._format_bitswap_message(message, want_list=want_list)
-    
+
     parsed = json.loads(formatted.decode("utf-8"))
     assert parsed["want_list"] == want_list
     assert parsed["payload"] == message.hex()
@@ -77,7 +76,7 @@ async def test_format_bitswap_message_with_blocks(ipfs_protocol):
     message = b"test message"
     blocks = {"QmBlock1": b"block1 data", "QmBlock2": b"block2 data"}
     formatted = ipfs_protocol._format_bitswap_message(message, blocks=blocks)
-    
+
     parsed = json.loads(formatted.decode("utf-8"))
     assert "blocks" in parsed
     assert parsed["blocks"]["QmBlock1"] == blocks["QmBlock1"].hex()
@@ -91,7 +90,7 @@ async def test_format_bitswap_message_size_limit(ipfs_protocol):
     # Hex encoding doubles size, so we need ~500KB to get to 1MB formatted
     large_message = b"x" * (500 * 1024)
     formatted = ipfs_protocol._format_bitswap_message(large_message)
-    
+
     # Should be truncated or warning logged
     # Allow some overhead for JSON structure
     assert len(formatted) <= 1024 * 1024 + 1000  # Allow small overhead
@@ -104,10 +103,10 @@ async def test_send_message_basic(ipfs_protocol, mock_ipfs_client):
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
     ipfs_protocol.ipfs_peers[peer_id].bytes_sent = 0
     ipfs_protocol.ipfs_peers[peer_id].last_seen = 0.0
-    
+
     message = b"test message"
     result = await ipfs_protocol.send_message(peer_id, message)
-    
+
     assert result is True
     mock_ipfs_client.pubsub.publish.assert_called_once()
 
@@ -119,11 +118,11 @@ async def test_send_message_with_want_list(ipfs_protocol, mock_ipfs_client):
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
     ipfs_protocol.ipfs_peers[peer_id].bytes_sent = 0
     ipfs_protocol.ipfs_peers[peer_id].last_seen = 0.0
-    
+
     message = b"test message"
     want_list = ["QmTestCID1"]
     result = await ipfs_protocol.send_message(peer_id, message, want_list=want_list)
-    
+
     assert result is True
     # Verify Bitswap formatting was used
     call_args = mock_ipfs_client.pubsub.publish.call_args
@@ -140,11 +139,11 @@ async def test_send_message_with_blocks(ipfs_protocol, mock_ipfs_client):
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
     ipfs_protocol.ipfs_peers[peer_id].bytes_sent = 0
     ipfs_protocol.ipfs_peers[peer_id].last_seen = 0.0
-    
+
     message = b"test message"
     blocks = {"QmBlock1": b"block data"}
     result = await ipfs_protocol.send_message(peer_id, message, blocks=blocks)
-    
+
     assert result is True
     call_args = mock_ipfs_client.pubsub.publish.call_args
     formatted_msg = call_args[0][1]
@@ -166,10 +165,10 @@ async def test_send_message_not_connected(ipfs_protocol):
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
-    
+
     message = b"test message"
     result = await ipfs_protocol.send_message(peer_id, message)
-    
+
     assert result is False
     # Message should be queued
     assert peer_id in ipfs_protocol._message_queue
@@ -181,27 +180,27 @@ async def test_send_message_queue_flush_on_connect(ipfs_protocol, mock_ipfs_clie
     """Test message queue flushing when peer connects."""
     peer_id = "QmValidPeerId123456789012345678901234567890123456"
     message = b"queued message"
-    
+
     # Setup mock for swarm.connect
     mock_ipfs_client.swarm.connect.return_value = None
     mock_ipfs_client.swarm.peers.return_value = []
-    
+
     # Queue message when not connected
     ipfs_protocol._ipfs_connected = False
     ipfs_protocol._ipfs_client = None
     ipfs_protocol._message_queue[peer_id] = [message]
-    
+
     # Connect peer
     ipfs_protocol._ipfs_connected = True
     ipfs_protocol._ipfs_client = mock_ipfs_client
-    
+
     # Connect peer (this should flush queue)
     peer_info = PeerInfo(ip="192.168.1.1", port=4001, peer_id=peer_id.encode())
-    
+
     # Mock the connection to succeed
     with patch.object(ipfs_protocol, "_setup_message_listener", new_callable=AsyncMock):
         await ipfs_protocol.connect_peer(peer_info)
-    
+
     # Queue should be flushed (check if peer was added and queue processed)
     # The queue is flushed in connect_peer if connection succeeds
     if peer_id in ipfs_protocol.ipfs_peers:
@@ -216,11 +215,11 @@ async def test_send_message_too_large(ipfs_protocol):
     peer_id = "test-peer-id"
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
     ipfs_protocol._ipfs_connected = True
-    
+
     # Create message larger than 1MB
     large_message = b"x" * (1024 * 1024 + 1)
     result = await ipfs_protocol.send_message(peer_id, large_message)
-    
+
     assert result is False
 
 
@@ -228,14 +227,14 @@ async def test_send_message_too_large(ipfs_protocol):
 async def test_send_message_error_handling(ipfs_protocol, mock_ipfs_client):
     """Test error handling in message sending."""
     import ipfshttpclient.exceptions
-    
+
     peer_id = "test-peer-id"
     ipfs_protocol.ipfs_peers[peer_id] = MagicMock()
     ipfs_protocol.ipfs_peers[peer_id].bytes_sent = 0
     ipfs_protocol.ipfs_peers[peer_id].last_seen = 0.0
-    
+
     mock_ipfs_client.pubsub.publish.side_effect = ipfshttpclient.exceptions.Error("Failed")
-    
+
     result = await ipfs_protocol.send_message(peer_id, b"test")
     assert result is False
 

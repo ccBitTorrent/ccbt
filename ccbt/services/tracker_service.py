@@ -331,37 +331,33 @@ class TrackerService(Service):
         try:
             # Determine tracker type
             if tracker_url.startswith("udp://"):
-                from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
+                from ccbt.discovery.tracker_udp_client import get_udp_tracker_client
 
-                client = AsyncUDPTrackerClient()
+                client = get_udp_tracker_client()
                 await client.start()
 
-                try:
-                    torrent_data = {"info_hash": info_hash, "announce": tracker_url}
-                    result = await client.scrape(torrent_data)
-                    if result:
-                        self.successful_scrapes += 1
-                    else:
-                        self.failed_scrapes += 1
-                    return result
-                finally:
-                    await client.stop()
-            else:
-                from ccbt.discovery.tracker import AsyncTrackerClient
+                torrent_data = {"info_hash": info_hash, "announce": tracker_url}
+                result = await client.scrape(torrent_data)
+                if result:
+                    self.successful_scrapes += 1
+                else:
+                    self.failed_scrapes += 1
+                return result
+            from ccbt.discovery.tracker import AsyncTrackerClient
 
-                client = AsyncTrackerClient()
-                await client.start()
+            client = AsyncTrackerClient()
+            await client.start()
 
-                try:
-                    torrent_data = {"info_hash": info_hash, "announce": tracker_url}
-                    result = await client.scrape(torrent_data)
-                    if result:
-                        self.successful_scrapes += 1
-                    else:
-                        self.failed_scrapes += 1
-                    return result
-                finally:
-                    await client.stop()
+            try:
+                torrent_data = {"info_hash": info_hash, "announce": tracker_url}
+                result = await client.scrape(torrent_data)
+                if result:
+                    self.successful_scrapes += 1
+                else:
+                    self.failed_scrapes += 1
+                return result
+            finally:
+                await client.stop()
 
         except Exception:
             self.failed_scrapes += 1

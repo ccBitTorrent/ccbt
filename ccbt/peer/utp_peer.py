@@ -18,7 +18,7 @@ from ccbt.peer.async_peer_connection import (
     ConnectionState,
     PeerStats,
 )
-from ccbt.peer.peer import PeerState
+from ccbt.peer.peer import AsyncMessageDecoder, PeerState
 from ccbt.transport.utp import (
     UTPConnection,
     UTPConnectionState,
@@ -168,9 +168,7 @@ class UTPPeerConnection(AsyncPeerConnection):
         if not hasattr(self, "stats"):
             self.stats = PeerStats()  # pragma: no cover - Dataclass initialization fallback, tested via normal initialization paths
         if not hasattr(self, "message_decoder"):
-            from ccbt.peer.peer import MessageDecoder
-
-            self.message_decoder = MessageDecoder()  # pragma: no cover - Dataclass initialization fallback, tested via normal initialization paths
+            self.message_decoder = AsyncMessageDecoder()  # pragma: no cover - Dataclass initialization fallback, tested via normal initialization paths
 
         self.state = ConnectionState.DISCONNECTED
 
@@ -202,6 +200,7 @@ class UTPPeerConnection(AsyncPeerConnection):
             # Create uTP connection
             self.utp_connection = UTPConnection(
                 remote_addr=(self.peer_info.ip, self.peer_info.port),
+                socket_manager=getattr(self, "utp_socket_manager", None),
             )
 
             # Initialize transport (gets socket manager and registers connection)
@@ -240,7 +239,7 @@ class UTPPeerConnection(AsyncPeerConnection):
             # Start message receiving task
             self.connection_task = asyncio.create_task(self._receive_messages())
 
-            logger.info(
+            logger.debug(
                 "uTP peer connection established to %s:%s",
                 self.peer_info.ip,
                 self.peer_info.port,
@@ -415,7 +414,7 @@ class UTPPeerConnection(AsyncPeerConnection):
         # Start message receiving task
         peer_conn.connection_task = asyncio.create_task(peer_conn._receive_messages())
 
-        logger.info(
+        logger.debug(
             "Accepted uTP peer connection from %s:%s",
             peer_info.ip,
             peer_info.port,

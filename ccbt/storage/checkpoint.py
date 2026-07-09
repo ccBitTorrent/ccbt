@@ -1049,32 +1049,6 @@ class CheckpointManager:
 
         return deleted_count
 
-    async def convert_checkpoint_checkpoint_format(  # pragma: no cover - Duplicate method (typo), kept for backward compatibility
-        self,
-        info_hash: bytes,
-        from_checkpoint_format: CheckpointFormat,
-        to_checkpoint_format: CheckpointFormat,
-    ) -> Path:
-        """Convert checkpoint between checkpoint_formats.
-
-        Args:
-            info_hash: Torrent info hash
-            from_checkpoint_format: Source checkpoint_format
-            to_checkpoint_format: Target checkpoint_format
-
-        Returns:
-            Path to converted checkpoint file
-
-        """
-        # Load from source checkpoint_format
-        checkpoint = await self.load_checkpoint(info_hash, from_checkpoint_format)
-        if checkpoint is None:
-            msg = f"No checkpoint found for {info_hash.hex()}"
-            raise CheckpointNotFoundError(msg)
-
-        # Save in target checkpoint_format
-        return await self.save_checkpoint(checkpoint, to_checkpoint_format)
-
     def get_checkpoint_stats(self) -> dict[str, Any]:
         """Get checkpoint directory statistics."""
         if (

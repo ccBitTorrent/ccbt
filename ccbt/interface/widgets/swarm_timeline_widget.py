@@ -17,11 +17,34 @@ from ccbt.i18n import _
 logger = logging.getLogger(__name__)
 
 try:
+    from textual.reactive import reactive
     from textual.widgets import Static
 except ImportError:
 
     class Static:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
+            pass
+
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
 
 
 SPARK_CHARS = "▁▂▃▄▅▆▇█"
@@ -29,6 +52,9 @@ SPARK_CHARS = "▁▂▃▄▅▆▇█"
 
 class SwarmTimelineWidget(Static):  # type: ignore[misc]
     """Widget that renders swarm availability/download timelines with annotations."""
+
+    # F2.5.4: bound to TerminalDashboard.swarm_health_samples via data_bind.
+    swarm_health_samples: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     SwarmTimelineWidget {
@@ -58,7 +84,23 @@ class SwarmTimelineWidget(Static):  # type: ignore[misc]
         yield Static(_("Loading swarm timeline..."), id="swarm-timeline-placeholder")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        self._start_updates()
+        # F2.5.4: bind to App swarm_health_samples (replaces set_interval self-poll).
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(swarm_health_samples=TerminalDashboard.swarm_health_samples)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("SwarmTimelineWidget data_bind skipped: %s", exc)
+        if self._data_provider:
+            self.call_after_refresh(lambda: asyncio.get_event_loop().create_task(self._update_from_provider()))  # type: ignore[attr-defined]
+
+    def watch_swarm_health_samples(self, value: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Reactive watcher: render timeline from bound swarm samples (F2.5.4)."""
+        if isinstance(value, list):
+            if not value:
+                self.update(Panel(_("No swarm activity captured for the selected window."), border_style="yellow"))
+                return
+            self.update(self._render_timeline(value))
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         if self._update_task:
@@ -104,6 +146,14 @@ class SwarmTimelineWidget(Static):  # type: ignore[misc]
         if not samples:
             self.update(Panel(_("No swarm activity captured for the selected window."), border_style="yellow"))
             return
+
+        # F2.5.4: publish samples to the App reactive so other widgets self-render.
+        try:
+            app = getattr(self, "app", None)
+            if app is not None and hasattr(app, "swarm_health_samples"):
+                app.swarm_health_samples = samples
+        except Exception as exc:  # pragma: no cover
+            logger.debug("SwarmTimelineWidget: could not set app.swarm_health_samples: %s", exc)
 
         self.update(self._render_timeline(samples))
 
@@ -247,10 +297,6 @@ class SwarmTimelineWidget(Static):  # type: ignore[misc]
             schedule()
         except Exception as exc:  # pragma: no cover
             logger.debug("SwarmTimelineWidget: Failed to schedule event refresh: %s", exc)
-
-
-
-
 
 
 

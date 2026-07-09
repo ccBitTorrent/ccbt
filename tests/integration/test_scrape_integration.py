@@ -14,10 +14,9 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from ccbt.models import ScrapeResult
-from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
+from ccbt.session.session import AsyncTorrentSession
 from tests.conftest import create_test_torrent_dict
 
 pytestmark = [pytest.mark.integration, pytest.mark.session]
@@ -47,7 +46,7 @@ def mock_config():
     from ccbt.models import CheckpointFormat
     config.disk.checkpoint_format = CheckpointFormat.BINARY  # Real enum value
     config.disk.checkpoint_enabled = True
-    # CRITICAL FIX: Add limits attribute to prevent TypeError
+    # Note: Add limits attribute to prevent TypeError
     config.limits = MagicMock()
     config.limits.global_down_kib = 0
     config.limits.global_up_kib = 0

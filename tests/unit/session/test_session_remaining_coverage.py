@@ -1,10 +1,11 @@
 """Tests for remaining uncovered paths in session module."""
 
-import pytest
 import time
 from pathlib import Path
 
-from ccbt.models import TorrentCheckpoint, CheckpointFormat
+import pytest
+
+from ccbt.models import CheckpointFormat, TorrentCheckpoint
 from ccbt.storage.checkpoint import CheckpointFileInfo
 
 
@@ -36,8 +37,8 @@ async def test_resume_from_checkpoint_with_dict_parser_result(monkeypatch, tmp_p
                 torrent_file_path=str(tmp_path / "test.torrent"),
             )
 
-    import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
 
@@ -80,8 +81,8 @@ async def test_find_checkpoint_by_name_handles_exception(monkeypatch, tmp_path):
             if ih == b"1" * 20:
                 raise RuntimeError("load failed")
 
-    import ccbt.storage.checkpoint
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
 
@@ -184,8 +185,8 @@ async def test_metrics_loop_executes(monkeypatch):
     async def _mock_emit(stats):
         metrics_called.append(1)
 
-    mgr._emit_global_metrics = _mock_emit
-    mgr._aggregate_torrent_stats = lambda: {}
+    mgr.background_tasks._emit_global_metrics = _mock_emit
+    mgr._aggregate_torrent_stats = dict
 
     import asyncio
     task = asyncio.create_task(mgr._metrics_loop())

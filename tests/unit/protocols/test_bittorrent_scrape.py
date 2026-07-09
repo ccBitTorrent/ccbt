@@ -8,9 +8,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-import pytest_asyncio
 
-from ccbt.models import TorrentInfo, FileInfo
+from ccbt.models import FileInfo, TorrentInfo
 
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 
@@ -92,7 +91,7 @@ class TestScrapeTorrent:
         )
 
         with patch(
-            "ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient",
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             return_value=mock_udp_client,
         ):
             result = await protocol.scrape_torrent(torrent_info)
@@ -101,7 +100,7 @@ class TestScrapeTorrent:
             assert result["leechers"] == 30
             assert result["completed"] == 600
             mock_udp_client.start.assert_called_once()
-            mock_udp_client.stop.assert_called_once()
+            mock_udp_client.stop.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_scrape_torrent_no_trackers(self, protocol, torrent_info):

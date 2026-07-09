@@ -1,7 +1,5 @@
 """ML-based Peer Selector for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides intelligent peer selection using machine learning:
 - Peer quality prediction
 - Feature extraction from peer behavior
@@ -11,8 +9,10 @@ Provides intelligent peer selection using machine learning:
 
 from __future__ import annotations
 
+import hashlib
 import statistics
 import time
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
@@ -22,6 +22,29 @@ from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import PeerInfo
+
+
+def peer_selector_cache_key(peer_info: PeerInfo) -> str:
+    """Stable key for :class:`PeerSelector` feature caches.
+
+    Peers without a BitTorrent ``peer_id`` (common for tracker/DHT lists) use
+    ``anon:{ip}:{port}`` so each address has its own slot (never a shared empty
+    string).
+    """
+    if peer_info.peer_id:
+        return peer_info.peer_id.hex()
+    return f"anon:{peer_info.ip}:{peer_info.port}"
+
+
+def peer_selector_cache_key_for_piece_peer_key(peer_key: str) -> str:
+    """Build anonymous ML cache key from piece-manager style ``ip:port`` string."""
+    return f"anon:{peer_key}"
+
+
+def _stable_unit_interval(seed: str) -> float:
+    """Deterministic float in ``[0.0, 1.0)`` from ``seed`` (SHA-256)."""
+    digest = hashlib.sha256(seed.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") / 2**64
 
 
 class PeerQuality(Enum):
@@ -64,6 +87,7 @@ class PeerFeatures:
     piece_selection_strategy: str = "unknown"
 
     # Network features
+    # ``latency`` is round-trip time in **seconds** (cold-start is estimated).
     latency: float = 0.0
     bandwidth: float = 0.0
     packet_loss: float = 0.0
@@ -92,7 +116,7 @@ class PeerPrediction:
 class PeerSelector:
     """ML-based peer selector."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize ML-based peer selector."""
         self.peer_features: dict[str, PeerFeatures] = {}
         self.quality_models: dict[str, Any] = {}
@@ -128,20 +152,20 @@ class PeerSelector:
             Peer quality prediction
 
         """
-        peer_id = peer_info.peer_id.hex() if peer_info.peer_id else ""
+        cache_key = peer_selector_cache_key(peer_info)
 
         # Extract features
-        features = await self._extract_features(peer_id, peer_info)
+        features = await self._extract_features(cache_key, peer_info)
 
         # Predict quality
         predicted_quality, confidence = await self._predict_quality(features)
 
         # Update features
-        self.peer_features[peer_id] = features
+        self.peer_features[cache_key] = features
 
         # Create prediction
         prediction = PeerPrediction(
-            peer_id=peer_id,
+            peer_id=cache_key,
             predicted_quality=predicted_quality,
             confidence=confidence,
             features=features,
@@ -156,7 +180,7 @@ class PeerSelector:
             Event(
                 event_type=EventType.ML_PEER_PREDICTION.value,
                 data={
-                    "peer_id": peer_id,
+                    "peer_id": cache_key,
                     "predicted_quality": predicted_quality.value,
                     "confidence": confidence,
                     "features": {
@@ -185,15 +209,15 @@ class PeerSelector:
         peer_scores = []
 
         for peer_info in peers:
-            peer_id = peer_info.peer_id.hex() if peer_info.peer_id else ""
+            cache_key = peer_selector_cache_key(peer_info)
 
             # Get or predict quality
-            if peer_id in self.peer_features:
-                features = self.peer_features[peer_id]
+            if cache_key in self.peer_features:
+                features = self.peer_features[cache_key]
                 score = features.quality_score
             else:
                 prediction = await self.predict_peer_quality(peer_info)
-                score = self._quality_to_score(prediction.predicted_quality)
+                score = prediction.features.quality_score
 
             peer_scores.append((peer_info, score))
 
@@ -213,8 +237,9 @@ class PeerSelector:
         """Update peer performance data for learning.
 
         Args:
-            peer_id: Peer identifier
-            performance_data: Performance metrics
+            peer_id: Peer identifier (use :func:`peer_selector_cache_key` /
+                :func:`peer_selector_cache_key_for_piece_peer_key` for consistency)
+            performance_data: Performance metrics; optional ``actual_quality`` in ``[0, 1]``
 
         """
         if peer_id not in self.peer_features:
@@ -232,11 +257,11 @@ class PeerSelector:
 
         # Update prediction accuracy
         if "actual_quality" in performance_data:
-            predicted_quality = features.quality_score
+            predicted_score = features.quality_score
             actual_quality = performance_data["actual_quality"]
 
             # Check if prediction was accurate
-            accuracy = abs(predicted_quality - actual_quality) < 0.2
+            accuracy = abs(predicted_score - actual_quality) < 0.2
             self.prediction_accuracy[peer_id].append(accuracy)
 
             if accuracy:
@@ -326,11 +351,11 @@ class PeerSelector:
             last_seen=current_time,
         )
 
-        # Extract basic features
+        # Extract basic features — one implicit successful observation at cold start
         features.connection_count = 1
         features.successful_connections = 1
 
-        # Estimate network features
+        # Estimate network features (deterministic; no per-call randomness)
         features.latency = await self._estimate_latency(peer_info.ip)
         features.bandwidth = await self._estimate_bandwidth(peer_info.ip)
 
@@ -393,6 +418,7 @@ class PeerSelector:
 
         # Update connection features
         if "connection_success" in performance_data:
+            features.connection_count += 1
             if performance_data["connection_success"]:
                 features.successful_connections += 1
             else:
@@ -413,9 +439,8 @@ class PeerSelector:
 
         # Update reliability features
         if "error_count" in performance_data:
-            total_messages = features.connection_count + features.successful_connections
-            if total_messages > 0:
-                features.error_rate = performance_data["error_count"] / total_messages
+            denom = max(1, features.connection_count)
+            features.error_rate = performance_data["error_count"] / denom
 
         if "response_time" in performance_data:
             features.response_time = self._update_average(
@@ -431,44 +456,68 @@ class PeerSelector:
         features.quality_score = await self._calculate_quality_score(features)
 
     async def _calculate_quality_score(self, features: PeerFeatures) -> float:
-        """Calculate quality score from features."""
-        # Weighted combination of features
-        score = 0.0
+        """Calculate quality score from features using normalized ``feature_weights``."""
+        w = self.feature_weights
 
-        # Connection reliability (30%)
-        if features.connection_count > 0:
-            success_rate = features.successful_connections / features.connection_count
-            score += success_rate * 0.3
-
-        # Performance (25%)
-        # Normalize download speed (assume max 10MB/s)
-        normalized_speed = min(1.0, features.avg_download_speed / (10 * 1024 * 1024))
-        score += normalized_speed * 0.25
-
-        # Reliability (20%)
-        reliability = 1.0 - features.error_rate
-        score += reliability * 0.2
-
-        # Network quality (15%)
-        # Lower latency is better
-        latency_score = max(
-            0.0,
-            1.0 - (features.latency / 1000.0),
-        )  # Assume max 1s latency
-        score += latency_score * 0.15
-
-        # Activity (10%)
-        # More activity is better
-        activity_score = min(
+        success_rate = min(
             1.0,
-            features.activity_duration / 3600.0,
-        )  # Normalize to 1 hour
-        score += activity_score * 0.1
+            features.successful_connections / max(1, features.connection_count),
+        )
+        max_dl = 10 * 1024 * 1024
+        max_ul = 5 * 1024 * 1024
+        spd_norm = min(1.0, features.avg_download_speed / max_dl)
+        bw_norm = min(1.0, features.bandwidth / max_dl)
+        up_norm = min(1.0, features.avg_upload_speed / max_ul)
+        speed_combo = (spd_norm + bw_norm + up_norm) / 3.0
 
+        reliability = max(
+            0.0,
+            min(1.0, 1.0 - features.error_rate - features.timeout_rate),
+        )
+        # Latency in seconds; treat >= 1s as worst for this subscore
+        latency_score = max(0.0, 1.0 - min(1.0, features.latency / 1.0))
+        activity_score = min(1.0, features.activity_duration / 3600.0)
+
+        wt_success = max(
+            1e-6,
+            abs(w.get("successful_connections", 0.2))
+            + abs(w.get("connection_count", 0.1)),
+        )
+        wt_speed = max(
+            1e-6,
+            abs(w.get("avg_download_speed", 0.3))
+            + abs(w.get("bandwidth", 0.2))
+            + abs(w.get("avg_upload_speed", 0.2)),
+        )
+        wt_rel = max(
+            1e-6,
+            abs(w.get("error_rate", -0.2)) + abs(w.get("timeout_rate", -0.1)),
+        )
+        wt_lat = max(1e-6, abs(w.get("latency", -0.1)))
+        wt_act = max(1e-6, abs(w.get("activity_duration", 0.1)))
+
+        tw = wt_success + wt_speed + wt_rel + wt_lat + wt_act
+        score = (
+            (wt_success / tw) * success_rate
+            + (wt_speed / tw) * speed_combo
+            + (wt_rel / tw) * reliability
+            + (wt_lat / tw) * latency_score
+            + (wt_act / tw) * activity_score
+        )
         return max(0.0, min(1.0, score))
 
     def _quality_to_score(self, quality: PeerQuality) -> float:
-        """Convert quality enum to numeric score."""
+        """Convert quality enum to numeric score.
+
+        .. deprecated::
+            :meth:`rank_peers` uses continuous ``PeerFeatures.quality_score``.
+            Prefer reading ``features.quality_score`` from predictions.
+        """
+        warnings.warn(
+            "PeerSelector._quality_to_score is deprecated; use PeerFeatures.quality_score.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         quality_scores = {
             PeerQuality.EXCELLENT: 0.9,
             PeerQuality.GOOD: 0.7,
@@ -484,25 +533,17 @@ class PeerSelector:
         alpha = 0.1
         return alpha * new_value + (1 - alpha) * current_avg
 
-    async def _estimate_latency(self, _ip: str) -> float:
-        """Estimate network latency to peer."""
-        # This is a placeholder implementation
-        # In a real implementation, this would ping the peer
+    async def _estimate_latency(self, ip: str) -> float:
+        """Estimate network latency to peer (deterministic cold-start placeholder)."""
+        u = _stable_unit_interval(f"ccbt:ml:latency:{ip}")
+        return 0.01 + u * (0.5 - 0.01)
 
-        # For now, return a random latency between 10ms and 500ms
-        import random
-
-        return random.uniform(0.01, 0.5)  # nosec B311 - ML randomization is not security-sensitive
-
-    async def _estimate_bandwidth(self, _ip: str) -> float:
-        """Estimate available bandwidth to peer."""
-        # This is a placeholder implementation
-        # In a real implementation, this would measure bandwidth
-
-        # For now, return a random bandwidth between 100KB/s and 10MB/s
-        import random
-
-        return random.uniform(100 * 1024, 10 * 1024 * 1024)  # nosec B311 - ML randomization is not security-sensitive
+    async def _estimate_bandwidth(self, ip: str) -> float:
+        """Estimate available bandwidth (deterministic cold-start placeholder)."""
+        u = _stable_unit_interval(f"ccbt:ml:bandwidth:{ip}")
+        lo = 100 * 1024
+        hi = 10 * 1024 * 1024
+        return lo + u * (hi - lo)
 
     async def _online_learning(
         self,

@@ -1,24 +1,22 @@
-"""
-Standalone splash screen demo - no dependencies on main ccbt package.
+"""Standalone splash screen demo - no dependencies on main ccbt package.
 """
 
 import asyncio
-import sys
 import os
+import sys
 
 # Handle Unicode encoding for Windows
-if os.name == 'nt':  # Windows
+if os.name == "nt":  # Windows
     try:
         # Try to set console to UTF-8
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass  # Fallback to default encoding
 
 # Add the splash module to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from animations import AnimationSegments
 from animation_helpers import AnimationController
 from ascii_art.logo_1 import LOGO_1
 from rich.align import Align
@@ -29,7 +27,6 @@ from rich.text import Text
 
 async def custom_rainbow_animation(controller: AnimationController, logo_text: str, duration: float = 5.0) -> None:
     """Custom rainbow animation without normalization/corrections that interfere with alignment."""
-
     # Rainbow colors for Rich styling
     rainbow_styles = [
         "red", "red dim", "red", "orange_red1", "dark_orange", "orange1", "yellow", "yellow dim",
@@ -40,7 +37,7 @@ async def custom_rainbow_animation(controller: AnimationController, logo_text: s
 
     # Split into lines and keep original alignment
     lines = []
-    for line in logo_text.split('\n'):
+    for line in logo_text.split("\n"):
         if line.strip():  # Keep lines that have any content
             lines.append(line.rstrip())  # Only strip trailing whitespace
 
@@ -85,7 +82,7 @@ async def main() -> None:
     controller = AnimationController()
 
     # Modify LOGO_1 alignment adjustments
-    logo_lines = LOGO_1.split('\n')
+    logo_lines = LOGO_1.split("\n")
 
     # Apply row-specific alignment adjustments
     for i, line in enumerate(logo_lines):
@@ -99,7 +96,7 @@ async def main() -> None:
             # Fifth row: move 2 spaces left (remove 2 leading spaces)
             logo_lines[i] = line[2:] if len(line) >= 2 else line
 
-    modified_logo = '\n'.join(logo_lines)
+    modified_logo = "\n".join(logo_lines)
 
     # Run the custom rainbow animation with modified logo (no interfering normalization)
     await custom_rainbow_animation(controller, modified_logo, 5.0)

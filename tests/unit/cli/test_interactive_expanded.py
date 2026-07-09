@@ -56,7 +56,7 @@ def mock_console():
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
-    # CRITICAL FIX: Rich Progress requires console.get_time method
+    # Note: Rich Progress requires console.get_time method
     console.get_time = Mock(return_value=time.time)
     return console
 
@@ -69,7 +69,7 @@ def interactive_cli(mock_session, mock_console, mock_config_manager):
     at module level for all commands that create ConfigManager(None) instances.
     """
     from tests.conftest import create_interactive_cli
-    
+
     cli = create_interactive_cli(mock_session, mock_console)
     return cli
 
@@ -78,9 +78,9 @@ def interactive_cli(mock_session, mock_console, mock_config_manager):
 async def test_interactive_cli_init(mock_session, mock_console):
     """Test InteractiveCLI initialization (lines 44-110)."""
     from tests.conftest import create_interactive_cli
-    
+
     cli = create_interactive_cli(mock_session, mock_console)
-    
+
     assert cli.session == mock_session
     assert cli.console == mock_console
     assert cli.running is False
@@ -99,7 +99,7 @@ async def test_interactive_cli_init(mock_session, mock_console):
 async def test_cmd_help(interactive_cli):
     """Test cmd_help command handler (lines 405-420)."""
     await interactive_cli.cmd_help([])
-    
+
     # Verify help text was printed
     assert interactive_cli.console.print.called
     call_args = interactive_cli.console.print.call_args
@@ -112,9 +112,9 @@ async def test_cmd_help(interactive_cli):
 async def test_cmd_status_no_torrent(interactive_cli):
     """Test cmd_status with no active torrent (lines 422-426)."""
     interactive_cli.current_torrent = None
-    
+
     await interactive_cli.cmd_status([])
-    
+
     interactive_cli.console.print.assert_called_with("No torrent active")
 
 
@@ -133,9 +133,9 @@ async def test_cmd_status_with_torrent(interactive_cli):
         "pieces_completed": 50,
         "pieces_total": 100,
     }
-    
+
     await interactive_cli.cmd_status([])
-    
+
     # Verify table was printed
     assert interactive_cli.console.print.called
 
@@ -151,13 +151,13 @@ async def test_cmd_status_with_progress_percentage(interactive_cli):
             self.downloaded_bytes = 100 * 1024 * 1024
             # progress_percentage as a method
             self.progress_percentage = lambda: 10
-        
+
         # Make it work with getattr but not dict.get()
         def get(self, key, default=None):
             return getattr(self, key, default)
-    
+
     torrent = MockTorrent()
-    
+
     interactive_cli.current_torrent = torrent
     interactive_cli.stats = {
         "download_speed": 1024.0,
@@ -166,9 +166,9 @@ async def test_cmd_status_with_progress_percentage(interactive_cli):
         "pieces_completed": 50,
         "pieces_total": 100,
     }
-    
+
     await interactive_cli.cmd_status([])
-    
+
     assert interactive_cli.console.print.called
 
 
@@ -176,9 +176,9 @@ async def test_cmd_status_with_progress_percentage(interactive_cli):
 async def test_cmd_peers_no_torrent(interactive_cli):
     """Test cmd_peers with no active torrent (lines 467-471)."""
     interactive_cli.current_torrent = None
-    
+
     await interactive_cli.cmd_peers([])
-    
+
     interactive_cli.console.print.assert_called_with("No torrent active")
 
 
@@ -188,9 +188,9 @@ async def test_cmd_peers_no_peers(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     interactive_cli.session.get_peers_for_torrent = AsyncMock(return_value=[])
-    
+
     await interactive_cli.cmd_peers([])
-    
+
     interactive_cli.console.print.assert_called_with("No peers connected")
 
 
@@ -199,9 +199,9 @@ async def test_cmd_peers_with_peers(interactive_cli):
     """Test cmd_peers with connected peers (lines 467-524)."""
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
-    
+
     await interactive_cli.cmd_peers([])
-    
+
     # Verify table was printed
     assert interactive_cli.console.print.called
 
@@ -212,9 +212,9 @@ async def test_cmd_peers_with_peer_exception(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     interactive_cli.session.get_peers_for_torrent = AsyncMock(side_effect=Exception("Error"))
-    
+
     await interactive_cli.cmd_peers([])
-    
+
     # Should handle exception and print "No peers connected"
     assert interactive_cli.console.print.called
 
@@ -233,9 +233,9 @@ async def test_cmd_peers_with_dict_peers(interactive_cli):
             "progress_percentage": Mock(return_value=50.0),
         },
     ])
-    
+
     await interactive_cli.cmd_peers([])
-    
+
     assert interactive_cli.console.print.called
 
 
@@ -243,9 +243,9 @@ async def test_cmd_peers_with_dict_peers(interactive_cli):
 async def test_cmd_files_no_torrent(interactive_cli):
     """Test cmd_files with no active torrent (lines 526-530)."""
     interactive_cli.current_torrent = None
-    
+
     await interactive_cli.cmd_files([])
-    
+
     interactive_cli.console.print.assert_called_with("No torrent active")
 
 
@@ -262,9 +262,9 @@ async def test_cmd_files_with_files(interactive_cli):
             },
         ],
     }
-    
+
     await interactive_cli.cmd_files([])
-    
+
     assert interactive_cli.console.print.called
 
 
@@ -277,14 +277,14 @@ async def test_cmd_files_with_files_as_attr(interactive_cli):
     file_info.progress_percentage = Mock(return_value=50.0)
     file_info.priority = MagicMock()
     file_info.priority.name = "high"
-    
+
     torrent = MagicMock()
     torrent.files = [file_info]
-    
+
     interactive_cli.current_torrent = torrent
-    
+
     await interactive_cli.cmd_files([])
-    
+
     assert interactive_cli.console.print.called
 
 
@@ -292,9 +292,9 @@ async def test_cmd_files_with_files_as_attr(interactive_cli):
 async def test_cmd_pause_no_torrent(interactive_cli):
     """Test cmd_pause with no active torrent (lines 561-565)."""
     interactive_cli.current_torrent = None
-    
+
     await interactive_cli.cmd_pause([])
-    
+
     interactive_cli.console.print.assert_called_with("No torrent active")
 
 
@@ -303,9 +303,9 @@ async def test_cmd_pause_with_torrent(interactive_cli):
     """Test cmd_pause with active torrent (lines 561-569)."""
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
-    
+
     await interactive_cli.cmd_pause([])
-    
+
     interactive_cli.session.pause_torrent.assert_called_once_with("abcd1234")
     interactive_cli.console.print.assert_called_with("Download paused")
 
@@ -314,9 +314,9 @@ async def test_cmd_pause_with_torrent(interactive_cli):
 async def test_cmd_resume_no_torrent(interactive_cli):
     """Test cmd_resume with no active torrent (lines 571-575)."""
     interactive_cli.current_torrent = None
-    
+
     await interactive_cli.cmd_resume([])
-    
+
     interactive_cli.console.print.assert_called_with("No torrent active")
 
 
@@ -325,16 +325,16 @@ async def test_cmd_resume_with_torrent(interactive_cli):
     """Test cmd_resume with active torrent (lines 571-579)."""
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
-    
+
     # Mock executor to return success with checkpoint info
     from ccbt.executor.executor import CommandResult
     interactive_cli.executor.execute = AsyncMock(return_value=CommandResult(
         success=True,
         data={"checkpoint_restored": False}  # No checkpoint found
     ))
-    
+
     await interactive_cli.cmd_resume([])
-    
+
     # Verify executor was called
     interactive_cli.executor.execute.assert_called_once_with(
         "torrent.resume", info_hash="abcd1234"
@@ -349,9 +349,9 @@ async def test_cmd_resume_with_torrent(interactive_cli):
 async def test_cmd_stop_no_torrent(interactive_cli):
     """Test cmd_stop with no active torrent (lines 581-585)."""
     interactive_cli.current_torrent = None
-    
+
     await interactive_cli.cmd_stop([])
-    
+
     interactive_cli.console.print.assert_called_with("No torrent active")
 
 
@@ -360,9 +360,9 @@ async def test_cmd_stop_with_torrent(interactive_cli):
     """Test cmd_stop with active torrent (lines 581-592)."""
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
-    
+
     await interactive_cli.cmd_stop([])
-    
+
     interactive_cli.session.remove.assert_called_once_with("abcd1234")
     interactive_cli.console.print.assert_called_with("Download stopped")
 
@@ -373,17 +373,16 @@ async def test_cmd_stop_no_remove_method(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     delattr(interactive_cli.session, "remove")
-    
+
     # Mock executor to return failure when remove method doesn't exist
-    from unittest.mock import MagicMock
     from ccbt.executor.executor import CommandResult
     interactive_cli.executor.execute = AsyncMock(return_value=CommandResult(
         success=False,
         error="remove"
     ))
-    
+
     await interactive_cli.cmd_stop([])
-    
+
     # Should print error message when remove fails
     assert interactive_cli.console.print.called
     call_args = interactive_cli.console.print.call_args[0][0]
@@ -394,11 +393,11 @@ async def test_cmd_stop_no_remove_method(interactive_cli):
 async def test_cmd_quit(interactive_cli):
     """Test cmd_quit command handler (lines 594-597)."""
     from rich.prompt import Confirm
-    
+
     with patch.object(Confirm, "ask", return_value=True):
         await interactive_cli.cmd_quit([])
         assert interactive_cli.running is False
-    
+
     with patch.object(Confirm, "ask", return_value=False):
         interactive_cli.running = True
         await interactive_cli.cmd_quit([])
@@ -410,7 +409,7 @@ async def test_cmd_quit(interactive_cli):
 async def test_cmd_clear(interactive_cli):
     """Test cmd_clear command handler (lines 599)."""
     await interactive_cli.cmd_clear([])
-    
+
     # Clear typically just prints to console
     assert interactive_cli.console.print.called or interactive_cli.console.clear.called
 
@@ -420,9 +419,9 @@ async def test_update_download_stats_with_status(interactive_cli):
     """Test update_download_stats with session status (lines 328-380)."""
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
-    
+
     await interactive_cli.update_download_stats()
-    
+
     # Verify stats were updated
     assert interactive_cli.stats["download_speed"] == 1000.0
     assert interactive_cli.stats["upload_speed"] == 500.0
@@ -441,9 +440,9 @@ async def test_update_download_stats_no_status(interactive_cli):
     }
     interactive_cli.current_info_hash_hex = None
     interactive_cli.session.get_torrent_status = AsyncMock(return_value=None)
-    
+
     await interactive_cli.update_download_stats()
-    
+
     # Should use torrent attributes
     assert interactive_cli.stats["download_speed"] in (2000.0, 0)
 
@@ -454,7 +453,7 @@ async def test_update_download_stats_exception(interactive_cli):
     interactive_cli.current_torrent = {"name": "test"}
     interactive_cli.current_info_hash_hex = "abcd1234"
     interactive_cli.session.get_torrent_status = AsyncMock(side_effect=Exception("Error"))
-    
+
     # Should not raise
     await interactive_cli.update_download_stats()
 
@@ -463,11 +462,11 @@ async def test_update_download_stats_exception(interactive_cli):
 async def test_update_display(interactive_cli):
     """Test update_display method (lines 322-326)."""
     interactive_cli.current_torrent = {"name": "test"}
-    
+
     with patch.object(interactive_cli, "update_download_stats", new_callable=AsyncMock) as mock_update:
         with patch.object(interactive_cli, "show_download_interface", new_callable=Mock) as mock_show:
             await interactive_cli.update_display()
-            
+
             mock_update.assert_called_once()
             mock_show.assert_called_once()
 
@@ -476,11 +475,11 @@ async def test_update_display(interactive_cli):
 async def test_update_display_no_torrent(interactive_cli):
     """Test update_display with no torrent (lines 324)."""
     interactive_cli.current_torrent = None
-    
+
     with patch.object(interactive_cli, "update_download_stats", new_callable=AsyncMock) as mock_update:
         with patch.object(interactive_cli, "show_download_interface", new_callable=Mock) as mock_show:
             await interactive_cli.update_display()
-            
+
             # Should not call update or show when no torrent
             mock_update.assert_not_called()
             mock_show.assert_not_called()
@@ -494,15 +493,15 @@ async def test_download_torrent(interactive_cli):
     # Make running False so loop exits immediately
     interactive_cli.running = False
     torrent_data = {"name": "test", "info_hash": b"abcd1234"}
-    
+
     info_hash_hex = "abcd1234"
     info_hash_bytes = bytes.fromhex(info_hash_hex)
     mock_torrent_session = AsyncMock()
     mock_torrent_session.file_selection_manager = None
     interactive_cli.session.torrents = {info_hash_bytes: mock_torrent_session}
-    
+
     await interactive_cli.download_torrent(torrent_data, resume=False)
-    
+
     assert interactive_cli.current_torrent == torrent_data
     interactive_cli.session.add_torrent.assert_called_once_with(torrent_data, resume=False)
     assert interactive_cli.current_info_hash_hex == "abcd1234"
@@ -516,15 +515,15 @@ async def test_download_torrent_with_resume(interactive_cli):
     # Make running False so loop exits immediately
     interactive_cli.running = False
     torrent_data = {"name": "test", "info_hash": b"abcd1234"}
-    
+
     info_hash_hex = "abcd1234"
     info_hash_bytes = bytes.fromhex(info_hash_hex)
     mock_torrent_session = AsyncMock()
     mock_torrent_session.file_selection_manager = None
     interactive_cli.session.torrents = {info_hash_bytes: mock_torrent_session}
-    
+
     await interactive_cli.download_torrent(torrent_data, resume=True)
-    
+
     interactive_cli.session.add_torrent.assert_called_once_with(torrent_data, resume=True)
 
 
@@ -575,7 +574,7 @@ async def test_cmd_disk(interactive_cli):
 async def test_cmd_network(interactive_cli):
     """Test cmd_network command handler."""
     from unittest.mock import MagicMock, patch
-    
+
     # Create a comprehensive mock config with all network settings
     mock_config = MagicMock()
     mock_config.network = MagicMock()
@@ -610,7 +609,7 @@ async def test_cmd_network(interactive_cli):
     mock_config.network.socket_sndbuf_kib = 256
     mock_config.network.socket_adaptive_buffers = True
     mock_config.network.tcp_nodelay = True
-    
+
     # Mock get_network_optimizer to avoid import/initialization issues
     mock_optimizer = MagicMock()
     mock_optimizer.get_stats.return_value = {
@@ -623,7 +622,7 @@ async def test_cmd_network(interactive_cli):
         },
         "socket_configs": {},
     }
-    
+
     with patch("ccbt.cli.interactive.get_config", return_value=mock_config), \
          patch("ccbt.utils.network_optimizer.get_network_optimizer", return_value=mock_optimizer):
         if hasattr(interactive_cli, "cmd_network"):
@@ -699,14 +698,14 @@ async def test_cmd_capabilities(interactive_cli):
 async def test_cmd_auto_tune(interactive_cli):
     """Test cmd_auto_tune command handler."""
     if hasattr(interactive_cli, "cmd_auto_tune"):
-        from unittest.mock import patch, MagicMock, Mock
-        from ccbt.config.config_conditional import ConditionalConfig
-        
+        from unittest.mock import MagicMock, Mock, patch
+
+
         mock_cc = MagicMock()
         mock_tuned_config = MagicMock()
         mock_tuned_config.model_dump = Mock(return_value={"test": "value"})
         mock_cc.adjust_for_system = Mock(return_value=(mock_tuned_config, []))
-        
+
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = Mock()
@@ -720,9 +719,9 @@ async def test_cmd_auto_tune(interactive_cli):
                 mock_cm.config = mock_config
                 mock_cm.config_file = None
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_auto_tune([])
-        
+
         assert interactive_cli.console.print.called
 
 
@@ -792,7 +791,7 @@ async def test_run_method_keyboard_interrupt(interactive_cli):  # pragma: no cov
     """
     # Skip only if coverage is running to prevent early test suite exit
     import sys
-    if any("--cov" in arg or "-m" in arg and "cov" in arg for arg in sys.argv):
+    if any("--cov" in arg or ("-m" in arg and "cov" in arg) for arg in sys.argv):
         pytest.skip(
             "KeyboardInterrupt test skipped in coverage runs to prevent early test suite exit. "
             "This test intentionally raises KeyboardInterrupt which pytest may interpret as a "
@@ -802,17 +801,17 @@ async def test_run_method_keyboard_interrupt(interactive_cli):  # pragma: no cov
         )  # pragma: no cover
     from unittest.mock import patch
     # Mock Live context manager to avoid needing actual terminal
-    with patch('ccbt.cli.interactive.Live') as mock_live:
+    with patch("ccbt.cli.interactive.Live") as mock_live:
         mock_live.return_value.__enter__ = Mock(return_value=mock_live.return_value)
         mock_live.return_value.__exit__ = Mock(return_value=None)
-        
+
         interactive_cli.setup_layout = Mock()
         interactive_cli.show_welcome = Mock()
         interactive_cli.update_display = AsyncMock(side_effect=KeyboardInterrupt())
-        
+
         # Should handle KeyboardInterrupt gracefully
         await interactive_cli.run()
-        
+
         assert interactive_cli.running is False
 
 

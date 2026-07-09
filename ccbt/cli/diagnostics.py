@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 def run_diagnostics(config_manager: ConfigManager, console: Console) -> None:
     """Run diagnostic checks for network connectivity and configuration."""
-    # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+    # Note: Check for daemon PID file BEFORE creating local session
     # If PID file exists, we MUST prevent local session to avoid port conflicts
     daemon_manager = DaemonManager()
     pid_file_exists = daemon_manager.pid_file.exists()
@@ -120,7 +120,7 @@ def run_diagnostics(config_manager: ConfigManager, console: Console) -> None:
 
     console.print(_("\n[yellow]6. Session Initialization Test[/yellow]"))
     try:
-        # CRITICAL FIX: Use safe local session creation helper
+        # Note: Use safe local session creation helper
         from ccbt.cli.main import _ensure_local_session_safe
 
         session = asyncio.run(_ensure_local_session_safe(_force_local=True))

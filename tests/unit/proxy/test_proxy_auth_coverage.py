@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -82,19 +82,19 @@ class TestCredentialStoreCoverage:
     def test_get_or_create_key_file_exists_read_error(self, temp_config_dir):
         """Test _get_or_create_key when file exists but read fails."""
         store = CredentialStore(config_dir=temp_config_dir)
-        
+
         # Create key file
         store.key_file.write_bytes(b"dummy key")
-        
+
         # Mock read_bytes using Path class method (works on Windows)
         original_read = Path.read_bytes
         key_file_str = str(store.key_file)
-        
+
         def conditional_read(self):
             if str(self) == key_file_str:
-                raise IOError("Read failed")
+                raise OSError("Read failed")
             return original_read(self)
-        
+
         with patch("pathlib.Path.read_bytes", side_effect=conditional_read, autospec=False):
             with patch("pathlib.Path.mkdir"), patch("pathlib.Path.chmod"):
                 with patch("ccbt.proxy.auth.Fernet") as mock_fernet:
@@ -107,20 +107,20 @@ class TestCredentialStoreCoverage:
     def test_get_or_create_key_write_error(self, temp_config_dir):
         """Test _get_or_create_key when write fails."""
         store = CredentialStore(config_dir=temp_config_dir)
-        
+
         # Delete key file if exists
         if store.key_file.exists():
             store.key_file.unlink()
-        
+
         # Mock write_bytes using Path class method (works on Windows)
         original_write = Path.write_bytes
         key_file_str = str(store.key_file)
-        
+
         def conditional_write(self, data):
             if str(self) == key_file_str:
-                raise IOError("Write failed")
+                raise OSError("Write failed")
             return original_write(self, data)
-        
+
         with patch("pathlib.Path.write_bytes", side_effect=conditional_write, autospec=False):
             with patch("pathlib.Path.mkdir"), patch("pathlib.Path.chmod"):
                 with patch("ccbt.proxy.auth.Fernet") as mock_fernet:
@@ -199,7 +199,7 @@ class TestProxyAuthCoverage:
     async def test_handle_challenge_no_username_password(self):
         """Test handle_challenge when no credentials provided."""
         auth = ProxyAuth()
-        result = await auth.handle_challenge("Basic realm=\"Proxy\"")
+        result = await auth.handle_challenge('Basic realm="Proxy"')
         assert result is None
 
     @pytest.mark.asyncio
@@ -207,7 +207,7 @@ class TestProxyAuthCoverage:
         """Test handle_challenge with unsupported scheme."""
         auth = ProxyAuth()
         with patch("ccbt.proxy.auth.logger") as mock_logger:
-            result = await auth.handle_challenge("Digest realm=\"Proxy\"", "user", "pass")
+            result = await auth.handle_challenge('Digest realm="Proxy"', "user", "pass")
             assert result is None
             mock_logger.warning.assert_called_once()
 

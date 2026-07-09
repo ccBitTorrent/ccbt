@@ -29,6 +29,28 @@ def test_dh_exchange_init_1024():
     assert dh.key_size == 1024
 
 
+def test_dh_parameters_are_well_known():
+    """Test DH parameter retrieval uses embedded Oakley MODP groups."""
+    dh_768 = DHPeerExchange._get_dh_parameters(768)
+    dh_1024 = DHPeerExchange._get_dh_parameters(1024)
+
+    assert dh_768.parameter_numbers().p == int(DHPeerExchange._DH_768_PRIME_HEX, 16)
+    assert dh_768.parameter_numbers().g == DHPeerExchange._DH_GENERATOR
+    assert dh_1024.parameter_numbers().p == int(DHPeerExchange._DH_1024_PRIME_HEX, 16)
+    assert dh_1024.parameter_numbers().g == DHPeerExchange._DH_GENERATOR
+
+
+def test_dh_parameter_cache_reuse():
+    """Test DH parameters are cached per key size."""
+    first_768 = DHPeerExchange._get_dh_parameters(768)
+    second_768 = DHPeerExchange._get_dh_parameters(768)
+    first_1024 = DHPeerExchange._get_dh_parameters(1024)
+    second_1024 = DHPeerExchange._get_dh_parameters(1024)
+
+    assert first_768 is second_768
+    assert first_1024 is second_1024
+
+
 def test_dh_exchange_init_invalid_size():
     """Test DHPeerExchange initialization with invalid key size raises error."""
     with pytest.raises(ValueError, match="DH key size must be 768 or 1024 bits"):
@@ -125,15 +147,17 @@ def test_dh_derive_encryption_key():
     )
 
     info_hash = bytes(range(20))  # Exactly 20 bytes
-    encryption_key = dh.derive_encryption_key(shared_secret, info_hash)
+    encryption_key = dh.derive_encryption_key(
+        shared_secret, info_hash, direction="outbound"
+    )
 
     # Key should be 20 bytes (SHA-1 output)
     assert len(encryption_key) == 20
     assert encryption_key != shared_secret
 
 
-def test_dh_derive_encryption_key_with_pad():
-    """Test encryption key derivation with custom pad."""
+def test_dh_derive_encryption_key_is_directional():
+    """Test directional key derivation."""
     dh = DHPeerExchange(key_size=768)
     keypair1 = dh.generate_keypair()
     keypair2 = dh.generate_keypair()
@@ -143,35 +167,20 @@ def test_dh_derive_encryption_key_with_pad():
     )
 
     info_hash = bytes(range(20))  # Exactly 20 bytes
-    pad = b"\x00" * 20
 
-    key1 = dh.derive_encryption_key(shared_secret, info_hash, pad=pad)
-    key2 = dh.derive_encryption_key(shared_secret, info_hash, pad=pad)
-
-    # Same inputs should produce same key
-    assert key1 == key2
-
-
-def test_dh_derive_encryption_key_different_pads():
-    """Test that different pads produce different keys."""
-    dh = DHPeerExchange(key_size=768)
-    keypair1 = dh.generate_keypair()
-    keypair2 = dh.generate_keypair()
-
-    shared_secret = dh.compute_shared_secret(
-        keypair1.private_key, keypair2.public_key
+    key_a1 = dh.derive_encryption_key(
+        shared_secret, info_hash, direction="outbound"
+    )
+    key_a2 = dh.derive_encryption_key(
+        shared_secret, info_hash, direction="outbound"
     )
 
-    info_hash = bytes(range(20))  # Exactly 20 bytes
-    pad1 = b"\x00" * 20
-    pad2 = b"\x01" * 20
+    key_b = dh.derive_encryption_key(
+        shared_secret, info_hash, direction="inbound"
+    )
 
-    key1 = dh.derive_encryption_key(shared_secret, info_hash, pad=pad1)
-    key2 = dh.derive_encryption_key(shared_secret, info_hash, pad=pad2)
-
-    # Different pads should produce different keys
-    assert key1 != key2
-
+    assert key_a1 == key_a2
+    assert key_a1 != key_b
 
 def test_dh_derive_encryption_key_invalid_info_hash():
     """Test key derivation with invalid info hash size raises error."""
@@ -287,8 +296,8 @@ def test_dh_key_derivation_consistency():
     )
     info_hash = bytes(range(20))  # Exactly 20 bytes
 
-    key1 = dh.derive_encryption_key(shared_secret, info_hash)
-    key2 = dh.derive_encryption_key(shared_secret, info_hash)
+    key1 = dh.derive_encryption_key(shared_secret, info_hash, direction="inbound")
+    key2 = dh.derive_encryption_key(shared_secret, info_hash, direction="inbound")
 
     # Same inputs should produce same key
     assert key1 == key2
@@ -307,9 +316,48 @@ def test_dh_key_derivation_different_info_hashes():
     info_hash1 = bytes(range(20))  # Exactly 20 bytes
     info_hash2 = bytes(range(20, 40))  # Exactly 20 bytes, different values
 
-    key1 = dh.derive_encryption_key(shared_secret, info_hash1)
-    key2 = dh.derive_encryption_key(shared_secret, info_hash2)
+    key1 = dh.derive_encryption_key(shared_secret, info_hash1, direction="outbound")
+    key2 = dh.derive_encryption_key(shared_secret, info_hash2, direction="outbound")
 
     # Different info hashes should produce different keys
     assert key1 != key2
 
+
+def test_dh_derive_stream_keys():
+    """Test both directional stream keys can be derived together."""
+    dh = DHPeerExchange(key_size=768)
+    keypair1 = dh.generate_keypair()
+    keypair2 = dh.generate_keypair()
+
+    shared_secret = dh.compute_shared_secret(
+        keypair1.private_key, keypair2.public_key
+    )
+    info_hash = bytes.fromhex("000102030405060708090a0b0c0d0e0f10111213")
+
+    outbound_key, inbound_key = dh.derive_stream_keys(shared_secret, info_hash)
+
+    assert len(outbound_key) == 20
+    assert len(inbound_key) == 20
+    assert outbound_key != inbound_key
+
+
+def test_dh_transcript_hash_helpers():
+    """Test transcript hash helpers for req1/req2/req3."""
+    dh = DHPeerExchange(key_size=768)
+    shared_secret = bytes.fromhex("00112233445566778899aabbccddeeff0011223344")
+    info_hash = bytes.fromhex("11223344556677889900aabbccddeeff00112233")
+
+    req1 = dh.req1_hash(shared_secret)
+    req2 = dh.req2_hash(info_hash)
+    req3 = dh.req3_hash(shared_secret)
+
+    assert len(req1) == 20
+    assert len(req2) == 20
+    assert len(req3) == 20
+    assert req1 != req2 != req3
+
+
+def test_dh_verification_constant():
+    """Test VC helper shape."""
+    dh = DHPeerExchange(key_size=768)
+    assert dh.verification_constant() == b"\x00" * 8

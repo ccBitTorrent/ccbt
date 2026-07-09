@@ -196,6 +196,7 @@ async def _set_torrent_option(
 @click.argument("value")
 @click.option(
     "--save-checkpoint",
+    "-S",
     is_flag=True,
     help=_("Save checkpoint immediately after setting option"),
 )
@@ -541,11 +542,13 @@ async def _reset_torrent_options(
 @click.argument("info_hash")
 @click.option(
     "--key",
+    "-k",
     type=str,
     help=_("Reset specific key only (otherwise resets all options)"),
 )
 @click.option(
     "--save-checkpoint",
+    "-S",
     is_flag=True,
     help=_("Save checkpoint after reset"),
 )

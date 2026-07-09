@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 
 from ccbt.protocols.bittorrent_v2 import (
+    HANDSHAKE_HYBRID_SIZE,
     HANDSHAKE_V1_SIZE,
     HANDSHAKE_V2_SIZE,
     INFO_HASH_V1_LEN,
@@ -36,6 +37,7 @@ from ccbt.protocols.bittorrent_v2 import (
     create_hybrid_handshake,
     create_v2_handshake,
     detect_protocol_version,
+    expected_plaintext_handshake_total_len,
     handle_v2_handshake,
     negotiate_protocol_version,
     parse_v2_handshake,
@@ -206,6 +208,28 @@ class TestDetectProtocolVersion:
         # This will fail with "Handshake too short" at initial check, not at protocol string check
         with pytest.raises(ProtocolVersionError):
             detect_protocol_version(handshake)
+
+    def test_expected_plaintext_handshake_total_len(self):
+        """Test expected handshake lengths from a protocol prefix."""
+        prefix_v1 = (
+            bytes([PROTOCOL_STRING_LEN])
+            + PROTOCOL_STRING
+            + b"\x00" * RESERVED_BYTES_LEN
+        )
+        assert expected_plaintext_handshake_total_len(prefix_v1) == (
+            HANDSHAKE_V1_SIZE,
+        )
+
+        prefix_v2 = (
+            bytes([PROTOCOL_STRING_LEN])
+            + PROTOCOL_STRING
+            + bytes([0x01] + [0x00] * (RESERVED_BYTES_LEN - 1))
+        )
+        assert expected_plaintext_handshake_total_len(prefix_v2) == (
+            HANDSHAKE_V1_SIZE,
+            HANDSHAKE_V2_SIZE,
+            HANDSHAKE_HYBRID_SIZE,
+        )
 
 
 class TestParseV2Handshake:
@@ -1142,7 +1166,7 @@ class TestAsyncHandshakeFunctions:
     async def test_handle_v2_handshake_incomplete_read_error(self):
         """Test handling handshake with IncompleteReadError."""
         reader = AsyncMock(spec=asyncio.StreamReader)
-        
+
         # First call (v2 size) raises IncompleteReadError, second call also raises it
         from asyncio import IncompleteReadError
         incomplete_error = IncompleteReadError(b"partial", 80)
@@ -1250,7 +1274,7 @@ class TestAsyncHandshakeFunctions:
         connection.our_peer_id = b"p" * PEER_ID_LEN
         connection.writer = AsyncMock(spec=asyncio.StreamWriter)
         connection.reader = AsyncMock(spec=asyncio.StreamReader)
-        
+
         # Mock reader to raise general exception
         connection.reader.readexactly = AsyncMock(side_effect=Exception("Unexpected error"))
 
@@ -1262,12 +1286,12 @@ class TestAsyncHandshakeFunctions:
         """Test protocol upgrade with exception during handshake send."""
         connection = MagicMock()
         connection.our_peer_id = b"p" * PEER_ID_LEN
-        
+
         # Mock writer to raise exception on write
         writer = AsyncMock(spec=asyncio.StreamWriter)
         writer.write = MagicMock(side_effect=Exception("Write error"))
         connection.writer = writer
-        
+
         connection.reader = AsyncMock(spec=asyncio.StreamReader)
 
         result = await upgrade_to_v2(connection, b"i" * INFO_HASH_V2_LEN)

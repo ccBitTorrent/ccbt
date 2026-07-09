@@ -9,7 +9,7 @@ import logging
 from enum import IntEnum
 from typing import Any, ClassVar, Optional
 
-from ccbt.utils.logging_config import get_logger
+from ccbt.utils.logging_config import TRACE_LOG_LEVEL, get_logger
 
 logger = get_logger(__name__)
 
@@ -41,7 +41,7 @@ class VerbosityManager:
         VerbosityLevel.NORMAL: logging.INFO,
         VerbosityLevel.VERBOSE: logging.INFO,
         VerbosityLevel.DEBUG: logging.DEBUG,
-        VerbosityLevel.TRACE: logging.DEBUG,  # TRACE uses DEBUG with stack traces
+        VerbosityLevel.TRACE: TRACE_LOG_LEVEL,  # TRACE uses dedicated TRACE level
     }
 
     def __init__(self, verbosity_count: int = 0):
@@ -98,6 +98,15 @@ class VerbosityManager:
             Logging level constant
 
         """
+        return self.logging_level_for_verbosity()
+
+    def logging_level_for_verbosity(self) -> int:
+        """Return the effective logging level for this verbosity.
+
+        Returns:
+            The logging level constant.
+
+        """
         return self.logging_level
 
     def is_verbose(self) -> bool:
@@ -126,6 +135,40 @@ class VerbosityManager:
 
         """
         return self.level == VerbosityLevel.TRACE
+
+
+def effective_observability_log_level(base_log_level: Any, verbosity_count: int) -> Any:
+    """Resolve effective log level from observability baseline and ``-v`` count.
+
+    Matches the semantics of the root ``cli()`` Click group callback in
+    ``ccbt.cli.main``.
+    """
+    from ccbt.models import LogLevel
+
+    vm = VerbosityManager.from_count(verbosity_count)
+    effective: Any = base_log_level
+    if vm.is_trace():
+        effective = vm.logging_level_for_verbosity()
+    elif vm.is_debug():
+        effective = LogLevel.DEBUG
+    elif vm.is_verbose():
+        effective = LogLevel.INFO
+    return effective
+
+
+def apply_cli_verbosity_to_observability(
+    observability: Any,
+    verbosity_count: int,
+) -> None:
+    """Apply verbosity to logging and persist for later :class:`ConfigManager` inits."""
+    from ccbt.utils.logging_config import (
+        set_cli_session_log_level_override,
+        setup_logging,
+    )
+
+    eff = effective_observability_log_level(observability.log_level, verbosity_count)
+    set_cli_session_log_level_override(eff)
+    setup_logging(observability, effective_log_level=eff)
 
 
 def get_verbosity_from_ctx(ctx: Optional[dict[str, Any]]) -> VerbosityManager:

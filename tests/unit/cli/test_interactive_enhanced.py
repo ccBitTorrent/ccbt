@@ -6,11 +6,10 @@ directly to verify they execute without raising exceptions.
 
 from __future__ import annotations
 
-import pytest
-from rich.console import Console
 from typing import Optional
 
-from ccbt.cli.interactive import InteractiveCLI
+import pytest
+from rich.console import Console
 
 
 class DummySession:

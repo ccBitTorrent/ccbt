@@ -15,10 +15,12 @@ from __future__ import annotations
 import asyncio
 import socket
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+import ccbt.discovery.dht as dht_module
 from ccbt.core.bencode import BencodeEncoder
 from ccbt.discovery.dht import (
     AsyncDHTClient,
@@ -144,7 +146,7 @@ class TestKademliaRoutingTable:
         # Verify bucket is full
         bucket_idx = table._bucket_index(b"\x01" * 19 + b"\x00")
         bucket = table.buckets[bucket_idx]
-        
+
         # If bucket isn't full, fill it
         while len(bucket) < 8 and len(bucket) < table.k:
             new_id = b"\x01" * 19 + bytes([len(bucket) + 100])
@@ -156,7 +158,7 @@ class TestKademliaRoutingTable:
         # Now try to add another node - should fail (bucket full)
         new_node = DHTNode(b"\x01" * 19 + b"\xff", "192.168.1.1", 6881)
         result = table.add_node(new_node)
-        
+
         # Should fail if bucket is truly full, or succeed if there was space
         # The key is we tested the logic path
         if len(bucket) >= table.k:
@@ -193,7 +195,7 @@ class TestKademliaRoutingTable:
         # Verify bucket is full
         bucket_idx = table._bucket_index(base_id + b"\x00")
         bucket = table.buckets[bucket_idx]
-        
+
         # Ensure all nodes in bucket are bad
         for node in bucket:
             node.is_good = False
@@ -284,9 +286,13 @@ class TestAsyncDHTClientBootstrap:
         client.routing_table.nodes = {}
 
         # Mock _bootstrap_step to return False (all fail)
-        with patch.object(client, "_bootstrap_step", new_callable=AsyncMock, return_value=False):
+        with patch.object(
+            client, "_bootstrap_step", new_callable=AsyncMock, return_value=False
+        ):
             # Mock _refresh_routing_table
-            with patch.object(client, "_refresh_routing_table", new_callable=AsyncMock) as mock_refresh:
+            with patch.object(
+                client, "_refresh_routing_table", new_callable=AsyncMock
+            ) as mock_refresh:
                 await client._bootstrap()
                 # Should call refresh when nodes < 8
                 mock_refresh.assert_called_once()
@@ -296,15 +302,65 @@ class TestAsyncDHTClientBootstrap:
         """Test _bootstrap_step exception handling (lines 288-290)."""
         client = AsyncDHTClient()
 
-        # Mock socket.gethostbyname to raise exception
-        with patch("socket.gethostbyname", side_effect=socket.gaierror("Host not found")):
+        # Bootstrap uses socket.getaddrinfo (via asyncio.to_thread), not gethostbyname
+        with patch(
+            "socket.getaddrinfo",
+            side_effect=socket.gaierror("Host not found"),
+        ):
             result = await client._bootstrap_step("invalid.host", 6881)
             assert result is False
 
+        def _addrinfo_local(host, port, *_args, **_kwargs):
+            return [(socket.AF_INET, socket.SOCK_DGRAM, 0, "", ("127.0.0.1", port))]
+
         # Mock _find_nodes to raise exception
-        with patch.object(client, "_find_nodes", new_callable=AsyncMock, side_effect=Exception("Network error")):
-            result = await client._bootstrap_step("127.0.0.1", 6881)
-            assert result is False
+        with patch("socket.getaddrinfo", side_effect=_addrinfo_local):
+            with patch.object(
+                client,
+                "_find_nodes",
+                new_callable=AsyncMock,
+                side_effect=Exception("Network error"),
+            ):
+                result = await client._bootstrap_step("127.0.0.1", 6881)
+                assert result is False
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_step_dns_host_backoff_skips_second_attempt(self):
+        """After DNS failure, same hostname should skip resolver until backoff expires."""
+        client = AsyncDHTClient()
+        client._dht_dns_host_backoff_initial_s = 30.0
+        client._dht_dns_host_backoff_max_s = 60.0
+        client._dht_dns_host_backoff_multiplier = 2.0
+
+        call_count = {"n": 0}
+
+        def _addrinfo_fail(*_a, **_k):
+            call_count["n"] += 1
+            raise socket.gaierror("temporary failure")
+
+        with patch("socket.getaddrinfo", side_effect=_addrinfo_fail):
+            assert await client._bootstrap_step("flaky.example.invalid", 6881) is False
+            assert call_count["n"] == 1
+            assert client._is_dns_host_in_backoff("flaky.example.invalid")
+            assert await client._bootstrap_step("flaky.example.invalid", 25401) is False
+            assert call_count["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_step_dns_success_clears_host_backoff(self):
+        """Successful resolve clears per-host DNS failure streak."""
+        client = AsyncDHTClient()
+        client._dht_dns_host_backoff_initial_s = 60.0
+
+        def _addrinfo_ok(host, port, *_args, **_kwargs):
+            return [(socket.AF_INET, socket.SOCK_DGRAM, 0, "", ("10.0.0.9", port))]
+
+        with patch("socket.getaddrinfo", side_effect=_addrinfo_ok):
+            with patch.object(client, "_find_nodes", new_callable=AsyncMock):
+                assert await client._bootstrap_step("ok.example.invalid", 6881) is True
+        assert not client._is_dns_host_in_backoff("ok.example.invalid")
+        assert client._normalize_dht_dns_host("ok.example.invalid") not in (
+            client._dht_dns_host_fail_streak
+        )
 
 
 class TestAsyncDHTClientFindNodes:
@@ -316,7 +372,12 @@ class TestAsyncDHTClientFindNodes:
         client = AsyncDHTClient()
 
         # Mock _send_query to raise exception
-        with patch.object(client, "_send_query", new_callable=AsyncMock, side_effect=Exception("Query failed")):
+        with patch.object(
+            client,
+            "_send_query",
+            new_callable=AsyncMock,
+            side_effect=Exception("Query failed"),
+        ):
             result = await client._find_nodes(("127.0.0.1", 6881), b"\x00" * 20)
             assert result == []
 
@@ -326,12 +387,16 @@ class TestAsyncDHTClientFindNodes:
         client = AsyncDHTClient()
 
         # Mock _send_query to return None
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=None):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=None
+        ):
             result = await client._find_nodes(("127.0.0.1", 6881), b"\x00" * 20)
             assert result == []
 
         # Mock _send_query to return non-response
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value={b"y": b"q"}):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value={b"y": b"q"}
+        ):
             result = await client._find_nodes(("127.0.0.1", 6881), b"\x00" * 20)
             assert result == []
 
@@ -357,7 +422,9 @@ class TestAsyncDHTClientGetPeers:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             # Query twice - second should be skipped
             peers = await client.get_peers(info_hash, max_peers=50)
             # First call should query the node
@@ -371,7 +438,7 @@ class TestAsyncDHTClientGetPeers:
             queried_nodes = {node.node_id}
             # Actually, queried_nodes is local to get_peers, so each call resets
             # We need to test within the same call
-            pass  # This is tested by having multiple nodes
+            # This is tested by having multiple nodes
 
     @pytest.mark.asyncio
     async def test_get_peers_nodes_data_parsing(self):
@@ -397,7 +464,9 @@ class TestAsyncDHTClientGetPeers:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             peers = await client.get_peers(info_hash, max_peers=50)
             # Should add new node from nodes_data
             assert len(client.routing_table.nodes) >= 1
@@ -413,11 +482,28 @@ class TestAsyncDHTClientGetPeers:
         client.routing_table.add_node(node)
 
         # Mock _send_query to raise exception
-        with patch.object(client, "_send_query", new_callable=AsyncMock, side_effect=Exception("Query failed")):
+        with patch.object(
+            client,
+            "_send_query",
+            new_callable=AsyncMock,
+            side_effect=Exception("Query failed"),
+        ):
             peers = await client.get_peers(info_hash, max_peers=50)
             # Node should be marked as bad
             assert not client.routing_table.nodes[node.node_id].is_good
             assert client.routing_table.nodes[node.node_id].failed_queries > 0
+
+    @pytest.mark.asyncio
+    async def test_get_peers_respects_swarm_discovery_disabled_callback(self):
+        """Discovery suppression callback short-circuits DHT peer lookup."""
+        client = AsyncDHTClient()
+        client.is_swarm_discovery_disabled = lambda _info_hash: True
+        info_hash = b"\x00" * 20
+
+        with patch.object(client, "_send_query", new_callable=AsyncMock) as mock_send:
+            peers = await client.get_peers(info_hash, max_peers=50)
+            assert peers == []
+            mock_send.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_peers_peer_callback_execution(self):
@@ -444,18 +530,24 @@ class TestAsyncDHTClientGetPeers:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             peers = await client.get_peers(info_hash, max_peers=50)
             # Callback is called twice: once when peer is found during query (line 1178)
             # and once at the end with all peers (line 1381)
-            assert callback_mock.call_count >= 1, "Callback should be called at least once"
+            assert callback_mock.call_count >= 1, (
+                "Callback should be called at least once"
+            )
             assert len(peers) > 0
 
         # Test callback with exception
         callback_mock_exc = Mock(side_effect=Exception("Callback error"))
         client.peer_callbacks = [callback_mock_exc]
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             peers = await client.get_peers(info_hash, max_peers=50)
             # Should not raise, exception should be caught
 
@@ -475,7 +567,9 @@ class TestAsyncDHTClientAnnouncePeer:
         client.routing_table.add_node(node)
 
         # Test without token - should trigger get_peers
-        with patch.object(client, "get_peers", new_callable=AsyncMock) as mock_get_peers:
+        with patch.object(
+            client, "get_peers", new_callable=AsyncMock
+        ) as mock_get_peers:
             with patch.object(client, "_send_query", new_callable=AsyncMock):
                 result = await client.announce_peer(info_hash, port)
                 # Should call get_peers to get token
@@ -487,7 +581,9 @@ class TestAsyncDHTClientAnnouncePeer:
         client.tokens[info_hash] = expired_token
 
         result = await client.announce_peer(info_hash, port)
-        assert result == 0  # Function returns int (number of peers announced), 0 indicates failure
+        assert (
+            result == 0
+        )  # Function returns int (number of peers announced), 0 indicates failure
         assert info_hash not in client.tokens  # Token should be deleted
 
         # Test with valid token
@@ -496,22 +592,44 @@ class TestAsyncDHTClientAnnouncePeer:
         client.tokens[info_hash] = valid_token
 
         response = {b"y": b"r"}
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             result = await client.announce_peer(info_hash, port)
             # Should succeed - function returns int (number of peers announced), > 0 indicates success
             assert result > 0
 
         # Test with failed response
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value={b"y": b"e"}):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value={b"y": b"e"}
+        ):
             result = await client.announce_peer(info_hash, port)
             # Node should be marked as bad
             assert not client.routing_table.nodes[node.node_id].is_good
 
         # Test with exception
-        with patch.object(client, "_send_query", new_callable=AsyncMock, side_effect=Exception("Network error")):
+        with patch.object(
+            client,
+            "_send_query",
+            new_callable=AsyncMock,
+            side_effect=Exception("Network error"),
+        ):
             result = await client.announce_peer(info_hash, port)
             # Should mark node as bad and return 0 (function returns int, 0 indicates failure)
             assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_announce_peer_respects_swarm_discovery_disabled_callback(self):
+        """Discovery suppression callback short-circuits DHT announces."""
+        client = AsyncDHTClient()
+        client.is_swarm_discovery_disabled = lambda _info_hash: True
+        info_hash = b"\x00" * 20
+        client.tokens[info_hash] = DHTToken(b"token", info_hash)
+
+        with patch.object(client, "_send_query", new_callable=AsyncMock) as mock_send:
+            result = await client.announce_peer(info_hash, 6881)
+            assert result == 0
+            mock_send.assert_not_called()
 
 
 class TestAsyncDHTClientResponseHandling:
@@ -593,6 +711,25 @@ class TestAsyncDHTClientResponseHandling:
         # The important thing is the future is done
 
 
+class TestAsyncDHTClientShutdown:
+    """DHT teardown must not leave long-running query waiters."""
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_pending_queries(self) -> None:
+        client = AsyncDHTClient()
+        tid = b"\xab\xcd"
+        fut: asyncio.Future[Any] = asyncio.Future()
+        client.pending_queries[tid] = fut
+        client._refresh_task = None
+        client._cleanup_task = None
+        client._bootstrap_task = None
+        client.transport = None
+        client.socket = None
+        await client.stop()
+        assert fut.cancelled()
+        assert client.pending_queries == {}
+
+
 class TestAsyncDHTClientBackgroundTasks:
     """Test AsyncDHTClient background tasks."""
 
@@ -602,7 +739,12 @@ class TestAsyncDHTClientBackgroundTasks:
         client = AsyncDHTClient()
 
         # Mock _refresh_routing_table to raise exception
-        with patch.object(client, "_refresh_routing_table", new_callable=AsyncMock, side_effect=Exception("Refresh error")):
+        with patch.object(
+            client,
+            "_refresh_routing_table",
+            new_callable=AsyncMock,
+            side_effect=Exception("Refresh error"),
+        ):
             task = asyncio.create_task(client._refresh_loop())
 
             # Wait a bit
@@ -626,7 +768,9 @@ class TestAsyncDHTClientBackgroundTasks:
             client.routing_table.add_node(node)
 
         # Mock _find_nodes
-        with patch.object(client, "_find_nodes", new_callable=AsyncMock, return_value=[]):
+        with patch.object(
+            client, "_find_nodes", new_callable=AsyncMock, return_value=[]
+        ):
             await client._refresh_routing_table()
             # Should call _find_nodes multiple times:
             # 8 target IDs * number of closest nodes (up to 8 each)
@@ -641,7 +785,12 @@ class TestAsyncDHTClientBackgroundTasks:
         client = AsyncDHTClient()
 
         # Mock _cleanup_old_data to raise exception
-        with patch.object(client, "_cleanup_old_data", new_callable=AsyncMock, side_effect=Exception("Cleanup error")):
+        with patch.object(
+            client,
+            "_cleanup_old_data",
+            new_callable=AsyncMock,
+            side_effect=Exception("Cleanup error"),
+        ):
             task = asyncio.create_task(client._cleanup_loop())
 
             # Wait a bit
@@ -831,7 +980,9 @@ class TestAsyncDHTClientFindNodesSuccess:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             result = await client._find_nodes(("127.0.0.1", 6881), b"\x00" * 20)
 
             # Should return parsed nodes
@@ -876,7 +1027,9 @@ class TestAsyncDHTClientGetPeersPaths:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             peers = await client.get_peers(info_hash, max_peers=50)
             # Should only query once due to duplicate check
             # The exact call count depends on implementation, but should be <= 2
@@ -902,7 +1055,9 @@ class TestAsyncDHTClientGetPeersPaths:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             peers = await client.get_peers(info_hash, max_peers=50)
 
             # Should return parsed peers
@@ -929,7 +1084,9 @@ class TestAsyncDHTClientGetPeersPaths:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             peers = await client.get_peers(info_hash, max_peers=10)
 
             # Should respect max_peers limit
@@ -954,12 +1111,62 @@ class TestAsyncDHTClientGetPeersPaths:
             },
         }
 
-        with patch.object(client, "_send_query", new_callable=AsyncMock, return_value=response):
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
             await client.get_peers(info_hash, max_peers=50)
 
             # Token should be stored
             assert info_hash in client.tokens
             assert client.tokens[info_hash].token == token
+
+    @pytest.mark.asyncio
+    async def test_get_peers_empty_result_logs_lookup_diagnostics(self):
+        """Test empty get_peers result logs structured zero-peer diagnostics."""
+        client = AsyncDHTClient()
+        client.logger = MagicMock()
+
+        info_hash = b"\x00" * 20
+        client.routing_table.add_node(DHTNode(b"\x01" * 20, "127.0.0.1", 6881))
+
+        response = {
+            b"y": b"r",
+            b"r": {},
+        }
+
+        with patch.object(
+            client, "_send_query", new_callable=AsyncMock, return_value=response
+        ):
+            peers = await client.get_peers(info_hash, max_peers=50)
+
+        assert peers == []
+        assert client.last_lookup_state == "empty_peer_set"
+        assert client._last_query_metrics["empty_result_reason"] == "empty_peer_set"
+        assert any(
+            "returned 0 peers after querying" in str(call.args[0])
+            for call in client.logger.info.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_peers_empty_routing_table_tracks_diagnostics(self):
+        """Test empty routing-table lookups emit structured zero-node diagnostics."""
+        client = AsyncDHTClient()
+        client.logger = MagicMock()
+
+        info_hash = b"\x11" * 20
+
+        peers = await client.get_peers(info_hash, max_peers=50)
+
+        assert peers == []
+        assert client.last_lookup_state == "empty_routing_table"
+        assert (
+            client._last_query_metrics["empty_result_reason"] == "empty_routing_table"
+        )
+        assert client.last_zero_node_lookup_at > 0
+        assert any(
+            "cannot start because the routing table is empty" in str(call)
+            for call in client.logger.warning.call_args_list
+        )
 
 
 class TestAsyncDHTClientSendQuery:
@@ -996,9 +1203,16 @@ class TestAsyncDHTClientSendQuery:
             b"r": {b"id": b"\x00" * 20},
         }
 
-        with patch.object(client, "_wait_for_response", new_callable=AsyncMock, return_value=response_data):
+        with patch.object(
+            client,
+            "_wait_for_response",
+            new_callable=AsyncMock,
+            return_value=response_data,
+        ):
             with patch("os.urandom", return_value=b"\x00\x01"):
-                result = await client._send_query(("127.0.0.1", 6881), "ping", {b"id": b"\x00" * 20})
+                result = await client._send_query(
+                    ("127.0.0.1", 6881), "ping", {b"id": b"\x00" * 20}
+                )
 
             # Should return response
             assert result == response_data
@@ -1014,7 +1228,12 @@ class TestAsyncDHTClientSendQuery:
         mock_transport = MagicMock()
         client.transport = mock_transport
 
-        with patch.object(client, "_wait_for_response", new_callable=AsyncMock, side_effect=asyncio.TimeoutError()):
+        with patch.object(
+            client,
+            "_wait_for_response",
+            new_callable=AsyncMock,
+            side_effect=asyncio.TimeoutError(),
+        ):
             with patch("os.urandom", return_value=b"\x00\x01"):
                 result = await client._send_query(("127.0.0.1", 6881), "ping", {})
 
@@ -1037,11 +1256,16 @@ class TestAsyncDHTClientWaitForResponse:
         async def set_response():
             await asyncio.sleep(0.01)
             if tid in client.pending_queries:
-                client.handle_response(BencodeEncoder().encode({
-                    b"t": tid,
-                    b"y": b"r",
-                    b"r": {},
-                }), ("127.0.0.1", 6881))
+                client.handle_response(
+                    BencodeEncoder().encode(
+                        {
+                            b"t": tid,
+                            b"y": b"r",
+                            b"r": {},
+                        }
+                    ),
+                    ("127.0.0.1", 6881),
+                )
 
         # Start response handler
         asyncio.create_task(set_response())
@@ -1098,15 +1322,50 @@ class TestDHTGlobalFunctions:
     @pytest.mark.asyncio
     async def test_shutdown_dht(self):
         """Test shutdown_dht (lines 684-686)."""
+        dht_module._dht_client = None
+
         # Initialize first
         with patch.object(AsyncDHTClient, "start", new_callable=AsyncMock):
-            await init_dht()
+            initialized_client = await init_dht()
+            assert dht_module._dht_client is initialized_client
 
         # Test shutdown
-        with patch.object(AsyncDHTClient, "stop", new_callable=AsyncMock) as mock_stop:
+        with patch.object(initialized_client, "stop", new_callable=AsyncMock) as mock_stop:
             await shutdown_dht()
             mock_stop.assert_called_once()
+            assert dht_module._dht_client is None
 
         # Test shutdown when client is None
         await shutdown_dht()  # Should not raise
 
+    @pytest.mark.asyncio
+    async def test_init_dht_stops_existing_global_client(self):
+        """init_dht should stop a pre-existing singleton before replacing it."""
+        existing_client = AsyncDHTClient()
+        dht_module._dht_client = existing_client
+
+        with (
+            patch.object(existing_client, "stop", new_callable=AsyncMock) as mock_stop,
+            patch.object(AsyncDHTClient, "start", new_callable=AsyncMock),
+        ):
+            new_client = await init_dht()
+
+        mock_stop.assert_called_once()
+        assert dht_module._dht_client is new_client
+        assert new_client is not existing_client
+
+    @pytest.mark.asyncio
+    async def test_shutdown_dht_clears_global_when_stop_raises(self):
+        """shutdown_dht should clear singleton even when stop raises."""
+        client = AsyncDHTClient()
+        dht_module._dht_client = client
+
+        with patch.object(
+            client,
+            "stop",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("stop failed"),
+        ), pytest.raises(RuntimeError, match="stop failed"):
+            await shutdown_dht()
+
+        assert dht_module._dht_client is None

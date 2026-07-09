@@ -354,7 +354,8 @@ def dht() -> None:
 @dht.command("aggressive")
 @click.argument("info_hash")
 @click.option(
-    "--enable/--disable",
+    "-e/--enable/--disable",
+    "enable",
     default=True,
     help="Enable or disable aggressive mode (default: enable)",
 )

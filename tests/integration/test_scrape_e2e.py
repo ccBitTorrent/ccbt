@@ -143,14 +143,13 @@ class TestEndToEndScrapeHTTP:
         )
 
         with patch(
-            "ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient",
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             return_value=mock_udp_client,
         ):
             result = await session_manager.force_scrape(info_hash_hex)
 
             assert result is True
             mock_udp_client.start.assert_called()
-            mock_udp_client.stop.assert_called()
             mock_udp_client.scrape.assert_called_once()
 
         # Clean up
@@ -218,7 +217,7 @@ class TestEndToEndScrapeHTTP:
             "ccbt.discovery.tracker.AsyncTrackerClient", side_effect=create_http_client
         )
         udp_patcher = patch(
-            "ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient",
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
             side_effect=create_udp_client,
         )
 
@@ -276,7 +275,7 @@ class TestEndToEndScrapeHTTP:
         self, session_manager
     ):
         """Test scrape flow with TorrentInfo model."""
-        from ccbt.models import TorrentInfo, FileInfo
+        from ccbt.models import FileInfo, TorrentInfo
         from ccbt.session.session import AsyncTorrentSession
 
         info_hash = b"x" * 20

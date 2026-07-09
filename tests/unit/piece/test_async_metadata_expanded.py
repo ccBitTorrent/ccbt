@@ -9,13 +9,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import struct
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.metadata]
 
-from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
+from ccbt.core.bencode import BencodeEncoder
 from ccbt.piece.async_metadata_exchange import (
     AsyncMetadataExchange,
     MetadataCache,
@@ -185,10 +185,15 @@ class TestAsyncMetadataExchange:
     async def test_fetch_metadata_no_peers(self, exchange):
         """Test fetch_metadata with no peers."""
         await exchange.start()
+        mock_on_error = Mock()
+        exchange.on_error = mock_on_error
 
         result = await exchange.fetch_metadata([], max_peers=10)
 
         assert result is None
+        assert exchange._failure_reason == "no_peers"
+        assert mock_on_error.called
+        assert exchange.completed is False
 
         await exchange.stop()
 
@@ -196,10 +201,36 @@ class TestAsyncMetadataExchange:
     async def test_fetch_metadata_zero_max_peers(self, exchange, sample_peers):
         """Test fetch_metadata with zero max_peers."""
         await exchange.start()
+        mock_on_error = Mock()
+        exchange.on_error = mock_on_error
 
         result = await exchange.fetch_metadata(sample_peers, max_peers=0)
 
         assert result is None
+        assert exchange._failure_reason == "invalid_max_peers"
+        assert mock_on_error.called
+        assert exchange.completed is False
+
+        await exchange.stop()
+
+    @pytest.mark.asyncio
+    async def test_fetch_metadata_timeout_reports_reason(self, exchange, sample_peers):
+        """Test timeout path reports deterministic failure reason."""
+        await exchange.start()
+        mock_on_error = Mock()
+        exchange.on_error = mock_on_error
+
+        async def never_complete() -> None:
+            while True:
+                await asyncio.sleep(0.1)
+
+        with patch.object(exchange, "_wait_for_completion", never_complete):
+            result = await exchange.fetch_metadata(sample_peers, timeout=0.05)
+
+        assert result is None
+        assert exchange._failure_reason == "timeout"
+        assert mock_on_error.called
+        assert exchange.completed is False
 
         await exchange.stop()
 
@@ -241,6 +272,133 @@ class TestAsyncMetadataExchange:
         # Replace info_hash in handshake
         invalid_handshake = handshake[:28] + wrong_hash + handshake[48:]
         assert exchange._validate_handshake(invalid_handshake) is False
+
+    def test_handshake_requires_extension_bit(self, exchange):
+        """Metadata path requires BEP 10 advertisement in reserved bytes."""
+        handshake = bytearray(exchange._create_handshake())
+        handshake[25] = 0  # clear extension protocol flag (byte index 1+19+5)
+        assert exchange._validate_handshake(bytes(handshake)) is False
+
+    @pytest.mark.asyncio
+    async def test_read_peer_handshake_staged_v1(self, exchange):
+        """Staged handshake read accepts a standard 68-byte v1 payload."""
+        hs = exchange._create_handshake()
+        reader = asyncio.StreamReader()
+        reader.feed_data(hs)
+        reader.feed_eof()
+        out = await exchange._read_peer_handshake_for_metadata(
+            reader, ("127.0.0.1", 6882), 5.0
+        )
+        assert out == hs
+
+    @pytest.mark.asyncio
+    async def test_read_peer_handshake_staged_hybrid(self, exchange):
+        """Staged handshake read accepts a 100-byte hybrid v1/v2 payload."""
+        protocol = b"\x13BitTorrent protocol"
+        reserved = bytearray(8)
+        reserved[0] = 0x01  # BEP 52 support
+        reserved[5] = 0x10  # BEP 10 extension flag
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        hs = (
+            protocol
+            + bytes(reserved)
+            + exchange.info_hash
+            + info_hash_v2
+            + exchange.our_peer_id
+        )
+        reader = asyncio.StreamReader()
+        reader.feed_data(hs)
+        reader.feed_eof()
+        out = await exchange._read_peer_handshake_for_metadata(
+            reader, ("127.0.0.1", 6882), 5.0
+        )
+        assert len(out) == 100
+        assert out == hs
+
+    def test_validate_handshake_hybrid_with_protocol_v2_off(
+        self, exchange, monkeypatch
+    ):
+        """Non-68 handshake fails when protocol_v2 is disabled."""
+        monkeypatch.setattr(
+            exchange.config.network.protocol_v2, "enable_protocol_v2", False
+        )
+        protocol = b"\x13BitTorrent protocol"
+        reserved = bytearray(8)
+        reserved[0] = 0x01  # BEP 52 support
+        reserved[5] = 0x10  # BEP 10 extension flag
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        hs = (
+            protocol
+            + bytes(reserved)
+            + exchange.info_hash
+            + info_hash_v2
+            + exchange.our_peer_id
+        )
+        assert exchange._validate_handshake(hs) is False
+
+    def test_validate_handshake_hybrid_with_protocol_v2_on(
+        self, exchange, monkeypatch
+    ):
+        """Hybrid handshake is accepted when protocol_v2 is enabled."""
+        monkeypatch.setattr(
+            exchange.config.network.protocol_v2, "enable_protocol_v2", True
+        )
+        protocol = b"\x13BitTorrent protocol"
+        reserved = bytearray(8)
+        reserved[0] = 0x01  # BEP 52 support
+        reserved[5] = 0x10  # BEP 10 extension flag
+        info_hash_v2 = b"v2_info_hash_32_bytes__________!!"[:32]
+        hs = (
+            protocol
+            + bytes(reserved)
+            + exchange.info_hash
+            + info_hash_v2
+            + exchange.our_peer_id
+        )
+        assert exchange._validate_handshake(hs) is True
+
+    def test_log_metadata_peer_outcome_includes_failure_stage(self, exchange):
+        """Structured failure metadata is included in METADATA_PEER_OUTCOME logs."""
+        logger = Mock()
+        exchange.logger = logger
+
+        exchange._log_metadata_peer_outcome(
+            ("127.0.0.1", 6881),
+            connect_ok=False,
+            bt_handshake_ok=False,
+            extended_handshake_ok=False,
+            ut_metadata_supported=False,
+            piece_count_received=0,
+            metadata_validated=False,
+            failure_stage="handshake_timeout",
+            failure_reason="timeout",
+        )
+
+        logger.info.assert_called_once()
+        message = logger.info.call_args.args[0]
+        args = logger.info.call_args.args[1:]
+        assert "failure_stage=%s failure_reason=%s" in message
+        assert args[-2:] == ("handshake_timeout", "timeout")
+
+    def test_log_metadata_peer_outcome_default_failure_fields(self, exchange):
+        """Default failure fields are stable when reason is omitted."""
+        logger = Mock()
+        exchange.logger = logger
+
+        exchange._log_metadata_peer_outcome(
+            ("127.0.0.1", 6881),
+            connect_ok=True,
+            bt_handshake_ok=True,
+            extended_handshake_ok=False,
+            ut_metadata_supported=False,
+            piece_count_received=0,
+            metadata_validated=False,
+        )
+
+        logger.info.assert_called_once()
+        args = logger.info.call_args.args[1:]
+        assert args[-2:] == ("unknown", "n/a")
+
 
     @pytest.mark.asyncio
     async def test_send_extended_handshake_no_writer(self, exchange):
@@ -369,13 +527,13 @@ class TestAsyncMetadataExchange:
         session = PeerMetadataSession(peer_info=("192.168.1.1", 6881))
         session.ut_metadata_id = 1
         session.writer = AsyncMock()
+        session.writer.write = Mock()
 
-        with patch.object(exchange, "_wait_for_piece_response") as mock_wait:
-            await exchange._request_metadata_piece(session, 0)
+        await exchange._request_metadata_piece(session, 0)
 
-            assert session.writer.write.called
-            assert session.writer.drain.called
-            mock_wait.assert_called_once_with(session, 0)
+        session.writer.write.assert_called_once()
+        session.writer.drain.assert_awaited_once()
+        assert 0 not in session.pieces_failed
 
     @pytest.mark.asyncio
     async def test_request_metadata_piece_exception(self, exchange):
@@ -383,11 +541,11 @@ class TestAsyncMetadataExchange:
         session = PeerMetadataSession(peer_info=("192.168.1.1", 6881))
         session.ut_metadata_id = 1
         session.writer = AsyncMock()
+        session.writer.write = Mock(side_effect=RuntimeError("Error"))
 
-        with patch.object(exchange, "_wait_for_piece_response", side_effect=Exception("Error")):
-            await exchange._request_metadata_piece(session, 0)
+        await exchange._request_metadata_piece(session, 0)
 
-            assert 0 in session.pieces_failed
+        assert 0 in session.pieces_failed
 
     @pytest.mark.asyncio
     async def test_wait_for_piece_response_no_reader(self, exchange):
@@ -518,6 +676,7 @@ class TestAsyncMetadataExchange:
         exchange.on_complete = mock_on_complete
 
         await exchange._assemble_metadata()
+        await exchange._assemble_metadata()
 
         assert exchange.completed is True
         assert exchange.metadata_data == metadata_bytes
@@ -542,6 +701,8 @@ class TestAsyncMetadataExchange:
         await exchange._assemble_metadata()
 
         assert exchange.completed is False
+        assert exchange._failure_reason == "hash_mismatch"
+        assert mock_on_error.called
 
     @pytest.mark.asyncio
     async def test_assemble_metadata_exception(self, exchange):
@@ -555,6 +716,7 @@ class TestAsyncMetadataExchange:
         await exchange._assemble_metadata()
 
         mock_on_error.assert_called_once()
+        assert exchange._failure_reason == "assembly_error"
 
     @pytest.mark.asyncio
     async def test_wait_for_completion(self, exchange):
@@ -1090,4 +1252,32 @@ class TestMetadataMetrics:
         metrics.record_piece_received()
 
         assert metrics.get_completion_rate() == 0.5
+
+
+@pytest.mark.asyncio
+async def test_receive_extended_handshake_skips_non_extension_message():
+    """Handshake parsing should tolerate an initial non-extension message before the ut_metadata handshake."""
+    info_hash = hashlib.sha1(b"skip-non-extension").digest()
+    exchange = AsyncMetadataExchange(info_hash)
+    session = PeerMetadataSession(peer_info=("192.168.1.1", 6881))
+
+    interested_msg = struct.pack("!IB", 1, 2)
+    payload = BencodeEncoder().encode({b"m": {b"ut_metadata": 7}, b"metadata_size": 8192})
+    handshake_len = len(payload) + 2
+    handshake_msg = struct.pack("!IBB", handshake_len, 20, 0) + payload
+
+    session.reader = AsyncMock()
+    session.reader.readexactly = AsyncMock(
+        side_effect=[
+            struct.pack("!I", 1),
+            interested_msg[4:],
+            struct.pack("!I", handshake_len),
+            handshake_msg[4:],
+        ]
+    )
+
+    await exchange._receive_extended_handshake(session)
+
+    assert session.ut_metadata_id == 7
+    assert session.metadata_size == 8192
 

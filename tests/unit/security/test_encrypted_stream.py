@@ -20,6 +20,7 @@ from ccbt.security.ciphers.rc4 import RC4Cipher
 from ccbt.security.encrypted_stream import (
     EncryptedStreamReader,
     EncryptedStreamWriter,
+    pair_streams,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
@@ -39,9 +40,48 @@ class TestEncryptedStreamReader:
         return RC4Cipher(b"test_key_16bytes")
 
     @pytest.fixture
+    def encrypt_cipher(self):
+        """Create separate cipher for test payload encryption."""
+        return RC4Cipher(b"test_key_16bytes")
+
+    @pytest.fixture
     def encrypted_reader(self, mock_reader, cipher):
         """Create EncryptedStreamReader instance."""
         return EncryptedStreamReader(mock_reader, cipher)
+
+
+    @pytest.mark.asyncio
+    async def test_pair_streams_builds_distinct_wrappers(self, mock_reader, cipher):
+        """Test pair_streams builds paired encrypted reader/writer with distinct ciphers."""
+        writer = AsyncMock()
+        inbound_cipher = RC4Cipher(b"inbound_key_16bytes")
+        outbound_cipher = RC4Cipher(b"outbound_key_16")
+        encrypted_reader, encrypted_writer = pair_streams(
+            mock_reader,
+            writer,
+            inbound_cipher=inbound_cipher,
+            outbound_cipher=outbound_cipher,
+        )
+
+        assert isinstance(encrypted_reader, EncryptedStreamReader)
+        assert isinstance(encrypted_writer, EncryptedStreamWriter)
+        assert encrypted_reader.cipher is inbound_cipher
+        assert encrypted_writer.cipher is outbound_cipher
+        assert encrypted_reader.cipher is not encrypted_writer.cipher
+
+    @pytest.mark.asyncio
+    async def test_pair_streams_rejects_shared_cipher(self, mock_reader, cipher):
+        """Test pair_streams rejects shared cipher instances for inbound and outbound."""
+        writer = AsyncMock()
+        shared_cipher = RC4Cipher(b"shared_key_16bytes")
+
+        with pytest.raises(ValueError, match="Encrypted stream wrappers must use distinct"):
+            pair_streams(
+                mock_reader,
+                writer,
+                inbound_cipher=shared_cipher,
+                outbound_cipher=shared_cipher,
+            )
 
     @pytest.mark.asyncio
     async def test_init(self, encrypted_reader, mock_reader, cipher):
@@ -51,10 +91,10 @@ class TestEncryptedStreamReader:
         assert encrypted_reader._buffer == b""
 
     @pytest.mark.asyncio
-    async def test_read_all_data(self, encrypted_reader, mock_reader):
+    async def test_read_all_data(self, encrypted_reader, mock_reader, encrypt_cipher):
         """Test reading all available data."""
         plaintext = b"Hello, World!"
-        encrypted = encrypted_reader.cipher.encrypt(plaintext)
+        encrypted = encrypt_cipher.encrypt(plaintext)
 
         mock_reader.read.return_value = encrypted
 
@@ -64,10 +104,12 @@ class TestEncryptedStreamReader:
         mock_reader.read.assert_called_once_with(-1)
 
     @pytest.mark.asyncio
-    async def test_read_specific_bytes(self, encrypted_reader, mock_reader):
+    async def test_read_specific_bytes(
+        self, encrypted_reader, mock_reader, encrypt_cipher
+    ):
         """Test reading specific number of bytes."""
         plaintext = b"Test data"
-        encrypted = encrypted_reader.cipher.encrypt(plaintext)
+        encrypted = encrypt_cipher.encrypt(plaintext)
 
         mock_reader.read.return_value = encrypted
 
@@ -97,10 +139,10 @@ class TestEncryptedStreamReader:
         mock_reader.read.assert_called_once_with(-1)
 
     @pytest.mark.asyncio
-    async def test_readexactly(self, encrypted_reader, mock_reader):
+    async def test_readexactly(self, encrypted_reader, mock_reader, encrypt_cipher):
         """Test readexactly method."""
         plaintext = b"Exact read test"
-        encrypted = encrypted_reader.cipher.encrypt(plaintext)
+        encrypted = encrypt_cipher.encrypt(plaintext)
 
         mock_reader.readexactly.return_value = encrypted
 
@@ -124,10 +166,12 @@ class TestEncryptedStreamReader:
             await encrypted_reader.readexactly(10)
 
     @pytest.mark.asyncio
-    async def test_read_partial_encrypted_data(self, encrypted_reader, mock_reader):
+    async def test_read_partial_encrypted_data(
+        self, encrypted_reader, mock_reader, encrypt_cipher
+    ):
         """Test reading partial encrypted data."""
         plaintext = b"Partial read test data"
-        encrypted = encrypted_reader.cipher.encrypt(plaintext)
+        encrypted = encrypt_cipher.encrypt(plaintext)
 
         # Simulate partial read
         mock_reader.read.return_value = encrypted[:10]
@@ -157,10 +201,10 @@ class TestEncryptedStreamReader:
         assert encrypted_reader.custom_attr == "test_value"
 
     @pytest.mark.asyncio
-    async def test_read_large_data(self, encrypted_reader, mock_reader):
+    async def test_read_large_data(self, encrypted_reader, mock_reader, encrypt_cipher):
         """Test reading large data."""
         plaintext = b"x" * 10240  # 10KB
-        encrypted = encrypted_reader.cipher.encrypt(plaintext)
+        encrypted = encrypt_cipher.encrypt(plaintext)
 
         mock_reader.read.return_value = encrypted
 
@@ -170,10 +214,12 @@ class TestEncryptedStreamReader:
         assert len(result) == len(plaintext)
 
     @pytest.mark.asyncio
-    async def test_decryption_round_trip(self, encrypted_reader, mock_reader):
+    async def test_decryption_round_trip(
+        self, encrypted_reader, mock_reader, encrypt_cipher
+    ):
         """Test that decryption correctly recovers plaintext."""
         plaintext = b"Round trip test data"
-        encrypted = encrypted_reader.cipher.encrypt(plaintext)
+        encrypted = encrypt_cipher.encrypt(plaintext)
 
         mock_reader.read.return_value = encrypted
 
@@ -222,9 +268,10 @@ class TestEncryptedStreamWriter:
         # Get the encrypted data that was written
         call_args = mock_writer.write.call_args[0]
         encrypted = call_args[0]
-        
+
         # Verify we can decrypt it back to original
-        decrypted = encrypted_writer.cipher.decrypt(encrypted)
+        decrypt_cipher = RC4Cipher(b"test_key_16bytes")
+        decrypted = decrypt_cipher.decrypt(encrypted)
         assert decrypted == plaintext
 
     def test_write_empty_data(self, encrypted_writer, mock_writer):
@@ -301,9 +348,10 @@ class TestEncryptedStreamWriter:
         # Get the encrypted data that was written
         call_args = mock_writer.write.call_args[0]
         encrypted = call_args[0]
-        
+
         # Verify we can decrypt it back and length matches
-        decrypted = encrypted_writer.cipher.decrypt(encrypted)
+        decrypt_cipher = RC4Cipher(b"test_key_16bytes")
+        decrypted = decrypt_cipher.decrypt(encrypted)
         assert decrypted == plaintext
         assert len(encrypted) == len(plaintext)
 
@@ -318,7 +366,8 @@ class TestEncryptedStreamWriter:
         encrypted = call_args[0]
 
         # Verify we can decrypt it back
-        decrypted = encrypted_writer.cipher.decrypt(encrypted)
+        decrypt_cipher = RC4Cipher(b"test_key_16bytes")
+        decrypted = decrypt_cipher.decrypt(encrypted)
         assert decrypted == plaintext
 
 
@@ -326,8 +375,13 @@ class TestEncryptedStreamIntegration:
     """Integration tests for encrypted streams."""
 
     @pytest.fixture
-    def cipher(self):
-        """Create shared cipher for reader and writer."""
+    def writer_cipher(self):
+        """Create cipher for writer direction."""
+        return RC4Cipher(b"shared_test_key_16")
+
+    @pytest.fixture
+    def reader_cipher(self):
+        """Create cipher for reader direction."""
         return RC4Cipher(b"shared_test_key_16")
 
     @pytest.fixture
@@ -345,20 +399,20 @@ class TestEncryptedStreamIntegration:
 
     @pytest.mark.asyncio
     async def test_full_encrypt_decrypt_round_trip(
-        self, cipher, mock_reader, mock_writer
+        self, writer_cipher, reader_cipher, mock_reader, mock_writer
     ):
         """Test full encryption/decryption round-trip."""
         plaintext = b"Integration test data"
 
         # Write through encrypted writer
-        writer = EncryptedStreamWriter(mock_writer, cipher)
+        writer = EncryptedStreamWriter(mock_writer, writer_cipher)
         writer.write(plaintext)
 
         # Get encrypted data
         encrypted = mock_writer.write.call_args[0][0]
 
         # Read through encrypted reader
-        reader = EncryptedStreamReader(mock_reader, cipher)
+        reader = EncryptedStreamReader(mock_reader, reader_cipher)
         mock_reader.read.return_value = encrypted
 
         result = await reader.read(-1)
@@ -366,11 +420,13 @@ class TestEncryptedStreamIntegration:
         assert result == plaintext
 
     @pytest.mark.asyncio
-    async def test_multiple_chunks(self, cipher, mock_reader, mock_writer):
+    async def test_multiple_chunks(
+        self, writer_cipher, reader_cipher, mock_reader, mock_writer
+    ):
         """Test multiple chunks of data."""
         chunks = [b"Chunk 1", b"Chunk 2", b"Chunk 3"]
 
-        writer = EncryptedStreamWriter(mock_writer, cipher)
+        writer = EncryptedStreamWriter(mock_writer, writer_cipher)
         for chunk in chunks:
             writer.write(chunk)
 
@@ -380,7 +436,7 @@ class TestEncryptedStreamIntegration:
         )
 
         # Read all chunks
-        reader = EncryptedStreamReader(mock_reader, cipher)
+        reader = EncryptedStreamReader(mock_reader, reader_cipher)
         mock_reader.read.return_value = all_encrypted
 
         result = await reader.read(-1)
@@ -389,12 +445,12 @@ class TestEncryptedStreamIntegration:
         assert result == b"".join(chunks)
 
     @pytest.mark.asyncio
-    async def test_readexactly_integration(self, cipher, mock_reader):
+    async def test_readexactly_integration(self, writer_cipher, reader_cipher, mock_reader):
         """Test readexactly with encrypted stream."""
         plaintext = b"Exact read integration test"
-        encrypted = cipher.encrypt(plaintext)
+        encrypted = writer_cipher.encrypt(plaintext)
 
-        reader = EncryptedStreamReader(mock_reader, cipher)
+        reader = EncryptedStreamReader(mock_reader, reader_cipher)
         mock_reader.readexactly.return_value = encrypted
 
         result = await reader.readexactly(len(plaintext))

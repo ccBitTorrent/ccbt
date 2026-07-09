@@ -9,9 +9,8 @@ Covers missing lines:
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -53,7 +52,7 @@ class TestQuickDiskBenchmark:
             return f
         # Use AsyncMock with side_effect to track calls but return the Future
         mock_disk.write_block = AsyncMock(side_effect=async_write_block)
-        
+
         # Mock read_block
         mock_disk.read_block = AsyncMock(return_value=b"X" * (64 * 1024))
 
@@ -93,7 +92,7 @@ class TestQuickDiskBenchmark:
         mock_disk = AsyncMock()
         mock_disk_manager.return_value = mock_disk
         mock_disk.stop.side_effect = Exception("Stop error")
-        
+
         # Make write_block return a Future that can be awaited later
         from asyncio import Future
         async def async_write_block(*args, **kwargs):
@@ -106,7 +105,7 @@ class TestQuickDiskBenchmark:
         # Should raise exception when stop() fails
         with pytest.raises(Exception, match="Stop error"):
             await _quick_disk_benchmark()
-        
+
         mock_disk.start.assert_called_once()
 
 
@@ -133,7 +132,7 @@ class TestPerformanceCommandExpanded:
         # Import the real __import__ before patching to avoid recursion
         import builtins
         real_import = builtins.__import__
-        
+
         # Patch cProfile inside the function context where it's imported
         with patch("builtins.__import__") as mock_import:
             def side_effect(name, *args, **kwargs):
@@ -142,7 +141,7 @@ class TestPerformanceCommandExpanded:
                     mock_prof = MagicMock()
                     mock_prof_module.Profile.return_value = mock_prof
                     return mock_prof_module
-                elif name == "pstats":
+                if name == "pstats":
                     mock_pstats_module = MagicMock()
                     mock_stats = MagicMock()
                     mock_stats_instance = MagicMock()
@@ -153,9 +152,9 @@ class TestPerformanceCommandExpanded:
                     return mock_pstats_module
                 # For other imports, use real import
                 return real_import(name, *args, **kwargs)
-            
+
             mock_import.side_effect = side_effect
-            
+
             runner = CliRunner()
             result = runner.invoke(performance, ["--profile"])
 
@@ -216,7 +215,7 @@ class TestPerformanceCommandExpanded:
 
             # Should handle exception gracefully
             assert result.exit_code in [0, 1]
-        
+
         # Clean up coroutine
         with contextlib.suppress(Exception):
             coro.close()
@@ -242,7 +241,7 @@ class TestPerformanceCommandExpanded:
         # Import the real __import__ before patching to avoid recursion
         import builtins
         real_import = builtins.__import__
-        
+
         # Patch __import__ to handle cProfile/pstats imports
         with patch("builtins.__import__") as mock_import:
             def side_effect(name, *args, **kwargs):
@@ -251,7 +250,7 @@ class TestPerformanceCommandExpanded:
                     mock_prof = MagicMock()
                     mock_prof_module.Profile.return_value = mock_prof
                     return mock_prof_module
-                elif name == "pstats":
+                if name == "pstats":
                     mock_pstats_module = MagicMock()
                     mock_stats = MagicMock()
                     mock_stats_instance = MagicMock()
@@ -261,9 +260,9 @@ class TestPerformanceCommandExpanded:
                     mock_pstats_module.Stats = mock_stats
                     return mock_pstats_module
                 return real_import(name, *args, **kwargs)
-            
+
             mock_import.side_effect = side_effect
-            
+
             # Mock _quick_disk_benchmark to return coroutine
             coro = mock_benchmark()
             with patch("ccbt.cli.advanced_commands._quick_disk_benchmark", return_value=coro):
@@ -274,7 +273,7 @@ class TestPerformanceCommandExpanded:
 
                 # Should handle exception gracefully
                 assert result.exit_code in [0, 1]
-            
+
             # Clean up coroutine
             with contextlib.suppress(Exception):
                 coro.close()

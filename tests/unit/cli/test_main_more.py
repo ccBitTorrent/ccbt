@@ -1,4 +1,5 @@
 import types
+
 from click.testing import CliRunner
 
 
@@ -30,7 +31,7 @@ def test_status_command_basic(monkeypatch):
     monkeypatch.setattr(status_module, "show_status", show_status)
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code == 0
 
 
@@ -54,7 +55,7 @@ def test_debug_command_basic(monkeypatch):
     monkeypatch.setattr(cli_main, "start_debug_mode", start_debug_mode)
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["debug"]) 
+    result = runner.invoke(cli_main.cli, ["debug"])
     assert result.exit_code == 0
 
 
@@ -69,7 +70,7 @@ def test_status_command_error_path(monkeypatch):
     monkeypatch.setattr(cli_main, "ConfigManager", DummyCfgMgr)
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code != 0
     assert "Error:" in result.output
 
@@ -139,7 +140,7 @@ def test_download_checkpoint_prompt_noninteractive(monkeypatch, tmp_path):
     import builtins
     import types as _types
     cm_mod = _types.ModuleType("ccbt.storage.checkpoint")
-    setattr(cm_mod, "CheckpointManager", DummyCkptMgr)
+    cm_mod.CheckpointManager = DummyCkptMgr
     builtins.__import__("ccbt.storage")
     import sys
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", cm_mod)
@@ -149,7 +150,7 @@ def test_download_checkpoint_prompt_noninteractive(monkeypatch, tmp_path):
     tf.write_bytes(b"d8:announce4:test4:infod3:key5:valuee")
 
     runner = CliRunner()
-    result = runner.invoke(cli_main.cli, ["download", str(tf), "--no-checkpoint"])  # disable to skip prompt path 
+    result = runner.invoke(cli_main.cli, ["download", str(tf), "--no-checkpoint"])  # disable to skip prompt path
     # Accept either success or graceful error depending on environment
     if result.exit_code != 0:
         assert "Error:" in result.output

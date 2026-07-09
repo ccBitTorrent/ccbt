@@ -85,6 +85,7 @@ class TestConnectionIDCollision:
     def test_collision_detection_no_collision(self, socket_manager):
         """Test that same ID, same address is not a collision."""
         from unittest.mock import MagicMock
+
         from ccbt.transport.utp import UTPPacket, UTPPacketType
 
         # Register connection
@@ -108,7 +109,7 @@ class TestConnectionIDCollision:
 
         # Should route to existing connection
         socket_manager._handle_incoming_packet(data, addr, ecn_ce=False)
-        
+
         # Verify packet was routed to connection (not dropped as collision)
         # _handle_packet is called with (packet_data: bytes, ecn_ce: bool)
         conn1._handle_packet.assert_called_once()
@@ -117,7 +118,7 @@ class TestConnectionIDCollision:
         # So data is positional, ecn_ce is keyword
         call_args, call_kwargs = conn1._handle_packet.call_args
         assert call_args[0] == data  # First positional arg should be the packet data
-        assert call_kwargs.get('ecn_ce') == False  # ecn_ce should be in kwargs
+        assert call_kwargs.get("ecn_ce") == False  # ecn_ce should be in kwargs
 
         # Connection should exist and packet should be handled
         key = (addr[0], addr[1], 12345)

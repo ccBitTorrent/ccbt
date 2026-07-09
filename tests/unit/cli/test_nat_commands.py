@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import ipaddress
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -307,7 +306,7 @@ class TestNATDiscover:
                     success=True,
                     data={"status": "discovered", "result": True}
                 )
-            elif command == "nat.status":
+            if command == "nat.status":
                 return MagicMock(
                     success=True,
                     data={"status": mock_nat_status}

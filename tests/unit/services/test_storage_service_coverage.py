@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import pytest_asyncio

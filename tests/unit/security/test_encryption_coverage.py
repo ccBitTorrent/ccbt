@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import struct
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -502,6 +502,7 @@ async def test_complete_handshake_emits_event():
     session = manager.encryption_sessions["peer_event"]
 
     import struct
+
     from ccbt.security.mse_handshake import CipherType
 
     cipher_type_map = {

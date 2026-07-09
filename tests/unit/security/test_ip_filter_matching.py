@@ -92,14 +92,14 @@ class TestIPFilterMatching:
     def test_statistics_tracking(self, ip_filter_block):
         """Test that statistics are properly tracked."""
         ip_filter_block.add_rule("192.168.1.0/24")
-        
+
         # Check matches counter
         ip_filter_block.is_blocked("192.168.1.10")
         assert ip_filter_block.stats["matches"] == 1
-        
+
         # Check blocks counter
         assert ip_filter_block.stats["blocks"] == 1
-        
+
         # Non-matching IP
         ip_filter_block.is_blocked("10.0.0.1")
         assert ip_filter_block.stats["matches"] == 2
@@ -111,7 +111,7 @@ class TestIPFilterMatching:
         ip_filter_block.add_rule("192.168.1.0/24", mode=FilterMode.BLOCK, priority=1)
         # Add allow rule with higher priority
         ip_filter_block.add_rule("192.168.1.10", mode=FilterMode.ALLOW, priority=2)
-        
+
         # With priority, allow should win, but current implementation
         # doesn't fully handle priority - it just checks if IP is in any range
         # This is expected behavior for now

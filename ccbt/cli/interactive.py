@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from ccbt.cli.ssl_posture import is_strict_ssl_posture
 from ccbt.i18n import _
 
 # region agent log
@@ -113,6 +114,7 @@ if TYPE_CHECKING:
     from ccbt.executor.session_adapter import SessionAdapter
 
 logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:  # pragma: no cover - TYPE_CHECKING imports not executed at runtime
     from ccbt.session.session import AsyncSessionManager
@@ -510,6 +512,16 @@ class InteractiveCLI:
             ),
             style="white",
         )
+        status_text.append("\n")
+        status_text.append(
+            _("Tip: full option catalog and file merge → "),
+            style="dim",
+        )
+        status_text.append("btbt config describe", style="cyan")
+        status_text.append(" / ", style="dim")
+        status_text.append("btbt config apply", style="cyan")
+        status_text.append(" / ", style="dim")
+        status_text.append("btbt config schema", style="cyan")
 
         return Panel(status_text, title=_("Status"))
 
@@ -1610,7 +1622,7 @@ Available Commands:
             if self.session and hasattr(self.session, "disk_io_manager"):
                 disk_io = self.session.disk_io_manager
             else:
-                # Fallback to deprecated singleton
+                # Fallback to compatibility singleton
                 from ccbt.storage.disk_io_init import get_disk_io_manager
 
                 with contextlib.suppress(Exception):
@@ -1980,11 +1992,46 @@ Available Commands:
         )
         table.add_row(
             "Enable Encryption",
-            "Yes" if getattr(cfg.network, "enable_encryption", False) else "No",
+            "Yes" if getattr(cfg.security, "enable_encryption", False) else "No",
             "Enable protocol encryption",
         )
+        security = getattr(cfg, "security", None)
+        if security is not None:
+            ssl_cfg = getattr(security, "ssl", None)
+            table.add_row(
+                "Tracker SSL",
+                "Yes" if getattr(ssl_cfg, "enable_ssl_trackers", False) else "No",
+                "Use HTTPS for tracker communication",
+            )
+            table.add_row(
+                "Peer SSL",
+                "Yes" if getattr(ssl_cfg, "enable_ssl_peers", False) else "No",
+                "Enable experimental peer TLS",
+            )
+            table.add_row(
+                "SSL Verify Certificates",
+                "Enabled"
+                if getattr(ssl_cfg, "ssl_verify_certificates", True)
+                else "Disabled",
+                "Verify TLS certificates for tracker/peer channels",
+            )
+            table.add_row(
+                "Allow Insecure Peers",
+                "Yes" if getattr(ssl_cfg, "ssl_allow_insecure_peers", False) else "No",
+                "Allow peers with invalid certificates",
+            )
 
         self.console.print(table)
+
+        if (
+            security is not None
+            and ssl_cfg is not None
+            and is_strict_ssl_posture(ssl_cfg)
+        ):
+            self.console.print(
+                "[yellow]Warning: certificate verification is disabled while SSL is"
+                " in strict posture[/yellow]"
+            )
 
     async def _show_network_stats(self) -> None:
         """Display network I/O statistics."""
@@ -2082,7 +2129,7 @@ Available Commands:
         cfg = get_config()
         table = Table(title=_("Network Optimization Recommendations"))
         table.add_column("Setting", style="cyan")
-        table.add_column("Current", style="yellow")
+        table.add_column(_("Current"), style="yellow")
         table.add_column("Recommended", style="green")
         table.add_column("Reason", style="dim")
 
@@ -2844,7 +2891,7 @@ Available Commands:
         self.console.print(_("[green]Imported configuration[/green]"))
 
     async def cmd_config_schema(self, args: list[str]) -> None:
-        """Show configuration JSON schema.
+        """Show configuration JSON schema (same data as ``btbt config schema``).
 
         Usage:
           config_schema [model]
@@ -2860,16 +2907,25 @@ Available Commands:
         self.console.print_json(data=json.loads(json.dumps(data)))
 
     async def cmd_config(self, args: list[str]) -> None:
-        """Show or modify configuration at runtime.
+        """Show or modify in-memory configuration at runtime.
 
         Usage:
           config show [section|key.path]
           config get <key.path>
           config set <key.path> <value>
           config reload
+
+        For every option path, defaults, and validated TOML edits, use the shell:
+        ``btbt config describe``, ``btbt config set``, ``btbt config apply``,
+        ``btbt config import``.
         """
         if not args:
-            self.console.print(_("Usage: config [show|get|set|reload] ..."))
+            self.console.print(
+                _(
+                    "Usage: config [show|get|set|reload] ...\n"
+                    "Shell: btbt config describe | apply | import | schema"
+                )
+            )
             return
         sub = args[0]
         cm = ConfigManager(None)

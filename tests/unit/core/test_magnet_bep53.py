@@ -385,6 +385,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -422,6 +423,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -455,6 +457,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -488,6 +491,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -526,6 +530,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -599,6 +604,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -632,6 +638,7 @@ class TestApplyMagnetFileSelection:
         # Note: This shouldn't happen since parsing validates, but test the error handling
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],

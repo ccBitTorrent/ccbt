@@ -21,8 +21,8 @@ else:
         DataProvider = None  # type: ignore[assignment, misc]
 
 try:
-    from textual.containers import Container, Vertical, Horizontal
-    from textual.widgets import Static, DataTable, Button, Input, Switch, Select
+    from textual.containers import Container, Horizontal, Vertical
+    from textual.widgets import Button, DataTable, Input, Select, Static, Switch
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
@@ -52,14 +52,14 @@ except ImportError:
     class Select:  # type: ignore[no-redef]
         pass
 
-from ccbt.i18n import _
 from ccbt.config.config_schema import ConfigSchema
-from ccbt.interface.screens.config.widgets import ConfigValueEditor
+from ccbt.i18n import _
 from ccbt.interface.screens.config.widget_factory import (
     create_config_widget,
     get_widget_value,
     validate_widget_value,
 )
+from ccbt.interface.screens.config.widgets import ConfigValueEditor
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         margin-right: 1;
     }
     """
-    
+
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("enter", "select", _("Select Section")),
         ("s", "save_config", _("Save Config")),
@@ -202,7 +202,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             else:
                 # For other config types, show placeholder
                 yield Static(_("Loading configuration..."), id="config-placeholder")
-        
+
         # Action buttons at bottom
         with Vertical(id="config-actions"):
             yield Button(_("Save Configuration"), id="save-button", variant="primary")
@@ -224,7 +224,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                             title=_("Global Configuration"),
                         )
                     )
-                # CRITICAL FIX: Ensure table receives focus
+                # Note: Ensure table receives focus
                 if self._sections_table:
                     self.call_later(self._sections_table.focus)  # type: ignore[attr-defined]
             else:
@@ -254,11 +254,11 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not self._sections_table:
             return
-        
+
         try:
             self._sections_table.add_columns(_("Section"), _("Description"), _("Modified"))
             self._sections_table.cursor_type = "row"
-            
+
             # Define config sections matching GlobalConfigMainScreen
             # (matching the sections list from GlobalConfigMainScreen.on_mount)
             sections = [
@@ -283,7 +283,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 ("ipfs", "IPFS protocol configuration"),
                 ("webtorrent", "WebTorrent protocol configuration"),
             ]
-            
+
             for section, description in sections:
                 self._sections_table.add_row(
                     section,
@@ -291,7 +291,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                     "",  # Modified status (empty for now)
                     key=section,
                 )
-            
+
             # Set cursor to first row if available
             if self._sections_table.row_count > 0:
                 self._sections_table.cursor_coordinate = (0, 0)
@@ -307,12 +307,12 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not self._sections_table or not hasattr(event, "row_key"):
             return
-        
+
         try:
             # Extract section name from row key
             row_key = event.row_key
             section = str(row_key) if row_key else None
-            
+
             if section:
                 self._selected_section = section
                 await self._show_section_info(section)
@@ -327,7 +327,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not self._sections_table:
             return
-        
+
         try:
             # Get the row key at cursor position
             cursor_row = event.cursor_row
@@ -348,16 +348,16 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not self._content_widget:
             return
-        
+
         try:
             from rich.panel import Panel
             from rich.table import Table
-            
+
             # Create info table
             table = Table(show_header=False, box=None, expand=True)
             table.add_column("Field", style="cyan", ratio=1)
             table.add_column("Value", style="green", ratio=2)
-            
+
             # Get section description
             section_descriptions = {
                 "network": "Network configuration (connections, timeouts, rate limits)",
@@ -381,15 +381,15 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 "ipfs": "IPFS protocol configuration",
                 "webtorrent": "WebTorrent protocol configuration",
             }
-            
+
             description = section_descriptions.get(section, _("Configuration section"))
-            
+
             table.add_row(_("Section"), section)
             table.add_row(_("Description"), description)
             table.add_row(_("Status"), _("Press Enter to configure this section"))
             table.add_row("", "")
             table.add_row(_("Note"), _("Full configuration editing requires navigating to the Global Config screen"))
-            
+
             self._content_widget.update(
                 Panel(
                     table,
@@ -405,10 +405,10 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         # If in editing mode, don't handle Enter (let inputs handle it)
         if self._editing_mode:
             return
-        
+
         if not self._sections_table:
             return
-        
+
         try:
             # Get selected section from cursor
             cursor_row = self._sections_table.cursor_row  # type: ignore[attr-defined]
@@ -440,7 +440,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not self._content_widget:
             return
-        
+
         try:
             # Map config types to sections
             section_map = {
@@ -450,18 +450,18 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 "security": "security",
                 "advanced": "advanced",
             }
-            
+
             if self._config_type in section_map:
                 # For mapped types, show section info
                 section = section_map[self._config_type]
                 from rich.panel import Panel
                 from rich.table import Table
-                
+
                 # Create a simple info table
                 table = Table(show_header=False, box=None, expand=True)
                 table.add_column(_("Info"), style="cyan", ratio=1)
                 table.add_column(_("Value"), style="green", ratio=2)
-                
+
                 descriptions = {
                     "network": _("Network configuration (connections, timeouts, rate limits)"),
                     "limits": _("Rate limit configuration (global and per-torrent)"),
@@ -469,11 +469,11 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                     "security": _("Security settings (encryption, IP filtering, SSL)"),
                     "advanced": _("Advanced configuration (experimental features)"),
                 }
-                
+
                 table.add_row(_("Section"), section)
                 table.add_row(_("Description"), descriptions.get(section, _("Configuration section")))
                 table.add_row(_("Status"), _("Click on 'Global' tab to configure this section"))
-                
+
                 self._content_widget.update(
                     Panel(
                         table,
@@ -503,7 +503,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 self.app.notify(error_msg, severity="error")  # type: ignore[attr-defined]
             logger.debug("ConfigWrapper: %s", error_msg)
             return
-        
+
         try:
             # Get current config with error handling
             try:
@@ -514,16 +514,16 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 if hasattr(self, "app"):
                     self.app.notify(error_msg, severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             if not result or not hasattr(result, "success") or not result.success:
                 error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
                 logger.debug("ConfigWrapper: Failed to get config: %s", error_msg)
                 if hasattr(self, "app"):
                     self.app.notify(_("Failed to get config: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             config_dict = result.data.get("config", {}) if result.data else {}
-            
+
             # Navigate to section in config dict
             section_parts = section.split(".")
             section_config = config_dict
@@ -534,54 +534,54 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                     if hasattr(self, "app"):
                         self.app.notify(_("Section '{section}' not found").format(section=section), severity="error")  # type: ignore[attr-defined]
                     return
-            
+
             if not isinstance(section_config, dict):
                 if hasattr(self, "app"):
                     self.app.notify(_("Section '{section}' is not a configuration section").format(section=section), severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             # Hide sections table and info, show editors
             if self._sections_table:
                 self._sections_table.display = False
             if self._content_widget:
                 self._content_widget.display = False
-            
+
             # Show editors container
             editors_widget = self.query_one("#config-editors", Vertical)  # type: ignore[attr-defined]
             editors_widget.display = True
             title_widget = self.query_one("#config-editors-title", Static)  # type: ignore[attr-defined]
             self._editors_container = self.query_one("#config-editors-container", Container)  # type: ignore[attr-defined]
             errors_widget = self.query_one("#config-editors-errors", Static)  # type: ignore[attr-defined]
-            
+
             # Clear existing editors
             self._editors_container.remove_children()  # type: ignore[attr-defined]
             self._editors.clear()
-            
+
             # Set title
             title_widget.update(_("Editing: {section}").format(section=section))
-            
+
             # Get section schema for metadata
             section_schema = ConfigSchema.get_schema_for_section(section_parts[0])
             section_properties = {}
             if section_schema and "properties" in section_schema:
                 section_properties = section_schema["properties"]
-            
+
             # Create editors for each config option (limit to first 20 to avoid overwhelming UI)
             editable_keys = sorted(section_config.keys())[:20]
             self._original_values = {}
-            
+
             for opt_key in editable_keys:
                 value = section_config[opt_key]
                 self._original_values[opt_key] = value
-                
+
                 # Get option metadata from schema
                 option_metadata = section_properties.get(opt_key)
-                
+
                 # Create label and widget using factory
                 try:
                     label = Static(f"{opt_key}:", id=f"label_{opt_key}")
                     self._editors_container.mount(label)  # type: ignore[attr-defined]
-                    
+
                     widget = create_config_widget(
                         option_key=opt_key,
                         current_value=value,
@@ -589,7 +589,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                         option_metadata=option_metadata,
                         id=f"editor_{opt_key}",
                     )
-                    
+
                     # Make widget focusable
                     widget.can_focus = True  # type: ignore[attr-defined]
                     self._editors[opt_key] = widget
@@ -597,20 +597,20 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 except Exception as e:
                     logger.debug("Error creating widget for %s: %s", opt_key, e)
                     continue
-            
+
             errors_widget.update("")
             self._editing_mode = True
             self._changed_values.clear()
-            
+
             # Show cancel button
             cancel_button = self.query_one("#cancel-button", Button)  # type: ignore[attr-defined]
             cancel_button.display = True
-            
+
             # Focus first editor if available
             if self._editors:
                 first_editor = next(iter(self._editors.values()))
                 first_editor.focus()  # type: ignore[attr-defined]
-            
+
         except Exception as e:
             logger.debug("Error loading section for editing: %s", e)
             if hasattr(self, "app"):
@@ -620,7 +620,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """Load per-torrent configuration for editing."""
         if not self._info_hash or not self._command_executor or not self._data_provider:
             return
-        
+
         try:
             # Get torrent status
             status = await self._data_provider.get_torrent_status(self._info_hash)
@@ -628,29 +628,29 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 errors_widget = self.query_one("#config-editors-errors", Static)  # type: ignore[attr-defined]
                 errors_widget.update(_("Torrent not found"))
                 return
-            
+
             # Get editors container
             self._editors_container = self.query_one("#config-editors-container", Container)  # type: ignore[attr-defined]
             if not self._editors_container:
                 return
-            
+
             # Clear existing editors
             self._editors_container.remove_children()  # type: ignore[attr-defined]
             self._editors.clear()
             self._original_values.clear()
             self._changed_values.clear()
-            
+
             # Create editable fields for per-torrent settings
             # Note: These would need to be fetched from config or torrent session
             # For now, we'll create placeholders that can be edited
-            
+
             # Download rate limit (in bytes/sec, 0 = unlimited)
             download_limit = status.get("download_rate_limit", 0)
             self._original_values["download_rate_limit"] = download_limit
-            
+
             label_dl = Static(_("Download Rate Limit (bytes/sec, 0 = unlimited):"), id="label_download_rate_limit")
             self._editors_container.mount(label_dl)  # type: ignore[attr-defined]
-            
+
             editor_dl = ConfigValueEditor(
                 option_key="download_rate_limit",
                 current_value=download_limit,
@@ -662,14 +662,14 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             editor_dl.can_focus = True  # type: ignore[attr-defined]
             self._editors["download_rate_limit"] = editor_dl
             self._editors_container.mount(editor_dl)  # type: ignore[attr-defined]
-            
+
             # Upload rate limit (in bytes/sec, 0 = unlimited)
             upload_limit = status.get("upload_rate_limit", 0)
             self._original_values["upload_rate_limit"] = upload_limit
-            
+
             label_ul = Static(_("Upload Rate Limit (bytes/sec, 0 = unlimited):"), id="label_upload_rate_limit")
             self._editors_container.mount(label_ul)  # type: ignore[attr-defined]
-            
+
             editor_ul = ConfigValueEditor(
                 option_key="upload_rate_limit",
                 current_value=upload_limit,
@@ -681,14 +681,14 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             editor_ul.can_focus = True  # type: ignore[attr-defined]
             self._editors["upload_rate_limit"] = editor_ul
             self._editors_container.mount(editor_ul)  # type: ignore[attr-defined]
-            
+
             # Priority (0 = normal, 1 = high, -1 = low)
             priority = status.get("priority", 0)
             self._original_values["priority"] = priority
-            
+
             label_prio = Static(_("Priority (0 = normal, 1 = high, -1 = low):"), id="label_priority")
             self._editors_container.mount(label_prio)  # type: ignore[attr-defined]
-            
+
             editor_prio = ConfigValueEditor(
                 option_key="priority",
                 current_value=priority,
@@ -700,28 +700,28 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             editor_prio.can_focus = True  # type: ignore[attr-defined]
             self._editors["priority"] = editor_prio
             self._editors_container.mount(editor_prio)  # type: ignore[attr-defined]
-            
+
             # Update title
             title_widget = self.query_one("#config-editors-title", Static)  # type: ignore[attr-defined]
             torrent_name = status.get("name", _("Unknown"))[:30]
             title_widget.update(_("Per-Torrent Configuration: {name}").format(name=torrent_name))
-            
+
             # Clear errors
             errors_widget = self.query_one("#config-editors-errors", Static)  # type: ignore[attr-defined]
             errors_widget.update("")
-            
+
             self._editing_mode = True
             self._selected_section = "torrent"  # Mark as torrent config
-            
+
             # Show cancel button
             cancel_button = self.query_one("#cancel-button", Button)  # type: ignore[attr-defined]
             cancel_button.display = True
-            
+
             # Focus first editor
             if self._editors:
                 first_editor = next(iter(self._editors.values()))
                 first_editor.focus()  # type: ignore[attr-defined]
-                
+
         except Exception as e:
             logger.debug("Error loading torrent config for editing: %s", e)
             if hasattr(self, "app"):
@@ -733,39 +733,38 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             if hasattr(self, "app"):
                 self.app.notify(_("Command executor not available"), severity="error")  # type: ignore[attr-defined]
             return
-        
+
         if not self._editing_mode or not self._selected_section:
             # Not in editing mode, show info
             if hasattr(self, "app"):
                 self.app.notify(_("No section selected for editing"), severity="info")  # type: ignore[attr-defined]
             return
-        
+
         # Validate all inputs before saving
         errors_widget = self.query_one("#config-editors-errors", Static)  # type: ignore[attr-defined]
         validation_errors: list[str] = []
-        
+
         for option_key, widget in self._editors.items():
             is_valid, error_msg = validate_widget_value(widget)
             if not is_valid:
                 validation_errors.append(f"{option_key}: {error_msg}")
                 if hasattr(widget, "add_class"):
                     widget.add_class("-invalid")  # type: ignore[attr-defined]
-            else:
-                if hasattr(widget, "remove_class"):
-                    widget.remove_class("-invalid")  # type: ignore[attr-defined]
-        
+            elif hasattr(widget, "remove_class"):
+                widget.remove_class("-invalid")  # type: ignore[attr-defined]
+
         if validation_errors:
             error_text = "\n".join(f"[red]•[/red] {err}" for err in validation_errors)
             errors_widget.update(f"[red]Validation errors (fix before saving):[/red]\n{error_text}")
             if hasattr(self, "app"):
                 self.app.notify(_("Please fix validation errors before saving"), severity="error")  # type: ignore[attr-defined]
             return
-        
+
         try:
             # Collect edited values (re-validate during collection)
             edited_values = {}
             parse_errors: list[str] = []
-            
+
             for key, widget in self._editors.items():
                 try:
                     # Re-validate before getting value
@@ -775,25 +774,25 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                         continue
                     edited_values[key] = get_widget_value(widget)
                 except Exception as e:
-                    parse_errors.append(f"{key}: {str(e)}")
-            
+                    parse_errors.append(f"{key}: {e!s}")
+
             if parse_errors:
                 error_text = "\n".join(f"[red]•[/red] {err}" for err in parse_errors)
                 errors_widget.update(f"[red]Parse errors (fix before saving):[/red]\n{error_text}")
                 if hasattr(self, "app"):
                     self.app.notify(_("Please fix parse errors before saving"), severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             # Handle per-torrent config differently
             if self._config_type == "torrent" and self._info_hash:
                 # Per-torrent config - use torrent-specific commands
                 save_results = []
-                
+
                 # Set rate limits if changed
                 if "download_rate_limit" in edited_values or "upload_rate_limit" in edited_values:
                     download_kib = edited_values.get("download_rate_limit", 0) // 1024
                     upload_kib = edited_values.get("upload_rate_limit", 0) // 1024
-                    
+
                     rate_result = await self._command_executor.execute_command(
                         "torrent.set_rate_limits",
                         info_hash=self._info_hash,
@@ -801,27 +800,27 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                         upload_kib=upload_kib,
                     )
                     save_results.append(("rate_limits", rate_result))
-                
+
                 # Set priority if changed
                 if "priority" in edited_values:
                     priority_value = edited_values["priority"]
                     # Map numeric priority to string
                     priority_map = {-1: "low", 0: "normal", 1: "high"}
                     priority_str = priority_map.get(priority_value, "normal")
-                    
+
                     priority_result = await self._command_executor.execute_command(
                         "queue.add",
                         info_hash=self._info_hash,
                         priority=priority_str,
                     )
                     save_results.append(("priority", priority_result))
-                
+
                 # Check if all saves succeeded
                 all_success = all(
                     result and hasattr(result, "success") and result.success
                     for _, result in save_results
                 )
-                
+
                 if all_success:
                     # Per-torrent configs don't require daemon restart (they're immediate)
                     update_result = type("Result", (), {"success": True, "data": {"restart_required": False}})()
@@ -844,13 +843,13 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                     current[part] = {}
                     current = current[part]
                 current[section_parts[-1]] = edited_values
-                
+
                 # Save via executor
                 update_result = await self._command_executor.execute_command(
                     "config.update",
                     config_dict=config_update
                 )
-            
+
             if update_result and hasattr(update_result, "success") and update_result.success:
                 restart_required = update_result.data.get("restart_required", False) if update_result.data else False
                 if restart_required:
@@ -866,23 +865,22 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                             severity="warning",
                             timeout=10.0,
                         )
-                else:
-                    if hasattr(self, "app"):
-                        self.app.notify(_("Configuration saved successfully"), severity="success")  # type: ignore[attr-defined]
-                
+                elif hasattr(self, "app"):
+                    self.app.notify(_("Configuration saved successfully"), severity="success")  # type: ignore[attr-defined]
+
                 # Update original values
                 self._original_values.update(edited_values)
-                
+
                 # Clear changed values tracking
                 self._changed_values.clear()
-                
+
                 # Remove change indicators from widgets
                 for widget in self._editors.values():
                     if hasattr(widget, "remove_class"):
                         widget.remove_class("-changed")  # type: ignore[attr-defined]
                         widget.remove_class("-invalid")  # type: ignore[attr-defined]
                         widget.add_class("-valid")  # type: ignore[attr-defined]
-                
+
                 # Clear errors
                 errors_widget = self.query_one("#config-editors-errors", Static)  # type: ignore[attr-defined]
                 errors_widget.update(_("Configuration saved successfully!"))
@@ -901,12 +899,12 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             # Hide editors, show sections table and info
             editors_widget = self.query_one("#config-editors", Vertical)  # type: ignore[attr-defined]
             editors_widget.display = False
-            
+
             if self._sections_table:
                 self._sections_table.display = True
             if self._content_widget:
                 self._content_widget.display = True
-            
+
             # Clear editors
             if self._editors_container:
                 self._editors_container.remove_children()  # type: ignore[attr-defined]
@@ -915,7 +913,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             self._changed_values.clear()
             self._editing_mode = False
             self._selected_section = None
-            
+
             # Hide cancel button
             cancel_button = self.query_one("#cancel-button", Button)  # type: ignore[attr-defined]
             cancel_button.display = False
@@ -939,22 +937,22 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not hasattr(event, "input") or not hasattr(event.input, "id"):
             return
-        
+
         try:
             widget_id = event.input.id
             if not widget_id or not widget_id.startswith("editor_"):
                 return
-            
+
             # Extract option key from widget ID
             option_key = widget_id.replace("editor_", "")
             widget = self._editors.get(option_key)
-            
+
             if not widget:
                 return
-            
+
             # Validate the widget
             is_valid, error_msg = validate_widget_value(widget)
-            
+
             # Update visual feedback (only for Input-based widgets)
             if hasattr(widget, "remove_class") and hasattr(widget, "add_class"):
                 if is_valid:
@@ -963,12 +961,12 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 else:
                     widget.remove_class("-valid")  # type: ignore[attr-defined]
                     widget.add_class("-invalid")  # type: ignore[attr-defined]
-            
+
             # Check if value has changed from original
             try:
                 current_value = get_widget_value(widget)
                 original_value = self._original_values.get(option_key)
-                
+
                 # Compare values (handle different types)
                 if current_value != original_value:
                     self._changed_values.add(option_key)
@@ -983,10 +981,10 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 self._changed_values.add(option_key)
                 if hasattr(widget, "add_class"):
                     widget.add_class("-changed")  # type: ignore[attr-defined]
-            
+
             # Update errors display
             await self._update_validation_errors()
-            
+
         except Exception as e:
             logger.debug("Error handling input change: %s", e)
 
@@ -998,22 +996,22 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not hasattr(event, "checkbox") or not hasattr(event.checkbox, "id"):
             return
-        
+
         try:
             widget_id = event.checkbox.id
             if not widget_id or not widget_id.startswith("editor_"):
                 return
-            
+
             option_key = widget_id.replace("editor_", "")
             widget = self._editors.get(option_key)
-            
+
             if not widget:
                 return
-            
+
             # Check if value has changed
             current_value = get_widget_value(widget)
             original_value = self._original_values.get(option_key)
-            
+
             if current_value != original_value:
                 self._changed_values.add(option_key)
                 if hasattr(widget, "add_class"):
@@ -1022,9 +1020,9 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 self._changed_values.discard(option_key)
                 if hasattr(widget, "remove_class"):
                     widget.remove_class("-changed")  # type: ignore[attr-defined]
-            
+
             await self._update_validation_errors()
-            
+
         except Exception as e:
             logger.debug("Error handling checkbox change: %s", e)
 
@@ -1036,22 +1034,22 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not hasattr(event, "select") or not hasattr(event.select, "id"):
             return
-        
+
         try:
             widget_id = event.select.id
             if not widget_id or not widget_id.startswith("editor_"):
                 return
-            
+
             option_key = widget_id.replace("editor_", "")
             widget = self._editors.get(option_key)
-            
+
             if not widget:
                 return
-            
+
             # Check if value has changed
             current_value = get_widget_value(widget)
             original_value = self._original_values.get(option_key)
-            
+
             if current_value != original_value:
                 self._changed_values.add(option_key)
                 if hasattr(widget, "add_class"):
@@ -1060,9 +1058,9 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 self._changed_values.discard(option_key)
                 if hasattr(widget, "remove_class"):
                     widget.remove_class("-changed")  # type: ignore[attr-defined]
-            
+
             await self._update_validation_errors()
-            
+
         except Exception as e:
             logger.debug("Error handling select change: %s", e)
 
@@ -1074,27 +1072,27 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         """
         if not hasattr(event, "input") or not hasattr(event.input, "id"):
             return
-        
+
         try:
             editor_id = event.input.id
             if not editor_id or not editor_id.startswith("editor_"):
                 return
-            
+
             # Extract option key from editor ID
             option_key = editor_id.replace("editor_", "")
             editor = self._editors.get(option_key)
-            
+
             if not editor:
                 return
-            
+
             # Validate and update
             is_valid, error_msg = editor.validate_value()
-            
+
             if is_valid:
                 # Move focus to next editor or save button
                 editors_list = list(self._editors.items())
                 current_idx = next((i for i, (k, _) in enumerate(editors_list) if k == option_key), -1)
-                
+
                 if current_idx >= 0 and current_idx < len(editors_list) - 1:
                     # Focus next editor
                     next_key, next_editor = editors_list[current_idx + 1]
@@ -1106,7 +1104,7 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
             else:
                 # Show error and keep focus
                 await self._update_validation_errors()
-                
+
         except Exception as e:
             logger.debug("Error handling input submission: %s", e)
 
@@ -1115,25 +1113,24 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         try:
             errors_widget = self.query_one("#config-editors-errors", Static)  # type: ignore[attr-defined]
             errors: list[str] = []
-            
+
             # Collect validation errors from all editors
             for option_key, editor in self._editors.items():
                 is_valid, error_msg = editor.validate_value()
                 if not is_valid:
                     errors.append(f"{option_key}: {error_msg}")
-            
+
             if errors:
                 error_text = "\n".join(f"[red]•[/red] {err}" for err in errors)
                 errors_widget.update(error_text)
+            # Show changed values count if any
+            elif self._changed_values:
+                errors_widget.update(
+                    f"[yellow]{len(self._changed_values)} value(s) changed. Press 's' to save or 'Escape' to cancel.[/yellow]"
+                )
             else:
-                # Show changed values count if any
-                if self._changed_values:
-                    errors_widget.update(
-                        f"[yellow]{len(self._changed_values)} value(s) changed. Press 's' to save or 'Escape' to cancel.[/yellow]"
-                    )
-                else:
-                    errors_widget.update("")
-                    
+                errors_widget.update("")
+
         except Exception as e:
             logger.debug("Error updating validation errors: %s", e)
 

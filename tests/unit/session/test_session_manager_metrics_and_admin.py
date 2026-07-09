@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 
 
@@ -14,6 +13,7 @@ async def test_set_rate_limits_and_stats_aggregation(monkeypatch):
     # Inject a dummy torrent session with required properties
     class _Dummy:
         def __init__(self):
+            self.info = type("Info", (), {"status": "downloading"})()
             self._status = {
                 "status": "downloading",
                 "download_rate": 2.5,

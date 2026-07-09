@@ -138,11 +138,18 @@ class SSLContextBuilder:
 
         return context
 
-    def create_peer_context(self, verify_hostname: bool = False) -> ssl.SSLContext:
+    def create_peer_context(
+        self,
+        verify_hostname: bool = False,
+        peer_opportunistic: Optional[bool] = None,
+        peer_strict: Optional[bool] = None,
+    ) -> ssl.SSLContext:
         """Create SSL context for peer connections.
 
         Args:
-            verify_hostname: Whether to verify peer hostname
+            verify_hostname: Backward-compatible strict hostname toggle.
+            peer_opportunistic: Explicitly create an opportunistic peer TLS context.
+            peer_strict: Explicitly create a stricter peer TLS context.
 
         Returns:
             Configured SSL context for peer connections
@@ -150,15 +157,32 @@ class SSLContextBuilder:
         """
         ssl_config = self.config.security.ssl
 
+        # Keep backward-compatible behavior: verify_hostname=True implies strict mode.
+        # Without explicit mode, use global insecure-peer policy for opportunistic mode.
+        if peer_opportunistic is None and peer_strict is None:
+            peer_strict = verify_hostname
+            peer_opportunistic = (
+                not verify_hostname
+            ) and ssl_config.ssl_allow_insecure_peers
+
+        peer_strict = False if peer_strict is None else peer_strict
+        peer_opportunistic = False if peer_opportunistic is None else peer_opportunistic
+        if peer_opportunistic and peer_strict:
+            msg = (
+                "peer_opportunistic and peer_strict are mutually exclusive for peer "
+                "TLS contexts"
+            )
+            raise ValueError(msg)
+
         # Create default context
         context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
 
         # For peers, verification is optional (opportunistic encryption)
         # Must set check_hostname BEFORE verify_mode when disabling verification
-        if ssl_config.ssl_verify_certificates and verify_hostname:
+        if peer_strict:
             context.verify_mode = ssl.CERT_REQUIRED
-            context.check_hostname = True
-        elif ssl_config.ssl_allow_insecure_peers:
+            context.check_hostname = ssl_config.ssl_verify_certificates
+        elif peer_opportunistic:
             # Allow peers with invalid certificates for opportunistic encryption
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE

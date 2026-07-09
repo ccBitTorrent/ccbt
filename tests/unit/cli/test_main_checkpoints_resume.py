@@ -16,15 +16,13 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from types import SimpleNamespace, ModuleType
+import importlib
 import sys
-from typing import Any
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -62,10 +60,10 @@ def test_checkpoints_list_empty(monkeypatch, tmp_path):
         async def list_checkpoints(self, *args, **kwargs):
             return []
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
-    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"])
     assert result.exit_code == 0
     assert "No checkpoints found" in result.output
 
@@ -91,11 +89,11 @@ def test_checkpoints_list_non_empty(monkeypatch):
         async def list_checkpoints(self, *args, **kwargs):
             return [_CP()]
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "list", "--format", "both"])
     assert result.exit_code == 0
     assert "Available Checkpoints" in result.output
 
@@ -120,10 +118,10 @@ def test_checkpoints_clean_dry_run(monkeypatch):
             # One ancient, one recent
             return [_CP(0), _CP(10**12)]
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
-    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--dry-run", "--days", "1"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--dry-run", "--days", "1"])
     assert result.exit_code == 0
     assert "Would delete" in result.output or "No checkpoints older" in result.output
 
@@ -141,11 +139,11 @@ def test_checkpoints_clean_actual(monkeypatch):
         async def cleanup_old_checkpoints(self, days: int):
             return 3
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--days", "7"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "clean", "--days", "7"])
     assert result.exit_code == 0
     assert "Cleaned up 3 old checkpoints" in result.output
 
@@ -161,11 +159,11 @@ def test_checkpoints_delete_invalid_hash(monkeypatch):
 
         async def delete_checkpoint(self, *_a, **_k):
             return False
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Invalid hex string
-    result = runner.invoke(cli_main.cli, ["checkpoints", "delete", "not-hex"]) 
+    result = runner.invoke(cli_main.cli, ["checkpoints", "delete", "not-hex"])
     assert result.exit_code != 0
     assert "Invalid info hash format" in result.output
 
@@ -181,7 +179,7 @@ def test_checkpoints_verify_valid_and_invalid(monkeypatch):
 
         async def verify_checkpoint(self, info_hash: bytes):
             return info_hash.startswith(b"\x00")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Patch asyncio.run to consume the coroutine
@@ -208,7 +206,7 @@ def test_checkpoints_delete_valid_and_missing(monkeypatch):
         async def delete_checkpoint(self, ih: bytes):
             return ih.startswith(b"\x00")
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -245,7 +243,7 @@ def test_checkpoints_export_backup_restore_migrate_minimal_paths(monkeypatch, tm
         async def convert_checkpoint_format(self, *_a, **_k):
             return tmp_path / "migrated.cp"
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
@@ -316,7 +314,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
             return False
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     sys.modules["ccbt.storage.checkpoint"] = fake_mod
 
     # Skip CLI resume due to environment-specific Click signature handling; exercise direct helper paths elsewhere
@@ -346,7 +344,7 @@ def test_resume_missing_checkpoint_and_config_show(monkeypatch):
             return False
 
     fake_mod2 = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod2, "CheckpointManager", _CPM2)
+    fake_mod2.CheckpointManager = _CPM2
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod2)
 
     # Skip CLI resume in this test; covered via helper tests

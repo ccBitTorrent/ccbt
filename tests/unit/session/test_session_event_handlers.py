@@ -1,7 +1,8 @@
 """Tests for session event handlers."""
 
-import pytest
 import time
+
+import pytest
 
 from ccbt.models import TorrentCheckpoint
 
@@ -120,17 +121,17 @@ async def test_on_piece_verified_saves_checkpoint_when_configured(monkeypatch, t
         def __init__(self):
             from ccbt.piece.async_piece_manager import PieceState
             self.state = PieceState.VERIFIED
-        
+
         def is_complete(self):
             return True
-        
+
         def get_data(self):
             return b"x" * 16384
-    
+
     class _PM:
         def __init__(self):
             self.pieces = [_MockPiece()]  # Mock pieces list for length check
-        
+
         async def get_checkpoint_state(self, name, ih, path):
             return TorrentCheckpoint(
                 info_hash=b"1" * 20,
@@ -155,7 +156,7 @@ async def test_on_piece_verified_saves_checkpoint_when_configured(monkeypatch, t
     session = AsyncTorrentSession(td, str(tmp_path))
     session.checkpoint_manager = _CPM()
     session.piece_manager = _PM()
-    # CRITICAL FIX: Update ctx.piece_manager to match session.piece_manager
+    # Note: Update ctx.piece_manager to match session.piece_manager
     # The CheckpointController uses ctx.piece_manager, not session.piece_manager
     session.ctx.piece_manager = session.piece_manager
     session.config.disk.checkpoint_enabled = True
@@ -176,17 +177,17 @@ async def test_on_piece_verified_handles_save_error(monkeypatch, tmp_path):
         def __init__(self):
             from ccbt.piece.async_piece_manager import PieceState
             self.state = PieceState.VERIFIED
-        
+
         def is_complete(self):
             return True
-        
+
         def get_data(self):
             return b"x" * 16384
-    
+
     class _PM:
         def __init__(self):
             self.pieces = [_MockPiece()]  # Mock pieces list for length check
-        
+
         async def get_checkpoint_state(self, name, ih, path):
             raise RuntimeError("save failed")
 
@@ -242,7 +243,7 @@ async def test_resume_from_checkpoint_in_session_loads_state(monkeypatch, tmp_pa
     class _FA:
         async def verify_existing_pieces(self, checkpoint):
             return {"valid": True}
-        
+
         def get_written_pieces(self):
             return set()
 

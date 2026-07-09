@@ -198,15 +198,20 @@ class AsyncDownloadManager:
                 if hasattr(self.peer_manager, "connections")
                 else 0
             )
-            self.logger.info(
+            self.logger.debug(
                 "Peer manager already exists with %d connections - reusing",
                 existing_connections,
             )
             await self.piece_manager.start_download(self.peer_manager)
             self._download_started = True
             if peers:
-                await self.peer_manager.connect_to_peers(peers)
-            self.logger.info(
+                submit = await self.peer_manager.connect_to_peers(peers)
+                if getattr(submit, "status", None) == "queued_reentrant":
+                    self.logger.debug(
+                        "Reused peer manager queued_reentrant (queue_depth=%s)",
+                        getattr(submit, "queue_depth_after", None),
+                    )
+            self.logger.debug(
                 "Download started successfully (reused existing peer manager)"
             )
             return
@@ -239,7 +244,7 @@ class AsyncDownloadManager:
         self.peer_manager.on_piece_received = self._on_piece_received
         self.peer_manager.on_bitfield_received = self._on_bitfield_received
 
-        # CRITICAL FIX: Propagate callbacks to existing connections if any exist
+        # Note: Propagate callbacks to existing connections if any exist
         # This handles the case where connections are created before callbacks are registered
         # The property setters will automatically propagate, but we also do it explicitly here
         # to ensure it happens immediately
@@ -265,7 +270,7 @@ class AsyncDownloadManager:
                 )
 
         self.piece_manager.on_piece_completed = self._on_piece_completed
-        # CRITICAL FIX: Don't override on_piece_verified if it's already set by session
+        # Note: Don't override on_piece_verified if it's already set by session
         # The session's callback writes to disk, this one just broadcasts HAVE
         # Only set if not already set (session will set it before start_download is called)
         # Check if callback exists and is not None - if session set it, keep it
@@ -294,12 +299,17 @@ class AsyncDownloadManager:
 
         # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see peer connection details
         self.logger.debug("Connecting to %s peers...", len(peers))
-        await self.peer_manager.connect_to_peers(peers)
+        submit = await self.peer_manager.connect_to_peers(peers)
+        if getattr(submit, "status", None) == "queued_reentrant":
+            self.logger.debug(
+                "Initial connect queued_reentrant (queue_depth=%s)",
+                getattr(submit, "queue_depth_after", None),
+            )
         # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see piece download start
         self.logger.debug("Starting piece download...")
         await self.piece_manager.start_download(self.peer_manager)
         self._download_started = True
-        self.logger.info("Download started successfully!")
+        self.logger.debug("Download started successfully!")
 
     def _calculate_rates(self) -> tuple[float, float]:
         current_time = time.time()
@@ -405,7 +415,7 @@ class AsyncDownloadManager:
             if bitfield_message and bitfield_message.bitfield
             else 0
         )
-        self.logger.info(
+        self.logger.debug(
             "Received bitfield from %s (bitfield length=%d bytes)",
             connection.peer_info,
             bitfield_length,
@@ -416,7 +426,7 @@ class AsyncDownloadManager:
             and bitfield_message
             and hasattr(self.piece_manager, "update_peer_availability")
         ):
-            self.logger.info(
+            self.logger.debug(
                 "Updating piece manager with peer availability for %s",
                 connection.peer_info,
             )
@@ -427,7 +437,7 @@ class AsyncDownloadManager:
                         str(connection.peer_info),
                         bitfield_message.bitfield,
                     )
-                    self.logger.info(
+                    self.logger.debug(
                         "Successfully updated peer availability for %s",
                         connection.peer_info,
                     )
@@ -516,14 +526,17 @@ class AsyncDownloadManager:
 
     def _on_piece_received(self, connection, piece_message) -> None:
         """Handle received piece block from peer."""
-        # CRITICAL FIX: Log at INFO level to track piece reception (suppress during shutdown)
+        # Note: Log at INFO level to track piece reception (suppress during shutdown)
         from ccbt.utils.shutdown import is_shutting_down
 
+        peer_key = self._resolve_peer_key_for_piece_updates(connection)
+        peer_label = peer_key or "unknown_peer"
+
         if not is_shutting_down():
-            self.logger.info(
+            self.logger.debug(
                 "DOWNLOAD_MANAGER: Received piece %d block from %s (offset=%d, size=%d bytes)",
                 piece_message.piece_index,
-                connection.peer_info,
+                peer_label,
                 piece_message.begin,
                 len(piece_message.block),
             )
@@ -532,39 +545,69 @@ class AsyncDownloadManager:
             self.logger.debug(
                 "DOWNLOAD_MANAGER: Received piece %d block from %s (shutdown in progress)",
                 piece_message.piece_index,
-                connection.peer_info,
+                peer_label,
             )
 
         if not self.piece_manager:
             self.logger.warning(
                 "Received piece %d from %s but piece_manager is None!",
                 piece_message.piece_index,
-                connection.peer_info,
+                peer_label,
             )
             return
+        piece_manager = typing.cast("AsyncPieceManager", self.piece_manager)
 
-        # Update peer availability
-        task = asyncio.create_task(
-            self.piece_manager.update_peer_have(
-                str(connection.peer_info),
-                piece_message.piece_index,
-            ),
-        )
+        # Update peer availability (best-effort + isolated failures)
+        async def _safe_update_peer_have() -> None:
+            try:
+                await piece_manager.update_peer_have(
+                    peer_label,
+                    piece_message.piece_index,
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to update peer availability for piece %d from peer %s",
+                    piece_message.piece_index,
+                    peer_label,
+                )
+
+        task = asyncio.create_task(_safe_update_peer_have())
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
         # Handle the piece block with peer information for performance tracking
-        peer_key = f"{connection.peer_info.ip}:{connection.peer_info.port}"
-        task = asyncio.create_task(
-            self.piece_manager.handle_piece_block(
-                piece_message.piece_index,
-                piece_message.begin,
-                piece_message.block,
-                peer_key=peer_key,
-            ),
-        )
+        async def _safe_handle_piece_block() -> None:
+            try:
+                await piece_manager.handle_piece_block(
+                    piece_message.piece_index,
+                    piece_message.begin,
+                    piece_message.block,
+                    peer_key=peer_key,
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to handle piece block %d from peer %s",
+                    piece_message.piece_index,
+                    peer_label,
+                )
+
+        task = asyncio.create_task(_safe_handle_piece_block())
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+
+    @staticmethod
+    def _resolve_peer_key_for_piece_updates(connection: Any) -> Optional[str]:
+        """Resolve a stable peer key for piece metadata updates."""
+        peer_info = getattr(connection, "peer_info", None)
+        if peer_info is None:
+            peer_key = getattr(connection, "peer_key", None)
+            return str(peer_key) if peer_key else None
+
+        ip = getattr(peer_info, "ip", None)
+        port = getattr(peer_info, "port", None)
+        if ip is not None and port is not None:
+            return f"{ip}:{port}"
+        return str(peer_info) if peer_info else None
 
     def _on_piece_completed(self, piece_index: int) -> None:
         # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see individual piece completion
@@ -599,7 +642,7 @@ async def _announce_to_trackers(
         announce = torrent_data.get("announce")
         if announce:
             tracker_urls = [announce]
-    # CRITICAL FIX: Filter out empty, None, and invalid URLs before announcing
+    # Note: Filter out empty, None, and invalid URLs before announcing
     # This prevents announce attempts to invalid trackers
     tracker_urls = [
         url.strip()
@@ -632,7 +675,7 @@ async def _announce_to_trackers(
         )
 
         for response in responses:
-            # CRITICAL FIX: Handle None response (UDP tracker client unavailable)
+            # Note: Handle None response (UDP tracker client unavailable)
             if response is None:
                 continue
             if not hasattr(response, "peers") or not response.peers:
@@ -748,7 +791,7 @@ async def download_magnet(
                             port=get_config().network.listen_port,
                             event="started",
                         )
-                        # CRITICAL FIX: Handle None response (UDP tracker client unavailable)
+                        # Note: Handle None response (UDP tracker client unavailable)
                         if response is None:
                             continue
                         if not hasattr(response, "peers") or not response.peers:
@@ -801,7 +844,7 @@ async def download_magnet(
                     )
                     seen_peers: set[tuple[str, int]] = set()
                     for response in responses:
-                        # CRITICAL FIX: Handle None response (UDP tracker client unavailable)
+                        # Note: Handle None response (UDP tracker client unavailable)
                         if response is None:
                             continue
                         if not hasattr(response, "peers") or not response.peers:

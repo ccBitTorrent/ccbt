@@ -1,16 +1,18 @@
 """Configuration management CLI commands for ccBitTorrent.
 
-Adds commands:
-- config show
-- config get
-- config set
-- config reset
-- config validate
-- config migrate
+Core commands:
+
+- ``config show`` / ``get`` / ``set`` / ``apply`` / ``describe`` / ``reset``
+- ``config validate`` / ``migrate``
+
+Extended commands (same ``btbt config`` group; see ``config_commands_extended``) are
+registered when this module finishes loading: ``schema``, ``import``, ``export``,
+``template``, ``profile``, ``backup``, ``restore``, ``diff``, ``auto-tune``, etc.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -20,9 +22,13 @@ from typing import Optional, Union
 import click
 import toml
 
+from ccbt.cli.config_group import config
 from ccbt.cli.config_utils import requires_daemon_restart, restart_daemon_if_needed
 from ccbt.config.config import ConfigManager
+from ccbt.config.config_cli_values import parse_cli_config_value, set_nested_dict
+from ccbt.config.config_schema import ConfigDiscovery
 from ccbt.i18n import _
+from ccbt.utils.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -104,38 +110,52 @@ def _should_skip_project_local_write(
     return False
 
 
-@click.group()
-def config():
-    """Manage configuration commands."""
-
-
 @config.command("show")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml"]),
     default="toml",
 )
 @click.option(
     "--section",
+    "-S",
     type=str,
     default=None,
     help=_("Show specific section key path (e.g. network)"),
 )
 @click.option(
     "--key",
+    "-k",
     type=str,
     default=None,
     help=_("Show specific key path (e.g. network.listen_port)"),
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def show_config(
     format_: str,
     section: Optional[str],
     key: Optional[str],
     config_file: Optional[str],
 ):
-    """Show current configuration in the desired format."""
+    """Show effective configuration (merged file, environment, and defaults).
+
+    This prints resolved values only. For every option path with types and defaults,
+    use ``btbt config describe`` (add ``--include-current`` to compare). For JSON
+    Schema, use ``btbt config schema``. To merge a patch file into ``ccbt.toml``,
+    use ``btbt config apply``.
+
+    MSE / peer encryption (effective values): ``btbt config security-posture`` or
+    ``btbt config show -S security -f json`` (see ``security.enable_encryption``,
+    ``encryption_mode``) and ``network.enable_encryption`` (mirror).
+    """
     cm = ConfigManager(config_file)
     data = cm.config.model_dump(mode="json")
     # filter by section/key
@@ -172,11 +192,78 @@ def show_config(
         click.echo(toml.dumps(data))
 
 
+@config.command("security-posture")
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
+def security_posture(config_file: Optional[str]):
+    """Print effective MSE/PE and related security fields (file + env merged).
+
+    Same merge order as ``config show``. Use this to verify why the session logs
+    ``mse_enabled=`` (maps to ``security.enable_encryption``).
+    """
+    cm = ConfigManager(config_file)
+    sec = cm.config.security
+    net = cm.config.network
+    out = {
+        "security.enable_encryption": sec.enable_encryption,
+        "security.encryption_mode": sec.encryption_mode,
+        "security.encryption_allow_plain_fallback": sec.encryption_allow_plain_fallback,
+        "security.encryption_dh_key_size": sec.encryption_dh_key_size,
+        "network.enable_encryption": net.enable_encryption,
+        "network.peer_quality_probation_timeout": net.peer_quality_probation_timeout,
+    }
+    click.echo(json.dumps(out, indent=2))
+
+
+@config.command("peer-cap-provenance")
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
+def peer_cap_provenance(config_file: Optional[str]) -> None:
+    """Print max_peers_per_torrent resolution chain (file → profile → env → clamp).
+
+    Same merge path as ``config show``. Does not include per-torrent overrides
+    (those apply when a torrent session binds its peer manager).
+    """
+    cm = ConfigManager(config_file)
+    prov = cm.max_peers_per_torrent_provenance
+    if prov is None:
+        click.echo(
+            json.dumps(
+                {
+                    "error": "peer_cap_provenance_unavailable",
+                    "hint": "Load failed before provenance was recorded.",
+                },
+                indent=2,
+            )
+        )
+        return
+    click.echo(json.dumps(prov.model_dump(mode="json"), indent=2))
+
+
 @config.command("get")
 @click.argument("key")
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def get_value(key: str, config_file: Optional[str]):
-    """Get a specific configuration value by dotted path."""
+    """Get one effective value by dotted path (same merge as ``config show``).
+
+    See ``btbt config describe`` for all valid paths and defaults.
+    """
     cm = ConfigManager(config_file)
     data = cm.config.model_dump(mode="json")
     ref = data
@@ -189,24 +276,160 @@ def get_value(key: str, config_file: Optional[str]):
         raise click.ClickException(msg) from None
 
 
+@config.command("describe")
+@click.option(
+    "--format",
+    "-f",
+    "format_",
+    type=click.Choice(["table", "json", "yaml"]),
+    default="table",
+    help=_("Output format for the option catalog"),
+)
+@click.option(
+    "--section",
+    "-S",
+    type=str,
+    default=None,
+    help=_("Only options in this top-level section (e.g. network)"),
+)
+@click.option(
+    "--path-prefix",
+    "-p",
+    type=str,
+    default=None,
+    help=_("Only paths starting with this prefix"),
+)
+@click.option(
+    "--include-current",
+    "-i",
+    is_flag=True,
+    help=_("Include effective runtime value from loaded config (file + env)"),
+)
+@click.option("-o", "--output", type=click.Path(), default=None)
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
+def describe_config(
+    format_: str,
+    section: Optional[str],
+    path_prefix: Optional[str],
+    include_current: bool,
+    output: Optional[str],
+    config_file: Optional[str],
+):
+    """List all configuration options (nested paths), types, defaults, descriptions.
+
+    Complements ``config show`` / ``config get`` (values only) and
+    ``btbt config schema`` (full JSON Schema). To change values use ``config set``
+    or ``config apply`` / ``config import --mode merge``.
+    """
+    from ccbt.config.config_cli_values import get_nested_value
+
+    rows = ConfigDiscovery.list_all_options_nested()
+    if section:
+        rows = [
+            r
+            for r in rows
+            if r["section"] == section or r["path"].startswith(f"{section}.")
+        ]
+    if path_prefix:
+        rows = [r for r in rows if r["path"].startswith(path_prefix)]
+
+    current_data: dict = {}
+    if include_current:
+        cm = ConfigManager(config_file)
+        current_data = cm.config.model_dump(mode="json")
+        for r in rows:
+            r["current"] = get_nested_value(current_data, r["path"])
+
+    if format_ == "json":
+        out = json.dumps(rows, indent=2, default=str)
+    elif format_ == "yaml":
+        try:
+            import yaml
+        except ImportError as e:
+            raise click.ClickException(_("PyYAML is required for YAML output")) from e
+        out = yaml.safe_dump(rows, sort_keys=False)
+    else:
+        from rich.console import Console
+        from rich.table import Table
+
+        table = Table(title=_("Configuration options"))
+        table.add_column(_("Path"), style="cyan", no_wrap=True)
+        table.add_column(_("Type"), style="green")
+        table.add_column(_("Required"), style="yellow")
+        table.add_column(_("Default"), max_width=36)
+        if include_current:
+            table.add_column(_("Current"), max_width=36)
+        table.add_column(_("Description"), max_width=48)
+        for r in rows:
+            row_cells = [
+                r["path"],
+                str(r["type"]),
+                _("yes") if r["required"] else _("no"),
+                json.dumps(r["default"], default=str)
+                if r["default"] is not None
+                else "",
+            ]
+            if include_current:
+                cur = r.get("current", None)
+                row_cells.append(
+                    json.dumps(cur, default=str) if cur is not None else ""
+                )
+            row_cells.append((r.get("description") or "")[:2000])
+            table.add_row(*row_cells)
+        console = Console(record=True)
+        console.print(table)
+        out = console.export_text()
+
+    if output:
+        Path(output).write_text(out, encoding="utf-8")
+        click.echo(_("Wrote catalog to {path}").format(path=output))
+    else:
+        click.echo(out)
+
+
 @config.command("set")
 @click.argument("key")
-@click.argument("value")
+@click.argument("value", required=False, default=None)
+@click.option(
+    "--value",
+    "-V",
+    "value_opt",
+    default=None,
+    help=_(
+        "Value to set (use for strings with spaces or JSON); overrides positional VALUE"
+    ),
+)
+@click.option(
+    "--dry-run",
+    "-n",
+    "dry_run",
+    is_flag=True,
+    help=_("Validate only; do not write the config file"),
+)
 @click.option(
     "--global",
+    "-G",
     "global_flag",
     is_flag=True,
     help=_("Set value in global config file"),
 )
 @click.option(
     "--local",
+    "-L",
     "local_flag",
     is_flag=True,
     help=_("Set value in project local ccbt.toml"),
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -214,6 +437,7 @@ def get_value(key: str, config_file: Optional[str]):
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -221,7 +445,9 @@ def get_value(key: str, config_file: Optional[str]):
 )
 def set_value(
     key: str,
-    value: str,
+    value: Optional[str],
+    value_opt: Optional[str],
+    dry_run: bool,
     global_flag: bool,
     local_flag: bool,
     config_file: Optional[str],
@@ -230,8 +456,23 @@ def set_value(
 ):
     """Set a configuration value and persist to TOML file.
 
+    Values are parsed as JSON when valid (numbers, booleans, arrays, objects).
+    Otherwise booleans, numbers, comma-separated lists (for known list paths), or strings.
+
     Precedence for destination: --config > --local (./ccbt.toml) > --global (~/.config/ccbt/ccbt.toml)
+
+    After writing, effective runtime config still follows normal precedence: environment
+    variables can override the same keys from the file. Use ``btbt config describe`` to
+    list paths; use ``btbt config apply`` for multi-key patches.
     """
+    raw = value_opt if value_opt is not None else value
+    if raw is None:
+        raise click.UsageError(
+            _(
+                "Provide a VALUE argument or use --value=... for values with spaces or JSON"
+            )
+        )
+
     # choose target file
     if config_file:
         target = Path(config_file)
@@ -251,35 +492,31 @@ def set_value(
         except Exception:
             current = {}
 
-    def parse_value(raw: str):
-        low = raw.lower()
-        if low in {"true", "1", "yes", "on"}:
-            return True
-        if low in {"false", "0", "no", "off"}:
-            return False
-        try:
-            if "." in raw:
-                return float(raw)
-            return int(raw)
-        except ValueError:
-            return raw
+    proposed = copy.deepcopy(current)
+    parsed = parse_cli_config_value(raw, key)
+    set_nested_dict(proposed, key, parsed)
 
-    parts = key.split(".")
-    ref = current
-    for p in parts[:-1]:
-        ref = ref.setdefault(p, {})
-    ref[parts[-1]] = parse_value(value)
+    validate_path = str(target) if target.exists() else config_file
+    validate_cm = ConfigManager(validate_path)
+    try:
+        validate_cm.simulate_load_from_file_dict(proposed)
+    except ConfigurationError as e:
+        raise click.ClickException(str(e)) from e
 
     # Safety: avoid overwriting project-local config during tests
     if _should_skip_project_local_write(target, config_file):
         click.echo(_("OK"))  # pragma: no cover - Test mode protection path
         return  # pragma: no cover - Test mode protection path
 
+    if dry_run:
+        click.echo(_("OK (dry-run — configuration is valid)"))
+        return
+
     # Load old config before modification
     old_config_manager = ConfigManager(config_file)
     old_config = old_config_manager.config
 
-    target.write_text(toml.dumps(current), encoding="utf-8")
+    target.write_text(toml.dumps(proposed), encoding="utf-8")
     click.echo(str(target))
 
     # Check if restart is needed
@@ -306,13 +543,41 @@ def set_value(
         # Don't fail the command if restart check fails
 
 
-@config.command("reset")
-@click.option("--section", type=str, default=None)
-@click.option("--key", type=str, default=None)
-@click.option("--confirm", is_flag=True, help=_("Skip confirmation prompt"))
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@config.command("apply")
+@click.argument("input_file", required=False, type=click.Path(exists=True))
+@click.option(
+    "--format",
+    "-f",
+    "format_",
+    type=click.Choice(["toml", "json", "yaml", "auto"]),
+    default="auto",
+    help=_("Patch file format (auto: infer from extension or try JSON then TOML)"),
+)
+@click.option(
+    "--global",
+    "-G",
+    "global_flag",
+    is_flag=True,
+    help=_("Write merged config to global config file"),
+)
+@click.option(
+    "--local",
+    "-L",
+    "local_flag",
+    is_flag=True,
+    help=_("Write merged config to project local ccbt.toml"),
+)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
+@click.option(
+    "--dry-run",
+    "-n",
+    "dry_run",
+    is_flag=True,
+    help=_("Validate merged file overlay only; do not write"),
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -320,6 +585,146 @@ def set_value(
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
+    "no_restart_daemon_flag",
+    is_flag=True,
+    default=None,
+    help=_("Skip daemon restart even if needed"),
+)
+def apply_config_patch(
+    input_file: Optional[str],
+    format_: str,
+    global_flag: bool,
+    local_flag: bool,
+    config_file: Optional[str],
+    dry_run: bool,
+    restart_daemon_flag: Optional[bool],
+    no_restart_daemon_flag: Optional[bool],
+):
+    """Merge a partial config object into the target TOML and validate before write.
+
+    For a single key, prefer ``btbt config set``. For a full document replace, use
+    ``btbt config import --mode replace``; for merge semantics similar to this command
+    from a file, ``btbt config import --mode merge``. See ``btbt config describe`` for paths.
+    """
+    import sys
+
+    from ccbt.config.config_templates import ConfigTemplates
+
+    if input_file:
+        raw = Path(input_file).read_text(encoding="utf-8")
+        src = Path(input_file)
+    else:
+        raw = sys.stdin.read()
+        src = None
+
+    fmt = format_
+    if fmt == "auto" and src is not None:
+        suf = src.suffix.lower()
+        if suf in {".yml", ".yaml"}:
+            fmt = "yaml"
+        elif suf == ".json":
+            fmt = "json"
+        elif suf == ".toml":
+            fmt = "toml"
+
+    if fmt == "auto":
+        try:
+            patch = json.loads(raw)
+        except json.JSONDecodeError:
+            patch = toml.loads(raw)
+    elif fmt == "json":
+        patch = json.loads(raw)
+    elif fmt == "yaml":
+        try:
+            import yaml
+        except ImportError as e:
+            raise click.ClickException(_("PyYAML is required for YAML patches")) from e
+        loaded = yaml.safe_load(raw)
+        patch = loaded if isinstance(loaded, dict) else {}
+    else:
+        patch = toml.loads(raw)
+
+    if not isinstance(patch, dict):
+        raise click.ClickException(
+            _("Patch must be a JSON/TOML object at the top level")
+        )
+
+    if config_file:
+        target = Path(config_file)
+    elif local_flag:
+        target = Path.cwd() / "ccbt.toml"
+    elif global_flag:
+        target = Path.home() / ".config" / "ccbt" / "ccbt.toml"
+    else:
+        target = Path.cwd() / "ccbt.toml"
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    base: dict = {}
+    if target.exists():
+        try:
+            base = toml.load(str(target))
+        except Exception:
+            base = {}
+
+    merged = ConfigTemplates._deep_merge(base, patch)  # noqa: SLF001
+
+    validate_path = str(target) if target.exists() else config_file
+    validate_cm = ConfigManager(validate_path)
+    try:
+        validate_cm.simulate_load_from_file_dict(merged)
+    except ConfigurationError as e:
+        raise click.ClickException(str(e)) from e
+
+    if _should_skip_project_local_write(target, config_file):
+        click.echo(_("OK"))
+        return
+
+    if dry_run:
+        click.echo(_("OK (dry-run — merged configuration is valid)"))
+        return
+
+    old_config_manager = ConfigManager(config_file)
+    old_config = old_config_manager.config
+
+    target.write_text(toml.dumps(merged), encoding="utf-8")
+    click.echo(str(target))
+
+    try:
+        new_config_manager = ConfigManager(config_file)
+        new_config = new_config_manager.config
+        needs_restart = requires_daemon_restart(old_config, new_config)
+        if needs_restart:
+            auto_restart = None
+            if restart_daemon_flag:
+                auto_restart = True
+            elif no_restart_daemon_flag:
+                auto_restart = False
+            restart_daemon_if_needed(
+                new_config_manager,
+                requires_restart=True,
+                auto_restart=auto_restart,
+            )
+    except Exception as e:
+        logger.debug(_("Error checking if restart is needed: %s"), e)
+
+
+@config.command("reset")
+@click.option("--section", "-S", type=str, default=None)
+@click.option("--key", "-k", type=str, default=None)
+@click.option("--confirm", "-y", is_flag=True, help=_("Skip confirmation prompt"))
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
+@click.option(
+    "--restart-daemon",
+    "-R",
+    "restart_daemon_flag",
+    is_flag=True,
+    default=None,
+    help=_("Automatically restart daemon if needed (without prompt)"),
+)
+@click.option(
+    "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -399,21 +804,54 @@ def reset_config(
 
 
 @config.command("validate")
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
-def validate_config_cmd(config_file: Optional[str]):
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
+@click.option(
+    "--detailed",
+    "-d",
+    is_flag=True,
+    help=_("Run additional system compatibility checks after model validation"),
+)
+def validate_config_cmd(config_file: Optional[str], detailed: bool):
     """Validate configuration file and print result."""
     try:
-        ConfigManager(config_file)
-        click.echo(_("VALID"))
+        from ccbt.config.config_conditional import ConditionalConfig
+
+        cm = ConfigManager(config_file)
+        if detailed:
+            click.echo(_("✓ Configuration is valid"))
+            conditional_config = ConditionalConfig()
+            warnings = conditional_config.validate_against_system(cm.config)[1]
+            if warnings:
+                click.echo(_("Warnings:"))
+                for warning in warnings:
+                    click.echo(_("  ⚠ {warning}").format(warning=warning))
+            else:
+                click.echo(_("✓ No system compatibility warnings"))
+        else:
+            click.echo(_("VALID"))
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
+        if detailed:
+            click.echo(_("✗ Configuration validation failed: {e}").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
 @config.command("migrate")
-@click.option("--from-version", type=str, default=None)
-@click.option("--to-version", type=str, default=None)
-@click.option("--backup", is_flag=True, help=_("Create backup before migration"))
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option("--from-version", "-F", type=str, default=None)
+@click.option("--to-version", "-T", type=str, default=None)
+@click.option("--backup", "-b", is_flag=True, help=_("Create backup before migration"))
+@click.option(
+    "--config",
+    "-c",
+    "config_file",
+    type=click.Path(exists=True),
+    default=None,
+)
 def migrate_config_cmd(
     from_version: Optional[str],  # noqa: ARG001
     to_version: Optional[str],  # noqa: ARG001
@@ -427,3 +865,6 @@ def migrate_config_cmd(
         bak = Path(str(cm.config_file) + ".bak")
         bak.write_text(cm.config_file.read_text(encoding="utf-8"), encoding="utf-8")
     click.echo(_("MIGRATED"))
+
+
+import ccbt.cli.config_commands_extended  # noqa: E402,F401 — attach extended subcommands

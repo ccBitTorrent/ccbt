@@ -6,8 +6,6 @@ and rate limits, including persistence via checkpoints.
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -68,9 +66,9 @@ async def test_torrent_config_set_with_daemon(mock_daemon_running, mock_ipc_clie
     value = "sequential"
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        from ccbt.executor.base import CommandResult
         from ccbt.daemon.ipc_protocol import TorrentStatusResponse
-        
+        from ccbt.executor.base import CommandResult
+
         # Mock executor manager and executor
         mock_executor = AsyncMock()
         # Mock adapter.get_torrent_status (used to check if torrent exists)
@@ -91,18 +89,18 @@ async def test_torrent_config_set_with_daemon(mock_daemon_running, mock_ipc_clie
         )
         mock_adapter.get_torrent_status = AsyncMock(return_value=mock_status)
         mock_executor.adapter = mock_adapter
-        
+
         # Mock set_option
         set_option_result = CommandResult(success=True, data={"set": True, "key": key, "value": value})
         mock_executor.execute = AsyncMock(return_value=set_option_result)
-        
+
         # Mock ExecutorManager.get_instance and get_executor
         # ExecutorManager is imported inside the function, so patch it there
         with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
             mock_manager = MagicMock()
             mock_manager.get_executor = MagicMock(return_value=mock_executor)
             mock_get_instance.return_value = mock_manager
-            
+
             await _set_torrent_option(info_hash, key, value, save_checkpoint=False)
 
             # Verify adapter.get_torrent_status was called
@@ -124,9 +122,9 @@ async def test_torrent_config_set_with_checkpoint(mock_daemon_running, mock_ipc_
     value = "true"
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
-        from ccbt.executor.base import CommandResult
         from ccbt.daemon.ipc_protocol import TorrentStatusResponse
-        
+        from ccbt.executor.base import CommandResult
+
         # Mock executor manager and executor
         mock_executor = AsyncMock()
         # Mock adapter.get_torrent_status (used to check if torrent exists)
@@ -147,19 +145,19 @@ async def test_torrent_config_set_with_checkpoint(mock_daemon_running, mock_ipc_
         )
         mock_adapter.get_torrent_status = AsyncMock(return_value=mock_status)
         mock_executor.adapter = mock_adapter
-        
+
         # Mock set_option and save_checkpoint
         set_option_result = CommandResult(success=True, data={"set": True, "key": key, "value": value})
         save_checkpoint_result = CommandResult(success=True, data={"saved": True})
         mock_executor.execute = AsyncMock(side_effect=[set_option_result, save_checkpoint_result])
-        
+
         # Mock ExecutorManager.get_instance and get_executor
         # ExecutorManager is imported inside the function, so patch it there
         with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
             mock_manager = MagicMock()
             mock_manager.get_executor = MagicMock(return_value=mock_executor)
             mock_get_instance.return_value = mock_manager
-            
+
             await _set_torrent_option(info_hash, key, value, save_checkpoint=True)
 
             # Verify adapter.get_torrent_status was called
@@ -178,12 +176,12 @@ async def test_torrent_config_get_with_daemon(mock_daemon_running, mock_ipc_clie
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
         from ccbt.executor.base import CommandResult
-        
+
         # Mock executor manager and executor
         mock_executor = AsyncMock()
         result = CommandResult(success=True, data={"key": key, "value": "sequential"})
         mock_executor.execute = AsyncMock(return_value=result)
-        
+
         # Mock ExecutorManager.get_instance and get_executor
         # ExecutorManager is imported inside the function, so patch it there
         with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
@@ -208,7 +206,7 @@ async def test_torrent_config_list_with_daemon(mock_daemon_running, mock_ipc_cli
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
         from ccbt.executor.base import CommandResult
-        
+
         # Mock executor manager and executor
         mock_executor = AsyncMock()
         result = CommandResult(
@@ -225,7 +223,7 @@ async def test_torrent_config_list_with_daemon(mock_daemon_running, mock_ipc_cli
             },
         )
         mock_executor.execute = AsyncMock(return_value=result)
-        
+
         # Mock ExecutorManager.get_instance and get_executor
         # ExecutorManager is imported inside the function, so patch it there
         with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
@@ -249,12 +247,12 @@ async def test_torrent_config_reset_all(mock_daemon_running, mock_ipc_client):
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
         from ccbt.executor.base import CommandResult
-        
+
         # Mock executor manager and executor
         mock_executor = AsyncMock()
         result = CommandResult(success=True, data={"reset": True, "key": None})
         mock_executor.execute = AsyncMock(return_value=result)
-        
+
         # Mock ExecutorManager.get_instance and get_executor
         # ExecutorManager is imported inside the function, so patch it there
         with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:
@@ -280,12 +278,12 @@ async def test_torrent_config_reset_key(mock_daemon_running, mock_ipc_client):
 
     with patch("ccbt.cli.torrent_config_commands.IPCClient", return_value=mock_ipc_client):
         from ccbt.executor.base import CommandResult
-        
+
         # Mock executor manager and executor
         mock_executor = AsyncMock()
         result = CommandResult(success=True, data={"reset": True, "key": key})
         mock_executor.execute = AsyncMock(return_value=result)
-        
+
         # Mock ExecutorManager.get_instance and get_executor
         # ExecutorManager is imported inside the function, so patch it there
         with patch("ccbt.executor.manager.ExecutorManager.get_instance") as mock_get_instance:

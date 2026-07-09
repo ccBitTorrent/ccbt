@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -69,7 +69,7 @@ class TestWebRTCPeerInitialization:
             peer_info=mock_peer_info,
             torrent_data=mock_torrent_data,
         )
-        
+
         assert peer.peer_info == mock_peer_info
         assert isinstance(peer.peer_state, PeerState)
         assert isinstance(peer.stats, PeerStats)
@@ -81,14 +81,14 @@ class TestWebRTCPeerInitialization:
         """Test __post_init__ doesn't override existing attributes."""
         existing_state = PeerState()
         existing_stats = PeerStats()
-        
+
         peer = WebRTCPeerConnection(
             peer_info=mock_peer_info,
             torrent_data=mock_torrent_data,
             peer_state=existing_state,
             stats=existing_stats,
         )
-        
+
         assert peer.peer_state is existing_state
         assert peer.stats is existing_stats
 
@@ -100,9 +100,9 @@ class TestWebRTCPeerConnect:
     async def test_connect_success(self, webrtc_peer, mock_webtorrent_protocol):
         """Test successful connection."""
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=True)
-        
+
         await webrtc_peer.connect()
-        
+
         assert webrtc_peer.state == ConnectionState.CONNECTED
         assert webrtc_peer.stats.last_activity > 0
         assert webrtc_peer._receive_task is not None
@@ -117,12 +117,12 @@ class TestWebRTCPeerConnect:
             nonlocal callback_called
             callback_called = True
             assert conn is webrtc_peer
-        
+
         webrtc_peer.on_peer_connected = on_connected
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=True)
-        
+
         await webrtc_peer.connect()
-        
+
         assert callback_called
         assert webrtc_peer.state == ConnectionState.CONNECTED
 
@@ -130,9 +130,9 @@ class TestWebRTCPeerConnect:
     async def test_connect_failure_returns_false(self, webrtc_peer, mock_webtorrent_protocol):
         """Test connection failure when protocol returns False."""
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=False)
-        
+
         await webrtc_peer.connect()
-        
+
         assert webrtc_peer.state == ConnectionState.ERROR
         assert webrtc_peer.error_message == "Failed to establish WebRTC connection"
         assert webrtc_peer._receive_task is None
@@ -141,10 +141,10 @@ class TestWebRTCPeerConnect:
     async def test_connect_exception_handling(self, webrtc_peer, mock_webtorrent_protocol):
         """Test connection exception handling."""
         mock_webtorrent_protocol.connect_peer = AsyncMock(side_effect=RuntimeError("Connection error"))
-        
+
         with pytest.raises(RuntimeError, match="Connection error"):
             await webrtc_peer.connect()
-        
+
         assert webrtc_peer.state == ConnectionState.ERROR
         assert "Connection error" in webrtc_peer.error_message
 
@@ -155,7 +155,7 @@ class TestWebRTCPeerConnect:
             peer_info=mock_peer_info,
             torrent_data=mock_torrent_data,
         )
-        
+
         with pytest.raises(ValueError, match="WebTorrent protocol not set"):
             await peer.connect()
 
@@ -167,9 +167,9 @@ class TestWebRTCPeerDisconnect:
     async def test_disconnect_when_disconnected(self, webrtc_peer):
         """Test disconnect when already disconnected is no-op."""
         webrtc_peer.state = ConnectionState.DISCONNECTED
-        
+
         await webrtc_peer.disconnect()
-        
+
         assert webrtc_peer.state == ConnectionState.DISCONNECTED
 
     @pytest.mark.asyncio
@@ -177,12 +177,12 @@ class TestWebRTCPeerDisconnect:
         """Test disconnect cancels receive task."""
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=True)
         await webrtc_peer.connect()
-        
+
         receive_task = webrtc_peer._receive_task
         assert receive_task is not None
-        
+
         await webrtc_peer.disconnect()
-        
+
         assert webrtc_peer.state == ConnectionState.DISCONNECTED
         assert receive_task.done()
 
@@ -191,10 +191,10 @@ class TestWebRTCPeerDisconnect:
         """Test disconnect calls protocol disconnect_peer."""
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=True)
         await webrtc_peer.connect()
-        
+
         peer_id = webrtc_peer.peer_info.peer_id.hex()
         await webrtc_peer.disconnect()
-        
+
         mock_webtorrent_protocol.disconnect_peer.assert_called_once_with(peer_id)
 
     @pytest.mark.asyncio
@@ -208,9 +208,9 @@ class TestWebRTCPeerDisconnect:
         )
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=True)
         await peer.connect()
-        
+
         await peer.disconnect()
-        
+
         # Should not call disconnect_peer when peer_id is None
         mock_webtorrent_protocol.disconnect_peer.assert_not_called()
 
@@ -222,13 +222,13 @@ class TestWebRTCPeerDisconnect:
             nonlocal callback_called
             callback_called = True
             assert conn is webrtc_peer
-        
+
         webrtc_peer.on_peer_disconnected = on_disconnected
         mock_webtorrent_protocol.connect_peer = AsyncMock(return_value=True)
         await webrtc_peer.connect()
-        
+
         await webrtc_peer.disconnect()
-        
+
         assert callback_called
 
     @pytest.mark.asyncio
@@ -236,9 +236,9 @@ class TestWebRTCPeerDisconnect:
         """Test disconnect when protocol is None."""
         webrtc_peer.webtorrent_protocol = None
         webrtc_peer.state = ConnectionState.CONNECTED
-        
+
         await webrtc_peer.disconnect()
-        
+
         assert webrtc_peer.state == ConnectionState.DISCONNECTED
 
 
@@ -252,9 +252,9 @@ class TestWebRTCPeerSendMessage:
         message = b"test message"
         peer_id = webrtc_peer.peer_info.peer_id.hex()
         initial_uploaded = webrtc_peer.stats.bytes_uploaded
-        
+
         await webrtc_peer.send_message(message)
-        
+
         mock_webtorrent_protocol.send_message.assert_called_once_with(peer_id, message)
         assert webrtc_peer.stats.bytes_uploaded == initial_uploaded + len(message)
         assert webrtc_peer.stats.last_activity > 0
@@ -264,9 +264,9 @@ class TestWebRTCPeerSendMessage:
         """Test send_message works in ACTIVE state."""
         webrtc_peer.state = ConnectionState.ACTIVE
         message = b"test"
-        
+
         await webrtc_peer.send_message(message)
-        
+
         mock_webtorrent_protocol.send_message.assert_called_once()
 
     @pytest.mark.asyncio
@@ -274,9 +274,9 @@ class TestWebRTCPeerSendMessage:
         """Test send_message works in CHOKED state."""
         webrtc_peer.state = ConnectionState.CHOKED
         message = b"test"
-        
+
         await webrtc_peer.send_message(message)
-        
+
         mock_webtorrent_protocol.send_message.assert_called_once()
 
     @pytest.mark.asyncio
@@ -284,7 +284,7 @@ class TestWebRTCPeerSendMessage:
         """Test send_message raises RuntimeError when disconnected."""
         webrtc_peer.state = ConnectionState.DISCONNECTED
         message = b"test"
-        
+
         with pytest.raises(RuntimeError, match="Cannot send message"):
             await webrtc_peer.send_message(message)
 
@@ -293,7 +293,7 @@ class TestWebRTCPeerSendMessage:
         """Test send_message raises RuntimeError in ERROR state."""
         webrtc_peer.state = ConnectionState.ERROR
         message = b"test"
-        
+
         with pytest.raises(RuntimeError, match="Cannot send message"):
             await webrtc_peer.send_message(message)
 
@@ -303,7 +303,7 @@ class TestWebRTCPeerSendMessage:
         webrtc_peer.state = ConnectionState.CONNECTED
         webrtc_peer.webtorrent_protocol = None
         message = b"test"
-        
+
         with pytest.raises(RuntimeError, match="WebTorrent protocol not available"):
             await webrtc_peer.send_message(message)
 
@@ -318,7 +318,7 @@ class TestWebRTCPeerSendMessage:
         )
         peer.state = ConnectionState.CONNECTED
         message = b"test"
-        
+
         with pytest.raises(RuntimeError, match="Peer ID not available"):
             await peer.send_message(message)
 
@@ -328,7 +328,7 @@ class TestWebRTCPeerSendMessage:
         webrtc_peer.state = ConnectionState.CONNECTED
         mock_webtorrent_protocol.send_message = AsyncMock(return_value=False)
         message = b"test"
-        
+
         with pytest.raises(RuntimeError, match="Failed to send message via WebRTC"):
             await webrtc_peer.send_message(message)
 
@@ -340,7 +340,7 @@ class TestWebRTCPeerReceiveMessage:
     async def test_receive_message_empty_queue(self, webrtc_peer):
         """Test receive_message returns None when queue is empty."""
         result = await webrtc_peer.receive_message()
-        
+
         assert result is None
 
     @pytest.mark.asyncio
@@ -350,12 +350,12 @@ class TestWebRTCPeerReceiveMessage:
         await webrtc_peer._message_queue.put(message)
         initial_downloaded = webrtc_peer.stats.bytes_downloaded
         initial_activity = webrtc_peer.stats.last_activity
-        
+
         # Wait a bit to ensure timestamp changes
         await asyncio.sleep(0.01)
-        
+
         result = await webrtc_peer.receive_message()
-        
+
         assert result == message
         assert webrtc_peer.stats.bytes_downloaded == initial_downloaded + len(message)
         assert webrtc_peer.stats.last_activity >= initial_activity
@@ -365,7 +365,7 @@ class TestWebRTCPeerReceiveMessage:
         """Test receive_message handles QueueEmpty exception."""
         # Queue is empty, get_nowait will raise QueueEmpty
         result = await webrtc_peer.receive_message()
-        
+
         assert result is None
 
 
@@ -379,7 +379,7 @@ class TestWebRTCPeerReceiveLoop:
         peer_id = webrtc_peer.peer_info.peer_id.hex()
         message1 = b"message 1"
         message2 = b"message 2"
-        
+
         # Mock receive_message to return messages then None
         call_count = 0
         async def mock_receive(pid):
@@ -387,32 +387,31 @@ class TestWebRTCPeerReceiveLoop:
             call_count += 1
             if call_count == 1:
                 return message1
-            elif call_count == 2:
+            if call_count == 2:
                 return message2
-            else:
-                await asyncio.sleep(0.05)  # Sleep to allow loop to continue
-                return None
-        
+            await asyncio.sleep(0.05)  # Sleep to allow loop to continue
+            return None
+
         mock_webtorrent_protocol.receive_message = mock_receive
-        
+
         # Start receive loop
         task = asyncio.create_task(webrtc_peer._receive_loop())
-        
+
         # Wait for messages to be queued
         await asyncio.sleep(0.1)
-        
+
         # Stop the loop
         webrtc_peer.state = ConnectionState.DISCONNECTED
-        
+
         # Wait a bit for loop to exit
         await asyncio.sleep(0.05)
         task.cancel()
-        
+
         try:
             await task
         except asyncio.CancelledError:
             pass
-        
+
         # Check messages were queued
         assert not webrtc_peer._message_queue.empty() or call_count > 0
 
@@ -421,30 +420,30 @@ class TestWebRTCPeerReceiveLoop:
         """Test _receive_loop updates state from CONNECTED to ACTIVE."""
         webrtc_peer.state = ConnectionState.CONNECTED
         peer_id = webrtc_peer.peer_info.peer_id.hex()
-        
+
         async def mock_receive(pid):
             await asyncio.sleep(0.01)
             if webrtc_peer.state == ConnectionState.CONNECTED:
                 return b"test message"
             return None
-        
+
         mock_webtorrent_protocol.receive_message = mock_receive
-        
+
         task = asyncio.create_task(webrtc_peer._receive_loop())
-        
+
         # Wait for state update
         await asyncio.sleep(0.05)
-        
+
         # Stop loop
         webrtc_peer.state = ConnectionState.DISCONNECTED
         await asyncio.sleep(0.01)
         task.cancel()
-        
+
         try:
             await task
         except asyncio.CancelledError:
             pass
-        
+
         # State should have been updated to ACTIVE after receiving message
         # (or remain CONNECTED if loop exited before processing)
         assert webrtc_peer.state in [ConnectionState.DISCONNECTED, ConnectionState.ACTIVE]
@@ -454,33 +453,33 @@ class TestWebRTCPeerReceiveLoop:
         """Test _receive_loop exits when protocol is None."""
         webrtc_peer.state = ConnectionState.CONNECTED
         webrtc_peer.webtorrent_protocol = None
-        
+
         await webrtc_peer._receive_loop()
-        
+
         # Loop should exit immediately
 
     @pytest.mark.asyncio
     async def test_receive_loop_handles_cancelled_error(self, webrtc_peer, mock_webtorrent_protocol):
         """Test _receive_loop handles CancelledError gracefully."""
         webrtc_peer.state = ConnectionState.CONNECTED
-        
+
         async def mock_receive(pid):
             await asyncio.sleep(0.1)
             raise asyncio.CancelledError()
-        
+
         mock_webtorrent_protocol.receive_message = mock_receive
-        
+
         task = asyncio.create_task(webrtc_peer._receive_loop())
-        
+
         # Wait a bit then cancel
         await asyncio.sleep(0.05)
         task.cancel()
-        
+
         try:
             await task
         except asyncio.CancelledError:
             pass
-        
+
         # Should exit gracefully
 
     @pytest.mark.asyncio
@@ -488,14 +487,14 @@ class TestWebRTCPeerReceiveLoop:
         """Test _receive_loop handles exceptions and sets error state."""
         webrtc_peer.state = ConnectionState.CONNECTED
         peer_id = webrtc_peer.peer_info.peer_id.hex()
-        
+
         async def mock_receive(pid):
             raise RuntimeError("Receive error")
-        
+
         mock_webtorrent_protocol.receive_message = mock_receive
-        
+
         await webrtc_peer._receive_loop()
-        
+
         assert webrtc_peer.state == ConnectionState.ERROR
         assert "Receive error" in webrtc_peer.error_message
 
@@ -503,22 +502,21 @@ class TestWebRTCPeerReceiveLoop:
     async def test_receive_loop_exits_on_disconnected_state(self, webrtc_peer, mock_webtorrent_protocol):
         """Test _receive_loop exits when state becomes disconnected."""
         webrtc_peer.state = ConnectionState.CONNECTED
-        
+
         async def mock_receive(pid):
             await asyncio.sleep(0.01)
-            return None
-        
+
         mock_webtorrent_protocol.receive_message = mock_receive
-        
+
         task = asyncio.create_task(webrtc_peer._receive_loop())
-        
+
         # Wait a bit then change state
         await asyncio.sleep(0.02)
         webrtc_peer.state = ConnectionState.DISCONNECTED
-        
+
         # Wait for loop to exit
         await asyncio.sleep(0.05)
-        
+
         # Task should be done or close to done
         if not task.done():
             task.cancel()

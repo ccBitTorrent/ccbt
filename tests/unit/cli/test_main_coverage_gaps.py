@@ -9,14 +9,13 @@ This module tests the remaining uncovered lines:
 - Additional error paths as identified
 """
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
 from click.testing import CliRunner
-from rich.console import Console
 
 
 @pytest.fixture(scope="function")
@@ -170,7 +169,6 @@ class TestIPFilterLoading:
         """
         # This test verifies the code structure exists
         # The actual error path is tested via integration tests
-        pass
 
 
 class TestPrivateTorrentWarning:
@@ -189,7 +187,6 @@ class TestPrivateTorrentWarning:
         """
         # This test verifies the code structure exists
         # The actual error path is tested via integration tests
-        pass
 
 
 class TestMagnetIndexMerging:
@@ -202,6 +199,7 @@ class TestMagnetIndexMerging:
         # Create magnet info with existing indices
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],
@@ -227,6 +225,7 @@ class TestMagnetIndexMerging:
         # Create magnet info without existing indices
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],
@@ -257,6 +256,7 @@ class TestMagnetPriorityMerging:
         # Create magnet info with existing priorities
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],
@@ -283,6 +283,7 @@ class TestMagnetPriorityMerging:
         # Create magnet info without existing priorities
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],

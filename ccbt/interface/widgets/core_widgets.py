@@ -11,9 +11,11 @@ from ccbt.i18n import _
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from textual.reactive import reactive
     from textual.widgets import DataTable, RichLog, Sparkline, Static
 else:
     try:
+        from textual.reactive import reactive
         from textual.widgets import DataTable, RichLog, Sparkline, Static
     except ImportError:
         # Fallback for when textual is not available
@@ -27,7 +29,29 @@ else:
             pass
 
         class Static:  # type: ignore[no-redef]
-            pass
+            def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+                """No-op data_bind when textual is unavailable."""
+                pass
+
+        class reactive:  # type: ignore[no-redef]
+            """Stub reactive descriptor for textual compatibility."""
+
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 
 from rich.panel import Panel
@@ -35,7 +59,7 @@ from rich.table import Table
 
 try:
     from textual.containers import Container, Horizontal, Vertical
-    from textual.widgets import Tabs, Tab
+    from textual.widgets import Tab, Tabs
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
@@ -55,13 +79,13 @@ except ImportError:
 
 
 def _get_rate(stats: dict[str, Any], key: str) -> float:
-    """Read canonical or IPC-compatible rate fields."""
-    return float(stats.get(key, stats.get(f"total_{key}", 0.0)))
+    """Read canonical rate field."""
+    return float(stats.get(key, 0.0))
 
 
 class Overview(Static):  # type: ignore[misc]
     """Simple widget to render global stats."""
-    
+
     DEFAULT_CSS = """
     Overview {
         height: 2;
@@ -74,6 +98,24 @@ class Overview(Static):  # type: ignore[misc]
     }
     """
 
+    # F2.2.1: reactive bound to TerminalDashboard.global_stats via data_bind.
+    # The App sets the reactive; the widget self-renders via watch_global_stats.
+    global_stats: reactive = reactive({})  # type: ignore[assignment]
+
+    def on_mount(self) -> None:  # type: ignore[override]
+        """Bind to the App's global_stats reactive (F2.2.1)."""
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(global_stats=TerminalDashboard.global_stats)
+        except Exception as exc:  # pragma: no cover - defensive for non-mounted contexts
+            logger.debug("Overview data_bind skipped: %s", exc)
+
+    def watch_global_stats(self, value: dict[str, Any]) -> None:
+        """Reactive watcher: re-render from the bound stats dict (F2.2.1)."""
+        if isinstance(value, dict):
+            self.update_from_stats(value)
+
     def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
         """Update dashboard with statistics."""
         # Format all stats in a single row with proper formatting
@@ -81,7 +123,7 @@ class Overview(Static):  # type: ignore[misc]
         active = str(stats.get("num_active", 0))
         paused = str(stats.get("num_paused", 0))
         seeding = str(stats.get("num_seeding", 0))
-        
+
         # Format download rate
         down_rate_val = _get_rate(stats, "download_rate")
         if down_rate_val >= 1024 * 1024:
@@ -90,7 +132,7 @@ class Overview(Static):  # type: ignore[misc]
             down_rate = f"{down_rate_val / 1024:.1f} KB/s"
         else:
             down_rate = f"{down_rate_val:.1f} B/s"
-        
+
         # Format upload rate
         up_rate_val = _get_rate(stats, "upload_rate")
         if up_rate_val >= 1024 * 1024:
@@ -99,13 +141,13 @@ class Overview(Static):  # type: ignore[misc]
             up_rate = f"{up_rate_val / 1024:.1f} KB/s"
         else:
             up_rate = f"{up_rate_val:.1f} B/s"
-        
+
         avg_progress = f"{stats.get('average_progress', 0.0) * 100:.1f}%"
-        
+
         # Get connected peer count if available
         connected_peers = stats.get("connected_peers", 0)
         peers_str = f"[cyan]Peers:[/cyan] {connected_peers}" if connected_peers > 0 else ""
-        
+
         # Create single-line display with proper spacing
         overview_parts = [
             f"[cyan]Torrents:[/cyan] {torrents}",
@@ -118,166 +160,9 @@ class Overview(Static):  # type: ignore[misc]
         ]
         if peers_str:
             overview_parts.insert(4, peers_str)  # Insert after seeding
-        
+
         overview_text = " | ".join(overview_parts)
         self.update(overview_text)
-
-
-class TorrentsTable(DataTable):  # type: ignore[misc]
-    """Widget to render per-torrent status table.
-    
-    Note: This is the legacy widget. New code should use ReusableDataTable
-    from reusable_table.py for better consistency.
-    """
-
-    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Mount the torrents table widget."""
-        # Textual widget lifecycle - requires widget mounting context
-        self.zebra_stripes = True
-        self.add_columns(_("Info Hash"), _("Name"), _("Status"), _("Progress"), _("Down/Up (B/s)"))
-
-    def update_from_status(
-        self, status: dict[str, dict[str, Any]]
-    ) -> None:  # pragma: no cover
-        """Update torrents table with current status."""
-        self.clear()
-        for ih, st in status.items():
-            progress = f"{float(st.get('progress', 0.0)) * 100:.1f}%"
-            rates = f"{float(st.get('download_rate', 0.0)):.0f} / {float(st.get('upload_rate', 0.0)):.0f}"
-            self.add_row(
-                ih,
-                str(st.get("name", "-")),
-                str(st.get("status", "-")),
-                progress,
-                rates,
-                key=ih,
-            )
-
-    def get_selected_info_hash(self) -> Optional[str]:  # pragma: no cover
-        """Get the info hash of the currently selected torrent."""
-        if hasattr(self, "cursor_row_key"):
-            with contextlib.suppress(Exception):
-                row_key = self.cursor_row_key
-                return None if row_key is None else str(row_key)
-        return None
-
-
-class PeersTable(DataTable):  # type: ignore[misc]
-    """Widget to render peers for selected torrent.
-    
-    Note: This is the legacy widget. New code should use ReusableDataTable
-    from reusable_table.py for better consistency.
-    """
-
-    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Mount the peers table widget."""
-        # Textual widget lifecycle - requires widget mounting context
-        self.zebra_stripes = True
-        self.add_columns(
-            _("IP"),
-            _("Port"),
-            _("Down (B/s)"),
-            _("Up (B/s)"),
-            _("Latency"),
-            _("Quality"),
-            _("Health"),
-            _("Choked"),
-            _("Client"),
-        )
-
-    def _calculate_connection_quality(
-        self, peer_data: dict[str, Any]
-    ) -> float:  # pragma: no cover
-        """Calculate connection quality score (0-100).
-
-        Args:
-            peer_data: Peer data dictionary
-
-        Returns:
-            Quality score (0-100)
-        """
-        down = float(peer_data.get("download_rate", 0.0))
-        up = float(peer_data.get("upload_rate", 0.0))
-        choked = peer_data.get("choked", True)
-
-        # Simple quality calculation
-        # Higher speeds and unchoked = better quality
-        quality = 0.0
-        if not choked:
-            quality += 50.0
-
-        # Speed contribution (normalized, max 50 points)
-        total_speed = down + up
-        if total_speed > 0:
-            # Assume 1 MB/s = 50 points (max)
-            speed_score = min(50.0, (total_speed / (1024 * 1024)) * 50.0)
-            quality += speed_score
-
-        return min(100.0, max(0.0, quality))
-
-    def _format_quality_indicator(self, quality: float) -> str:  # pragma: no cover
-        """Format quality as visual indicator.
-
-        Args:
-            quality: Quality score (0-100)
-
-        Returns:
-            Formatted quality string
-        """
-        if quality >= 80:
-            return f"[green]{quality:.0f}%[/green]"
-        if quality >= 60:
-            return f"[yellow]{quality:.0f}%[/yellow]"
-        if quality >= 40:
-            return f"[orange1]{quality:.0f}%[/orange1]"
-        return f"[red]{quality:.0f}%[/red]"
-
-    def _get_health_status(self, quality: float) -> str:  # pragma: no cover
-        """Get health status string based on quality score.
-
-        Args:
-            quality: Quality score (0-100)
-
-        Returns:
-            Health status string
-        """
-        if quality >= 80:
-            return "[green]Excellent[/green]"
-        if quality >= 60:
-            return "[yellow]Good[/yellow]"
-        if quality >= 40:
-            return "[orange1]Fair[/orange1]"
-        return "[red]Poor[/red]"
-
-    def update_from_peers(
-        self, peers: list[dict[str, Any]]
-    ) -> None:  # pragma: no cover
-        """Update peers table with current peer data."""
-        self.clear()
-        for p in peers or []:
-            # Calculate quality score
-            quality = self._calculate_connection_quality(p)
-            quality_str = self._format_quality_indicator(quality)
-            health_status = self._get_health_status(quality)
-
-            # Get latency
-            latency = p.get("request_latency", 0.0)
-            if latency and latency > 0:
-                latency_str = f"{latency * 1000:.1f} ms"
-            else:
-                latency_str = "N/A"
-
-            self.add_row(
-                str(p.get("ip", "-")),
-                str(p.get("port", "-")),
-                f"{float(p.get('download_rate', 0.0)):.0f}",
-                f"{float(p.get('upload_rate', 0.0)):.0f}",
-                latency_str,
-                quality_str,
-                health_status,
-                str(p.get("choked", False)),
-                str(p.get("client", "?")),
-            )
 
 
 class SpeedSparklines(Static):  # type: ignore[misc]
@@ -297,6 +182,9 @@ class SpeedSparklines(Static):  # type: ignore[misc]
     }
     """
 
+    # F2.2.2: reactive bound to TerminalDashboard.global_stats via data_bind.
+    global_stats: reactive = reactive({})  # type: ignore[assignment]
+
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the speed sparklines widget."""
         # Textual widget lifecycle - requires widget mounting context
@@ -311,6 +199,20 @@ class SpeedSparklines(Static):  # type: ignore[misc]
         self.mount(self._down, self._up)
         # Update with a simple title instead of Panel
         self.update(_("Speeds"))
+        # F2.2.2: bind to the App's global_stats reactive so the sparklines
+        # self-render (appending to the 120-sample rolling history) on every
+        # stats update without an App-level push.
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(global_stats=TerminalDashboard.global_stats)
+        except Exception as exc:  # pragma: no cover - defensive for non-mounted contexts
+            logger.debug("SpeedSparklines data_bind skipped: %s", exc)
+
+    def watch_global_stats(self, value: dict[str, Any]) -> None:
+        """Reactive watcher: append rates to history and re-render (F2.2.2)."""
+        if isinstance(value, dict):
+            self.update_from_stats(value)
 
     def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
         """Update sparklines with current speed statistics."""
@@ -526,12 +428,12 @@ class GlobalTorrentMetricsPanel(Static):  # type: ignore[misc]
 
 class SwarmHotspotsTable(DataTable):  # type: ignore[misc]
     """Table showing torrents sorted by poor swarm availability (swarm hotspots)."""
-    
+
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the swarm hotspots table widget."""
         self.zebra_stripes = True
         self.add_columns(_("Torrent"), _("Availability"), _("Peers"), _("Rates"), _("Status"))
-    
+
     def update_from_swarm_samples(
         self, samples: list[dict[str, Any]]
     ) -> None:  # pragma: no cover
@@ -543,13 +445,13 @@ class SwarmHotspotsTable(DataTable):  # type: ignore[misc]
         self.clear()
         if not samples:
             return
-        
+
         # Sort by availability (lowest first) to show hotspots
         sorted_samples = sorted(
             samples,
             key=lambda s: float(s.get("swarm_availability", 0.0)),
         )
-        
+
         for sample in sorted_samples:
             name = sample.get("name") or sample.get("info_hash", "unknown")[:16]
             availability = float(sample.get("swarm_availability", 0.0))
@@ -558,7 +460,7 @@ class SwarmHotspotsTable(DataTable):  # type: ignore[misc]
             active_peers = int(sample.get("active_peers", 0))
             download_rate = float(sample.get("download_rate", 0.0))
             upload_rate = float(sample.get("upload_rate", 0.0))
-            
+
             # Format availability with color
             if availability_pct < 25:
                 avail_str = f"[red]{availability_pct:.1f}%[/red]"
@@ -572,7 +474,7 @@ class SwarmHotspotsTable(DataTable):  # type: ignore[misc]
             else:
                 avail_str = f"[green]{availability_pct:.1f}%[/green]"
                 status_str = "[green]Excellent[/green]"
-            
+
             # Format rates
             def _format_rate(rate: float) -> str:
                 if rate >= 1024 * 1024:
@@ -580,10 +482,10 @@ class SwarmHotspotsTable(DataTable):  # type: ignore[misc]
                 if rate >= 1024:
                     return f"{rate / 1024:.1f} KiB/s"
                 return f"{rate:.0f} B/s"
-            
+
             rates_str = f"↓ {_format_rate(download_rate)} • ↑ {_format_rate(upload_rate)}"
             peers_str = f"{active_peers}/{connected_peers}"
-            
+
             self.add_row(name, avail_str, peers_str, rates_str, status_str)
 
 
@@ -614,7 +516,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         display: block;
     }
     
-    /* CRITICAL FIX: Graphs pane always visible */
+    /* Note: Graphs pane always visible */
     #top-pane-graphs {
         height: 1fr;
         overflow-y: auto;
@@ -660,48 +562,55 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
     def compose(self) -> Any:  # pragma: no cover
         """Compose the graphs section layout.
         
-        CRITICAL FIX: Replaced Tabs with ButtonSelector for better visibility control.
+        Note: Replaced Tabs with ButtonSelector for better visibility control.
         All content is always mounted and visible, with manual visibility management.
         """
         from ccbt.interface.widgets.button_selector import ButtonSelector
-        
-        # CRITICAL FIX: Removed alerts and logs tabs - only graphs now
+
+        # Note: Removed alerts and logs tabs - only graphs now
         # Graphs pane - Always visible (no selector needed)
-        with Container(id="top-pane-content"):
-            with Container(id="top-pane-graphs"):
-                # Graph sub-selector (always visible)
-                with Container(id="graphs-selector-container"):
-                    yield ButtonSelector(
-                        [
-                            ("graph-tab-performance", _("Performance")),
-                            ("graph-tab-disk", _("Disk IO")),
-                            ("graph-tab-system", _("System Resources")),
-                            ("graph-tab-network", _("Network")),
-                            ("graph-tab-swarm", _("Swarm Health")),
-                            ("graph-tab-peers", _("Peer Quality")),
-                            ("graph-tab-peer-dist", _("Peer Distribution")),
-                            ("graph-tab-dht", _("DHT Health")),
-                            ("graph-tab-swarm-timeline", _("Swarm Timeline")),
-                            ("graph-tab-global-kpis", _("Global KPIs")),
-                        ],
-                        initial_selection="graph-tab-performance",
-                        id="graph-sub-selector",
-                    )
-                with Container(id="graph-display-area"):
-                    yield Static(_("Select a graph type to view"), id="graph-placeholder")
+        with Container(id="top-pane-content"), Container(id="top-pane-graphs"):
+            # Graph sub-selector (always visible)
+            with Container(id="graphs-selector-container"):
+                yield ButtonSelector(
+                    [
+                        ("graph-tab-performance", _("Performance")),
+                        ("graph-tab-disk", _("Disk IO")),
+                        ("graph-tab-system", _("System Resources")),
+                        ("graph-tab-network", _("Network")),
+                        ("graph-tab-swarm", _("Swarm Health")),
+                        ("graph-tab-peers", _("Peer Quality")),
+                        ("graph-tab-peer-dist", _("Peer Distribution")),
+                        ("graph-tab-dht", _("DHT Health")),
+                        ("graph-tab-swarm-timeline", _("Swarm Timeline")),
+                        ("graph-tab-global-kpis", _("Global KPIs")),
+                    ],
+                    initial_selection="graph-tab-performance",
+                    id="graph-sub-selector",
+                )
+            with Container(id="graph-display-area"):
+                yield Static(_("Select a graph type to view"), id="graph-placeholder")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the graphs section container."""
         logger.debug("GraphsSectionContainer.on_mount: Starting mount process (id=%s)", self.id if hasattr(self, "id") else "unknown")
+
+        def initialize_graphs_section() -> None:
+            self._initialize_graphs_section()
+
+        self.call_after_refresh(initialize_graphs_section)  # type: ignore[attr-defined]
+
+    def _initialize_graphs_section(self) -> None:  # pragma: no cover
+        """Initialize child widget references after Textual has mounted them."""
         # Get widget references
         try:
             from ccbt.interface.widgets.button_selector import ButtonSelector
-            
+
             logger.debug("GraphsSectionContainer.on_mount: Querying widgets...")
             self._graph_selector = self.query_one("#graph-sub-selector", ButtonSelector)  # type: ignore[attr-defined]
             logger.debug("GraphsSectionContainer.on_mount: Found graph_selector: %s", self._graph_selector is not None)
-            
-            # CRITICAL FIX: Ensure graph display area is visible
+
+            # Note: Ensure graph display area is visible
             try:
                 graph_area = self.query_one("#graph-display-area", Container)  # type: ignore[attr-defined]
                 if graph_area:
@@ -709,8 +618,8 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                     logger.debug("GraphsSectionContainer: Graph display area is visible")
             except Exception as e:
                 logger.error("Error ensuring graph area visibility: %s", e, exc_info=True)
-            
-            # CRITICAL FIX: Set active graph selection first, then load content
+
+            # Note: Set active graph selection first, then load content
             if self._graph_selector:
                 try:
                     # Set active selection to trigger initial load
@@ -718,11 +627,11 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                     logger.debug("GraphsSectionContainer: Set active graph selection to performance")
                 except Exception as e:
                     logger.error("Error setting active graph selection: %s", e, exc_info=True)
-            
+
             # Load graph content explicitly
             self._load_graph_content("graph-tab-performance")
             logger.debug("GraphsSectionContainer: Loaded initial graph content")
-            
+
             # Also schedule a refresh-based initialization as backup
             def init_visibility_refresh() -> None:
                 try:
@@ -730,7 +639,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                     self._load_graph_content("graph-tab-performance")
                 except Exception as e:
                     logger.error("Error in refresh-based init: %s", e, exc_info=True)
-            
+
             self.call_after_refresh(init_visibility_refresh)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error mounting graphs section container: %s", e, exc_info=True)
@@ -742,9 +651,6 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             message: LanguageChanged message with new locale
         """
         try:
-            from ccbt.interface.widgets.language_selector import (
-                LanguageSelectorWidget,
-            )
 
             # Verify this is a LanguageChanged message
             if not hasattr(message, "locale"):
@@ -772,14 +678,14 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         """
         try:
             graph_area = self.query_one("#graph-display-area", Container)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure graph area is visible
+            # Note: Ensure graph area is visible
             if graph_area:
                 graph_area.display = True  # type: ignore[attr-defined]
-            
+
             if graph_tab_id == self._active_graph_tab_id:
                 return
-            
-            # CRITICAL FIX: Clear existing content before loading new graph
+
+            # Note: Clear existing content before loading new graph
             # Unregister widgets before removing them
             try:
                 for widget in self._registered_widgets:
@@ -793,13 +699,13 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                 self._registered_widgets.clear()
             except Exception as e:
                 logger.debug("Error unregistering widgets: %s", e)
-            
+
             try:
                 graph_area.remove_children()  # type: ignore[attr-defined]
             except Exception as e:
                 logger.debug("Error removing graph children: %s", e)
-            
-            # CRITICAL FIX: Verify data provider is available and valid
+
+            # Note: Verify data provider is available and valid
             if not self._data_provider:
                 logger.warning("Data provider not available for graph loading")
                 placeholder = Static(
@@ -809,8 +715,8 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                 graph_area.mount(placeholder)  # type: ignore[attr-defined]
                 self._active_graph_tab_id = graph_tab_id
                 return
-            
-            # CRITICAL FIX: Verify data provider has required methods
+
+            # Note: Verify data provider has required methods
             if not hasattr(self._data_provider, "get_adapter"):
                 logger.warning("Data provider missing get_adapter method")
                 placeholder = Static(
@@ -820,19 +726,21 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                 graph_area.mount(placeholder)  # type: ignore[attr-defined]
                 self._active_graph_tab_id = graph_tab_id
                 return
-            
+
             # Load appropriate graph widget based on tab
             if graph_tab_id == "graph-tab-performance":
                 # Performance graph with upload/download only
                 try:
                     logger.debug("GraphsSectionContainer: Loading performance graph widget")
-                    from ccbt.interface.widgets.graph_widget import PerformanceGraphWidget
+                    from ccbt.interface.widgets.graph_widget import (
+                        PerformanceGraphWidget,
+                    )
                     graph = PerformanceGraphWidget(
                         data_provider=self._data_provider,
                         id="performance-graph"
                     )
                     graph_area.mount(graph)  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Ensure graph is visible and trigger refresh after mount
+                    # Note: Ensure graph is visible and trigger refresh after mount
                     graph.display = True  # type: ignore[attr-defined]
                     # Ensure graph area is visible
                     graph_area.display = True  # type: ignore[attr-defined]
@@ -870,7 +778,9 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             elif graph_tab_id == "graph-tab-system":
                 # System resources graph
                 try:
-                    from ccbt.interface.widgets.graph_widget import SystemResourcesGraphWidget
+                    from ccbt.interface.widgets.graph_widget import (
+                        SystemResourcesGraphWidget,
+                    )
                     graph = SystemResourcesGraphWidget(
                         data_provider=self._data_provider,
                         id="system-graph"
@@ -928,7 +838,9 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                     self._active_graph_tab_id = graph_tab_id
             elif graph_tab_id == "graph-tab-peers":
                 try:
-                    from ccbt.interface.widgets.graph_widget import PeerQualitySummaryWidget
+                    from ccbt.interface.widgets.graph_widget import (
+                        PeerQualitySummaryWidget,
+                    )
                     graph = PeerQualitySummaryWidget(
                         data_provider=self._data_provider,
                         id="peer-quality-graph",
@@ -988,7 +900,9 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                     self._active_graph_tab_id = graph_tab_id
             elif graph_tab_id == "graph-tab-swarm-timeline":
                 try:
-                    from ccbt.interface.widgets.swarm_timeline_widget import SwarmTimelineWidget
+                    from ccbt.interface.widgets.swarm_timeline_widget import (
+                        SwarmTimelineWidget,
+                    )
 
                     graph = SwarmTimelineWidget(
                         data_provider=self._data_provider,
@@ -1033,7 +947,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             self._active_graph_tab_id = graph_tab_id
         except Exception as e:
             logger.error("Error loading graph content for %s: %s", graph_tab_id, e, exc_info=True)
-    
+
     def _register_widget(self, widget: Any) -> None:
         """Register widget with adapter for event-driven updates.
         
@@ -1043,30 +957,30 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         if not widget:
             logger.debug("GraphsSectionContainer: Cannot register None widget")
             return
-        
+
         # Add to registered widgets list for cleanup
         if widget not in self._registered_widgets:
             self._registered_widgets.append(widget)
-        
+
         try:
-            # CRITICAL FIX: Verify data provider and adapter are available
+            # Note: Verify data provider and adapter are available
             if not self._data_provider:
                 logger.warning("GraphsSectionContainer: Data provider not available for widget registration")
                 return
-            
+
             if not hasattr(self._data_provider, "get_adapter"):
                 logger.warning("GraphsSectionContainer: Data provider missing get_adapter method")
                 return
-            
+
             adapter = self._data_provider.get_adapter()
             if not adapter:
                 logger.debug("GraphsSectionContainer: Adapter not available (may be normal for local mode)")
                 return
-            
+
             if not hasattr(adapter, "register_widget"):
                 logger.debug("GraphsSectionContainer: Adapter missing register_widget method")
                 return
-            
+
             # Register widget with adapter
             adapter.register_widget(widget)
             logger.debug(
@@ -1102,14 +1016,12 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         Args:
             event: ButtonSelector.SelectionChanged message
         """
-        from ccbt.interface.widgets.button_selector import ButtonSelector
-        
         if not hasattr(event, "selection_id"):
             return
-        
+
         selection_id = event.selection_id
         selector = event.selector if hasattr(event, "selector") else None
-        
+
         # Determine which selector this is from
         if selector:
             selector_id = getattr(selector, "id", None)
@@ -1127,7 +1039,7 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                         logger.warning("GraphsSectionContainer: Could not find graph-display-area")
                 except Exception as e:
                     logger.error("GraphsSectionContainer: Error ensuring graph area visibility: %s", e, exc_info=True)
-    
+
     def on_selection_changed(self, event: Any) -> None:  # pragma: no cover
         """Handle ButtonSelector.SelectionChanged message (Textual message handler naming convention).
         
@@ -1138,17 +1050,17 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             event: ButtonSelector.SelectionChanged message
         """
         from ccbt.interface.widgets.button_selector import ButtonSelector
-        
+
         # Verify this is a SelectionChanged message from ButtonSelector
         if not isinstance(event, ButtonSelector.SelectionChanged):
             return
-        
+
         if not hasattr(event, "selection_id"):
             return
-        
+
         selection_id = event.selection_id
         selector = getattr(event, "selector", None)
-        
+
         # Determine which selector this is from
         if selector:
             selector_id = getattr(selector, "id", None)
@@ -1168,54 +1080,5 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                     logger.error("GraphsSectionContainer: Error ensuring graph area visibility: %s", e, exc_info=True)
 
     def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
-        """Update graphs section with statistics.
-
-        Args:
-            stats: Dictionary containing global statistics
-        """
-        # Note: _summary_cards and _quick_stats are not part of GraphsSectionContainer
-        # They may exist in other containers, but not here
-        
-        # Update active graph widget - try multiple widget types
-        try:
-            graph_area = self.query_one("#graph-display-area", Container)  # type: ignore[attr-defined]
-            
-            # Try PerformanceGraphWidget first (which wraps UploadDownloadGraphWidget)
-            from ccbt.interface.widgets.graph_widget import PerformanceGraphWidget, UploadDownloadGraphWidget
-            try:
-                perf_widget = graph_area.query_one(PerformanceGraphWidget)  # type: ignore[attr-defined]
-                if perf_widget:
-                    perf_widget.update_from_stats(stats)
-                    logger.debug("GraphsSectionContainer: Updated PerformanceGraphWidget from stats")
-                    return
-            except Exception as e:
-                logger.debug("GraphsSectionContainer: PerformanceGraphWidget not found: %s", e)
-            
-            # Fallback: Try UploadDownloadGraphWidget directly
-            try:
-                graph_widget = graph_area.query_one(UploadDownloadGraphWidget)  # type: ignore[attr-defined]
-                if graph_widget:
-                    graph_widget.update_from_stats(stats)
-                    logger.debug("GraphsSectionContainer: Updated UploadDownloadGraphWidget from stats")
-                    return
-            except Exception as e:
-                logger.debug("GraphsSectionContainer: UploadDownloadGraphWidget not found: %s", e)
-            
-            # Try other graph widget types that might support update_from_stats
-            try:
-                from ccbt.interface.widgets.graph_widget import DiskGraphWidget, NetworkGraphWidget, SystemResourcesGraphWidget
-                for widget_class in [DiskGraphWidget, NetworkGraphWidget, SystemResourcesGraphWidget]:
-                    try:
-                        widget = graph_area.query_one(widget_class)  # type: ignore[attr-defined]
-                        if widget and hasattr(widget, "update_from_stats"):
-                            widget.update_from_stats(stats)  # type: ignore[attr-defined]
-                            logger.debug("GraphsSectionContainer: Updated %s from stats", widget_class.__name__)
-                            return
-                    except Exception:
-                        continue
-            except Exception as e:
-                logger.debug("GraphsSectionContainer: Error querying other graph widgets: %s", e)
-                
-        except Exception as e:
-            # Graph widget may not be mounted or may be a different type
-            logger.debug("GraphsSectionContainer: Error updating graph widgets from stats: %s", e)
+        """Legacy no-op: graph widgets self-render via ``data_bind`` (F2.5)."""
+        _ = stats

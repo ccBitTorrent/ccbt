@@ -58,6 +58,12 @@ class RC4Cipher(CipherSuite):
             result[k] = self._s[(self._s[self._i] + self._s[self._j]) % 256]
         return bytes(result)
 
+    def discard_keystream(self, count: int) -> None:
+        """Discard bytes from the keystream without emitting output."""
+        if count <= 0:
+            return
+        self._prga(count)
+
     def encrypt(self, data: bytes) -> bytes:
         """Encrypt data using RC4.
 
@@ -85,11 +91,8 @@ class RC4Cipher(CipherSuite):
             Decrypted plaintext data (same length as input)
 
         """
-        # RC4 is symmetric (XOR cipher), but we need fresh state
-        # Create a new cipher instance with same key to decrypt
-        # This ensures we start with fresh PRGA state
-        decrypt_cipher = RC4Cipher(self.key)
-        return decrypt_cipher.encrypt(data)
+        # RC4 is symmetric; decryption advances the same PRGA state as encryption.
+        return self.encrypt(data)
 
     def key_size(self) -> int:
         """Get the key size in bytes.

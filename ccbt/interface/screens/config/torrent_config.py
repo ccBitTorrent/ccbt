@@ -22,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover - TYPE_CHECKING block
 
 try:
     from textual.containers import Container, Horizontal, Vertical
+    from textual.reactive import reactive
     from textual.widgets import (
         Button,
         DataTable,
@@ -117,15 +118,27 @@ class PerTorrentConfigMainScreen(PerTorrentConfigScreen):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and populate torrents."""
+        await super().on_mount()
         torrents_table = self.query_one("#torrents", DataTable)
         torrents_table.add_columns(
             "Info Hash", "Name", "Status", "Progress", "Down Limit", "Up Limit"
         )
 
-        # Get all torrents from session
-        all_status = await self.session.get_status()
-        for ih, status in all_status.items():
-            # Get rate limits if set
+        # Get all torrents via the DataProvider (daemon parity: do not reach into
+        # session internals — self.session.get_status() / self.session.torrents
+        # don't exist on DaemonInterfaceAdapter; R6).
+        all_torrents: list[dict[str, Any]] = []
+        if self._data_provider:
+            try:
+                all_torrents = await self._data_provider.list_torrents()
+            except Exception as e:
+                self.logger.debug("Error listing torrents via DataProvider: %s", e)
+        for status in all_torrents:
+            ih = str(status.get("info_hash", ""))
+            if not ih:
+                continue
+            # Get rate limits if set (local-session attribute; absent in daemon
+            # mode — getattr default keeps this safe).
             limits = getattr(self.session, "_per_torrent_limits", {}).get(
                 bytes.fromhex(ih), {}
             )
@@ -278,6 +291,8 @@ class PerTorrentConfigMainScreen(PerTorrentConfigScreen):  # type: ignore[misc]
 class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
     """Detail screen for per-torrent configuration with enhanced information."""
 
+    selected_torrent_status: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape", "back", "Back"),
         ("q", "quit", "Quit"),
@@ -361,6 +376,7 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and populate torrent config."""
+        await super().on_mount()
         content = self.query_one("#content", Static)
         info_widget = self.query_one("#info", Static)
         inputs_container = self.query_one("#inputs", Container)
@@ -369,21 +385,34 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         operations_section = self.query_one("#operations", Static)
         errors_widget = self.query_one("#errors", Static)
 
-        # Get torrent session to access queue and file selection
+        # Get torrent session to access queue and file selection (local mode
+        # only — DaemonInterfaceAdapter has no .torrents mapping; R6).
         info_hash_bytes = bytes.fromhex(self.info_hash_hex)
-        async with self.session.lock:
-            torrent_session = self.session.torrents.get(info_hash_bytes)
+        torrent_session = None
+        if not self._is_daemon_session and hasattr(self.session, "torrents"):
+            async with self.session.lock:
+                torrent_session = self.session.torrents.get(info_hash_bytes)
 
-        # Get current rate limits
+        # Get current rate limits (local-session attribute; absent in daemon
+        # mode — getattr default keeps this safe).
         limits = getattr(self.session, "_per_torrent_limits", {}).get(
             info_hash_bytes, {}
         )
         down_limit = limits.get("down_kib", 0)
         up_limit = limits.get("up_kib", 0)
 
-        # Get torrent status
-        all_status = await self.session.get_status()
-        torrent_status = all_status.get(self.info_hash_hex, {})
+        # Get torrent status via the DataProvider (daemon parity: do not call
+        # self.session.get_status() which returns a different shape and reaches
+        # into session internals; R6).
+        torrent_status: dict[str, Any] = {}
+        if self._data_provider:
+            try:
+                torrent_status = (
+                    await self._data_provider.get_torrent_status(self.info_hash_hex)
+                    or {}
+                )
+            except Exception as e:
+                self.logger.debug("Error getting torrent status via DataProvider: %s", e)
         torrent_name = torrent_status.get("name", "Unknown")
         progress = float(torrent_status.get("progress", 0.0)) * 100
         status_str = str(torrent_status.get("status", "-"))
@@ -568,6 +597,7 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         torrent_options = (
             getattr(torrent_session, "options", {}) if torrent_session else {}
         )
+        canonical_encryption = bool(self.session.config.security.enable_encryption)
 
         # Piece selection strategy
         piece_selection = torrent_options.get("piece_selection", "rarest_first")
@@ -603,7 +633,11 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         # Protocol options
         enable_tcp = torrent_options.get("enable_tcp", True)
         enable_utp = torrent_options.get("enable_utp", True)
-        enable_encryption = torrent_options.get("enable_encryption", False)
+        enable_encryption = torrent_options.get("enable_encryption", canonical_encryption)
+        if enable_encryption is None:
+            enable_encryption = canonical_encryption
+        elif not isinstance(enable_encryption, bool):
+            enable_encryption = bool(enable_encryption)
 
         advanced_table.add_row(
             "TCP Transport",
@@ -711,12 +745,19 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
 
         # Performance metrics section
         await self._refresh_performance_metrics()
-        self.set_interval(2.0, self._refresh_performance_metrics)  # type: ignore[attr-defined]
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(selected_torrent_status=TerminalDashboard.selected_torrent_status)  # type: ignore[attr-defined]
+        except Exception as exc:
+            self.logger.debug("TorrentConfigDetailScreen data_bind skipped: %s", exc)
 
         # Scrape results section
         scrape_info = ""
         try:
-            scrape_result = await self.session.get_scrape_result(self.info_hash_hex)
+            scrape_result = None
+            if self._data_provider:
+                scrape_result = await self._data_provider.get_scrape_result(self.info_hash_hex)
             if scrape_result:
                 scrape_info = (
                     f"Seeders: {scrape_result.seeders} | "
@@ -775,20 +816,31 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
         # Focus first input
         down_input.focus()
 
-    async def _refresh_performance_metrics(self) -> None:  # pragma: no cover
+    def watch_selected_torrent_status(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: refresh performance metrics when status updates (F2.7.3)."""
+        if isinstance(value, dict) and value:
+            asyncio.create_task(
+                self._refresh_performance_metrics(status_override=value)
+            )
+
+    async def _refresh_performance_metrics(
+        self,
+        *,
+        status_override: Optional[dict[str, Any]] = None,
+    ) -> None:  # pragma: no cover
         """Refresh per-torrent performance metrics display."""
         try:
             metrics_widget = self.query_one("#performance_metrics", Static)
-            info_hash_bytes = bytes.fromhex(self.info_hash_hex)
 
-            # Get detailed metrics using the helper from TerminalDashboard
-            # We'll use the session to get torrent status and calculate metrics
-            all_status = await self.session.get_status()
-            torrent_status = all_status.get(self.info_hash_hex, {})
-
-            # Get torrent session for piece manager access
-            async with self.session.lock:
-                torrent_session = self.session.torrents.get(info_hash_bytes)
+            torrent_status: dict[str, Any] = status_override or {}
+            if not torrent_status and self._data_provider:
+                try:
+                    torrent_status = (
+                        await self._data_provider.get_torrent_status(self.info_hash_hex)
+                        or {}
+                    )
+                except Exception as e:
+                    self.logger.debug("Error getting torrent status: %s", e)
 
             from rich.table import Table
 
@@ -814,48 +866,41 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
             table.add_row("Download Rate", format_speed(down_rate))
             table.add_row("Upload Rate", format_speed(up_rate))
 
-            # Get piece statistics
-            if torrent_session and hasattr(torrent_session, "piece_manager"):
-                try:
-                    piece_manager = torrent_session.piece_manager
-                    if hasattr(piece_manager, "get_statistics"):
-                        piece_stats = piece_manager.get_statistics()
-                        pieces_completed = piece_stats.get("pieces_completed", 0)
-                        pieces_total = piece_stats.get("pieces_total", 0)
-                        pieces_failed = piece_stats.get("pieces_failed", 0)
+            # Piece statistics from the canonical torrent read model
+            # (pieces_completed / pieces_total / hash_verification_failures).
+            pieces_completed = int(torrent_status.get("pieces_completed", 0))
+            pieces_total = int(torrent_status.get("pieces_total", 0))
+            pieces_failed = int(torrent_status.get("hash_verification_failures", 0))
+            if pieces_total > 0:
+                table.add_row("", "")
+                table.add_row("[bold]Piece Statistics[/bold]", "")
+                table.add_row(
+                    "Pieces Completed", f"{pieces_completed}/{pieces_total}"
+                )
+                if pieces_failed > 0:
+                    table.add_row("Pieces Failed", str(pieces_failed))
 
-                        table.add_row("", "")
-                        table.add_row("[bold]Piece Statistics[/bold]", "")
-                        table.add_row(
-                            "Pieces Completed", f"{pieces_completed}/{pieces_total}"
+                # Calculate ETA
+                if down_rate > 0 and pieces_total > pieces_completed:
+                    remaining_pieces = pieces_total - pieces_completed
+                    total_size = float(torrent_status.get("total_size", 0))
+                    if total_size > 0 and pieces_total > 0:
+                        avg_piece_size = total_size / pieces_total
+                        remaining_bytes = remaining_pieces * avg_piece_size
+                        eta_seconds = (
+                            remaining_bytes / down_rate if down_rate > 0 else 0
                         )
-                        if pieces_failed > 0:
-                            table.add_row("Pieces Failed", str(pieces_failed))
 
-                        # Calculate ETA
-                        if down_rate > 0 and pieces_total > pieces_completed:
-                            remaining_pieces = pieces_total - pieces_completed
-                            # Estimate: assume average piece size
-                            total_size = float(torrent_status.get("total_size", 0))
-                            if total_size > 0 and pieces_total > 0:
-                                avg_piece_size = total_size / pieces_total
-                                remaining_bytes = remaining_pieces * avg_piece_size
-                                eta_seconds = (
-                                    remaining_bytes / down_rate if down_rate > 0 else 0
-                                )
+                        if eta_seconds > 0:
+                            if eta_seconds < 60:
+                                eta_str = f"{eta_seconds:.0f}s"
+                            elif eta_seconds < 3600:
+                                eta_str = f"{eta_seconds / 60:.1f}m"
+                            else:
+                                eta_str = f"{eta_seconds / 3600:.1f}h"
+                            table.add_row("Estimated ETA", eta_str)
 
-                                if eta_seconds > 0:
-                                    if eta_seconds < 60:
-                                        eta_str = f"{eta_seconds:.0f}s"
-                                    elif eta_seconds < 3600:
-                                        eta_str = f"{eta_seconds / 60:.1f}m"
-                                    else:
-                                        eta_str = f"{eta_seconds / 3600:.1f}h"
-                                    table.add_row("Estimated ETA", eta_str)
-                except Exception:
-                    pass
-
-            # Get connection count
+            # Get connection count (adapter exposes get_peers_for_torrent).
             try:
                 peers = await self.session.get_peers_for_torrent(self.info_hash_hex)
                 connection_count = len(peers) if peers else 0
@@ -865,9 +910,9 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
             except Exception:
                 pass
 
-            # Get total downloaded/uploaded
-            total_downloaded = float(torrent_status.get("total_downloaded", 0))
-            total_uploaded = float(torrent_status.get("total_uploaded", 0))
+            # Get total downloaded/uploaded (canonical keys: downloaded/uploaded).
+            total_downloaded = float(torrent_status.get("downloaded", 0))
+            total_uploaded = float(torrent_status.get("uploaded", 0))
 
             def format_bytes(b: float) -> str:
                 if b >= 1024 * 1024 * 1024:
@@ -1270,7 +1315,9 @@ class TorrentConfigDetailScreen(PerTorrentConfigScreen):  # type: ignore[misc]
                 return
 
             scrape_section = scrape_section_widgets[0]
-            scrape_result = await self.session.get_scrape_result(self.info_hash_hex)
+            scrape_result = None
+            if self._data_provider:
+                scrape_result = await self._data_provider.get_scrape_result(self.info_hash_hex)
 
             if scrape_result:
                 scrape_table = Table(

@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 from ccbt.transport.utp_extensions import (
     ECNExtension,
     UTPExtensionType,
@@ -31,7 +36,7 @@ class TestECNExtension:
         # Ensure ECN is negotiated (required for echo to be set)
         from ccbt.transport.utp_extensions import UTPExtensionType
         connection.negotiated_extensions.add(UTPExtensionType.ECN)
-        
+
         # Use a STATE packet instead of DATA packet to avoid _handle_data_packet
         # calling _send_ack which might reset the flag
         packet_data = UTPPacket(

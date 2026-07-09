@@ -19,6 +19,7 @@ class MagnetInfo:
 
     info_hash: bytes
     display_name: Optional[str]
+    swarm_id: Optional[str]
     trackers: list[str]
     web_seeds: list[str]
     selected_indices: Optional[list[int]] = None  # BEP 53: so parameter
@@ -234,6 +235,7 @@ def parse_magnet(uri: str) -> MagnetInfo:
     return MagnetInfo(
         info_hash=info_hash,
         display_name=display_name,
+        swarm_id=qs.get("swarm_id", [None])[0],
         trackers=trackers,
         web_seeds=web_seeds,
         selected_indices=selected_indices,
@@ -246,20 +248,21 @@ def build_minimal_torrent_data(
     name: Optional[str],
     trackers: list[str],
     web_seeds: Optional[list[str]] = None,
+    swarm_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Create a minimal `torrent_data` placeholder using known info.
 
     This structure is suitable for tracker/DHT peer discovery and metadata
     fetching, but lacks `info` details and piece layout until metadata is fetched.
 
-    CRITICAL FIX: If no trackers are provided, add default public trackers to enable
+    Note: If no trackers are provided, add default public trackers to enable
     peer discovery. This is essential for magnet links that only have web seeds (ws=)
     but no trackers (tr=).
 
-    CRITICAL FIX: Store web seeds (ws= parameters) from magnet links so they can be
+    Note: Store web seeds (ws= parameters) from magnet links so they can be
     used by the WebSeedExtension for downloading pieces via HTTP range requests.
     """
-    # CRITICAL FIX: Add default trackers if none provided
+    # Note: Add default trackers if none provided
     # This enables peer discovery for magnet links without tr= parameters
     # However, respect explicit empty list when passed (for testing/edge cases)
     # The function signature requires a list, so we can't distinguish None from []
@@ -355,8 +358,10 @@ def build_minimal_torrent_data(
         "name": name or "",
         "is_magnet": True,  # CRITICAL: Mark as magnet link for DHT setup to prioritize DHT queries
     }
+    if swarm_id:
+        result["swarm_id"] = swarm_id
 
-    # CRITICAL FIX: Store web seeds from magnet link (ws= parameters)
+    # Note: Store web seeds from magnet link (ws= parameters)
     # These will be used by WebSeedExtension to download pieces via HTTP range requests
     if web_seeds:
         result["web_seeds"] = web_seeds
@@ -405,6 +410,7 @@ def magnet_info_from_minimal_torrent_data(
     return MagnetInfo(
         info_hash=info_hash,
         display_name=name,
+        swarm_id=torrent_data.get("swarm_id"),
         trackers=trackers,
         web_seeds=web_seeds,
         selected_indices=None,
@@ -478,7 +484,7 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
     # Extract piece hashes
     piece_length = int(info_dict.get(b"piece length", 0))
 
-    # CRITICAL FIX: Handle both bytes and string keys for 'pieces' field
+    # Note: Handle both bytes and string keys for 'pieces' field
     # Some decoders may return string keys instead of bytes
     pieces_blob = b""
     if b"pieces" in info_dict:
@@ -513,7 +519,7 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
 
     piece_hashes = [pieces_blob[i : i + 20] for i in range(0, len(pieces_blob), 20)]
 
-    # CRITICAL FIX: Log piece hash extraction for debugging
+    # Note: Log piece hash extraction for debugging
     import logging
 
     logger = logging.getLogger(__name__)
@@ -585,7 +591,7 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
         )
     )
 
-    # CRITICAL FIX: Validate piece count matches expected count based on total_length
+    # Note: Validate piece count matches expected count based on total_length
     # Expected piece count = ceil(total_length / piece_length)
     import logging
     import math

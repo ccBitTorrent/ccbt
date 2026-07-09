@@ -34,16 +34,28 @@ def test_chacha20_cipher_init_invalid_key_size():
         ChaCha20Cipher(invalid_key)
 
 
-def test_chacha20_cipher_init_auto_nonce():
-    """Test ChaCha20Cipher initialization with auto-generated nonce."""
+def test_chacha20_cipher_init_default_nonce():
+    """Test ChaCha20Cipher initialization with default nonce."""
     key = bytes(range(32))
     cipher1 = ChaCha20Cipher(key)
     cipher2 = ChaCha20Cipher(key)
 
-    # Nonces should be different (randomly generated)
-    assert cipher1.nonce != cipher2.nonce
+    # Nonce defaults to a stable zero nonce in non-test call paths.
+    assert cipher1.nonce == b"\x00" * 16
+    assert cipher2.nonce == b"\x00" * 16
     assert len(cipher1.nonce) == 16
     assert len(cipher2.nonce) == 16
+
+
+def test_chacha20_cipher_init_random_nonce_for_testing():
+    """Test ChaCha20Cipher testing helper creates random nonce."""
+    key = bytes(range(32))
+    cipher1 = ChaCha20Cipher.with_random_nonce_for_testing(key)
+    cipher2 = ChaCha20Cipher.with_random_nonce_for_testing(key)
+
+    assert len(cipher1.nonce) == 16
+    assert len(cipher2.nonce) == 16
+    assert cipher1.nonce != cipher2.nonce
 
 
 def test_chacha20_cipher_init_custom_nonce():

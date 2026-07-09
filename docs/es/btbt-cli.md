@@ -391,22 +391,20 @@ uv run btbt files priority abc123... 2 maximum
 
 ## Comandos de Configuración
 
-Grupo de comandos de configuración: [ccbt/cli/config_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands.py)
+El grupo `config` está definido en [ccbt/cli/config_group.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_group.py). Los manejadores principales están en [ccbt/cli/config_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands.py); los subcomandos adicionales (schema, import, export, template, etc.) están en [ccbt/cli/config_commands_extended.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py) y se **registran en el mismo** grupo `btbt config` (no existe un comando separado `config-extended`).
 
 ### config
 
-Gestionar configuración.
-
-Implementación: [ccbt/cli/main.py:config](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py#L810)
+Gestionar la configuración (show, get, set, apply, describe, validate, etc.).
 
 Uso:
 ```bash
-uv run btbt config [subcommand]
+uv run btbt config --help
+uv run btbt config describe --format table
+uv run btbt config set network.listen_port 6882 --dry-run
 ```
 
-Comandos de configuración extendidos: [ccbt/cli/config_commands_extended.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py)
-
-Ver [Guía de Configuración](configuration.md) para opciones de configuración detalladas.
+Ver [Guía de Configuración](configuration.md) para opciones detalladas.
 
 ## Comandos Avanzados
 
@@ -969,22 +967,20 @@ uv run btbt files priority abc123... 2 maximum
 
 ## Comandos de Configuración
 
-Grupo de comandos de configuración: [ccbt/cli/config_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands.py)
+El grupo `config` está definido en [ccbt/cli/config_group.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_group.py). Los manejadores principales están en [ccbt/cli/config_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands.py); los subcomandos adicionales (schema, import, export, template, etc.) están en [ccbt/cli/config_commands_extended.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py) y se **registran en el mismo** grupo `btbt config` (no existe un comando separado `config-extended`).
 
 ### config
 
-Gestionar configuración.
-
-Implementación: [ccbt/cli/main.py:config](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/main.py#L810)
+Gestionar la configuración (show, get, set, apply, describe, validate, etc.).
 
 Uso:
 ```bash
-uv run btbt config [subcommand]
+uv run btbt config --help
+uv run btbt config describe --format table
+uv run btbt config set network.listen_port 6882 --dry-run
 ```
 
-Comandos de configuración extendidos: [ccbt/cli/config_commands_extended.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/config_commands_extended.py)
-
-Ver [Guía de Configuración](configuration.md) para opciones de configuración detalladas.
+Ver [Guía de Configuración](configuration.md) para opciones detalladas.
 
 ## Comandos Avanzados
 

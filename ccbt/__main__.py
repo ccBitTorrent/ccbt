@@ -46,27 +46,32 @@ def main():
     parser = argparse.ArgumentParser(description="ccBitTorrent - A BitTorrent client")
     parser.add_argument("torrent", help="Path to torrent file, URL, or magnet URI")
     parser.add_argument(
+        "-p",
         "--port",
         type=int,
         default=6881,
         help="Port to listen on (default: 6881)",
     )
     parser.add_argument(
+        "-m",
         "--magnet",
         action="store_true",
         help="Treat input as a magnet URI",
     )
     parser.add_argument(
+        "-d",
         "--daemon",
         action="store_true",
         help="Run long-lived multi-torrent session",
     )
     parser.add_argument(
+        "-a",
         "--add",
         action="append",
         help="Add a torrent or magnet (repeatable)",
     )
     parser.add_argument(
+        "-s",
         "--status",
         action="store_true",
         help="Show status and exit (daemon mode)",

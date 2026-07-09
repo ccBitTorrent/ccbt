@@ -22,6 +22,23 @@ import sys
 from pathlib import Path
 from typing import NamedTuple, Optional
 
+# Substrings matched against `Path.as_posix()` (Windows-safe).
+_DEFAULT_DIRECTORY_EXCLUDES: tuple[str, ...] = (
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    "node_modules",
+    "build",
+    "dist",
+    "htmlcov",
+    "site",
+    # Offline translation tooling and generated locale payloads (not runtime i18n)
+    "ccbt/i18n/scripts/",
+    "ccbt/i18n/locale_data/",
+)
+
 
 class CompatibilityIssue(NamedTuple):
     """Represents a compatibility issue found in code."""
@@ -732,25 +749,15 @@ class CompatibilityLinter:
 
     def lint_directory(self, directory: Path, exclude_patterns: Optional[list[str]] = None) -> list[CompatibilityIssue]:
         """Lint all Python files in a directory."""
-        if exclude_patterns is None:
-            exclude_patterns = [
-                ".git",
-                ".venv",
-                "__pycache__",
-                ".pytest_cache",
-                ".ruff_cache",
-                "node_modules",
-                "build",
-                "dist",
-                "htmlcov",
-                "site",
-            ]
+        patterns = list(_DEFAULT_DIRECTORY_EXCLUDES)
+        if exclude_patterns:
+            patterns.extend(exclude_patterns)
 
         all_issues: list[CompatibilityIssue] = []
 
         for py_file in directory.rglob("*.py"):
-            # Skip excluded paths
-            if any(exclude in str(py_file) for exclude in exclude_patterns):
+            posix_path = py_file.as_posix()
+            if any(excl in posix_path for excl in patterns):
                 continue
 
             file_issues = self.check_file(py_file)

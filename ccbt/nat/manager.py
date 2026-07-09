@@ -55,7 +55,7 @@ class NATManager:
             True if a protocol was discovered, False otherwise
 
         """
-        # CRITICAL FIX: Don't retry discovery if it already failed and we're not forcing
+        # Note: Don't retry discovery if it already failed and we're not forcing
         # This prevents infinite discovery loops when discovery fails
         if self._discovery_attempted and not force and not self.active_protocol:
             self.logger.debug(
@@ -63,7 +63,7 @@ class NATManager:
             )
             return False
 
-        # CRITICAL FIX: Add retry logic with exponential backoff for NAT discovery
+        # Note: Add retry logic with exponential backoff for NAT discovery
         # Retry delays: 2s, 4s (2 attempts total) - optimized for faster startup
         max_attempts = 2
         retry_delays = [2.0, 4.0]
@@ -156,11 +156,16 @@ class NATManager:
                             e,
                         )
 
-        # NAT traversal is optional - only log as debug to reduce noise
-        # Downloads work fine without NAT traversal (most users don't need it)
+        # NAT traversal is optional; downloads work without it for many users.
+        recommended_action = (
+            "Optional: enable UPnP or NAT-PMP on the router, or configure a manual port forward "
+            "if you need inbound peer connections."
+        )
         self.logger.info(
-            "No NAT traversal protocol available after %d attempts (this is normal and doesn't affect downloads)",
+            "No NAT traversal protocol available after %d attempts "
+            "(this is normal and does not block downloads). recommended_action=%s",
             max_attempts,
+            recommended_action,
         )
         return False
 
@@ -169,7 +174,7 @@ class NATManager:
         if not self.config.nat.auto_map_ports:
             return
 
-        # CRITICAL FIX: Clear discovery cache on startup to force fresh discovery
+        # Note: Clear discovery cache on startup to force fresh discovery
         # This helps when router UPnP service has changed or stale URLs exist
         if self.upnp_client:
             self.upnp_client.clear_cache()
@@ -177,7 +182,7 @@ class NATManager:
 
         await self.discover()
 
-        # CRITICAL FIX: Clear existing port mappings before creating new ones
+        # Note: Clear existing port mappings before creating new ones
         # This prevents conflicts from stale mappings left by previous sessions
         if self.active_protocol == "upnp" and self.upnp_client:
             try:
@@ -235,7 +240,7 @@ class NATManager:
 
         """
         if not self.active_protocol:
-            # CRITICAL FIX: Only try discovery once if not already attempted
+            # Note: Only try discovery once if not already attempted
             # This prevents multiple discovery attempts when mapping multiple ports
             if not self._discovery_attempted:
                 discovered = await self.discover()
@@ -255,7 +260,7 @@ class NATManager:
                 )
                 return None
 
-        # CRITICAL FIX: Add retry logic with exponential backoff for failed port mappings
+        # Note: Add retry logic with exponential backoff for failed port mappings
         # Retry delays: 5s, 10s, 20s (3 attempts total)
         max_attempts = 3
         retry_delays = [5.0, 10.0, 20.0]
@@ -425,6 +430,15 @@ class NATManager:
                             f"UPnP port mapping failed: Router denied the port mapping request. "
                             f"This may indicate insufficient permissions or router security restrictions. "
                             f"Try manually forwarding port {internal_port} ({protocol.upper()}) in your router settings."
+                        )
+                    elif (
+                        "decode" in error_msg.lower()
+                        or "encoding" in error_msg.lower()
+                        or "UnicodeDecodeError" in error_msg
+                    ):
+                        user_msg = (
+                            f"UPnP port mapping failed: Router sent a response that could not be decoded (non-UTF-8 or invalid encoding). "
+                            f"Consider manually forwarding port {internal_port} ({protocol.upper()}) in your router settings."
                         )
                     else:
                         user_msg = (
@@ -654,14 +668,14 @@ class NATManager:
     async def map_listen_ports(self) -> None:
         """Map all required ports (TCP listen, UDP peer, UDP tracker, DHT, XET).
 
-        CRITICAL FIX: Maps both TCP and UDP for all applicable ports to ensure
+        Note: Maps both TCP and UDP for all applicable ports to ensure
         proper NAT traversal. For listen_port, both TCP and UDP are mapped.
         For tracker_udp_port, both TCP and UDP are mapped if different from listen_port.
         DHT port is UDP only.
         XET protocol port is UDP only.
         XET multicast port is UDP only (usually not needed for multicast).
         """
-        # CRITICAL FIX: Track mapping results for diagnostics
+        # Note: Track mapping results for diagnostics
         mapping_results = []
         # Use new port configuration with backward compatibility
         configured_tcp_port = (
@@ -690,7 +704,7 @@ class NATManager:
         ):
             configured_xet_multicast_port = None
 
-        # CRITICAL FIX: Map both TCP and UDP for listen ports
+        # Note: Map both TCP and UDP for listen ports
         # Use listen_port_tcp and listen_port_udp from config (with fallback to listen_port)
         # If they're the same port, map both TCP and UDP for that port
         # If they're different, map TCP for TCP port and UDP for UDP port
@@ -707,7 +721,7 @@ class NATManager:
                     configured_tcp_port,
                     "tcp",
                 )
-                # CRITICAL FIX: Verify mapping was actually created and uses correct ports
+                # Note: Verify mapping was actually created and uses correct ports
                 verified = False
                 internal_port_match = False
                 if result:
@@ -757,7 +771,7 @@ class NATManager:
                         configured_tcp_port,
                     )
 
-        # CRITICAL FIX: Map UDP for listen_port_udp (or listen_port if not set)
+        # Note: Map UDP for listen_port_udp (or listen_port if not set)
         # If listen_port_tcp == listen_port_udp, we'll have both TCP and UDP for the same port
         if self.config.nat.map_udp_port:
             # Map UDP for listen_port_udp
@@ -772,7 +786,7 @@ class NATManager:
                     configured_udp_port,
                     "udp",
                 )
-                # CRITICAL FIX: Verify mapping was actually created and uses correct ports
+                # Note: Verify mapping was actually created and uses correct ports
                 verified = False
                 internal_port_match = False
                 # external_port_match = False  # Reserved for future use
@@ -823,7 +837,7 @@ class NATManager:
                         configured_udp_port,
                     )
 
-        # CRITICAL FIX: Map both TCP and UDP for tracker_udp_port if different from listen ports
+        # Note: Map both TCP and UDP for tracker_udp_port if different from listen ports
         # Check if tracker port is different from both TCP and UDP listen ports
         tracker_port_different = configured_tracker_udp_port not in (
             configured_tcp_port,
@@ -842,7 +856,7 @@ class NATManager:
                     configured_tracker_udp_port,
                     "udp",
                 )
-                # CRITICAL FIX: Verify mapping was actually created
+                # Note: Verify mapping was actually created
                 verified = False
                 internal_port_match = False
                 if result:
@@ -881,7 +895,7 @@ class NATManager:
                         configured_tracker_udp_port,
                     )
 
-            # CRITICAL FIX: Also map TCP for tracker port (both protocols needed)
+            # Note: Also map TCP for tracker port (both protocols needed)
             if self.config.nat.map_tcp_port:
                 if (
                     configured_tracker_udp_port <= 0
@@ -948,7 +962,7 @@ class NATManager:
                     dht_port,
                     "udp",
                 )
-                # CRITICAL FIX: Verify mapping was actually created
+                # Note: Verify mapping was actually created
                 verified = False
                 if result:
                     mappings = await self.port_mapping_manager.get_all_mappings()
@@ -1137,7 +1151,7 @@ class NATManager:
                     configured_xet_multicast_port,
                 )
 
-        # CRITICAL FIX: Log summary of all port mappings for diagnostics
+        # Note: Log summary of all port mappings for diagnostics
         successful_mappings = [r for r in mapping_results if r[2]]
         failed_mappings = [r for r in mapping_results if not r[2]]
 
@@ -1240,7 +1254,7 @@ class NATManager:
         if self.external_ip:
             return self.external_ip
 
-        # CRITICAL FIX: Only try discovery once if not already attempted
+        # Note: Only try discovery once if not already attempted
         # This prevents multiple discovery attempts
         if not self.active_protocol and not self._discovery_attempted:
             await self.discover()

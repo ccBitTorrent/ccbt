@@ -12,7 +12,7 @@ import asyncio
 import importlib
 import sys
 from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -171,7 +171,7 @@ class TestResumeVerify:
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -224,7 +224,7 @@ class TestResumeVerify:
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return None
 
@@ -250,7 +250,7 @@ class TestResumeVerify:
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -290,7 +290,7 @@ class TestResumeVerify:
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 
@@ -355,7 +355,7 @@ class TestResumeVerify:
         class MockCheckpointManager:
             def __init__(self, config):
                 pass
-            
+
             async def load_checkpoint(self, ih):
                 return mock_checkpoint
 

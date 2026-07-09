@@ -79,21 +79,21 @@ class TestConfigFlags:
         from ccbt.cli.main import _apply_disk_overrides
 
         cfg = _make_mock_config()
-        
+
         # Make setting enable_io_uring raise an AttributeError (platform-specific)
         def set_io_uring(value):
             raise AttributeError("enable_io_uring not available on this platform")
-        
+
         type(cfg.disk).enable_io_uring = property(
             lambda self: False,
             set_io_uring
         )
-        
+
         options = {"enable_io_uring": True}
 
         # Exception should be caught and logged
         _apply_disk_overrides(cfg, options)
-        
+
         # Should not raise - exception is caught
 
 
@@ -121,6 +121,7 @@ class TestErrorPaths:
     def test_checkpoint_export_invalid_info_hash(self, mock_config_manager, tmp_path):
         """Test checkpoint export with invalid info_hash format (lines 1112-1115)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Setup mock config manager
@@ -143,6 +144,7 @@ class TestErrorPaths:
     def test_checkpoint_backup_invalid_info_hash(self, mock_config_manager, tmp_path):
         """Test checkpoint backup with invalid info_hash format (lines 1155-1158)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Setup mock config manager
@@ -165,6 +167,7 @@ class TestErrorPaths:
     def test_checkpoint_verify_invalid_info_hash(self, mock_config_manager):
         """Test checkpoint verify with invalid info_hash format (lines 1068-1071)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Setup mock config manager
@@ -186,6 +189,7 @@ class TestErrorPaths:
     def test_config_command_exception(self, mock_config_manager):
         """Test config command exception handling (lines 842-852)."""
         from click.testing import CliRunner
+
         from ccbt.cli.main import cli
 
         # Make ConfigManager raise an exception

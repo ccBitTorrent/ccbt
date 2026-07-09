@@ -5,14 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
     from textual.app import ComposeResult
     from textual.containers import Vertical
     from textual.widgets import Footer, Header, Static
+
+    from ccbt.session.session import AsyncSessionManager
 else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -25,6 +27,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.panel import Panel
 from rich.table import Table
 
@@ -34,6 +54,10 @@ from ccbt.interface.widgets import SparklineGroup
 
 class HistoricalTrendsScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display historical trends for various metrics using sparklines."""
+
+    _reactive_sources = ("global_stats", "system_metrics")
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    system_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -65,14 +89,31 @@ class HistoricalTrendsScreen(MonitoringScreen):  # type: ignore[misc]
             yield SparklineGroup(id="sparklines")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh historical trends display."""
         try:
             content = self.query_one("#content", Static)
             sparklines = self.query_one("#sparklines", SparklineGroup)
 
-            # Get current metrics
-            stats = await self.session.get_global_stats()
+            stats_override = overrides.get("global_stats_override")
+            if stats_override is None:
+                try:
+                    if isinstance(self.global_stats, dict) and self.global_stats:
+                        stats_override = self.global_stats
+                except Exception:
+                    stats_override = None
+            sys_override = overrides.get("system_metrics_override")
+            if sys_override is None:
+                try:
+                    if isinstance(self.system_metrics, dict) and self.system_metrics:
+                        sys_override = self.system_metrics
+                except Exception:
+                    sys_override = None
+
+            if isinstance(stats_override, dict) and stats_override:
+                stats = stats_override
+            else:
+                stats = await self.session.get_global_stats()
 
             # Store historical data
             self._store_historical_metric(
@@ -80,8 +121,14 @@ class HistoricalTrendsScreen(MonitoringScreen):  # type: ignore[misc]
             )
             self._store_historical_metric("upload_rate", stats.get("upload_rate", 0.0))
 
-            # Get system metrics if available
-            if self.metrics_collector and self.metrics_collector.running:
+            if isinstance(sys_override, dict) and sys_override:
+                self._store_historical_metric(
+                    "cpu_usage", float(sys_override.get("cpu_usage", 0.0))
+                )
+                self._store_historical_metric(
+                    "memory_usage", float(sys_override.get("memory_usage", 0.0))
+                )
+            elif self.metrics_collector and self.metrics_collector.running:
                 system_metrics = self.metrics_collector.get_system_metrics()
                 self._store_historical_metric(
                     "cpu_usage", system_metrics.get("cpu_usage", 0.0)

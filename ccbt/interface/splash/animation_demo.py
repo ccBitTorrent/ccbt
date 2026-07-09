@@ -7,20 +7,20 @@ Run this to test and preview animations before using them in the CLI/interface.
 from __future__ import annotations
 
 import asyncio
-import sys
 import os
+import sys
 
 # Handle Unicode encoding for Windows
-if os.name == 'nt':  # Windows
+if os.name == "nt":  # Windows
     try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
 from ccbt.interface.splash.animation_helpers import AnimationController
 from ccbt.interface.splash.animations import AnimationSegments
-from ccbt.interface.splash.ascii_art import LOGO_1, CCBT_TITLE
+from ccbt.interface.splash.ascii_art import CCBT_TITLE, LOGO_1
 
 
 async def run_animation_demo() -> None:
@@ -100,7 +100,7 @@ async def run_animation_demo() -> None:
         except KeyboardInterrupt:
             print(f"\n\nSkipped: {name}")
             response = input("\nContinue with next animation? (y/n): ").lower()
-            if response != 'y':
+            if response != "y":
                 print("\nDemo cancelled by user.")
                 return
         except Exception as e:

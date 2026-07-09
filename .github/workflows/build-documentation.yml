@@ -8,7 +8,7 @@ on:
     paths:
       - 'docs/**'
       - 'dev/mkdocs.yml'
-      - '.readthedocs.yaml'
+      - 'dev/.readthedocs.yaml'
       - 'dev/requirements-rtd.txt'
       - 'ccbt/**'
   workflow_dispatch:
@@ -147,7 +147,7 @@ jobs:
       - name: Generate Bandit report
         run: |
           uv run python tests/scripts/ensure_bandit_dir.py
-          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks
+          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks,ccbt/i18n/scripts,ccbt/i18n/locale_data
         continue-on-error: true
       
       - name: Ensure report files exist in documentation location

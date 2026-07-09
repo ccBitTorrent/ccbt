@@ -16,7 +16,6 @@ Covers missing lines:
 from __future__ import annotations
 
 import asyncio
-import importlib
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -24,7 +23,6 @@ import pytest
 from ccbt.plugins.base import (
     Plugin,
     PluginError,
-    PluginInfo,
     PluginManager,
     PluginState,
 )
@@ -39,19 +37,15 @@ class TestPluginClass(Plugin):
 
     async def initialize(self) -> None:
         """Initialize the plugin."""
-        pass
 
     async def start(self) -> None:
         """Start the plugin."""
-        pass
 
     async def stop(self) -> None:
         """Stop the plugin."""
-        pass
 
     async def cleanup(self) -> None:
         """Cleanup plugin resources."""
-        pass
 
 
 class TestPluginHookOperations:
@@ -562,7 +556,6 @@ class TestPluginManagerGetPluginDependencies:
             assert len(plugins) == 0
 
         # Run async test
-        import asyncio
         asyncio.run(load_and_check())
 
 
@@ -587,9 +580,9 @@ class TestPluginManagerLoadPluginFromModule:
                     if name == "Plugin":
                         raise AttributeError("Plugin")
                     return MagicMock()
-            
+
             mock_import.return_value = MockModuleWithoutPlugin()
-            
+
             # This will raise AttributeError when accessing Plugin, which gets caught
             # and re-raised as PluginError with "Failed to load plugin from module"
             with pytest.raises(PluginError, match="Failed to load plugin from module"):

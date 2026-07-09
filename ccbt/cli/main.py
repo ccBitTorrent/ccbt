@@ -1,7 +1,5 @@
 """Enhanced CLI for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides rich CLI interface with:
 - Interactive TUI
 - Progress bars
@@ -27,8 +25,12 @@ from ccbt.cli.advanced_commands import performance as performance_cmd
 from ccbt.cli.advanced_commands import recover as recover_cmd
 from ccbt.cli.advanced_commands import security as security_cmd
 from ccbt.cli.advanced_commands import test as test_cmd
+from ccbt.cli.auth_commands import auth as auth_group
+from ccbt.cli.cli_option_sets import (
+    DOWNLOAD_MAGNET_SHARED_OPTIONS,
+    compose_click_options,
+)
 from ccbt.cli.config_commands import config as config_group
-from ccbt.cli.config_commands_extended import config_extended
 from ccbt.cli.create_torrent import create_torrent
 from ccbt.cli.daemon_commands import daemon as daemon_group
 from ccbt.cli.downloads import (
@@ -56,12 +58,14 @@ from ccbt.cli.proxy_commands import proxy as proxy_group
 from ccbt.cli.queue_commands import queue as queue_group
 from ccbt.cli.scrape_commands import scrape as scrape_group
 from ccbt.cli.ssl_commands import ssl as ssl_group
+from ccbt.cli.ssl_posture import is_strict_ssl_posture
 from ccbt.cli.torrent_commands import dht as dht_group
 from ccbt.cli.torrent_commands import global_controls as global_controls_group
 from ccbt.cli.torrent_commands import peer as peer_group
 from ccbt.cli.torrent_commands import pex as pex_group
 from ccbt.cli.torrent_commands import torrent as torrent_control_group
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
+from ccbt.config.env_bootstrap import maybe_load_dotenv_from_env
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
 from ccbt.i18n import _
@@ -336,7 +340,7 @@ async def _route_to_daemon_if_running(
         True if routed to daemon, False if daemon not running
 
     """
-    # CRITICAL FIX: Check PID file existence directly before attempting os.kill()
+    # Note: Check PID file existence directly before attempting os.kill()
     # This avoids Windows-specific os.kill() errors that can cause false negatives
     daemon_manager = DaemonManager()
     pid_file_exists = daemon_manager.pid_file.exists()
@@ -361,7 +365,7 @@ async def _route_to_daemon_if_running(
             # Don't set daemon_running = False here - we'll check via IPC instead
             # The IPC connection check is the authoritative way to verify daemon is running
 
-    # CRITICAL FIX: If PID file exists, we MUST attempt IPC connection
+    # Note: If PID file exists, we MUST attempt IPC connection
     # Don't skip IPC check just because is_running() failed on Windows
     # The IPC connection is the definitive test of whether the daemon is accessible
     if not pid_file_exists and not daemon_running:
@@ -395,7 +399,7 @@ async def _route_to_daemon_if_running(
         )
         client = IPCClient(api_key=api_key, base_url=base_url)
 
-        # CRITICAL FIX: Verify daemon is actually accessible before routing
+        # Note: Verify daemon is actually accessible before routing
         # Increased timeout to 30 seconds to account for slow daemon startup (NAT discovery, DHT bootstrap, etc.)
         # Initial wait to give daemon time to start IPC server after PID file is written
         initial_wait = 1.0
@@ -526,9 +530,9 @@ async def _route_to_daemon_if_running(
                 raise click.ClickException(error_msg)
             return False
 
-        # CRITICAL FIX: Perform the requested operation using executor
+        # Note: Perform the requested operation using executor
         # Wrap in try-except to ensure client is properly closed even on errors
-        # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+        # Note: Use ExecutorManager to ensure consistent executor creation
         from ccbt.executor.manager import ExecutorManager
 
         executor_manager = ExecutorManager.get_instance()
@@ -633,7 +637,7 @@ async def _route_to_daemon_if_running(
         # Re-raise ClickException (these are user-facing errors about daemon state)
         raise
     except Exception as e:
-        # CRITICAL FIX: Distinguish between connection errors and other errors
+        # Note: Distinguish between connection errors and other errors
         error_type = type(e).__name__
         error_str = str(e)
         is_connection_error = (
@@ -681,7 +685,7 @@ async def _route_to_daemon_if_running(
 
         return False
     finally:
-        # CRITICAL FIX: Always close client to prevent resource leaks
+        # Note: Always close client to prevent resource leaks
         if client:
             try:
                 await client.close()
@@ -815,7 +819,7 @@ async def _get_executor() -> tuple[Optional[Any], bool]:
         raise click.ClickException(_(timeout_msg))
 
     # Daemon is accessible - create executor via ExecutorManager
-    # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+    # Note: Use ExecutorManager to ensure consistent executor creation
     # This prevents duplicate executors and ensures proper session reference management
     # ExecutorManager will create DaemonSessionAdapter internally when ipc_client is provided
     from ccbt.executor.manager import ExecutorManager
@@ -947,6 +951,7 @@ def _apply_cli_overrides(cfg_mgr: ConfigManager, options: dict[str, Any]) -> Non
     cfg = cfg_mgr.config
 
     _apply_network_overrides(cfg, options)
+    _apply_ssl_overrides(cfg, options)
     _apply_discovery_overrides(cfg, options)
     _apply_strategy_overrides(cfg, options)
     _apply_disk_overrides(cfg, options)
@@ -988,10 +993,17 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
         cfg.network.enable_utp = True
     if options.get("disable_utp"):
         cfg.network.enable_utp = False
+    security = getattr(cfg, "security", None)
     if options.get("enable_encryption"):
-        cfg.network.enable_encryption = True
+        if security is not None:
+            security.enable_encryption = True
+        else:
+            cfg.network.enable_encryption = True
     if options.get("disable_encryption"):
-        cfg.network.enable_encryption = False
+        if security is not None:
+            security.enable_encryption = False
+        else:
+            cfg.network.enable_encryption = False
     if options.get("tcp_nodelay"):
         cfg.network.tcp_nodelay = True
     if options.get("no_tcp_nodelay"):
@@ -1103,6 +1115,22 @@ def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
         )  # type: ignore[attr-defined]
     if options.get("unchoke_interval") is not None:
         cfg.network.unchoke_interval = float(options["unchoke_interval"])  # type: ignore[attr-defined]
+    if options.get("peer_choked_hard_timeout_seconds") is not None:
+        cfg.network.peer_choked_hard_timeout_seconds = float(
+            options["peer_choked_hard_timeout_seconds"],
+        )
+    if options.get("peer_choked_anchor_timeout_seconds") is not None:
+        cfg.network.peer_choked_anchor_timeout_seconds = float(
+            options["peer_choked_anchor_timeout_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_seconds = float(
+            options["peer_choked_solo_grace_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_zero_bytes_cap_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_zero_bytes_cap_seconds = float(
+            options["peer_choked_solo_grace_zero_bytes_cap_seconds"],
+        )
     if options.get("sequential_window_size") is not None:
         cfg.strategy.sequential_window = int(options["sequential_window_size"])  # type: ignore[attr-defined]
     if options.get("sequential_priority_files") is not None:
@@ -1213,6 +1241,14 @@ def _apply_ssl_overrides(cfg: Config, options: dict[str, Any]) -> None:
             logger.warning("SSL client key path does not exist: %s", key_path)
     if options.get("no_ssl_verify"):
         cfg.security.ssl.ssl_verify_certificates = False
+        logger.warning(
+            "SSL certificate verification disabled (--no-ssl-verify). "
+            "HTTPS tracker connections will not validate server certificates.",
+        )
+        if is_strict_ssl_posture(cfg.security.ssl):
+            logger.warning(
+                "Strict SSL posture requested while verification is disabled."
+            )
     if options.get("ssl_protocol_version"):
         cfg.security.ssl.ssl_protocol_version = options["ssl_protocol_version"]
 
@@ -1293,6 +1329,7 @@ def _apply_protocol_v2_overrides(cfg: Config, options: dict[str, Any]) -> None:
 @click.pass_context
 def cli(ctx, config, verbose, debug):
     """CcBitTorrent - High-performance BitTorrent client."""
+    maybe_load_dotenv_from_env()
     ctx.ensure_object(dict)
     ctx.obj["config"] = config
     # Convert debug flag to verbosity count for backward compatibility
@@ -1328,27 +1365,12 @@ def cli(ctx, config, verbose, debug):
                         "en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu"
                     ).format(current_locale=current_locale)
                 )
-            # Update logging level based on verbosity
+            # Update logging level based on verbosity (survives later init_config)
             cfg = config_manager.config
             if hasattr(cfg, "observability"):
-                from ccbt.models import LogLevel
-                from ccbt.utils.logging_config import setup_logging
+                from ccbt.cli.verbosity import apply_cli_verbosity_to_observability
 
-                # Temporarily override log level based on verbosity
-                original_log_level = cfg.observability.log_level
-
-                # Map verbosity to log level: -v=INFO, -vv/-vvv=DEBUG
-                if verbosity_manager.is_debug():
-                    cfg.observability.log_level = LogLevel.DEBUG
-                elif verbosity_manager.is_verbose():
-                    cfg.observability.log_level = LogLevel.INFO
-                # else: keep original level (usually INFO)
-
-                # Setup logging with verbosity-aware level
-                setup_logging(cfg.observability)
-
-                # Restore original log level (verbosity only affects console output)
-                cfg.observability.log_level = original_log_level
+                apply_cli_verbosity_to_observability(cfg.observability, verbose)
 
     # docs command removed; docs are maintained in repository
 
@@ -1364,115 +1386,7 @@ def cli(ctx, config, verbose, debug):
     is_flag=True,
     help=_("Resume from checkpoint if available"),
 )
-@click.option("--no-checkpoint", is_flag=True, help=_("Disable checkpointing"))
-@click.option("--checkpoint-dir", type=click.Path(), help=_("Checkpoint directory"))
-@click.option("--listen-port", type=int, help=_("Listen port"))
-@click.option("--max-peers", type=int, help=_("Maximum global peers"))
-@click.option("--max-peers-per-torrent", type=int, help=_("Maximum peers per torrent"))
-@click.option("--pipeline-depth", type=int, help=_("Request pipeline depth"))
-@click.option("--block-size-kib", type=int, help=_("Block size (KiB)"))
-@click.option("--connection-timeout", type=float, help=_("Connection timeout (s)"))
-@click.option("--download-limit", type=int, help=_("Global download limit (KiB/s)"))
-@click.option("--upload-limit", type=int, help=_("Global upload limit (KiB/s)"))
-@click.option("--dht-port", type=int, help=_("DHT port"))
-@click.option("--enable-dht", is_flag=True, help=_("Enable DHT"))
-@click.option("--disable-dht", is_flag=True, help=_("Disable DHT"))
-@click.option(
-    "--piece-selection",
-    type=click.Choice(["round_robin", "rarest_first", "sequential"]),
-)
-@click.option("--endgame-threshold", type=float, help=_("Endgame threshold (0..1)"))
-@click.option("--hash-workers", type=int, help=_("Hash verification workers"))
-@click.option("--disk-workers", type=int, help=_("Disk I/O workers"))
-@click.option("--use-mmap", is_flag=True, help=_("Use memory mapping"))
-@click.option("--no-mmap", is_flag=True, help=_("Disable memory mapping"))
-@click.option("--mmap-cache-mb", type=int, help=_("MMap cache size (MB)"))
-@click.option("--write-batch-kib", type=int, help=_("Write batch size (KiB)"))
-@click.option("--write-buffer-kib", type=int, help=_("Write buffer size (KiB)"))
-@click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
-@click.option("--sparse-files", is_flag=True, help=_("Enable sparse files"))
-@click.option("--no-sparse-files", is_flag=True, help=_("Disable sparse files"))
-@click.option(
-    "--enable-io-uring",
-    is_flag=True,
-    help=_("Enable io_uring on Linux if available"),
-)
-@click.option("--disable-io-uring", is_flag=True, help=_("Disable io_uring usage"))
-@click.option(
-    "--direct-io",
-    is_flag=True,
-    help=_("Enable direct I/O for writes when supported"),
-)
-@click.option(
-    "--sync-writes", is_flag=True, help=_("Enable fsync after batched writes")
-)
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
-)
-@click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
-@click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
-@click.option("--metrics-port", type=int, help=_("Metrics port"))
-@click.option("--enable-ipv6", is_flag=True, help=_("Enable IPv6"))
-@click.option("--disable-ipv6", is_flag=True, help=_("Disable IPv6"))
-@click.option("--enable-tcp", is_flag=True, help=_("Enable TCP transport"))
-@click.option("--disable-tcp", is_flag=True, help=_("Disable TCP transport"))
-@click.option("--enable-utp", is_flag=True, help=_("Enable uTP transport"))
-@click.option("--disable-utp", is_flag=True, help=_("Disable uTP transport"))
-@click.option("--enable-encryption", is_flag=True, help=_("Enable protocol encryption"))
-@click.option(
-    "--disable-encryption", is_flag=True, help=_("Disable protocol encryption")
-)
-@click.option("--tcp-nodelay", is_flag=True, help=_("Enable TCP_NODELAY"))
-@click.option("--no-tcp-nodelay", is_flag=True, help=_("Disable TCP_NODELAY"))
-@click.option("--socket-rcvbuf-kib", type=int, help=_("Socket receive buffer (KiB)"))
-@click.option("--socket-sndbuf-kib", type=int, help=_("Socket send buffer (KiB)"))
-@click.option("--listen-interface", type=str, help=_("Listen interface"))
-@click.option("--peer-timeout", type=float, help=_("Peer timeout (s)"))
-@click.option("--dht-timeout", type=float, help=_("DHT timeout (s)"))
-@click.option("--min-block-size-kib", type=int, help=_("Minimum block size (KiB)"))
-@click.option("--max-block-size-kib", type=int, help=_("Maximum block size (KiB)"))
-@click.option("--enable-http-trackers", is_flag=True, help=_("Enable HTTP trackers"))
-@click.option("--disable-http-trackers", is_flag=True, help=_("Disable HTTP trackers"))
-@click.option("--enable-udp-trackers", is_flag=True, help=_("Enable UDP trackers"))
-@click.option("--disable-udp-trackers", is_flag=True, help=_("Disable UDP trackers"))
-@click.option(
-    "--tracker-announce-interval",
-    type=float,
-    help=_("Tracker announce interval (s)"),
-)
-@click.option(
-    "--tracker-scrape-interval",
-    type=float,
-    help=_("Tracker scrape interval (s)"),
-)
-@click.option("--pex-interval", type=float, help=_("PEX interval (s)"))
-@click.option("--endgame-duplicates", type=int, help=_("Endgame duplicate requests"))
-@click.option("--streaming-mode", is_flag=True, help=_("Enable streaming mode"))
-@click.option("--first-piece-priority", is_flag=True, help=_("Prioritize first piece"))
-@click.option("--last-piece-priority", is_flag=True, help=_("Prioritize last piece"))
-@click.option(
-    "--optimistic-unchoke-interval",
-    type=float,
-    help=_("Optimistic unchoke interval (s)"),
-)
-@click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
-@click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
-@click.option(
-    "--enable-v2", "enable_v2", is_flag=True, help=_("Enable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--disable-v2", "disable_v2", is_flag=True, help=_("Disable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--prefer-v2",
-    "prefer_v2",
-    is_flag=True,
-    help=_("Prefer Protocol v2 when available"),
-)
-@click.option(
-    "--v2-only", "v2_only", is_flag=True, help=_("Use Protocol v2 only (disable v1)")
-)
+@compose_click_options(*DOWNLOAD_MAGNET_SHARED_OPTIONS)
 @click.pass_context
 def download(
     ctx,
@@ -1489,7 +1403,7 @@ def download(
     console = Console()
 
     try:
-        # CRITICAL FIX: Always check for daemon PID file FIRST before calling _get_executor()
+        # Note: Always check for daemon PID file FIRST before calling _get_executor()
         # This prevents any possibility of creating a local session when daemon is running
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -1551,7 +1465,7 @@ def download(
             asyncio.run(_add_torrent_to_daemon())
             return
 
-        # CRITICAL FIX: Double-check daemon PID file before creating local session
+        # Note: Double-check daemon PID file before creating local session
         # This is a safety check - if we reach here, PID file should NOT exist
         # (because we checked it at the start and _get_executor() would have raised if it existed)
         if pid_file_exists:
@@ -1559,7 +1473,7 @@ def download(
             raise click.ClickException(_(DAEMON_CRITICAL_ERROR_MSG))
 
         # No daemon running - create local session and executor
-        # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
+        # Note: Use ExecutorManager for consistency, even for local sessions
         from ccbt.executor.manager import ExecutorManager
 
         # Load configuration
@@ -1577,12 +1491,12 @@ def download(
         # Create session (only when daemon is NOT running)
         session = AsyncSessionManager(".")
 
-        # CRITICAL FIX: Start session immediately to initialize NAT manager, TCP server, and port bindings
+        # Note: Start session immediately to initialize NAT manager, TCP server, and port bindings
         # This ensures components use configured ports instead of random ports
         # NOTE: This only runs when daemon is confirmed NOT running - no port conflicts possible
         asyncio.run(session.start())
 
-        # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+        # Note: Use ExecutorManager to ensure consistent executor creation
         # This prevents duplicate executors and ensures proper session reference management
         executor_manager = ExecutorManager.get_instance()
         executor = executor_manager.get_executor(session_manager=session)
@@ -1711,6 +1625,7 @@ def download(
 @click.option("--interactive", "-i", is_flag=True, help=_("Start interactive mode"))
 @click.option(
     "--select-files",
+    "-F",
     is_flag=True,
     help=_("Wait for metadata and prompt for file selection (interactive only)"),
 )
@@ -1720,115 +1635,7 @@ def download(
     is_flag=True,
     help=_("Resume from checkpoint if available"),
 )
-@click.option("--no-checkpoint", is_flag=True, help=_("Disable checkpointing"))
-@click.option("--checkpoint-dir", type=click.Path(), help=_("Checkpoint directory"))
-@click.option("--listen-port", type=int, help=_("Listen port"))
-@click.option("--max-peers", type=int, help=_("Maximum global peers"))
-@click.option("--max-peers-per-torrent", type=int, help=_("Maximum peers per torrent"))
-@click.option("--pipeline-depth", type=int, help=_("Request pipeline depth"))
-@click.option("--block-size-kib", type=int, help=_("Block size (KiB)"))
-@click.option("--connection-timeout", type=float, help=_("Connection timeout (s)"))
-@click.option("--download-limit", type=int, help=_("Global download limit (KiB/s)"))
-@click.option("--upload-limit", type=int, help=_("Global upload limit (KiB/s)"))
-@click.option("--dht-port", type=int, help=_("DHT port"))
-@click.option("--enable-dht", is_flag=True, help=_("Enable DHT"))
-@click.option("--disable-dht", is_flag=True, help=_("Disable DHT"))
-@click.option(
-    "--piece-selection",
-    type=click.Choice(["round_robin", "rarest_first", "sequential"]),
-)
-@click.option("--endgame-threshold", type=float, help=_("Endgame threshold (0..1)"))
-@click.option("--hash-workers", type=int, help=_("Hash verification workers"))
-@click.option("--disk-workers", type=int, help=_("Disk I/O workers"))
-@click.option("--use-mmap", is_flag=True, help=_("Use memory mapping"))
-@click.option("--no-mmap", is_flag=True, help=_("Disable memory mapping"))
-@click.option("--mmap-cache-mb", type=int, help=_("MMap cache size (MB)"))
-@click.option("--write-batch-kib", type=int, help=_("Write batch size (KiB)"))
-@click.option("--write-buffer-kib", type=int, help=_("Write buffer size (KiB)"))
-@click.option("--preallocate", type=click.Choice(["none", "sparse", "full"]))
-@click.option("--sparse-files", is_flag=True, help=_("Enable sparse files"))
-@click.option("--no-sparse-files", is_flag=True, help=_("Disable sparse files"))
-@click.option(
-    "--enable-io-uring",
-    is_flag=True,
-    help=_("Enable io_uring on Linux if available"),
-)
-@click.option("--disable-io-uring", is_flag=True, help=_("Disable io_uring usage"))
-@click.option(
-    "--direct-io",
-    is_flag=True,
-    help=_("Enable direct I/O for writes when supported"),
-)
-@click.option(
-    "--sync-writes", is_flag=True, help=_("Enable fsync after batched writes")
-)
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
-)
-@click.option("--enable-metrics", is_flag=True, help=_("Enable metrics"))
-@click.option("--disable-metrics", is_flag=True, help=_("Disable metrics"))
-@click.option("--metrics-port", type=int, help=_("Metrics port"))
-@click.option("--enable-ipv6", is_flag=True, help=_("Enable IPv6"))
-@click.option("--disable-ipv6", is_flag=True, help=_("Disable IPv6"))
-@click.option("--enable-tcp", is_flag=True, help=_("Enable TCP transport"))
-@click.option("--disable-tcp", is_flag=True, help=_("Disable TCP transport"))
-@click.option("--enable-utp", is_flag=True, help=_("Enable uTP transport"))
-@click.option("--disable-utp", is_flag=True, help=_("Disable uTP transport"))
-@click.option("--enable-encryption", is_flag=True, help=_("Enable protocol encryption"))
-@click.option(
-    "--disable-encryption", is_flag=True, help=_("Disable protocol encryption")
-)
-@click.option("--tcp-nodelay", is_flag=True, help=_("Enable TCP_NODELAY"))
-@click.option("--no-tcp-nodelay", is_flag=True, help=_("Disable TCP_NODELAY"))
-@click.option("--socket-rcvbuf-kib", type=int, help=_("Socket receive buffer (KiB)"))
-@click.option("--socket-sndbuf-kib", type=int, help=_("Socket send buffer (KiB)"))
-@click.option("--listen-interface", type=str, help=_("Listen interface"))
-@click.option("--peer-timeout", type=float, help=_("Peer timeout (s)"))
-@click.option("--dht-timeout", type=float, help=_("DHT timeout (s)"))
-@click.option("--min-block-size-kib", type=int, help=_("Minimum block size (KiB)"))
-@click.option("--max-block-size-kib", type=int, help=_("Maximum block size (KiB)"))
-@click.option("--enable-http-trackers", is_flag=True, help=_("Enable HTTP trackers"))
-@click.option("--disable-http-trackers", is_flag=True, help=_("Disable HTTP trackers"))
-@click.option("--enable-udp-trackers", is_flag=True, help=_("Enable UDP trackers"))
-@click.option("--disable-udp-trackers", is_flag=True, help=_("Disable UDP trackers"))
-@click.option(
-    "--tracker-announce-interval",
-    type=float,
-    help=_("Tracker announce interval (s)"),
-)
-@click.option(
-    "--tracker-scrape-interval",
-    type=float,
-    help=_("Tracker scrape interval (s)"),
-)
-@click.option("--pex-interval", type=float, help=_("PEX interval (s)"))
-@click.option("--endgame-duplicates", type=int, help=_("Endgame duplicate requests"))
-@click.option("--streaming-mode", is_flag=True, help=_("Enable streaming mode"))
-@click.option("--first-piece-priority", is_flag=True, help=_("Prioritize first piece"))
-@click.option("--last-piece-priority", is_flag=True, help=_("Prioritize last piece"))
-@click.option(
-    "--optimistic-unchoke-interval",
-    type=float,
-    help=_("Optimistic unchoke interval (s)"),
-)
-@click.option("--unchoke-interval", type=float, help=_("Unchoke interval (s)"))
-@click.option("--metrics-interval", type=float, help=_("Metrics interval (s)"))
-@click.option(
-    "--enable-v2", "enable_v2", is_flag=True, help=_("Enable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--disable-v2", "disable_v2", is_flag=True, help=_("Disable Protocol v2 (BEP 52)")
-)
-@click.option(
-    "--prefer-v2",
-    "prefer_v2",
-    is_flag=True,
-    help=_("Prefer Protocol v2 when available"),
-)
-@click.option(
-    "--v2-only", "v2_only", is_flag=True, help=_("Use Protocol v2 only (disable v1)")
-)
+@compose_click_options(*DOWNLOAD_MAGNET_SHARED_OPTIONS)
 @click.pass_context
 def magnet(
     ctx,
@@ -1845,7 +1652,7 @@ def magnet(
     console = Console()
 
     try:
-        # CRITICAL FIX: Use a single event loop for the entire operation
+        # Note: Use a single event loop for the entire operation
         # This prevents "Event loop is closed" errors when IPCClient is created
         # in one event loop and used in another
         # Capture variables from outer scope for closure
@@ -1857,7 +1664,7 @@ def magnet(
 
         async def _magnet_operation():
             """Handle magnet operation in a single event loop."""
-            # CRITICAL FIX: Always check for daemon PID file FIRST before calling _get_executor()
+            # Note: Always check for daemon PID file FIRST before calling _get_executor()
             # This prevents any possibility of creating a local session when daemon is running
             daemon_manager = DaemonManager()
             pid_file_exists = daemon_manager.pid_file.exists()
@@ -1934,7 +1741,7 @@ def magnet(
                             logger.debug(_("Error closing IPC client: %s"), e)
                 return
 
-            # CRITICAL FIX: Double-check daemon PID file before creating local session
+            # Note: Double-check daemon PID file before creating local session
             # This is a safety check - if we reach here, PID file should NOT exist
             # (because we checked it at the start and _get_executor() would have raised if it existed)
             # But we check again as a defensive measure
@@ -1963,7 +1770,7 @@ def magnet(
             )
 
             # No daemon running - create local session and executor
-            # CRITICAL FIX: Use ExecutorManager for consistency, even for local sessions
+            # Note: Use ExecutorManager for consistency, even for local sessions
             from ccbt.executor.manager import ExecutorManager
 
             # Load configuration
@@ -1980,12 +1787,12 @@ def magnet(
             # Create session (only when daemon is NOT running)
             session = AsyncSessionManager(".")
 
-            # CRITICAL FIX: Start session immediately to initialize NAT manager, TCP server, and port bindings
+            # Note: Start session immediately to initialize NAT manager, TCP server, and port bindings
             # This ensures components use configured ports instead of random ports
             # NOTE: This only runs when daemon is confirmed NOT running - no port conflicts possible
             await session.start()
 
-            # CRITICAL FIX: Use ExecutorManager to ensure consistent executor creation
+            # Note: Use ExecutorManager to ensure consistent executor creation
             # This prevents duplicate executors and ensures proper session reference management
             executor_manager = ExecutorManager.get_instance()
             executor = executor_manager.get_executor(session_manager=session)
@@ -2138,14 +1945,14 @@ def magnet(
 
 @cli.command()
 @click.option("--port", "-p", type=int, default=9090, help=_("Port for web interface"))
-@click.option("--host", "-h", default="localhost", help=_("Host for web interface"))
+@click.option("--host", "-H", default="localhost", help=_("Host for web interface"))
 @click.pass_context
 def web(ctx, port, host):
     """Start web interface."""
     console = Console()
 
     try:
-        # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+        # Note: Check for daemon PID file BEFORE creating local session
         # If PID file exists, we MUST prevent local session to avoid port conflicts
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -2190,7 +1997,7 @@ def interactive(ctx):
 
         if executor is None:
             # No daemon running - create local session and executor
-            # CRITICAL FIX: Use ExecutorManager for consistency
+            # Note: Use ExecutorManager for consistency
             from ccbt.executor.manager import ExecutorManager
 
             session = AsyncSessionManager(".")
@@ -2312,27 +2119,19 @@ def status(ctx):
 
 
 @cli.command()
-@click.pass_context
-def config(ctx):
-    """Manage configuration."""
-    console = Console()
-
-    try:
-        # Load configuration
-        config_manager = ConfigManager(ctx.obj["config"])
-        config = config_manager.config
-
-        # Show configuration
-        show_config(config, console)
-
-    except Exception as e:
-        console.print(_("[red]Error: {error}[/red]").format(error=e))
-        raise click.ClickException(str(e)) from e
-
-
-@cli.command()
-@click.option("--set", "locale_code", help=_("Set locale (e.g., 'en', 'es', 'fr')"))
-@click.option("--list", "list_locales", is_flag=True, help=_("List available locales"))
+@click.option(
+    "--set",
+    "-s",
+    "locale_code",
+    help=_("Set locale (e.g., 'en', 'es', 'fr')"),
+)
+@click.option(
+    "--list",
+    "-L",
+    "list_locales",
+    is_flag=True,
+    help=_("List available locales"),
+)
 @click.pass_context
 def language(ctx, locale_code: Optional[str], list_locales: bool) -> None:
     """Manage language/locale settings."""
@@ -2393,7 +2192,7 @@ def debug(ctx):
     console = Console()
 
     try:
-        # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+        # Note: Check for daemon PID file BEFORE creating local session
         # If PID file exists, we MUST prevent local session to avoid port conflicts
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -2524,6 +2323,7 @@ def list_checkpoints(ctx, _checkpoint_format):
 )
 @click.option(
     "--dry-run",
+    "-n",
     is_flag=True,
     help=_("Show what would be deleted without actually deleting"),
 )
@@ -2674,12 +2474,14 @@ def verify_checkpoint_cmd(ctx, info_hash):
 @click.argument("info_hash")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["json", "binary"]),
     default="json",
 )
 @click.option(
     "--output",
+    "-o",
     "output_path",
     type=click.Path(),
     required=True,
@@ -2718,6 +2520,7 @@ def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
 @click.argument("info_hash")
 @click.option(
     "--destination",
+    "-d",
     "destination",
     type=click.Path(),
     required=True,
@@ -2725,11 +2528,17 @@ def export_checkpoint_cmd(ctx, info_hash, format_, output_path):
 )
 @click.option(
     "--compress",
+    "-c",
     is_flag=True,
     default=True,
     help=_("Compress backup (default: yes)"),
 )
-@click.option("--encrypt", is_flag=True, help=_("Encrypt backup with generated key"))
+@click.option(
+    "--encrypt",
+    "-e",
+    is_flag=True,
+    help=_("Encrypt backup with generated key"),
+)
 @click.pass_context
 def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
     """Backup a checkpoint to a destination path."""
@@ -2768,6 +2577,7 @@ def backup_checkpoint_cmd(ctx, info_hash, destination, compress, encrypt):
 @click.argument("backup_file", type=click.Path(exists=True))
 @click.option(
     "--info-hash",
+    "-i",
     "info_hash",
     type=str,
     default=None,
@@ -2810,8 +2620,16 @@ def restore_checkpoint_cmd(ctx, backup_file, info_hash):
 
 @checkpoints.command("migrate")
 @click.argument("info_hash")
-@click.option("--from-format", type=click.Choice(["json", "binary"]))
-@click.option("--to-format", type=click.Choice(["json", "binary", "both"]))
+@click.option(
+    "--from-format",
+    "-F",
+    type=click.Choice(["json", "binary"]),
+)
+@click.option(
+    "--to-format",
+    "-T",
+    type=click.Choice(["json", "binary", "both"]),
+)
 @click.pass_context
 def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
     """Migrate a checkpoint between formats."""
@@ -2846,12 +2664,14 @@ def migrate_checkpoint_cmd(ctx, info_hash, from_format, to_format):
 @checkpoints.command("reload")
 @click.argument("info_hash")
 @click.option(
-    "--peers/--no-peers",
+    "-P/--peers/--no-peers",
+    "peers",
     default=True,
     help=_("Reconnect to peers from checkpoint"),
 )
 @click.option(
-    "--trackers/--no-trackers",
+    "-K/--trackers/--no-trackers",
+    "trackers",
     default=True,
     help=_("Refresh tracker state from checkpoint"),
 )
@@ -2941,12 +2761,14 @@ def checkpoint_reload(_ctx, info_hash, peers, trackers):
 @checkpoints.command("refresh")
 @click.argument("info_hash")
 @click.option(
-    "--peers/--no-peers",
+    "-P/--peers/--no-peers",
+    "peers",
     default=True,
     help=_("Reconnect to peers from checkpoint"),
 )
 @click.option(
-    "--trackers/--no-trackers",
+    "-K/--trackers/--no-trackers",
+    "trackers",
     default=True,
     help=_("Refresh tracker state from checkpoint"),
 )
@@ -3106,6 +2928,7 @@ def resume_save(ctx, info_hash):
 @click.argument("info_hash")
 @click.option(
     "--verify-pieces",
+    "-V",
     type=int,
     default=0,
     help=_("Number of pieces to verify for integrity (0 = disable)"),
@@ -3246,7 +3069,7 @@ def resume(ctx, info_hash, _output_dir, interactive):
     console = Console()
 
     try:
-        # CRITICAL FIX: Check for daemon PID file BEFORE creating local session
+        # Note: Check for daemon PID file BEFORE creating local session
         # If PID file exists, we MUST prevent local session to avoid port conflicts
         daemon_manager = DaemonManager()
         pid_file_exists = daemon_manager.pid_file.exists()
@@ -3587,7 +3410,6 @@ async def start_debug_mode(_session: AsyncSessionManager, console: Console) -> N
 
 # Register external command groups at module level so they appear in --help
 cli.add_command(config_group)
-cli.add_command(config_extended)
 cli.add_command(daemon_group)
 cli.add_command(torrent_group)
 cli.add_command(torrent_control_group)
@@ -3599,6 +3421,7 @@ cli.add_command(queue_group)
 cli.add_command(files_group)
 cli.add_command(nat_group)
 cli.add_command(ssl_group)
+cli.add_command(auth_group)
 cli.add_command(proxy_group)
 cli.add_command(scrape_group)
 cli.add_command(resume_cmd)

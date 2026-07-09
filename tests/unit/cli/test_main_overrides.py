@@ -108,6 +108,7 @@ def _make_cfg() -> Any:
 
     class Security:
         ssl = SSL()
+        enable_encryption = False
 
     class Cfg:
         network = Net()
@@ -153,20 +154,49 @@ def test_apply_network_overrides_exercises_paths():
     assert cfg.network.enable_ipv6 is False
     assert cfg.network.enable_tcp is False
     assert cfg.network.enable_utp is True
-    assert cfg.network.enable_encryption is True
+    assert cfg.security.enable_encryption is True
     assert cfg.network.tcp_nodelay is True
     assert cfg.network.socket_rcvbuf_kib == 256
     assert cfg.network.socket_sndbuf_kib == 256
     assert cfg.network.listen_interface == "lo"
 
 
+def test_apply_network_overrides_encryption_flags_target_security_model():
+    from ccbt.cli.main import _apply_network_overrides
+
+    class Security:
+        enable_encryption: bool = False
+
+    class Network:
+        def __setattr__(self, name: str, value: object) -> None:
+            if name == "enable_encryption":
+                raise AssertionError("network.enable_encryption must not be written")
+            super().__setattr__(name, value)
+
+    class Cfg:
+        network = Network()
+        security = Security()
+        webtorrent = type(
+            "WebTorrent",
+            (),
+            {"enable_webtorrent": True},
+        )()
+
+    cfg = Cfg()
+    _apply_network_overrides(cfg, {"enable_encryption": True})
+    assert cfg.security.enable_encryption is True
+
+    _apply_network_overrides(cfg, {"disable_encryption": True})
+    assert cfg.security.enable_encryption is False
+
+
 def test_apply_discovery_strategy_disk_observability_and_limits():
     from ccbt.cli.main import (
         _apply_discovery_overrides,
-        _apply_strategy_overrides,
         _apply_disk_overrides,
-        _apply_observability_overrides,
         _apply_limit_overrides,
+        _apply_observability_overrides,
+        _apply_strategy_overrides,
     )
 
     cfg = _make_cfg()
@@ -234,7 +264,12 @@ def test_apply_discovery_strategy_disk_observability_and_limits():
             "log_correlation_id": True,
         },
     )
+    assert cfg.observability.log_level == "DEBUG"
     assert cfg.observability.enable_metrics is True
+    assert cfg.observability.metrics_port == 9091
+    assert cfg.observability.metrics_interval == 2.5
+    assert cfg.observability.structured_logging is True
+    assert cfg.observability.log_correlation_id is True
 
     _apply_limit_overrides(cfg, {"download_limit": 1234, "upload_limit": 4321})
     assert cfg.network.global_down_kib == 1234
@@ -544,7 +579,7 @@ def test_proxy_invalid_port():
 
     cfg = _make_cfg()
     opts = {"proxy": "proxy.example.com:invalid"}
-    
+
     with pytest.raises(click.Abort):
         _apply_proxy_overrides(cfg, opts)
 
@@ -629,45 +664,39 @@ def test_ssl_peer_disable_flag():
 
 def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
     """Test SSL CA certificates path expansion and validation (lines 369-374)."""
-    from ccbt.cli.main import _apply_ssl_overrides
     from pathlib import Path
-    from unittest.mock import MagicMock
+
+    from ccbt.cli.main import _apply_ssl_overrides
 
     cfg = _make_cfg()
     ca_file = tmp_path / "ca.crt"
     ca_file.write_text("fake ca cert")
-    
+
     # Test with existing path
     opts = {"ssl_ca_certs": str(ca_file)}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_ca_certificates == str(ca_file)
-    
+
     # Test path expansion with ~ (expanduser)
     expanded_path = tmp_path / "expanded.crt"
     expanded_path.write_text("fake ca cert")
-    
-    # Mock Path to return expanded_path when expanduser is called
-    original_path_init = Path.__init__
-    
-    class MockPath(Path):
-        def expanduser(self):
+
+    original_expanduser = Path.expanduser
+
+    def mock_expanduser(self):
+        if self.as_posix() == "~/ca.crt":
             return expanded_path
-    
-    def mock_path_init(self, *args, **kwargs):
-        if args and str(args[0]) == "~/ca.crt":
-            # Return expanded path
-            return original_path_init(self, expanded_path, **kwargs)
-        return original_path_init(self, *args, **kwargs)
-    
+        return original_expanduser(self)
+
     with monkeypatch.context() as m:
-        m.setattr(Path, "__init__", mock_path_init)
+        m.setattr(Path, "expanduser", mock_expanduser)
         cfg2 = _make_cfg()
         opts2 = {"ssl_ca_certs": "~/ca.crt"}
         _apply_ssl_overrides(cfg2, opts2)
         # Should use expanded path
         if expanded_path.exists():
             assert cfg2.security.ssl.ssl_ca_certificates == str(expanded_path)
-    
+
     # Test with non-existent path (should warn but not set)
     cfg3 = _make_cfg()
     nonexistent_file = tmp_path / "nonexistent.crt"
@@ -683,16 +712,15 @@ def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
 def test_ssl_client_cert_path_expansion_and_validation(tmp_path, monkeypatch):
     """Test SSL client certificate path expansion and validation (lines 376-381)."""
     from ccbt.cli.main import _apply_ssl_overrides
-    from unittest.mock import MagicMock
 
     cfg = _make_cfg()
     cert_file = tmp_path / "client.crt"
     cert_file.write_text("fake cert")
-    
+
     opts = {"ssl_client_cert": str(cert_file)}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_client_certificate == str(cert_file)
-    
+
     # Test with non-existent path (should warn)
     cfg2 = _make_cfg()
     nonexistent_file = tmp_path / "nonexistent.crt"
@@ -706,16 +734,15 @@ def test_ssl_client_cert_path_expansion_and_validation(tmp_path, monkeypatch):
 def test_ssl_client_key_path_expansion_and_validation(tmp_path, monkeypatch):
     """Test SSL client key path expansion and validation (lines 383-388)."""
     from ccbt.cli.main import _apply_ssl_overrides
-    from unittest.mock import MagicMock
 
     cfg = _make_cfg()
     key_file = tmp_path / "client.key"
     key_file.write_text("fake key")
-    
+
     opts = {"ssl_client_key": str(key_file)}
     _apply_ssl_overrides(cfg, opts)
     assert cfg.security.ssl.ssl_client_key == str(key_file)
-    
+
     # Test with non-existent path (should warn)
     cfg2 = _make_cfg()
     nonexistent_file = tmp_path / "nonexistent.key"
@@ -752,10 +779,12 @@ def test_ssl_protocol_version():
 
 def test_ip_filter_loading_success(tmp_path, monkeypatch):
     """Test IP filter file loading success path (lines 746-749)."""
-    from ccbt.cli.main import download
-    from click.testing import CliRunner
     from unittest.mock import AsyncMock, MagicMock, patch
+
     import click
+    from click.testing import CliRunner
+
+    from ccbt.cli.main import download
 
     # Create a filter file
     filter_file = tmp_path / "filter.dat"
@@ -770,11 +799,11 @@ def test_ip_filter_loading_success(tmp_path, monkeypatch):
     mock_security_manager.load_ip_filter = AsyncMock()
 
     runner = CliRunner()
-    
+
     with patch("ccbt.security.security_manager.SecurityManager", return_value=mock_security_manager), \
          patch("ccbt.cli.main.ConfigManager") as mock_cm, \
          patch("ccbt.cli.main.AsyncSessionManager") as mock_session:
-        
+
         # Setup mocks
         mock_config = _make_cfg()
         mock_cm_instance = MagicMock()
@@ -807,10 +836,12 @@ def test_ip_filter_loading_success(tmp_path, monkeypatch):
 
 def test_ip_filter_loading_with_errors(tmp_path, monkeypatch):
     """Test IP filter file loading with errors (lines 750-753)."""
-    from ccbt.cli.main import download
-    from click.testing import CliRunner
     from unittest.mock import AsyncMock, MagicMock, patch
+
     import click
+    from click.testing import CliRunner
+
+    from ccbt.cli.main import download
 
     # Create a filter file
     filter_file = tmp_path / "filter.dat"
@@ -825,11 +856,11 @@ def test_ip_filter_loading_with_errors(tmp_path, monkeypatch):
     mock_security_manager.load_ip_filter = AsyncMock()
 
     runner = CliRunner()
-    
+
     with patch("ccbt.security.security_manager.SecurityManager", return_value=mock_security_manager), \
          patch("ccbt.cli.main.ConfigManager") as mock_cm, \
          patch("ccbt.cli.main.AsyncSessionManager") as mock_session:
-        
+
         # Setup mocks
         mock_config = _make_cfg()
         mock_cm_instance = MagicMock()
@@ -862,10 +893,12 @@ def test_ip_filter_loading_with_errors(tmp_path, monkeypatch):
 
 def test_ip_filter_not_available_warning(tmp_path, monkeypatch):
     """Test IP filter not available warning (lines 756-759)."""
-    from ccbt.cli.main import download
-    from click.testing import CliRunner
     from unittest.mock import AsyncMock, MagicMock, patch
+
     import click
+    from click.testing import CliRunner
+
+    from ccbt.cli.main import download
 
     # Create a filter file
     filter_file = tmp_path / "filter.dat"
@@ -877,11 +910,11 @@ def test_ip_filter_not_available_warning(tmp_path, monkeypatch):
     mock_security_manager.load_ip_filter = AsyncMock()
 
     runner = CliRunner()
-    
+
     with patch("ccbt.security.security_manager.SecurityManager", return_value=mock_security_manager), \
          patch("ccbt.cli.main.ConfigManager") as mock_cm, \
          patch("ccbt.cli.main.AsyncSessionManager") as mock_session:
-        
+
         # Setup mocks
         mock_config = _make_cfg()
         mock_cm_instance = MagicMock()

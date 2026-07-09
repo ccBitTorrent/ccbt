@@ -14,12 +14,12 @@ from ccbt.i18n import _
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ccbt.interface.data_provider import DataProvider
     from ccbt.interface.commands.executor import CommandExecutor
+    from ccbt.interface.data_provider import DataProvider
 else:
     try:
-        from ccbt.interface.data_provider import DataProvider
         from ccbt.interface.commands.executor import CommandExecutor
+        from ccbt.interface.data_provider import DataProvider
     except ImportError:
         # Fallback for when modules are not available
         class DataProvider:  # type: ignore[no-redef]
@@ -112,14 +112,14 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
         """Compose the per-peer tab content."""
         # Summary widget
         yield Static(_("Loading peer metrics..."), id="peer-summary")
-        
+
         # Tables container
         with Container(id="peer-tables-container"):
             # Global peers table
             with Container(id="global-peers-table-container"):
                 yield Static(_("Global Connected Peers"), id="global-peers-title")
                 yield DataTable(id="global-peers-table")
-            
+
             # Peer detail container
             with Container(id="peer-detail-container"):
                 yield Static(_("Peer Details"), id="peer-detail-title")
@@ -131,7 +131,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
             self._summary_widget = self.query_one("#peer-summary", Static)  # type: ignore[attr-defined]
             self._global_peers_table = self.query_one("#global-peers-table", DataTable)  # type: ignore[attr-defined]
             self._peer_detail_table = self.query_one("#peer-detail-table", DataTable)  # type: ignore[attr-defined]
-            
+
             # Initialize tables
             if self._global_peers_table:
                 self._global_peers_table.add_columns(
@@ -144,13 +144,13 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                 )
                 # Enable row selection
                 self._global_peers_table.cursor_type = "row"  # type: ignore[attr-defined]
-            
+
             if self._peer_detail_table:
                 self._peer_detail_table.add_columns(
                     _("Metric"),
                     _("Value"),
                 )
-            
+
             # Start update loop
             self._start_updates()
         except Exception as e:
@@ -161,9 +161,9 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
         try:
             if self._update_task:
                 self._update_task.cancel()
-            
+
             async def update_loop() -> None:
-                # CRITICAL FIX: Use app's event loop for task creation
+                # Note: Use app's event loop for task creation
                 loop = None
                 try:
                     if hasattr(self.app, "loop"):
@@ -172,20 +172,20 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                         loop = asyncio.get_event_loop()
                 except Exception:
                     loop = asyncio.get_event_loop()
-                
+
                 while True:
                     try:
-                        # CRITICAL FIX: Only update if widget is visible and attached
+                        # Note: Only update if widget is visible and attached
                         if self.is_attached and self.display:  # type: ignore[attr-defined]
                             await self._update_peer_data()
-                        await asyncio.sleep(1.0)  # CRITICAL FIX: Reduced from 2.0s to 1.0s for tighter updates
+                        await asyncio.sleep(1.0)  # Note: Reduced from 2.0s to 1.0s for tighter updates
                     except asyncio.CancelledError:
                         break
                     except Exception as e:
                         logger.error("Error in peer update loop: %s", e, exc_info=True)
                         await asyncio.sleep(2.0)
-            
-            # CRITICAL FIX: Use app's event loop for task creation
+
+            # Note: Use app's event loop for task creation
             try:
                 if hasattr(self.app, "loop"):
                     self._update_task = self.app.loop.create_task(update_loop())  # type: ignore[attr-defined]
@@ -201,12 +201,12 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
         if not self._data_provider:
             logger.warning("PerPeerTabContent: Missing data provider, cannot update peer data")
             return
-        
-        # CRITICAL FIX: Ensure widget is visible and attached before updating
+
+        # Note: Ensure widget is visible and attached before updating
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("PerPeerTabContent: Widget not attached or not visible, skipping update")
             return
-        
+
         try:
             logger.debug("PerPeerTabContent: Fetching peer metrics from data provider...")
             metrics = await self._data_provider.get_peer_metrics()
@@ -214,7 +214,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                         metrics.get("total_peers", 0),
                         metrics.get("active_peers", 0),
                         len(metrics.get("peers", [])))
-            
+
             # Update summary
             if self._summary_widget:
                 total_peers = metrics.get("total_peers", 0)
@@ -224,16 +224,16 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                     active=active_peers,
                 )
                 self._summary_widget.update(summary_text)  # type: ignore[attr-defined]
-            
+
             # Update global peers table
             if self._global_peers_table:
-                # CRITICAL FIX: Ensure table is visible and attached before populating
+                # Note: Ensure table is visible and attached before populating
                 if not self._global_peers_table.is_attached or not self._global_peers_table.display:  # type: ignore[attr-defined]
                     logger.debug("PerPeerTabContent: Table not attached or not visible, skipping population")
                     return
-                
+
                 self._global_peers_table.clear()  # type: ignore[attr-defined]
-                # CRITICAL FIX: Ensure columns exist (clear() might remove them)
+                # Note: Ensure columns exist (clear() might remove them)
                 if not self._global_peers_table.columns:  # type: ignore[attr-defined]
                     self._global_peers_table.add_columns(
                         _("IP:Port"),
@@ -243,7 +243,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                         _("Torrents"),
                         _("Duration"),
                     )
-                
+
                 peers = metrics.get("peers", [])
                 logger.debug("PerPeerTabContent: Processing %d peers for table", len(peers))
                 for peer in peers:
@@ -251,29 +251,27 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                     ip = peer.get("ip", "unknown")
                     port = peer.get("port", 0)
                     client = peer.get("client") or "?"
-                    download_rate = peer.get("total_download_rate", 0.0)
-                    upload_rate = peer.get("total_upload_rate", 0.0)
+                    download_rate = float(peer.get("download_rate", 0.0))
+                    upload_rate = float(peer.get("upload_rate", 0.0))
                     info_hashes = peer.get("info_hashes", [])
                     connection_duration = peer.get("connection_duration", 0.0)
-                    
+
                     # Format rates
                     def format_rate(rate: float) -> str:
                         if rate >= 1024 * 1024:
                             return f"{rate / (1024 * 1024):.1f} MB/s"
-                        elif rate >= 1024:
+                        if rate >= 1024:
                             return f"{rate / 1024:.1f} KB/s"
-                        else:
-                            return f"{rate:.1f} B/s"
-                    
+                        return f"{rate:.1f} B/s"
+
                     # Format duration
                     def format_duration(seconds: float) -> str:
                         if seconds < 60:
                             return f"{seconds:.0f}s"
-                        elif seconds < 3600:
+                        if seconds < 3600:
                             return f"{seconds / 60:.1f}m"
-                        else:
-                            return f"{seconds / 3600:.1f}h"
-                    
+                        return f"{seconds / 3600:.1f}h"
+
                     self._global_peers_table.add_row(  # type: ignore[attr-defined]
                         f"{ip}:{port}",
                         client,
@@ -283,16 +281,15 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                         format_duration(connection_duration),
                         key=peer_key,
                     )
-                
-                logger.debug("PerPeerTabContent: Added peer %s:%d to table", ip, port)
-            
+                    logger.debug("PerPeerTabContent: Added peer %s:%d to table", ip, port)
+
             logger.debug("PerPeerTabContent: Added %d peers to table", len(peers))
-            
-            # CRITICAL FIX: Force table refresh and ensure visibility
+
+            # Note: Force table refresh and ensure visibility
             if hasattr(self._global_peers_table, "refresh"):
                 self._global_peers_table.refresh()  # type: ignore[attr-defined]
             self._global_peers_table.display = True  # type: ignore[attr-defined]
-            
+
             # Update peer detail if a peer is selected
             if self._selected_peer_key and self._peer_detail_table:
                 await self._update_peer_detail(self._selected_peer_key, metrics)
@@ -306,7 +303,7 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
         """Update peer detail table for selected peer."""
         if not self._peer_detail_table:
             return
-        
+
         try:
             peers = metrics.get("peers", [])
             peer_data = None
@@ -314,46 +311,50 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
                 if peer.get("peer_key") == peer_key:
                     peer_data = peer
                     break
-            
+
             if not peer_data:
                 self._peer_detail_table.clear()  # type: ignore[attr-defined]
                 self._peer_detail_table.add_row(_("Peer not found"), "")  # type: ignore[attr-defined]
                 return
-            
+
             self._peer_detail_table.clear()  # type: ignore[attr-defined]
-            
+
             # Add peer details
             self._peer_detail_table.add_row(_("IP Address"), peer_data.get("ip", "unknown"))  # type: ignore[attr-defined]
             self._peer_detail_table.add_row(_("Port"), str(peer_data.get("port", 0)))  # type: ignore[attr-defined]
             self._peer_detail_table.add_row(_("Client"), peer_data.get("client") or "?")  # type: ignore[attr-defined]
             self._peer_detail_table.add_row(_("Choked"), "Yes" if peer_data.get("choked") else "No")  # type: ignore[attr-defined]
-            
+
             # Format rates
             def format_rate(rate: float) -> str:
                 if rate >= 1024 * 1024:
                     return f"{rate / (1024 * 1024):.2f} MB/s"
-                elif rate >= 1024:
+                if rate >= 1024:
                     return f"{rate / 1024:.2f} KB/s"
-                else:
-                    return f"{rate:.2f} B/s"
-            
-            self._peer_detail_table.add_row(_("Download Rate"), format_rate(peer_data.get("total_download_rate", 0.0)))  # type: ignore[attr-defined]
-            self._peer_detail_table.add_row(_("Upload Rate"), format_rate(peer_data.get("total_upload_rate", 0.0)))  # type: ignore[attr-defined]
-            
+                return f"{rate:.2f} B/s"
+
+            self._peer_detail_table.add_row(
+                _("Download Rate"),
+                format_rate(peer_data.get("download_rate", 0.0)),
+            )  # type: ignore[attr-defined]
+            self._peer_detail_table.add_row(
+                _("Upload Rate"),
+                format_rate(peer_data.get("upload_rate", 0.0)),
+            )  # type: ignore[attr-defined]
+
             # Format bytes
             def format_bytes(bytes_val: int) -> str:
                 if bytes_val >= 1024 * 1024 * 1024:
                     return f"{bytes_val / (1024 * 1024 * 1024):.2f} GB"
-                elif bytes_val >= 1024 * 1024:
+                if bytes_val >= 1024 * 1024:
                     return f"{bytes_val / (1024 * 1024):.2f} MB"
-                elif bytes_val >= 1024:
+                if bytes_val >= 1024:
                     return f"{bytes_val / 1024:.2f} KB"
-                else:
-                    return f"{bytes_val} B"
-            
+                return f"{bytes_val} B"
+
             self._peer_detail_table.add_row(_("Bytes Downloaded"), format_bytes(peer_data.get("total_bytes_downloaded", 0)))  # type: ignore[attr-defined]
             self._peer_detail_table.add_row(_("Bytes Uploaded"), format_bytes(peer_data.get("total_bytes_uploaded", 0)))  # type: ignore[attr-defined]
-            
+
             # Format duration
             duration = peer_data.get("connection_duration", 0.0)
             if duration < 60:
@@ -363,16 +364,16 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
             else:
                 duration_str = f"{duration / 3600:.1f} hours"
             self._peer_detail_table.add_row(_("Connection Duration"), duration_str)  # type: ignore[attr-defined]
-            
+
             # Pieces info
             self._peer_detail_table.add_row(_("Pieces Received"), str(peer_data.get("pieces_received", 0)))  # type: ignore[attr-defined]
             self._peer_detail_table.add_row(_("Pieces Served"), str(peer_data.get("pieces_served", 0)))  # type: ignore[attr-defined]
-            
+
             # Latency
             latency = peer_data.get("request_latency", 0.0)
             if latency > 0.0:
                 self._peer_detail_table.add_row(_("Request Latency"), f"{latency * 1000:.1f} ms")  # type: ignore[attr-defined]
-            
+
             # Torrents
             info_hashes = peer_data.get("info_hashes", [])
             self._peer_detail_table.add_row(_("Connected Torrents"), str(len(info_hashes)))  # type: ignore[attr-defined]

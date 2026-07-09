@@ -5,8 +5,8 @@ from __future__ import annotations
 # Lazy imports to avoid breaking when terminal_dashboard has issues
 try:
     from ccbt.interface.data_provider import (
-        DataProvider,
         DaemonDataProvider,
+        DataProvider,
         LocalDataProvider,
         create_data_provider,
     )
@@ -24,8 +24,8 @@ except (ImportError, TypeError):
     TerminalDashboard = None  # type: ignore[assignment, misc]
 
 __all__ = [
-    "DataProvider",
     "DaemonDataProvider",
+    "DataProvider",
     "LocalDataProvider",
     "TerminalDashboard",
     "create_data_provider",

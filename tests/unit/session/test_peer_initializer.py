@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
+from ccbt.config.config import get_config
 from ccbt.session.models import SessionContext
 from ccbt.session.peers import PeerManagerInitializer
-from ccbt.config.config import get_config
 
 
 class FakePeerManager:

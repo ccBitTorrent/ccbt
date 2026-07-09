@@ -1,14 +1,15 @@
 """Tests for session import/export functionality."""
 
-import pytest
 import json
-from pathlib import Path
+
+import pytest
 
 
 @pytest.mark.asyncio
 async def test_export_session_state_writes_json(monkeypatch, tmp_path):
     """Test export_session_state writes session data to JSON file."""
     from unittest.mock import AsyncMock, patch
+
     from ccbt.session.session import AsyncSessionManager
 
     class _Session:
@@ -19,7 +20,7 @@ async def test_export_session_state_writes_json(monkeypatch, tmp_path):
             self.progress = 0.5
             self.downloaded = 0
             self.uploaded = 0
-        
+
         async def get_status(self):
             return {"name": "test-torrent", "progress": 0.5}
 

@@ -10,6 +10,7 @@ import logging
 import pytest
 
 from ccbt.cli.verbosity import VerbosityLevel, VerbosityManager, get_verbosity_from_ctx
+from ccbt.utils.logging_config import TRACE_LOG_LEVEL
 
 pytestmark = [pytest.mark.cli, pytest.mark.unit]
 
@@ -62,7 +63,7 @@ class TestVerbosityManager:
         vm = VerbosityManager.from_count(3)
         assert vm.verbosity_count == 3
         assert vm.level == VerbosityLevel.TRACE
-        assert vm.logging_level == logging.DEBUG
+        assert vm.logging_level == TRACE_LOG_LEVEL
 
     def test_from_count_clamped(self):
         """Test that verbosity count is clamped to valid range."""
@@ -179,7 +180,7 @@ class TestVerbosityIntegration:
             (0, VerbosityLevel.NORMAL, logging.INFO),
             (1, VerbosityLevel.VERBOSE, logging.INFO),
             (2, VerbosityLevel.DEBUG, logging.DEBUG),
-            (3, VerbosityLevel.TRACE, logging.DEBUG),
+            (3, VerbosityLevel.TRACE, TRACE_LOG_LEVEL),
         ]
 
         for count, expected_level, expected_logging in mappings:

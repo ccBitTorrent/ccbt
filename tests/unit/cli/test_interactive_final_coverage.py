@@ -35,12 +35,12 @@ def _create_mock_config_manager(mock_config=None, config_file=None):
         Mock ConfigManager instance with config and config_file attributes.
     """
     from unittest.mock import Mock
-    
+
     if mock_config is None:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
         mock_config.disk.backup_dir = "/tmp/backups"
-    
+
     mock_cm = Mock()
     mock_cm.config = mock_config
     mock_cm.config_file = config_file
@@ -67,8 +67,6 @@ def interactive_cli(mock_session, mock_config_manager):
     Uses mock_config_manager fixture to ensure ConfigManager is patched
     at module level for all commands that create ConfigManager(None) instances.
     """
-    from ccbt.cli.interactive import InteractiveCLI
-    
     from tests.conftest import create_interactive_cli
     console = Mock(spec=Console)
     console.print = Mock()
@@ -89,13 +87,13 @@ class TestInteractiveFinalCoverage:
         interactive_cli._interactive_file_selection = AsyncMock()
         interactive_cli.show_download_interface = Mock()
         interactive_cli.update_download_stats = AsyncMock()
-        
+
         torrent_data = {"name": "test.torrent", "total_size": 1024}
         # Mock get_torrent_status to return None immediately
         mock_session.get_torrent_status = AsyncMock(return_value=None)
-        
+
         await interactive_cli.download_torrent(torrent_data, resume=False)
-        
+
         # Should break out of loop when status is None
         assert interactive_cli.current_torrent == torrent_data
 
@@ -113,14 +111,14 @@ class TestInteractiveFinalCoverage:
             "pieces_completed": 0,
             "pieces_total": 0,
         }
-        
+
         interactive_cli.session.get_torrent_status = AsyncMock(return_value={
             "progress": 0.5,
             "downloaded_bytes": 512 * 1024 * 1024,
         })
-        
+
         await interactive_cli.update_download_stats()
-        
+
         # Should update progress (lines 409-420)
         interactive_cli._download_progress.update.assert_called()
 
@@ -134,12 +132,12 @@ class TestInteractiveFinalCoverage:
             "downloaded_bytes": 512 * 1024 * 1024,
         }
         # Add progress_percentage as a callable (will be checked via hasattr)
-        torrent_obj = type('TorrentObj', (dict,), {
-            'progress_percentage': Mock(return_value=50),
-            '__getitem__': dict.__getitem__,
-            'get': dict.get,
+        torrent_obj = type("TorrentObj", (dict,), {
+            "progress_percentage": Mock(return_value=50),
+            "__getitem__": dict.__getitem__,
+            "get": dict.get,
         })(torrent_dict)
-        
+
         interactive_cli.current_torrent = torrent_obj
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
@@ -151,9 +149,9 @@ class TestInteractiveFinalCoverage:
             "pieces_total": 0,
         }
         mock_session.get_scrape_result = AsyncMock(return_value=None)
-        
+
         await interactive_cli.cmd_status([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -166,12 +164,12 @@ class TestInteractiveFinalCoverage:
             "downloaded_bytes": 512 * 1024 * 1024,
         }
         # Create object that has is_private attribute but also works as dict
-        torrent_obj = type('TorrentObj', (dict,), {
-            'is_private': True,
-            '__getitem__': dict.__getitem__,
-            'get': dict.get,
+        torrent_obj = type("TorrentObj", (dict,), {
+            "is_private": True,
+            "__getitem__": dict.__getitem__,
+            "get": dict.get,
         })(torrent_dict)
-        
+
         interactive_cli.current_torrent = torrent_obj
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
@@ -183,9 +181,9 @@ class TestInteractiveFinalCoverage:
             "pieces_total": 0,
         }
         mock_session.get_scrape_result = AsyncMock(return_value=None)
-        
+
         await interactive_cli.cmd_status([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -202,9 +200,9 @@ class TestInteractiveFinalCoverage:
             "pieces_total": 0,
         }
         mock_session.get_scrape_result = AsyncMock(return_value=None)
-        
+
         await interactive_cli.cmd_status([])
-        
+
         # Should handle exception gracefully (lines 506-507)
         assert interactive_cli.console.print.called
 
@@ -216,10 +214,10 @@ class TestInteractiveFinalCoverage:
         mock_mc.collect_performance_metrics = AsyncMock()
         mock_mc.collect_custom_metrics = AsyncMock()
         mock_mc.get_all_metrics = Mock(return_value={"test": "data"})
-        
+
         with patch("ccbt.monitoring.MetricsCollector", return_value=mock_mc):
             await interactive_cli.cmd_metrics(["export", "json"])
-        
+
         # Should handle exception (lines 1109-1110)
         assert interactive_cli.console.print.called
 
@@ -232,10 +230,10 @@ class TestInteractiveFinalCoverage:
         mock_rule.metric_name = "test_metric"
         mock_rule.condition = "> 100"
         mock_am.alert_rules = {"test_rule": mock_rule}
-        
+
         with patch("ccbt.monitoring.get_alert_manager", return_value=mock_am):
             await interactive_cli.cmd_alerts(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -245,15 +243,15 @@ class TestInteractiveFinalCoverage:
         mock_tuned_config = MagicMock()
         mock_tuned_config.model_dump = Mock(return_value={"test": "value"})
         mock_cc.adjust_for_system = Mock(return_value=(mock_tuned_config, ["Warning 1", "Warning 2"]))
-        
+
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_auto_tune(["preview"])
-        
+
         # Should print warnings (lines 1364-1365)
         assert interactive_cli.console.print.called
         assert interactive_cli.console.print.call_count >= 2  # At least warnings + preview
@@ -265,16 +263,16 @@ class TestInteractiveFinalCoverage:
             mock_cb = MagicMock()
             mock_cb.list_backups = Mock(return_value=[])
             mock_cb_class.return_value = mock_cb
-            
+
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_config.disk = MagicMock()
                 mock_config.disk.backup_dir = "/tmp"
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_backup(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -285,13 +283,13 @@ class TestInteractiveFinalCoverage:
             mock_cm.config = MagicMock()
             mock_cm.config.model_dump = Mock(return_value={"network": {}})
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config") as mock_model_class:
                 mock_model = MagicMock()
                 mock_model_class.return_value = mock_model
-                
+
                 await interactive_cli.cmd_config(["set", "network.test", "false"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -302,14 +300,14 @@ class TestInteractiveFinalCoverage:
             mock_cm.config = MagicMock()
             mock_cm.config.model_dump = Mock(return_value={"network": {}})
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config") as mock_model_class:
                 with patch("ccbt.config.config.set_config") as mock_set_config:
                     mock_model = MagicMock()
                     mock_model_class.return_value = mock_model
-                    
+
                     await interactive_cli.cmd_config(["set", "network.port", "6881"])
-        
+
         assert interactive_cli.console.print.called
         mock_set_config.assert_called_once()
 

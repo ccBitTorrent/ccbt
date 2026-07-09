@@ -1,10 +1,17 @@
 """UDP Tracker Client (BEP 15) for BitTorrent.
 
-High-performance async UDP tracker communication with retry logic,
-concurrent announces across multiple tracker tiers, and proper error handling.
+The BEP 15 UDP transport is a datagram protocol and has no TLS framing.
+It provides retry, pacing, and transaction validation but does not provide
+HTTP(S)-style confidentiality or certificate validation by design.
 
-Supports BEP 15 IPv6 (18-byte peer response when response is from IPv6) and
-optional BEP 41 extensions (URLData) in announce requests.
+In contrast, HTTPS trackers use the HTTP client stack in ``tracker.py``
+(which can use the optional tracker SSL context) and are expected to rely on
+TLS for transport confidentiality.
+
+This module therefore remains explicitly segregated by threat model:
+- **UDP tracker path**: unauthenticated and unencrypted transport channel.
+- **HTTP/HTTPS tracker path**: HTTPS path carries TLS expectations and certificate
+  controls.
 """
 
 from __future__ import annotations
@@ -14,19 +21,38 @@ import contextlib
 import logging
 import socket
 import struct
+import sys
 import time
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
 from urllib.parse import urlparse
 
 from ccbt.config.config import get_config
+from ccbt.session.peer_discovery_telemetry import observe_udp_tracker_pending_window
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo
 
+# Callback for immediate peer connection after UDP ANNOUNCE (sync or async).
+ImmediatePeersCallback = Callable[
+    [list[dict[str, Any]], str],
+    Union[None, Awaitable[None]],
+]
+
 # Error message constants
 _ERROR_UDP_TRANSPORT_NOT_INITIALIZED = "UDP transport is not initialized"
+
+
+def _is_windows_proactor_loop(loop: asyncio.AbstractEventLoop) -> bool:
+    """Return whether the loop is Windows ProactorEventLoop."""
+    proactor_loop_type = getattr(asyncio, "ProactorEventLoop", None)
+    return bool(
+        sys.platform == "win32"
+        and proactor_loop_type is not None
+        and isinstance(loop, proactor_loop_type)
+    )
 
 
 class TrackerAction(Enum):
@@ -63,6 +89,8 @@ class TrackerResponse:
     complete: Optional[int] = None  # Seeders in scrape response
     downloaded: Optional[int] = None  # Completed downloads in scrape response
     incomplete: Optional[int] = None  # Leechers in scrape response
+    # BEP 15 UDP announce responses do not carry min_interval; kept for type parity
+    min_interval: Optional[int] = None
 
 
 @dataclass
@@ -92,7 +120,8 @@ class AsyncUDPTrackerClient:
 
         Args:
             peer_id: Our peer ID (20 bytes)
-            test_mode: If True, bypass socket validation for testing. Defaults to False.
+            test_mode: If True, allow construction outside ``get_udp_tracker_client()`` and
+                bypass socket validation (unit tests only). Production code must use the singleton.
 
         """
         self.config = get_config()
@@ -110,21 +139,53 @@ class AsyncUDPTrackerClient:
         self.socket: Optional[asyncio.DatagramProtocol] = None
         self.transport: Optional[asyncio.DatagramTransport] = None
         self.transaction_counter = 0
+        self._udp_tracker_stale_response_total: int = 0
+        self._udp_tracker_stale_response_by_category: dict[str, int] = {
+            "timeout_suspect": 0,
+            "id_collision": 0,
+            "foreign_tracker": 0,
+        }
 
         # Pending requests
         self.pending_requests: dict[int, asyncio.Future] = {}
+        self.pending_immediate_callbacks: dict[int, ImmediatePeersCallback] = {}
+        self._pending_request_timestamps: dict[int, float] = {}
+        self._max_pending_requests: int = 128
+        self._pending_request_stale_after: float = 30.0
+        self._pending_request_budget_base: int = 128
+        self._pending_request_budget_min: int = 8
+        self._pending_request_budget_per_tracker: int = 16
+        self._pending_request_budget_window: float = 60.0
+        self._pending_request_success_history: deque[float] = deque(maxlen=512)
+        self._pending_request_stale_history: deque[float] = deque(maxlen=512)
+        self._adaptive_pending_request_budget: int = self._pending_request_budget_base
+        self._last_budget_refresh: float = 0.0
+        self._budget_refresh_interval: float = 1.0
+        self._pending_cleanup_interval: float = 30.0
+        self._last_pending_cleanup: float = 0.0
+        self._stale_response_transaction_ids: dict[int, float] = {}
+        self._stale_response_allowlist_seconds: float = 30.0
+        self._timeout_warning_summary_window: float = 1.0
+        self._timeout_warning_host_state: dict[str, tuple[float, int]] = {}
+        self._tracker_response_timeout_alpha: float = 0.25
+        self._tracker_response_timeout_ema: dict[str, float] = {}
+        self._tracker_timeout_floor_scale: dict[str, float] = {}
+        self._pending_request_host_by_tid: dict[int, str] = {}
+        self._pending_request_soft_cap_per_host: int = 24
+        self._udp_wait_pacing_load_ratio: float = 0.5
+        self._last_udp_pending_gauge_monotonic: float = 0.0
 
         # Background tasks
         self._cleanup_task: Optional[asyncio.Task] = None
 
-        # CRITICAL FIX: Add lock to prevent concurrent socket operations
+        # Note: Add lock to prevent concurrent socket operations
         # Windows requires serialized access to UDP sockets to prevent WinError 10022
         self._socket_lock: asyncio.Lock = asyncio.Lock()
         self._socket_ready: bool = False
         self._last_winerror_warning_time: float = 0.0
         self._winerror_warning_interval: float = 60.0  # 60 seconds between warnings
 
-        # CRITICAL FIX: Socket health monitoring to prevent aggressive recreation
+        # Note: Socket health monitoring to prevent aggressive recreation
         self._socket_error_count: int = 0
         self._socket_last_error_time: float = 0.0
         self._socket_health_check_interval: float = (
@@ -137,18 +198,42 @@ class AsyncUDPTrackerClient:
         self._socket_recreation_count: int = 0
         self._last_socket_health_check: float = 0.0
 
-        # CRITICAL FIX: Immediate peer connection callback
-        # This allows sessions to connect peers immediately when tracker responses arrive
-        # instead of waiting for the announce loop to process them
-        self.on_peers_received: Optional[
-            Callable[[list[dict[str, Any]], str], None]
-        ] = None
-
         # Test mode: bypass socket validation for testing
         self._test_mode: bool = test_mode
         self._xet_chunk_registry: dict[tuple[bytes, Optional[str]], list[PeerInfo]] = {}
 
         self.logger = logging.getLogger(__name__)
+        self._refresh_udp_pending_settings_from_config()
+        if not test_mode and not _udp_singleton_construct_in_progress():
+            msg = (
+                "AsyncUDPTrackerClient must be obtained via get_udp_tracker_client() "
+                "or ComponentFactory.create_udp_tracker_client(); for isolated tests pass "
+                "test_mode=True."
+            )
+            raise RuntimeError(msg)
+
+    def _refresh_udp_pending_settings_from_config(self) -> None:
+        """Apply discovery.* limits for the process-wide UDP tracker singleton."""
+        disc = getattr(self.config, "discovery", None)
+        if disc is None:
+            return
+        with contextlib.suppress(Exception):
+            self._pending_request_soft_cap_per_host = int(
+                getattr(disc, "tracker_udp_pending_soft_cap_per_host", 24)
+            )
+            self._max_pending_requests = int(
+                getattr(disc, "tracker_udp_max_pending_requests", 128)
+            )
+            self._udp_wait_pacing_load_ratio = float(
+                getattr(disc, "tracker_udp_wait_pacing_load_ratio", 0.5)
+            )
+
+    def _maybe_emit_udp_pending_gauge(self) -> None:
+        now = time.monotonic()
+        if now - self._last_udp_pending_gauge_monotonic < 0.25:
+            return
+        self._last_udp_pending_gauge_monotonic = now
+        observe_udp_tracker_pending_window(len(self.pending_requests))
 
     @property
     def socket_ready(self) -> bool:
@@ -159,6 +244,218 @@ class AsyncUDPTrackerClient:
 
         """
         return self._socket_ready
+
+    def _record_pending_request_result(
+        self, *, stale: bool, now: Optional[float] = None
+    ) -> None:
+        """Record completion history for adaptive transaction budgeting."""
+        event_time = time.time() if now is None else now
+        if stale:
+            self._pending_request_stale_history.append(event_time)
+        else:
+            self._pending_request_success_history.append(event_time)
+
+    def _mark_stale_transaction(
+        self, transaction_id: int, *, now: Optional[float] = None
+    ) -> None:
+        """Track transaction IDs that are expected to be late and suppress noisy warnings."""
+        self._stale_response_transaction_ids[transaction_id] = (
+            time.time() if now is None else now
+        )
+
+    def _is_expected_stale_transaction(
+        self, transaction_id: int, *, now: Optional[float] = None
+    ) -> bool:
+        """Check if a response transaction ID should be treated as expected stale."""
+        now = time.time() if now is None else now
+        seen_at = self._stale_response_transaction_ids.get(transaction_id)
+        if seen_at is None:
+            return False
+
+        if now - seen_at > self._stale_response_allowlist_seconds:
+            self._stale_response_transaction_ids.pop(transaction_id, None)
+            return False
+        return True
+
+    def _cleanup_stale_response_transaction_ids(
+        self, now: Optional[float] = None
+    ) -> None:
+        """Drop old expected-stale IDs from the suppression allowlist."""
+        current_time = time.time() if now is None else now
+        cutoff = current_time - self._stale_response_allowlist_seconds
+        expired = [
+            tx_id
+            for tx_id, seen_at in self._stale_response_transaction_ids.items()
+            if seen_at < cutoff
+        ]
+        for tx_id in expired:
+            self._stale_response_transaction_ids.pop(tx_id, None)
+
+    def _classify_unmatched_response(
+        self,
+        *,
+        transaction_id: int,
+        addr: tuple[str, int],
+        now: float,
+    ) -> tuple[str, Optional[float]]:
+        """Classify unmatched UDP responses for actionable churn diagnostics."""
+        addr_host = addr[0] if addr else "unknown"
+        addr_port = addr[1] if addr else 0
+        known_tracker_addr = any(
+            session.host == addr_host and int(session.port) == int(addr_port)
+            for session in self.sessions.values()
+            if getattr(session, "host", None) and getattr(session, "port", None)
+        )
+        if not known_tracker_addr:
+            return "foreign_tracker", None
+
+        if self.pending_requests:
+            oldest_pending = min(self._pending_request_timestamps.values(), default=now)
+            age_hint = max(0.0, now - oldest_pending)
+            return "id_collision", age_hint
+
+        stale_seen_at = self._stale_response_transaction_ids.get(transaction_id)
+        if stale_seen_at is not None:
+            return "timeout_suspect", max(0.0, now - stale_seen_at)
+        return "timeout_suspect", None
+
+    def _trim_request_history(self, now: float) -> None:
+        """Trim stale completion history entries from the tracking window."""
+        cutoff = now - self._pending_request_budget_window
+        while (
+            self._pending_request_stale_history
+            and self._pending_request_stale_history[0] < cutoff
+        ):
+            self._pending_request_stale_history.popleft()
+        while (
+            self._pending_request_success_history
+            and self._pending_request_success_history[0] < cutoff
+        ):
+            self._pending_request_success_history.popleft()
+
+    def _get_adaptive_pending_request_budget(self, now: float) -> int:
+        """Calculate adaptive transaction budget from tracker and response history."""
+        if now - self._last_budget_refresh < self._budget_refresh_interval:
+            return self._adaptive_pending_request_budget
+
+        self._last_budget_refresh = now
+
+        connected_trackers = sum(
+            1
+            for session in self.sessions.values()
+            if session.is_connected
+            or session.last_response_time is not None
+            or session.connection_time > 0
+        )
+        tracker_count = max(1, connected_trackers or len(self.sessions))
+        adaptive_budget = min(
+            self._pending_request_budget_base,
+            max(
+                self._pending_request_budget_min,
+                tracker_count * self._pending_request_budget_per_tracker,
+            ),
+        )
+
+        self._trim_request_history(now)
+        total_samples = len(self._pending_request_stale_history) + len(
+            self._pending_request_success_history
+        )
+        if total_samples >= 6:
+            stale_ratio = len(self._pending_request_stale_history) / total_samples
+            if stale_ratio >= 0.45:
+                adaptive_budget = max(
+                    self._pending_request_budget_min, adaptive_budget // 2
+                )
+            elif stale_ratio <= 0.15 and total_samples >= 12:
+                adaptive_budget = min(
+                    self._pending_request_budget_base, adaptive_budget + 8
+                )
+
+        if self._socket_error_count > 0:
+            adaptive_budget = max(
+                self._pending_request_budget_min, adaptive_budget // 2
+            )
+
+        self._adaptive_pending_request_budget = adaptive_budget
+        return adaptive_budget
+
+    def _get_effective_pending_request_cap(self) -> int:
+        """Return final transaction cap including manual override."""
+        now = time.time()
+        self._get_adaptive_pending_request_budget(now)
+        effective_cap = min(
+            self._max_pending_requests, self._adaptive_pending_request_budget
+        )
+        if self._max_pending_requests >= self._pending_request_budget_min:
+            return max(self._pending_request_budget_min, effective_cap)
+        return effective_cap
+
+    def _get_tracker_host(self, tracker_host: Optional[str]) -> str:
+        """Normalize tracker host for timeout tracking keys."""
+        if not tracker_host:
+            return "unknown"
+        normalized = tracker_host.strip()
+        return normalized if normalized else "unknown"
+
+    def _get_adaptive_wait_timeout(
+        self,
+        timeout: float,
+        tracker_host: Optional[str],
+        pending_count: int,
+    ) -> float:
+        """Calculate adaptive timeout based on queue pressure and host response history."""
+        if timeout <= 0:
+            return timeout
+        pending_count = max(pending_count, 0)
+
+        effective_cap = self._get_effective_pending_request_cap()
+        queue_pressure = pending_count / effective_cap if effective_cap > 0 else 0.0
+        queue_pressure = max(0.0, min(1.0, queue_pressure))
+
+        # Queue pressure scaling with congestion floor + hysteresis.
+        # Slightly steeper than legacy 0.45 to shorten waits under multiplex load.
+        queue_scale = 1.0 - (0.55 * queue_pressure)
+        host_key = self._get_tracker_host(tracker_host)
+        previous_floor = float(self._tracker_timeout_floor_scale.get(host_key, 0.65))
+        target_floor = 0.65 if queue_pressure < 0.7 else 0.8
+        floor_scale = (0.85 * previous_floor) + (0.15 * target_floor)
+        self._tracker_timeout_floor_scale[host_key] = floor_scale
+        queue_scale = max(floor_scale, queue_scale)
+
+        host_ema = self._tracker_response_timeout_ema.get(host_key)
+        host_scale = 1.0
+        if host_ema is not None and host_ema > 0:
+            host_scale = max(0.75, min(1.75, host_ema / timeout))
+
+        return max(0.5, min(timeout * 2.0, timeout * host_scale * queue_scale))
+
+    def _record_tracker_response_time(
+        self,
+        tracker_host: Optional[str],
+        elapsed: float,
+    ) -> None:
+        """Track EMA of successful tracker response times per host."""
+        if elapsed <= 0:
+            return
+
+        host_key = self._get_tracker_host(tracker_host)
+        previous = self._tracker_response_timeout_ema.get(host_key)
+        if previous is None:
+            self._tracker_response_timeout_ema[host_key] = elapsed
+        else:
+            alpha = self._tracker_response_timeout_alpha
+            self._tracker_response_timeout_ema[host_key] = (
+                1 - alpha
+            ) * previous + alpha * elapsed
+
+    def _cleanup_stale_pending_requests(self, now: Optional[float] = None) -> int:
+        """Clean up stale pending transactions outside normal response flow."""
+        current_time = now or time.time()
+        return self._prune_stale_pending_requests(
+            now=current_time,
+            timeout=self._pending_request_stale_after,
+            additional_new=0,
+        )
 
     async def announce_chunk(
         self,
@@ -204,6 +501,8 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        on_immediate_peers: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -217,32 +516,85 @@ class AsyncUDPTrackerClient:
             downloaded: Bytes downloaded
             left: Bytes left
             event: Announce event
+            on_immediate_peers: Optional per-announce callback for immediate peer connect (multi-swarm safe).
 
         Returns:
             Tuple of (peers, interval, seeders, leechers) or None on error
 
         """
         return await self._announce_to_tracker_full(
-            url, torrent_data, port, uploaded, downloaded, left, event
+            url,
+            torrent_data,
+            port,
+            uploaded,
+            downloaded,
+            left,
+            event,
+            on_immediate_peers=on_immediate_peers,
         )
 
     async def _call_immediate_connection(
-        self, peers: list[dict[str, Any]], tracker_url: str
+        self,
+        peers: list[dict[str, Any]],
+        tracker_url: str,
+        callback: Optional[ImmediatePeersCallback] = None,
     ) -> None:
         """Call immediate connection callback asynchronously."""
-        if self.on_peers_received:
-            try:
-                # Call the callback - it should be async-safe
-                if asyncio.iscoroutinefunction(self.on_peers_received):
-                    await self.on_peers_received(peers, tracker_url)
-                else:
-                    self.on_peers_received(peers, tracker_url)
-            except Exception as e:
-                self.logger.warning(
-                    "Error in immediate peer connection callback: %s",
-                    e,
-                    exc_info=True,
+        if callback is None:
+            return
+        try:
+            if asyncio.iscoroutinefunction(callback):
+                await callback(peers, tracker_url)  # type: ignore[misc]
+            else:
+                callback(peers, tracker_url)  # type: ignore[misc]
+        except Exception as e:
+            self.logger.warning(
+                "Error in immediate peer connection callback: %s",
+                e,
+                exc_info=True,
+            )
+
+    def _trigger_immediate_connection(
+        self,
+        peers: list[dict[str, Any]],
+        tracker_url: str,
+        log_prefix: str,
+        *,
+        callback: Optional[ImmediatePeersCallback] = None,
+    ) -> None:
+        """Trigger immediate peer connection callback in a context-aware way."""
+        if callback is None:
+            return
+        cb = callback
+        try:
+            # Primary path: schedule the callback in the running event loop.
+            asyncio.get_running_loop()
+            task = asyncio.create_task(
+                self._call_immediate_connection(peers, tracker_url, cb)
+            )
+            task.add_done_callback(
+                lambda t: self.logger.debug("%s callback task completed", log_prefix)
+                if t.exception() is None
+                else self.logger.warning(
+                    "%s callback task failed: %s",
+                    log_prefix,
+                    t.exception(),
                 )
+            )
+        except RuntimeError:
+            # No running loop - execute inline for unit-test / sync paths.
+            if asyncio.iscoroutinefunction(cb):
+                asyncio.run(self._call_immediate_connection(peers, tracker_url, cb))
+            else:
+                try:
+                    cb(peers, tracker_url)
+                    self.logger.debug("%s callback completed", log_prefix)
+                except Exception as e:
+                    self.logger.warning(
+                        "%s callback failed: %s",
+                        log_prefix,
+                        e,
+                    )
 
     def _raise_connection_failed(self) -> None:
         """Raise ConnectionError for failed tracker connection."""
@@ -287,7 +639,7 @@ class AsyncUDPTrackerClient:
             return
 
         if not self._check_socket_health():
-            # CRITICAL FIX: Don't recreate socket on transient errors
+            # Note: Don't recreate socket on transient errors
             # Only raise error if socket is truly invalid
             current_time = time.time()
 
@@ -322,7 +674,8 @@ class AsyncUDPTrackerClient:
         CRITICAL: Socket must be initialized during daemon startup via start_udp_tracker_client().
         Socket recreation is not supported as it breaks session logic.
         """
-        # CRITICAL FIX: Assert socket should never be recreated during runtime
+        self._refresh_udp_pending_settings_from_config()
+        # Note: Assert socket should never be recreated during runtime
         # If socket is already initialized and healthy, return immediately
         # Socket recreation breaks session logic and causes WinError 10022 on Windows
         if (
@@ -347,7 +700,7 @@ class AsyncUDPTrackerClient:
 
         # Use lock to prevent concurrent start() calls
         async with self._socket_lock:
-            # CRITICAL FIX: Double-check socket health after acquiring lock
+            # Note: Double-check socket health after acquiring lock
             if (
                 self._socket_ready
                 and self.transport is not None
@@ -359,7 +712,7 @@ class AsyncUDPTrackerClient:
                 )
                 return
 
-            # CRITICAL FIX: Apply exponential backoff to prevent aggressive socket recreation
+            # Note: Apply exponential backoff to prevent aggressive socket recreation
             current_time = time.time()
             time_since_last_recreation = current_time - self._socket_last_error_time
 
@@ -383,7 +736,7 @@ class AsyncUDPTrackerClient:
             )
             self._socket_last_error_time = current_time
 
-            # CRITICAL FIX: Prevent socket recreation - fail gracefully instead
+            # Note: Prevent socket recreation - fail gracefully instead
             # Socket should have been initialized during daemon startup
             # Recreation breaks session logic and causes WinError 10022 on Windows
             if self.transport is not None and not self.transport.is_closing():
@@ -410,12 +763,10 @@ class AsyncUDPTrackerClient:
             if self.transport is not None:
                 try:
                     self.transport.close()
-                    # CRITICAL FIX: Wait longer on Windows Proactor for socket to fully close
-                    import sys
-
+                    # Note: Wait longer on Windows Proactor for socket to fully close
                     loop = asyncio.get_event_loop()
-                    is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
-                    if sys.platform == "win32" and is_proactor:
+                    is_proactor = _is_windows_proactor_loop(loop)
+                    if is_proactor:
                         await asyncio.sleep(0.3)  # Longer wait for Proactor
                     else:
                         await asyncio.sleep(0.1)
@@ -425,7 +776,7 @@ class AsyncUDPTrackerClient:
                     self.transport = None
                     self.socket = None
 
-        # CRITICAL FIX: Only create new socket if transport is None or closing
+        # Note: Only create new socket if transport is None or closing
         # This should only happen during initial daemon startup, not during runtime
         if self.transport is not None and not self.transport.is_closing():
             self.logger.error(
@@ -446,7 +797,7 @@ class AsyncUDPTrackerClient:
         try:
             # Set socket options
             try:
-                # CRITICAL FIX: Add SO_REUSEADDR for Windows socket binding
+                # Note: Add SO_REUSEADDR for Windows socket binding
                 # This helps prevent "address already in use" errors and improves socket stability
                 sock.setsockopt(std_socket.SOL_SOCKET, std_socket.SO_REUSEADDR, 1)
 
@@ -472,9 +823,8 @@ class AsyncUDPTrackerClient:
 
         except OSError as e:
             sock.close()
-            # CRITICAL FIX: Enhanced port conflict error handling
+            # Note: Enhanced port conflict error handling
             error_code = e.errno if hasattr(e, "errno") else None
-            import sys
 
             if sys.platform == "win32":
                 if error_code == 10048:  # WSAEADDRINUSE
@@ -573,7 +923,7 @@ class AsyncUDPTrackerClient:
         if not isinstance(self.socket, UDPTrackerProtocol):
             self.logger.warning("Socket protocol may not be properly registered")
 
-        # CRITICAL FIX: Verify socket is actually ready before marking as ready
+        # Note: Verify socket is actually ready before marking as ready
         # Perform a health check to ensure socket can send/receive
         try:
             # Verify transport is not closing
@@ -587,14 +937,12 @@ class AsyncUDPTrackerClient:
                 msg = "Socket name not available after creation"
                 raise RuntimeError(msg)
 
-            # CRITICAL FIX: On Windows, ensure socket is fully initialized in event loop
+            # Note: On Windows, ensure socket is fully initialized in event loop
             # before marking as ready. ProactorEventLoop needs more time for UDP sockets.
             # Also verify we're using SelectorEventLoop (not ProactorEventLoop) for UDP support
-            import sys
-
             if sys.platform == "win32":
                 loop = asyncio.get_event_loop()
-                is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
+                is_proactor = _is_windows_proactor_loop(loop)
                 if is_proactor:
                     # CRITICAL: ProactorEventLoop has known bugs with UDP (WinError 10022)
                     # This should not happen if policy was set correctly in __init__.py
@@ -654,18 +1002,16 @@ class AsyncUDPTrackerClient:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
 
-        # CRITICAL FIX: Ensure proper cleanup of transport on Windows
+        # Note: Ensure proper cleanup of transport on Windows
         # Close transport and wait for it to fully close before proceeding
         if self.transport:
             try:
                 self.transport.close()
-                # CRITICAL FIX: On Windows Proactor, wait for transport to fully close
+                # Note: On Windows Proactor, wait for transport to fully close
                 # This prevents WinError 10022 when socket is reused
-                import sys
-
                 loop = asyncio.get_event_loop()
-                is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
-                if sys.platform == "win32" and is_proactor:
+                is_proactor = _is_windows_proactor_loop(loop)
+                if is_proactor:
                     # Wait longer for Proactor to release socket resources
                     await asyncio.sleep(0.3)
                 elif sys.platform == "win32":
@@ -706,6 +1052,8 @@ class AsyncUDPTrackerClient:
         for future in self.pending_requests.values():
             if not future.done():
                 future.cancel()
+        self.pending_requests.clear()
+        self._pending_request_timestamps.clear()
 
         self.logger.info("UDP tracker client stopped")
 
@@ -831,7 +1179,7 @@ class AsyncUDPTrackerClient:
         """
         try:
             # Parse URL with enhanced error handling
-            # CRITICAL FIX: Rename unpacked variable to avoid shadowing the port parameter
+            # Note: Rename unpacked variable to avoid shadowing the port parameter
             try:
                 host, tracker_port = self._parse_udp_url(url)
             except ValueError as e:
@@ -845,7 +1193,7 @@ class AsyncUDPTrackerClient:
 
             session = self.sessions[session_key]
 
-            # CRITICAL FIX: Check connection health and refresh if needed
+            # Note: Check connection health and refresh if needed
             # Connection IDs expire after 60 seconds, so refresh before announce
             # Improved: Refresh earlier (50s) to avoid race conditions and add validation
             current_time = time.time()
@@ -895,7 +1243,7 @@ class AsyncUDPTrackerClient:
                 return []
 
             # Send announce
-            # CRITICAL FIX: Pass port parameter (client's external port from NAT manager) to use external port
+            # Note: Pass port parameter (client's external port from NAT manager) to use external port
             # This ensures trackers receive the correct port for routing incoming connections
             return await self._send_announce(
                 session,
@@ -927,6 +1275,8 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        on_immediate_peers: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -938,7 +1288,7 @@ class AsyncUDPTrackerClient:
         """
         try:
             # Parse URL
-            # CRITICAL FIX: Rename unpacked variable to avoid shadowing the port parameter
+            # Note: Rename unpacked variable to avoid shadowing the port parameter
             # The port parameter is the client's external port from NAT manager
             host, tracker_port = self._parse_udp_url(url)
 
@@ -977,7 +1327,7 @@ class AsyncUDPTrackerClient:
                 return None
 
             # Send announce and get full response
-            # CRITICAL FIX: Pass port parameter (client's external port from NAT manager) to use external port
+            # Note: Pass port parameter (client's external port from NAT manager) to use external port
             # This ensures trackers receive the correct port for routing incoming connections
             return await self._send_announce_full(
                 session,
@@ -987,6 +1337,7 @@ class AsyncUDPTrackerClient:
                 downloaded=downloaded,
                 left=left,
                 event=event,
+                on_immediate_peers=on_immediate_peers,
             )
 
         except (
@@ -1032,7 +1383,7 @@ class AsyncUDPTrackerClient:
         if "?" in url:
             url = url.split("?", 1)[0]
 
-        # CRITICAL FIX: Handle IPv6 addresses (enclosed in brackets)
+        # Note: Handle IPv6 addresses (enclosed in brackets)
         # IPv6 format: [2001:db8::1]:port
         if url.startswith("[") and "]" in url:
             # Extract IPv6 address and port
@@ -1093,7 +1444,14 @@ class AsyncUDPTrackerClient:
 
         return host, port
 
-    async def _connect_to_tracker(self, session: TrackerSession) -> None:
+    async def _connect_to_tracker(
+        self,
+        session: TrackerSession,
+        *,
+        max_retries: int = 5,
+        retry_delay: float = 1.0,
+        base_timeout: float = 10.0,
+    ) -> None:
         """Connect to a UDP tracker with health check and retry logic.
 
         CRITICAL: Socket must be initialized during daemon startup. Socket recreation
@@ -1102,12 +1460,15 @@ class AsyncUDPTrackerClient:
         # Validate socket is ready before use
         self._validate_socket_ready()
 
-        max_retries = 5
-        retry_delay = 1.0
+        if max_retries <= 0:
+            max_retries = 1
+        retry_delay = max(retry_delay, 0.0)
+        if base_timeout < 0.0:
+            base_timeout = 0.1
 
         for attempt in range(max_retries):
             try:
-                # CRITICAL FIX: Health check - reset connection state if stale
+                # Note: Health check - reset connection state if stale
                 if session.connection_time > 0 and (
                     time.time() - session.connection_time > 60.0
                 ):
@@ -1149,7 +1510,7 @@ class AsyncUDPTrackerClient:
                         msg = "Transport is None after validation"
                         raise RuntimeError(msg)
 
-                    # CRITICAL FIX: Check socket health before send operation
+                    # Note: Check socket health before send operation
                     if not self._check_socket_health():
                         # Socket appears unhealthy - increment error count
                         self._socket_error_count += 1
@@ -1172,13 +1533,11 @@ class AsyncUDPTrackerClient:
                         msg = "Socket health check failed"
                         raise ConnectionError(msg)
 
-                    # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
+                    # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                     # WinError 10022 can occur if socket state is not properly synchronized
-                    import sys
-
                     loop = asyncio.get_event_loop()
-                    is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
-                    if sys.platform == "win32" and is_proactor:
+                    is_proactor = _is_windows_proactor_loop(loop)
+                    if is_proactor:
                         # Longer delay for ProactorEventLoop to ensure socket state is synchronized
                         await asyncio.sleep(0.1)  # Increased from 0.01s to 0.1s
 
@@ -1215,9 +1574,7 @@ class AsyncUDPTrackerClient:
                             )
                             self._socket_error_count = 0
                     except OSError as send_error:
-                        # CRITICAL FIX: Improved WinError 10022 detection and handling
-                        import sys
-
+                        # Note: Improved WinError 10022 detection and handling
                         error_code = getattr(send_error, "winerror", None) or getattr(
                             send_error, "errno", None
                         )
@@ -1231,7 +1588,7 @@ class AsyncUDPTrackerClient:
                             self._socket_error_count += 1
                             self._socket_last_error_time = time.time()
 
-                            # CRITICAL FIX: Add exponential backoff for WinError 10022
+                            # Note: Add exponential backoff for WinError 10022
                             # Wait before retrying to allow socket to recover
                             backoff_delay = min(
                                 0.1 * (2 ** min(self._socket_error_count - 1, 4)), 1.0
@@ -1258,10 +1615,10 @@ class AsyncUDPTrackerClient:
                                     send_error,
                                 )
 
-                            # CRITICAL FIX: Wait before retrying to allow socket to recover
+                            # Note: Wait before retrying to allow socket to recover
                             await asyncio.sleep(backoff_delay)
 
-                            # CRITICAL FIX: Validate socket state before retrying
+                            # Note: Validate socket state before retrying
                             if (
                                 not self._socket_ready
                                 or self.transport is None
@@ -1315,9 +1672,8 @@ class AsyncUDPTrackerClient:
                             raise
 
                 # Wait for response with timeout
-                # CRITICAL FIX: Reduce timeout when socket errors are occurring
+                # Note: Reduce timeout when socket errors are occurring
                 # If socket has recent errors, use shorter timeout to fail faster
-                base_timeout = 10.0  # Reduced from 20.0s
                 if self._socket_error_count > 0:
                     # Reduce timeout when socket is having issues
                     base_timeout = max(
@@ -1327,16 +1683,23 @@ class AsyncUDPTrackerClient:
                 timeout = base_timeout + (
                     attempt * 2.0
                 )  # 10s base (or less if errors), increase by 2s per retry attempt
+                adaptive_timeout = self._get_adaptive_wait_timeout(
+                    timeout=timeout,
+                    tracker_host=session.host,
+                    pending_count=len(self.pending_requests),
+                )
                 self.logger.debug(
                     "Waiting for tracker response from %s:%d (timeout=%.1fs, attempt %d/%d)",
                     session.host,
                     session.port,
-                    timeout,
+                    adaptive_timeout,
                     attempt + 1,
                     max_retries,
                 )
                 response = await self._wait_for_response(
-                    transaction_id, timeout=timeout
+                    transaction_id,
+                    timeout=adaptive_timeout,
+                    tracker_host=session.host,
                 )
 
                 if response and response.action == TrackerAction.CONNECT:
@@ -1396,9 +1759,7 @@ class AsyncUDPTrackerClient:
                     or isinstance(e, (OSError, ConnectionError))
                 )
 
-                # CRITICAL FIX: Check if this is a transient socket error that shouldn't trigger recreation
-                import sys
-
+                # Note: Check if this is a transient socket error that shouldn't trigger recreation
                 error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
                 is_winerror_10022 = (
                     error_code == 10022
@@ -1452,7 +1813,7 @@ class AsyncUDPTrackerClient:
                     session.is_connected = False
                     session.retry_count += 1
                     session.backoff_delay = min(session.backoff_delay * 2, 60.0)
-                    # CRITICAL FIX: Enhanced error logging for connection failures
+                    # Note: Enhanced error logging for connection failures
                     self.logger.warning(
                         "Failed to connect to tracker %s:%d after %d attempts: %s (type: %s, network_error: %s, backoff: %.1fs)",
                         session.host,
@@ -1478,7 +1839,7 @@ class AsyncUDPTrackerClient:
         """Send announce request to tracker."""
         try:
             # Check if we need to reconnect
-            # CRITICAL FIX: Check connection_id is None, connection_time is 0, or connection expired (>60s)
+            # Note: Check connection_id is None, connection_time is 0, or connection expired (>60s)
             current_time = time.time()
             connection_expired = (
                 session.connection_id is None
@@ -1522,7 +1883,7 @@ class AsyncUDPTrackerClient:
                 )
                 return []
 
-            # CRITICAL FIX: Use external port from NAT manager if provided, otherwise use config port
+            # Note: Use external port from NAT manager if provided, otherwise use config port
             # The port parameter should be the external port from NAT manager (passed from AnnounceController)
             # If None, fallback to internal port but log warning
             if port is not None:
@@ -1534,7 +1895,7 @@ class AsyncUDPTrackerClient:
                     session.port,
                 )
             else:
-                # CRITICAL FIX: Use listen_port_tcp (or listen_port as fallback) to match actual configured port
+                # Note: Use listen_port_tcp (or listen_port as fallback) to match actual configured port
                 client_listen_port = int(
                     self.config.network.listen_port_tcp
                     or self.config.network.listen_port
@@ -1579,12 +1940,10 @@ class AsyncUDPTrackerClient:
                     msg = "Transport is None after validation"
                     raise RuntimeError(msg)
 
-                # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
-                import sys
-
+                # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 loop = asyncio.get_event_loop()
-                is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
-                if sys.platform == "win32" and is_proactor:
+                is_proactor = _is_windows_proactor_loop(loop)
+                if is_proactor:
                     # Small delay to ensure socket state is synchronized on Windows Proactor
                     await asyncio.sleep(0.01)
 
@@ -1594,9 +1953,7 @@ class AsyncUDPTrackerClient:
                         announce_data, (session.host, session.port)
                     )  # pragma: no cover - Network operation, tested via mocking
                 except OSError as send_error:
-                    # CRITICAL FIX: Improved WinError 10022 detection and handling (same as connect)
-                    import sys
-
+                    # Note: Improved WinError 10022 detection and handling (same as connect)
                     error_code = getattr(send_error, "winerror", None) or getattr(
                         send_error, "errno", None
                     )
@@ -1610,7 +1967,7 @@ class AsyncUDPTrackerClient:
                         self._socket_error_count += 1
                         self._socket_last_error_time = time.time()
 
-                        # CRITICAL FIX: Add exponential backoff for WinError 10022
+                        # Note: Add exponential backoff for WinError 10022
                         backoff_delay = min(
                             0.1 * (2 ** min(self._socket_error_count - 1, 4)), 1.0
                         )  # Max 1 second
@@ -1685,7 +2042,7 @@ class AsyncUDPTrackerClient:
                         raise
 
             # Wait for response with timeout
-            # CRITICAL FIX: Use adaptive timeout based on connection quality
+            # Note: Use adaptive timeout based on connection quality
             # For first announce, use longer timeout. For subsequent announces, use shorter timeout if previous was fast
             base_timeout = 30.0  # 30 seconds base timeout
             if session.last_announce > 0:
@@ -1705,8 +2062,15 @@ class AsyncUDPTrackerClient:
 
             start_time = time.time()
             try:
+                adaptive_timeout = self._get_adaptive_wait_timeout(
+                    timeout=announce_timeout,
+                    tracker_host=session.host,
+                    pending_count=len(self.pending_requests),
+                )
                 response = await self._wait_for_response(
-                    transaction_id, timeout=announce_timeout
+                    transaction_id,
+                    timeout=adaptive_timeout,
+                    tracker_host=session.host,
                 )  # pragma: no cover - Async network wait, tested separately
                 # Track response time for adaptive timeout
                 response_time = time.time() - start_time
@@ -1720,7 +2084,7 @@ class AsyncUDPTrackerClient:
                     "(3) Firewall blocking responses, or (4) Tracker is overloaded",
                     session.host,
                     session.port,
-                    announce_timeout,
+                    adaptive_timeout,
                     response_time,
                 )
                 raise
@@ -1728,7 +2092,7 @@ class AsyncUDPTrackerClient:
             if (
                 response and response.action == TrackerAction.ANNOUNCE
             ):  # pragma: no cover - Successful response path requires real network or complex async mocking
-                # CRITICAL FIX: Log successful announce with peer count
+                # Note: Log successful announce with peer count
                 peer_count = (
                     len(response.peers)
                     if (hasattr(response, "peers") and response.peers)
@@ -1759,7 +2123,7 @@ class AsyncUDPTrackerClient:
         except (
             Exception
         ) as e:  # pragma: no cover - Announce exception, defensive error handling
-            # CRITICAL FIX: Enhanced error logging for announce failures
+            # Note: Enhanced error logging for announce failures
             self.logger.warning(
                 "Announce error for tracker %s:%d: %s (type: %s)",
                 session.host,
@@ -1780,6 +2144,8 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        on_immediate_peers: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -1834,7 +2200,7 @@ class AsyncUDPTrackerClient:
                 )
                 return None
 
-            # CRITICAL FIX: Use external port from NAT manager if provided, otherwise use config port
+            # Note: Use external port from NAT manager if provided, otherwise use config port
             # The port parameter should be the external port from NAT manager (passed from AnnounceController)
             # If None, fallback to internal port but log warning
             if port is not None:
@@ -1846,7 +2212,7 @@ class AsyncUDPTrackerClient:
                     session.port,
                 )
             else:
-                # CRITICAL FIX: Use listen_port_tcp (or listen_port as fallback) to match actual configured port
+                # Note: Use listen_port_tcp (or listen_port as fallback) to match actual configured port
                 client_listen_port = int(
                     self.config.network.listen_port_tcp
                     or self.config.network.listen_port
@@ -1891,12 +2257,10 @@ class AsyncUDPTrackerClient:
                     msg = "Transport is None after validation"
                     raise RuntimeError(msg)
 
-                # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
-                import sys
-
+                # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 loop = asyncio.get_event_loop()
-                is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
-                if sys.platform == "win32" and is_proactor:
+                is_proactor = _is_windows_proactor_loop(loop)
+                if is_proactor:
                     # Small delay to ensure socket state is synchronized on Windows Proactor
                     await asyncio.sleep(0.01)
 
@@ -1906,9 +2270,7 @@ class AsyncUDPTrackerClient:
                         announce_data, (session.host, session.port)
                     )  # pragma: no cover - Network operation, tested via mocking
                 except OSError as send_error:
-                    # CRITICAL FIX: Improved WinError 10022 detection and handling (same as connect)
-                    import sys
-
+                    # Note: Improved WinError 10022 detection and handling (same as connect)
                     error_code = getattr(send_error, "winerror", None) or getattr(
                         send_error, "errno", None
                     )
@@ -1922,7 +2284,7 @@ class AsyncUDPTrackerClient:
                         self._socket_error_count += 1
                         self._socket_last_error_time = time.time()
 
-                        # CRITICAL FIX: Add exponential backoff for WinError 10022
+                        # Note: Add exponential backoff for WinError 10022
                         backoff_delay = min(
                             0.1 * (2 ** min(self._socket_error_count - 1, 4)), 1.0
                         )  # Max 1 second
@@ -1997,11 +2359,18 @@ class AsyncUDPTrackerClient:
                         raise
 
             # Wait for response
-            # CRITICAL FIX: Increased timeout from 10s to 30s to match _send_announce
+            # Note: Increased timeout from 10s to 30s to match _send_announce
             # Trackers may be slow, especially on first announce
             announce_timeout = 30.0  # 30 seconds for announce (matching _send_announce)
             response = await self._wait_for_response(
-                transaction_id, timeout=announce_timeout
+                transaction_id,
+                timeout=self._get_adaptive_wait_timeout(
+                    timeout=announce_timeout,
+                    tracker_host=session.host,
+                    pending_count=len(self.pending_requests),
+                ),
+                tracker_host=session.host,
+                immediate_peers_callback=on_immediate_peers,
             )  # pragma: no cover - Async network wait, tested separately
 
             if (
@@ -2042,31 +2411,230 @@ class AsyncUDPTrackerClient:
         self.transaction_counter = (self.transaction_counter + 1) % 65536
         return self.transaction_counter
 
+    def _record_timeout_warning(
+        self,
+        *,
+        now: float,
+        transaction_id: int,
+        timeout: float,
+        pending_count: int,
+        elapsed: float,
+        oldest_age: float,
+        pruned_count: int,
+        tracker_host: Optional[str] = None,
+    ) -> None:
+        """Track timeout warnings and emit batched summaries."""
+        host_key = self._get_tracker_host(tracker_host)
+        timeout_window_start, timeout_count = self._timeout_warning_host_state.get(
+            host_key, (0.0, 0)
+        )
+
+        if timeout_count == 0:
+            self._timeout_warning_host_state[host_key] = (now, 1)
+            self.logger.debug(
+                "Timeout waiting for tracker response (host=%s, transaction_id=%d, timeout=%.1fs). "
+                "Aggregating timeout events for %.1fs windows.",
+                host_key,
+                transaction_id,
+                timeout,
+                self._timeout_warning_summary_window,
+            )
+            return
+
+        timeout_count += 1
+        self._timeout_warning_host_state[host_key] = (
+            timeout_window_start,
+            timeout_count,
+        )
+        if now - timeout_window_start < self._timeout_warning_summary_window:
+            self.logger.debug(
+                "Tracker timeout summary: pending=%d, event_count=%d in %.1fs window",
+                pending_count,
+                timeout_count,
+                now - timeout_window_start,
+            )
+            return
+
+        self.logger.warning(
+            "Tracker response timeout burst for host=%s: %d timeouts in %.1fs (latest tx=%d, timeout=%.1fs, pending=%d, elapsed=%.1fs, oldest_age=%.1fs, pruned=%d)",
+            host_key,
+            timeout_count,
+            now - timeout_window_start,
+            transaction_id,
+            timeout,
+            pending_count,
+            elapsed,
+            oldest_age,
+            pruned_count,
+        )
+        self._timeout_warning_host_state[host_key] = (now, 1)
+
+    def _prune_stale_pending_requests(
+        self, now: float, timeout: float, additional_new: int = 0
+    ) -> int:
+        """Drop stale pending requests and enforce request cap."""
+        effective_cap = self._get_effective_pending_request_cap()
+        cutoff = now - max(timeout, self._pending_request_stale_after)
+        stale_tids = [
+            transaction_id
+            for transaction_id, timestamp in self._pending_request_timestamps.items()
+            if timestamp < cutoff
+        ]
+        pruned_count = 0
+        for transaction_id in stale_tids:
+            future = self.pending_requests.pop(transaction_id, None)
+            self._pending_request_timestamps.pop(transaction_id, None)
+            self.pending_immediate_callbacks.pop(transaction_id, None)
+            self._pending_request_host_by_tid.pop(transaction_id, None)
+            if future is not None and not future.done():
+                future.cancel()
+            self._mark_stale_transaction(transaction_id, now=now)
+            self._record_pending_request_result(stale=True, now=now)
+            self.logger.warning(
+                "Cancelling stale tracker request transaction_id=%d (age=%.1fs)",
+                transaction_id,
+                now - cutoff,
+            )
+            pruned_count += 1
+
+        projected_count = len(self.pending_requests) + additional_new
+        if projected_count > effective_cap:
+            overflow = projected_count - effective_cap
+            oldest = sorted(
+                self._pending_request_timestamps.items(), key=lambda item: item[1]
+            )
+            dropped_tids: list[int] = []
+            for transaction_id, _created_at in oldest[:overflow]:
+                future = self.pending_requests.pop(transaction_id, None)
+                self._pending_request_timestamps.pop(transaction_id, None)
+                self.pending_immediate_callbacks.pop(transaction_id, None)
+                self._pending_request_host_by_tid.pop(transaction_id, None)
+                if future is not None and not future.done():
+                    future.cancel()
+                self._mark_stale_transaction(transaction_id, now=now)
+                self._record_pending_request_result(stale=True, now=now)
+                dropped_tids.append(transaction_id)
+                pruned_count += 1
+            self.logger.warning(
+                "Dropping oldest tracker requests to enforce cap: dropped=%s",
+                dropped_tids,
+            )
+        return pruned_count
+
     async def _wait_for_response(
         self,
         transaction_id: int,
         timeout: float,
+        tracker_host: Optional[str] = None,
+        *,
+        immediate_peers_callback: Optional[ImmediatePeersCallback] = None,
     ) -> Optional[TrackerResponse]:
         """Wait for UDP tracker response."""
+        host = self._get_tracker_host(tracker_host)
         future = asyncio.Future()
+        now = time.time()
+        start_wait = now
+        host_pending = sum(
+            1 for h in self._pending_request_host_by_tid.values() if h == host
+        )
+        if host_pending >= self._pending_request_soft_cap_per_host:
+            self.logger.debug(
+                "Tracker host pending soft cap reached: host=%s pending=%d cap=%d",
+                host,
+                host_pending,
+                self._pending_request_soft_cap_per_host,
+            )
+            return None
+        effective_cap_pre = self._get_effective_pending_request_cap()
+        pending_pre = len(self.pending_requests)
+        pace_threshold = self._udp_wait_pacing_load_ratio * effective_cap_pre
+        if effective_cap_pre > 0 and pending_pre > int(pace_threshold):
+            # Pace new waits when the shared UDP client is heavily loaded so responses
+            # can drain before adding more in-flight transactions.
+            half_span = max(1.0, pace_threshold)
+            pressure = min(
+                1.0,
+                (pending_pre - pace_threshold) / half_span,
+            )
+            await asyncio.sleep(0.04 + 0.12 * pressure)
+        pruned_count = self._prune_stale_pending_requests(
+            now=now, timeout=timeout, additional_new=1
+        )
+        adaptive_timeout = self._get_adaptive_wait_timeout(
+            timeout=timeout,
+            tracker_host=host,
+            pending_count=len(self.pending_requests),
+        )
+        if transaction_id in self.pending_requests:
+            stale_future = self.pending_requests.pop(transaction_id, None)
+            self._pending_request_timestamps.pop(transaction_id, None)
+            self.pending_immediate_callbacks.pop(transaction_id, None)
+            if stale_future is not None and not stale_future.done():
+                stale_future.cancel()
+            self._mark_stale_transaction(transaction_id, now=time.time())
+            self._record_pending_request_result(stale=True, now=time.time())
+            self.logger.debug(
+                "Replacing existing pending transaction_id=%d while waiting for response",
+                transaction_id,
+            )
+        self.logger.debug(
+            "Tracker pending request window: total=%d, pruned=%d, oldest_age=%.1fs",
+            len(self.pending_requests),
+            pruned_count,
+            now - min(self._pending_request_timestamps.values(), default=now)
+            if self._pending_request_timestamps
+            else 0.0,
+        )
         self.pending_requests[transaction_id] = future
+        self._pending_request_timestamps[transaction_id] = now
+        self._pending_request_host_by_tid[transaction_id] = host
+        if immediate_peers_callback is not None:
+            self.pending_immediate_callbacks[transaction_id] = immediate_peers_callback
+        else:
+            self.pending_immediate_callbacks.pop(transaction_id, None)
+
+        self._maybe_emit_udp_pending_gauge()
 
         try:
-            return await asyncio.wait_for(future, timeout=timeout)
-        except asyncio.TimeoutError:
-            # CRITICAL FIX: Enhanced logging for timeouts - this is a common failure mode
-            self.logger.warning(
-                "Timeout waiting for tracker response (transaction_id=%d, timeout=%.1fs). "
-                "This may indicate: (1) Tracker is slow/unresponsive, (2) Network issues, "
-                "or (3) Firewall blocking responses. "
-                "Pending requests: %d",
+            response = await asyncio.wait_for(future, timeout=adaptive_timeout)
+            elapsed = time.time() - start_wait
+            self._record_tracker_response_time(host, elapsed)
+            return response
+        except asyncio.CancelledError:
+            self._mark_stale_transaction(transaction_id, now=time.time())
+            self._record_pending_request_result(stale=True, now=time.time())
+            self.logger.debug(
+                "Tracker response future cancelled for transaction_id=%d",
                 transaction_id,
-                timeout,
-                len(self.pending_requests),
+            )
+            return None
+        except asyncio.TimeoutError:
+            # Note: Enhanced logging for timeouts - this is a common failure mode
+            self._record_pending_request_result(stale=True, now=time.time())
+            elapsed = time.time() - start_wait
+            oldest = (
+                now - min(self._pending_request_timestamps.values(), default=now)
+                if self._pending_request_timestamps
+                else 0.0
+            )
+            self._mark_stale_transaction(transaction_id, now=time.time())
+            self._record_timeout_warning(
+                now=time.time(),
+                transaction_id=transaction_id,
+                timeout=adaptive_timeout,
+                pending_count=len(self.pending_requests),
+                elapsed=elapsed,
+                oldest_age=oldest,
+                pruned_count=pruned_count,
+                tracker_host=host,
             )
             return None
         finally:
             self.pending_requests.pop(transaction_id, None)
+            self._pending_request_timestamps.pop(transaction_id, None)
+            self.pending_immediate_callbacks.pop(transaction_id, None)
+            self._pending_request_host_by_tid.pop(transaction_id, None)
+            self._cleanup_stale_response_transaction_ids(now=time.time())
 
     @staticmethod
     def _is_ipv6_address(addr: tuple[str, int]) -> bool:
@@ -2115,7 +2683,7 @@ class AsyncUDPTrackerClient:
                 if not (1 <= port <= 65535):
                     invalid_peers += 1
                     continue
-                if not is_ipv6 and ip == "0.0.0.0":
+                if not is_ipv6 and ip == "0.0.0.0":  # nosec B104 — reject invalid peer IP, not bind
                     invalid_peers += 1
                     continue
                 peers.append(
@@ -2130,6 +2698,47 @@ class AsyncUDPTrackerClient:
                 invalid_peers += 1
                 self.logger.debug("Error parsing peer at offset %d: %s", i, e)
         return (peers, invalid_peers)
+
+    def _extract_announce_peers(
+        self, data: bytes, _addr: tuple[str, int]
+    ) -> tuple[list[dict[str, Any]], int, int, int]:
+        """Extract peer list from ANNOUNCE response.
+
+        Returns a tuple of (peers, interval, seeders, leechers).
+        """
+        if len(data) < 20:
+            return [], 0, 0, 0
+
+        try:
+            interval = struct.unpack("!I", data[8:12])[0]
+            leechers = struct.unpack("!I", data[12:16])[0]
+            seeders = struct.unpack("!I", data[16:20])[0]
+        except struct.error:
+            self.logger.debug(
+                "Failed to parse ANNOUNCE header from %s:%d",
+                _addr[0] if _addr else "unknown",
+                _addr[1] if _addr else 0,
+            )
+            return [], 0, 0, 0
+
+        peers = []
+        invalid_peers = 0
+        peer_data = data[20:]
+        is_ipv6 = self._is_ipv6_address(_addr)
+        stride = 18 if is_ipv6 else 6
+        if peer_data and len(peer_data) % stride != 0:
+            peer_data = peer_data[: len(peer_data) - (len(peer_data) % stride)]
+
+        if peer_data:
+            peers, invalid_peers = self._parse_peers_compact(peer_data, is_ipv6)
+
+        if invalid_peers > 0:
+            self.logger.debug(
+                "Skipped %d invalid peer(s) from orphaned announce response",
+                invalid_peers,
+            )
+
+        return peers, interval, seeders, leechers
 
     @staticmethod
     def _build_bep41_options(tracker_url: str) -> bytes:
@@ -2194,20 +2803,65 @@ class AsyncUDPTrackerClient:
                 # Enhanced logging for unmatched responses
                 # This can happen if: (1) Response arrived after timeout, (2) Transaction ID collision,
                 # or (3) Response from different tracker/client
-                self.logger.warning(
-                    "Received UDP response with transaction_id=%d from %s:%d but no pending request found. "
-                    "This may indicate: (1) Response arrived after timeout, (2) Transaction ID collision, "
-                    "or (3) Response from different tracker/client. "
-                    "Pending transaction IDs: %s (count: %d). Response action: %d",
-                    transaction_id,
-                    _addr[0] if _addr else "unknown",
-                    _addr[1] if _addr else 0,
-                    sorted(self.pending_requests.keys())[
-                        :10
-                    ],  # Show first 10 for brevity
-                    len(self.pending_requests),
-                    action,
-                )
+                now = time.time()
+                if self._is_expected_stale_transaction(transaction_id, now=now):
+                    self.logger.debug(
+                        "Ignoring stale tracker response for timed-out transaction_id=%d from %s:%d (action=%d)",
+                        transaction_id,
+                        _addr[0] if _addr else "unknown",
+                        _addr[1] if _addr else 0,
+                        action,
+                    )
+                else:
+                    stale_category, age_hint = self._classify_unmatched_response(
+                        transaction_id=transaction_id,
+                        addr=_addr,
+                        now=now,
+                    )
+                    self._udp_tracker_stale_response_total += 1
+                    self._udp_tracker_stale_response_by_category[stale_category] = (
+                        self._udp_tracker_stale_response_by_category.get(
+                            stale_category, 0
+                        )
+                        + 1
+                    )
+                    self.logger.warning(
+                        "Received UDP response with transaction_id=%d from %s:%d but no pending request found. "
+                        "This may indicate: (1) Response arrived after timeout, (2) Transaction ID collision, "
+                        "or (3) Response from different tracker/client. "
+                        "Pending transaction IDs: %s (count: %d). Response action: %d. "
+                        "stale_category=%s age_hint_s=%s udp_tracker_stale_response_total=%d "
+                        "stale_category_totals=%s",
+                        transaction_id,
+                        _addr[0] if _addr else "unknown",
+                        _addr[1] if _addr else 0,
+                        sorted(self.pending_requests.keys())[
+                            :10
+                        ],  # Show first 10 for brevity
+                        len(self.pending_requests),
+                        action,
+                        stale_category,
+                        f"{age_hint:.1f}" if isinstance(age_hint, float) else "n/a",
+                        self._udp_tracker_stale_response_total,
+                        self._udp_tracker_stale_response_by_category,
+                    )
+                if action == TrackerAction.ANNOUNCE.value:
+                    peers, interval, seeders, leechers = self._extract_announce_peers(
+                        data, _addr
+                    )
+                    if peers:
+                        tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
+                        self.logger.debug(
+                            "Late UDP ANNOUNCE (no pending request) for %s "
+                            "(transaction_id=%d, peers=%d, interval=%d, seeders=%d, leechers=%d); "
+                            "skipping immediate connect (unknown swarm)",
+                            tracker_url,
+                            transaction_id,
+                            len(peers),
+                            interval,
+                            seeders,
+                            leechers,
+                        )
                 return
 
             future = self.pending_requests[transaction_id]
@@ -2226,6 +2880,7 @@ class AsyncUDPTrackerClient:
                         transaction_id=transaction_id,
                         connection_id=connection_id,
                     )
+                    self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
             elif action == TrackerAction.ANNOUNCE.value:
@@ -2234,7 +2889,7 @@ class AsyncUDPTrackerClient:
                     leechers = struct.unpack("!I", data[12:16])[0]
                     seeders = struct.unpack("!I", data[16:20])[0]
 
-                    # CRITICAL FIX: Add detailed logging of raw tracker response
+                    # Note: Add detailed logging of raw tracker response
                     # Always log at INFO level for visibility - this is critical for debugging
                     self.logger.info(
                         "UDP Tracker ANNOUNCE response from %s:%d: "
@@ -2247,7 +2902,7 @@ class AsyncUDPTrackerClient:
                         len(data),
                     )
 
-                    # CRITICAL FIX: Log FULL raw response data at INFO level for debugging
+                    # Note: Log FULL raw response data at INFO level for debugging
                     # This helps identify if peers are in the response but not being parsed
                     if len(data) > 0:
                         # Log first 200 bytes at INFO level, full response at DEBUG
@@ -2266,11 +2921,11 @@ class AsyncUDPTrackerClient:
                             )
 
                     # Parse peers (compact format)
-                    # CRITICAL FIX: Improved peer parsing with validation and logging
+                    # Note: Improved peer parsing with validation and logging
                     peers = []
                     invalid_peers = 0
 
-                    # CRITICAL FIX: Log raw response for debugging at INFO level for visibility
+                    # Note: Log raw response for debugging at INFO level for visibility
                     self.logger.info(
                         "UDP Tracker response parsing: length=%d bytes, action=ANNOUNCE, seeders=%d, leechers=%d",
                         len(data),
@@ -2328,7 +2983,7 @@ class AsyncUDPTrackerClient:
                             len(data),
                         )
 
-                        # CRITICAL FIX: If tracker reports seeders/leechers but no peer data, log error
+                        # Note: If tracker reports seeders/leechers but no peer data, log error
                         if (seeders > 0 or leechers > 0) and len(data) <= 20:
                             self.logger.error(
                                 "INCONSISTENCY: Tracker %s:%d reports seeders=%d, leechers=%d but no peer data! "
@@ -2357,7 +3012,7 @@ class AsyncUDPTrackerClient:
                                 leechers,
                             )
                         else:
-                            # CRITICAL FIX: Enhanced logging for 0 peers case
+                            # Note: Enhanced logging for 0 peers case
                             peer_data_len = (len(data) - 20) if len(data) > 20 else 0
                             self.logger.warning(
                                 "Tracker %s:%d responded with 0 valid peers after parsing "
@@ -2394,9 +3049,11 @@ class AsyncUDPTrackerClient:
                         seeders=seeders,
                         peers=peers,
                     )
+                    immediate_cb = self.pending_immediate_callbacks.get(transaction_id)
+                    self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
-                    # CRITICAL FIX: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
+                    # Note: IMMEDIATE CONNECTION PATH - Connect peers as soon as they arrive
                     # This bypasses the announce loop and connects peers immediately
                     if peers and len(peers) > 0:
                         self.logger.info(
@@ -2404,32 +3061,13 @@ class AsyncUDPTrackerClient:
                             len(peers),
                             transaction_id,
                         )
-                        # Call immediate connection callback if registered
-                        if self.on_peers_received:
-                            try:
-                                tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
-                                # Call callback asynchronously to avoid blocking
-                                # Store task reference to prevent garbage collection
-                                task = asyncio.create_task(
-                                    self._call_immediate_connection(peers, tracker_url)
-                                )
-                                # Add done callback to log errors if task fails
-                                task.add_done_callback(
-                                    lambda t: self.logger.debug(
-                                        "Immediate connection callback task completed"
-                                    )
-                                    if t.exception() is None
-                                    else self.logger.warning(
-                                        "Immediate connection callback task failed: %s",
-                                        t.exception(),
-                                    )
-                                )
-                            except Exception as e:
-                                self.logger.warning(
-                                    "Failed to trigger immediate peer connection: %s",
-                                    e,
-                                    exc_info=True,
-                                )
+                        tracker_url = f"{_addr[0] if _addr else 'unknown'}:{_addr[1] if _addr else 0}"
+                        self._trigger_immediate_connection(
+                            peers,
+                            tracker_url,
+                            "Immediate connection",
+                            callback=immediate_cb,
+                        )
 
             elif action == TrackerAction.SCRAPE.value:
                 # Scrape response format:
@@ -2447,6 +3085,7 @@ class AsyncUDPTrackerClient:
                         downloaded=downloaded,
                         incomplete=incomplete,
                     )
+                    self._record_pending_request_result(stale=False, now=time.time())
                     future.set_result(response)
 
             elif action == TrackerAction.ERROR.value:
@@ -2456,6 +3095,7 @@ class AsyncUDPTrackerClient:
                     transaction_id=transaction_id,
                     error_message=error_message,
                 )
+                self._record_pending_request_result(stale=False, now=time.time())
                 future.set_result(response)
 
         except Exception as e:  # pragma: no cover - Exception handling in response parsing, hard to trigger reliably in tests
@@ -2467,10 +3107,12 @@ class AsyncUDPTrackerClient:
         """Background task to clean up old sessions."""
         while True:  # pragma: no cover - Background loop, tested via cancellation
             try:
-                await asyncio.sleep(300.0)  # Clean every 5 minutes
-                await (
-                    self._cleanup_sessions()
-                )  # pragma: no cover - Tested via direct calls
+                await asyncio.sleep(self._pending_cleanup_interval)
+                self._last_pending_cleanup = time.time()
+                now = self._last_pending_cleanup
+                await self._cleanup_sessions()
+                self._cleanup_stale_pending_requests(now=now)
+                self._cleanup_stale_response_transaction_ids(now=now)
             except asyncio.CancelledError:
                 break  # pragma: no cover - Cancellation tested separately
             except Exception:  # pragma: no cover - Exception handling tested separately
@@ -2579,12 +3221,10 @@ class AsyncUDPTrackerClient:
                     msg = "Transport is None after validation"
                     raise RuntimeError(msg)
 
-                # CRITICAL FIX: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
-                import sys
-
+                # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 loop = asyncio.get_event_loop()
-                is_proactor = isinstance(loop, asyncio.ProactorEventLoop)
-                if sys.platform == "win32" and is_proactor:
+                is_proactor = _is_windows_proactor_loop(loop)
+                if is_proactor:
                     # Small delay to ensure socket state is synchronized on Windows Proactor
                     await asyncio.sleep(0.01)
 
@@ -2593,8 +3233,6 @@ class AsyncUDPTrackerClient:
                     self.transport.sendto(request_data, tracker_address)
                 except OSError as send_error:
                     # Check if this is WinError 10022 (transient on Windows)
-                    import sys
-
                     error_code = getattr(send_error, "winerror", None) or getattr(
                         send_error, "errno", None
                     )
@@ -2615,7 +3253,15 @@ class AsyncUDPTrackerClient:
                     raise
 
             # Wait for response
-            response_data = await self._wait_for_response(transaction_id, timeout=10.0)
+            response_data = await self._wait_for_response(
+                transaction_id,
+                timeout=self._get_adaptive_wait_timeout(
+                    timeout=10.0,
+                    tracker_host=host,
+                    pending_count=len(self.pending_requests),
+                ),
+                tracker_host=host,
+            )
 
             if response_data:
                 # Parse scrape response
@@ -2790,8 +3436,6 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
 
         Behavior is consistent with DHT and uTP implementations which also only log errors.
         """
-        import sys
-
         error_code = (
             getattr(exc, "winerror", None) if hasattr(exc, "winerror") else None
         )
@@ -2837,6 +3481,38 @@ class UDPTrackerProtocol(asyncio.DatagramProtocol):
             )  # pragma: no cover - Logging statement, tested via other paths
 
 
-# Global UDP tracker client instance
-# Singleton pattern removed - UDP tracker client is now managed via AsyncSessionManager.udp_tracker_client
-# This ensures proper lifecycle management and prevents socket recreation issues
+# Process-wide UDP tracker client (one bound socket per process; BEP 15).
+_udp_tracker_client_singleton: Optional[AsyncUDPTrackerClient] = None
+# True only while get_udp_tracker_client() is creating the module singleton.
+_udp_singleton_construct_active: bool = False
+
+
+def _udp_singleton_construct_in_progress() -> bool:
+    """Return True while the official singleton constructor path is running."""
+    return _udp_singleton_construct_active
+
+
+def get_udp_tracker_client() -> AsyncUDPTrackerClient:
+    """Return the lazily-created process-wide UDP tracker client."""
+    global _udp_tracker_client_singleton, _udp_singleton_construct_active
+    if _udp_tracker_client_singleton is None:
+        _udp_singleton_construct_active = True
+        try:
+            _udp_tracker_client_singleton = AsyncUDPTrackerClient()
+        finally:
+            _udp_singleton_construct_active = False
+    return _udp_tracker_client_singleton
+
+
+async def shutdown_udp_tracker_client() -> None:
+    """Stop the process-wide client and release the module singleton (idempotent)."""
+    global _udp_tracker_client_singleton
+    if _udp_tracker_client_singleton is not None:
+        await _udp_tracker_client_singleton.stop()
+        _udp_tracker_client_singleton = None
+
+
+def reset_udp_tracker_client_for_testing() -> None:
+    """Clear the module singleton without awaiting stop (tests: call after ``stop()`` or with no start)."""
+    global _udp_tracker_client_singleton
+    _udp_tracker_client_singleton = None

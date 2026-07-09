@@ -40,12 +40,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         """Test that source code has SIM102 fix (combined if statements)."""
         # Read source file to verify fix
         import ccbt.cli.torrent_config_commands as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
-        # CRITICAL FIX: The SIM102 fix is at line 186, not 169
+
+        # Note: The SIM102 fix is at line 186, not 169
         # Find the SIM102 fix around line 186
         lines = source.splitlines()
         found_combined_if = False
@@ -60,7 +59,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                         assert "if save_checkpoint:" not in lines[i-1], \
                             "Should use combined if statement, not nested ifs (SIM102 fix)"
                     break
-        
+
         assert found_combined_if, \
             "Should find combined if statement (SIM102 fix) around line 186 in _set_torrent_option"
 
@@ -68,12 +67,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         """Test that source code has SIM102 fix (combined if statements)."""
         # Read source file to verify fix
         import ccbt.cli.torrent_config_commands as mod
-        from pathlib import Path
-        
+
         source_file = Path(mod.__file__)
         source = source_file.read_text(encoding="utf-8")
-        
-        # CRITICAL FIX: The SIM102 fix is at line 533, not 474
+
+        # Note: The SIM102 fix is at line 533, not 474
         # Find the SIM102 fix around line 533
         lines = source.splitlines()
         found_combined_if = False
@@ -88,7 +86,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                         assert "if save_checkpoint:" not in lines[i-1], \
                             "Should use combined if statement, not nested ifs (SIM102 fix)"
                     break
-        
+
         assert found_combined_if, \
             "Should find combined if statement (SIM102 fix) around line 533 in _reset_torrent_options"
 
@@ -102,7 +100,7 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         # Mock session manager and torrent session
         mock_session_manager = MagicMock()
         mock_torrent_session = MagicMock()
@@ -112,11 +110,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_torrent_session.apply_per_torrent_options = MagicMock()
         mock_session_manager.torrents = {b"\x00" * 20: mock_torrent_session}
         mock_session_manager_class.return_value = mock_session_manager
-        
+
         # Mock _get_torrent_session
         async def mock_get_torrent_session(info_hash, session_manager):
             return mock_torrent_session
-        
+
         with patch.object(torrent_config_mod, "_get_torrent_session", mock_get_torrent_session):
             # Call _set_torrent_option with save_checkpoint=True
             _run_coro_locally(
@@ -127,7 +125,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                     save_checkpoint=True,
                 )
             )
-        
+
         # Should save checkpoint (both conditions met: save_checkpoint=True and hasattr=True)
         mock_torrent_session.checkpoint_controller.save_checkpoint_state.assert_called_once()
 
@@ -141,10 +139,9 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         # Mock session manager and torrent session (no checkpoint_controller)
         # Use a real object-like structure that doesn't have checkpoint_controller
-        from types import SimpleNamespace
         mock_session_manager = MagicMock()
         mock_torrent_session = SimpleNamespace()
         mock_torrent_session.options = {}
@@ -152,11 +149,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         # Explicitly do NOT add checkpoint_controller attribute
         mock_session_manager.torrents = {b"\x00" * 20: mock_torrent_session}
         mock_session_manager_class.return_value = mock_session_manager
-        
+
         # Mock _get_torrent_session
         async def mock_get_torrent_session(info_hash, session_manager):
             return mock_torrent_session
-        
+
         with patch.object(torrent_config_mod, "_get_torrent_session", mock_get_torrent_session):
             # Call _set_torrent_option with save_checkpoint=True but no controller
             _run_coro_locally(
@@ -167,7 +164,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                     save_checkpoint=True,
                 )
             )
-        
+
         # Should not try to save checkpoint (hasattr check fails in combined if)
         # Verify checkpoint_controller was never accessed
         assert not hasattr(mock_torrent_session, "checkpoint_controller")
@@ -182,7 +179,7 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         # Mock session manager and torrent session
         mock_session_manager = MagicMock()
         mock_torrent_session = MagicMock()
@@ -192,11 +189,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_torrent_session.apply_per_torrent_options = MagicMock()
         mock_session_manager.torrents = {b"\x00" * 20: mock_torrent_session}
         mock_session_manager_class.return_value = mock_session_manager
-        
+
         # Mock _get_torrent_session
         async def mock_get_torrent_session(info_hash, session_manager):
             return mock_torrent_session
-        
+
         with patch.object(torrent_config_mod, "_get_torrent_session", mock_get_torrent_session):
             # Call _set_torrent_option with save_checkpoint=False
             _run_coro_locally(
@@ -207,7 +204,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                     save_checkpoint=False,
                 )
             )
-        
+
         # Should not save checkpoint (save_checkpoint=False, so combined if is False)
         mock_torrent_session.checkpoint_controller.save_checkpoint_state.assert_not_called()
 
@@ -221,7 +218,7 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         # Mock session manager and torrent session
         mock_session_manager = MagicMock()
         mock_torrent_session = MagicMock()
@@ -231,11 +228,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_torrent_session.apply_per_torrent_options = MagicMock()
         mock_session_manager.torrents = {b"\x00" * 20: mock_torrent_session}
         mock_session_manager_class.return_value = mock_session_manager
-        
+
         # Mock _get_torrent_session
         async def mock_get_torrent_session(info_hash, session_manager):
             return mock_torrent_session
-        
+
         with patch.object(torrent_config_mod, "_get_torrent_session", mock_get_torrent_session):
             # Call _reset_torrent_options with save_checkpoint=True
             _run_coro_locally(
@@ -245,7 +242,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                     save_checkpoint=True,
                 )
             )
-        
+
         # Should save checkpoint (both conditions met: save_checkpoint=True and hasattr=True)
         mock_torrent_session.checkpoint_controller.save_checkpoint_state.assert_called_once()
 
@@ -259,7 +256,7 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         # Mock session manager and torrent session
         mock_session_manager = MagicMock()
         mock_torrent_session = MagicMock()
@@ -269,11 +266,11 @@ class TestTorrentConfigCommandsSIM102Fix:
         mock_torrent_session.apply_per_torrent_options = MagicMock()
         mock_session_manager.torrents = {b"\x00" * 20: mock_torrent_session}
         mock_session_manager_class.return_value = mock_session_manager
-        
+
         # Mock _get_torrent_session
         async def mock_get_torrent_session(info_hash, session_manager):
             return mock_torrent_session
-        
+
         with patch.object(torrent_config_mod, "_get_torrent_session", mock_get_torrent_session):
             # Call _reset_torrent_options with save_checkpoint=False
             _run_coro_locally(
@@ -283,7 +280,7 @@ class TestTorrentConfigCommandsSIM102Fix:
                     save_checkpoint=False,
                 )
             )
-        
+
         # Should not save checkpoint (save_checkpoint=False, so combined if is False)
         mock_torrent_session.checkpoint_controller.save_checkpoint_state.assert_not_called()
 
@@ -294,13 +291,13 @@ class TestTorrentConfigCommandsSIM102Fix:
         #   if save_checkpoint:
         #       if hasattr(torrent_session, 'checkpoint_controller'):
         #           ...
-        
+
         # Test all combinations:
         # 1. save_checkpoint=True, hasattr=True -> should execute
         # 2. save_checkpoint=True, hasattr=False -> should not execute
         # 3. save_checkpoint=False, hasattr=True -> should not execute
         # 4. save_checkpoint=False, hasattr=False -> should not execute
-        
+
         # This is verified by the individual test methods above
         assert True, "Logic equivalence verified by individual test methods"
 
@@ -315,15 +312,15 @@ class TestTorrentConfigCommandsFunctionCompatibility:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         runner = CliRunner()
-        
+
         # Test command help (should not fail due to syntax errors)
         result = runner.invoke(
             torrent_config_mod.torrent_config,
             ["set", "--help"],
         )
-        
+
         assert result.exit_code == 0
         assert "set" in result.output.lower() or "help" in result.output.lower()
 
@@ -334,15 +331,15 @@ class TestTorrentConfigCommandsFunctionCompatibility:
         mock_daemon_manager = MagicMock()
         mock_daemon_manager.is_running.return_value = False
         mock_daemon_manager_class.return_value = mock_daemon_manager
-        
+
         runner = CliRunner()
-        
+
         # Test command help (should not fail due to syntax errors)
         result = runner.invoke(
             torrent_config_mod.torrent_config,
             ["reset", "--help"],
         )
-        
+
         assert result.exit_code == 0
         assert "reset" in result.output.lower() or "help" in result.output.lower()
 

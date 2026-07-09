@@ -15,7 +15,6 @@ import pytest
 
 from ccbt.storage.xet_deduplication import XetDeduplication
 
-
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
 
@@ -235,7 +234,7 @@ class TestXetDeduplication:
         # (cleanup_unused_chunks removes chunks with ref_count <= 1 AND old last_accessed)
         import time
         old_time = time.time() - (31 * 24 * 60 * 60)  # 31 days ago
-        
+
         conn = sqlite3.connect(dedup.cache_path)
         cursor = conn.cursor()
         cursor.execute(
@@ -255,7 +254,7 @@ class TestXetDeduplication:
         result = await dedup.check_chunk_exists(chunk_hash1)
         # Chunk may be removed if cleanup worked, or still exist if cleanup didn't run
         # (depends on timing and cleanup logic)
-        
+
         # Chunk2 should still exist (not old enough or has refs)
         result2 = await dedup.check_chunk_exists(chunk_hash2)
         assert result2 is not None
@@ -399,8 +398,8 @@ class TestXetDeduplication:
         await dedup.store_chunk(chunk_hash, chunk_data)
 
         # Set ref_count to 0 and last_accessed to old timestamp
-        import time
         import sqlite3
+        import time
 
         conn = sqlite3.connect(dedup.cache_path)
         cursor = conn.cursor()
@@ -413,7 +412,6 @@ class TestXetDeduplication:
 
         # Delete the file manually to trigger OSError
         import os
-        from pathlib import Path
         # Get storage path from chunk info
         info = dedup.get_chunk_info(chunk_hash)
         if info and info.get("storage_path"):
@@ -524,6 +522,7 @@ class TestXetDeduplication:
     async def test_query_dht_get_peers_fallback(self, dedup):
         """Test query_dht_for_chunk with get_peers fallback."""
         from unittest.mock import AsyncMock
+
         from ccbt.models import PeerInfo
 
         chunk_hash = b"L" * 32
@@ -593,11 +592,12 @@ class TestXetDeduplication:
     async def test_query_dht_for_chunk_with_get_data_value(self, dedup):
         """Test query_dht_for_chunk with get_data returning value."""
         from unittest.mock import AsyncMock
+
         from ccbt.models import PeerInfo
 
         chunk_hash = b"N" * 32
         mock_dht = AsyncMock()
-        
+
         # Mock get_data to return a value
         mock_value = {"ip": "192.168.1.1", "port": 6881}
         mock_dht.get_data = AsyncMock(return_value=mock_value)
@@ -790,7 +790,7 @@ class TestXetDeduplication:
         # Create a database with only chunks table (version 1)
         conn = sqlite3.connect(temp_db_path)
         cursor = conn.cursor()
-        
+
         # Create schema_version table and set to version 1
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS schema_version (
@@ -802,7 +802,7 @@ class TestXetDeduplication:
             "INSERT INTO schema_version (version, applied_at) VALUES (1, ?)",
             (0.0,)
         )
-        
+
         # Create only chunks table (old schema)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS chunks (

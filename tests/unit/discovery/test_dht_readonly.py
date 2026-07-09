@@ -6,13 +6,8 @@ Target: 95%+ code coverage for ccbt/discovery/dht_readonly.py
 
 from __future__ import annotations
 
-import contextlib
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from ccbt.core.bencode import BencodeDecoder
-from ccbt.discovery.dht import AsyncDHTClient
 from ccbt.discovery.dht_readonly import is_read_only_node
 
 pytestmark = [pytest.mark.unit, pytest.mark.discovery]

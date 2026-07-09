@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import struct
 import time
+import warnings
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Callable, Optional
@@ -69,6 +70,16 @@ class ExtensionProtocol:
         return normalized
 
     @staticmethod
+    def _normalize_encryption_preference(value: Any) -> Any:
+        """Normalize top-level extended-handshake encryption preference."""
+        if isinstance(value, bytes):
+            try:
+                return value.decode("utf-8")
+            except UnicodeDecodeError:
+                return value.decode("utf-8", errors="replace")
+        return value
+
+    @staticmethod
     def _coerce_message_id(value: Any) -> Optional[int]:
         """Convert peer-advertised extension IDs to integers when possible."""
         if isinstance(value, bool):
@@ -103,6 +114,8 @@ class ExtensionProtocol:
         state["reverse_message_map"] = {
             message_id: name for name, message_id in message_map.items()
         }
+        if "e" in state:
+            state["e"] = self._normalize_encryption_preference(state["e"])
         return state
 
     def register_extension(
@@ -324,6 +337,7 @@ class ExtensionProtocol:
                     "peer_id": peer_id,
                     "extensions": self.peer_extensions[peer_id],
                     "ssl_capable": ssl_supported,
+                    "encryption_preference": self.peer_extensions[peer_id].get("e"),
                     "timestamp": time.time(),
                 },
             ),
@@ -379,6 +393,13 @@ class ExtensionProtocol:
         """Get extensions supported by peer."""
         return self.peer_extensions.get(peer_id, {})
 
+    def get_peer_encryption_preference(self, peer_id: str) -> Optional[Any]:
+        """Get peer encryption preference from extended-handshake `e`."""
+        peer_extensions = self.peer_extensions.get(peer_id, {})
+        if not isinstance(peer_extensions, dict):
+            return None
+        return peer_extensions.get("e")
+
     def peer_supports_extension(self, peer_id: str, extension_name: str) -> bool:
         """Check if peer supports specific extension."""
         peer_extensions = self.peer_extensions.get(peer_id, {})
@@ -429,30 +450,67 @@ class ExtensionProtocol:
 
     def send_extension_message(
         self,
-        _peer_id: str,
-        _extension_name: str,
+        extension_name: str,
         payload: bytes,
+        peer_id: Optional[str] = None,
+        local_fallback: bool = False,
     ) -> bytes:
-        """Send extension message to peer."""
-        if _extension_name not in self.extensions:
-            msg = f"Extension '{_extension_name}' not registered"
+        """Build a peer extension message payload with peer-aware routing IDs.
+
+        This method is now peer-aware and prefers the peer-advertised extension ID
+        for the provided peer. If ``peer_id`` is omitted, it falls back to the
+        local extension ID to preserve compatibility for code paths that are not
+        peer-specific.
+
+        If ``peer_id`` is provided and ``local_fallback`` is False, this method
+        requires a peer-advertised ID and raises when the peer has not advertised
+        the extension. Set ``local_fallback`` to True only when you explicitly want
+        that behavior.
+
+        Args:
+            extension_name: Extension name to send.
+            payload: Payload bytes to send.
+            peer_id: Peer identifier (for peer-specific extension ID lookup).
+            local_fallback: If True, use local extension ID when peer mapping is absent.
+
+        Returns:
+            Encoded extension message bytes.
+
+        """
+        if extension_name not in self.extensions:
+            msg = f"Extension '{extension_name}' not registered"
             raise ValueError(msg)
 
-        extension_info = self.extensions[_extension_name]
-        return self.encode_extension_message(extension_info.message_id, payload)
+        extension_info = self.extensions[extension_name]
+        if peer_id is None:
+            warnings.warn(
+                "send_extension_message is deprecated for direct local-only usage. "
+                "Pass peer_id to safely use the peer-advertised extension ID.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        outgoing_message_id: Optional[int]
+        if peer_id is None:
+            outgoing_message_id = extension_info.message_id
+        else:
+            outgoing_message_id = self.get_peer_message_id(peer_id, extension_name)
+            if outgoing_message_id is None and local_fallback:
+                outgoing_message_id = extension_info.message_id
+        if outgoing_message_id is None:
+            msg = f"Extension '{extension_name}' has no id for peer '{peer_id}'"
+            raise ValueError(msg)
+        return self.encode_extension_message(outgoing_message_id, payload)
 
-    def create_extension_handler(self, _extension_name: str) -> Callable:
-        """Create extension handler function."""
-
-        def handler(
-            peer_id: str, payload: bytes
-        ) -> (
-            None
-        ):  # pragma: no cover - Default handler stub, tested via actual handlers
-            # Default handler - can be overridden
-            pass
-
-        return handler
+    def send_extension_message_for_peer(
+        self,
+        peer_id: str,
+        extension_name: str,
+        payload: bytes,
+    ) -> bytes:
+        """Build a peer extension message payload using the peer-advertised ID."""
+        return self.send_extension_message(
+            extension_name, payload, peer_id=peer_id, local_fallback=False
+        )
 
     def register_message_handler(self, message_id: int, handler: Callable) -> None:
         """Register message handler for specific message ID."""

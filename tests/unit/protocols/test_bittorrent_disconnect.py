@@ -186,14 +186,13 @@ class TestDisconnectPeer:
         protocol, peer_id, peer_ip = protocol_with_peer
 
         # Mock remove_peer to track calls
-        with patch.object(protocol, "remove_peer") as mock_remove:
-            with patch(
-                "ccbt.protocols.bittorrent.emit_event", new_callable=AsyncMock
-            ):
-                await protocol.disconnect_peer(peer_id)
+        with patch.object(protocol, "remove_peer") as mock_remove, patch(
+            "ccbt.protocols.bittorrent.emit_event", new_callable=AsyncMock
+        ):
+            await protocol.disconnect_peer(peer_id)
 
-                # Verify remove_peer was called (with IP, not full peer_id)
-                mock_remove.assert_called_once_with(peer_ip)
+            # Verify remove_peer was called (with IP, not full peer_id)
+            mock_remove.assert_called_once_with(peer_ip)
 
     @pytest.mark.asyncio
     async def test_disconnect_peer_error_handling(

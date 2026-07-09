@@ -6,10 +6,7 @@ Tests HTTP endpoint accessibility and Prometheus format output.
 from __future__ import annotations
 
 import asyncio
-import socket
-import time
 from http.client import HTTPConnection
-from threading import Thread
 
 import pytest
 
@@ -70,7 +67,7 @@ class TestPrometheusEndpoint:
 
         # Ensure any previous metrics are shut down
         await shutdown_metrics()
-        
+
         # Reset singleton
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
 
@@ -150,7 +147,7 @@ class TestPrometheusEndpoint:
 
         # Register a test metric
         from ccbt.monitoring.metrics_collector import MetricType
-        
+
         metrics.register_metric(
             "test_metric",
             MetricType.GAUGE,
@@ -218,6 +215,65 @@ class TestPrometheusEndpoint:
             # Restore
             monkeypatch.setattr(HTTPServer, "__init__", original_init)
 
+    @pytest.mark.asyncio
+    async def test_streaming_metrics_present_on_endpoint(self, mock_config_enabled):
+        """Streaming metrics can be exported with labels on /metrics endpoint."""
+        import ccbt.monitoring as monitoring_module
+
+        # Reset singleton
+        monitoring_module._GLOBAL_METRICS_COLLECTOR = None
+
+        mock_config_enabled.observability.enable_metrics = True
+        mock_config_enabled.observability.metrics_port = 9196
+
+        metrics = await init_metrics()
+
+        if metrics is None:
+            pytest.skip("Metrics not initialized")
+
+        # Emit a few stream-oriented metric samples
+        metrics.increment_gauge("ccbt_media_stream_active_streams", 1)
+        metrics.set_gauge("ccbt_media_stream_active_clients", 2)
+        metrics.increment_counter(
+            "ccbt_media_stream_requests_total",
+            1,
+            {"result": "success"},
+        )
+        metrics.increment_counter(
+            "ccbt_media_stream_errors_total",
+            1,
+            {"reason": "timeout"},
+        )
+        metrics.record_histogram(
+            "ccbt_media_stream_wait_seconds",
+            0.75,
+            {"result": "timeout"},
+        )
+
+        await asyncio.sleep(0.4)
+
+        try:
+            conn = HTTPConnection("127.0.0.1", 9196, timeout=2)
+            conn.request("GET", "/metrics")
+            response = conn.getresponse()
+
+            assert response.status == 200
+            body = response.read().decode("utf-8")
+
+            assert "ccbt_media_stream_active_streams" in body
+            assert "ccbt_media_stream_active_clients" in body
+            assert 'ccbt_media_stream_requests_total{result="success"}' in body
+            assert 'ccbt_media_stream_errors_total{reason="timeout"}' in body
+            assert 'ccbt_media_stream_wait_seconds{result="timeout"}' in body
+            assert "# TYPE ccbt_media_stream_active_streams" in body
+            assert "# TYPE ccbt_media_stream_requests_total" in body
+            conn.close()
+        except (ConnectionRefusedError, OSError) as e:
+            pytest.skip(f"Could not connect to metrics endpoint: {e}")
+        finally:
+            await shutdown_metrics()
+            await asyncio.sleep(0.2)
+
 
 @pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
@@ -242,6 +298,7 @@ def mock_config_enabled(monkeypatch):
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test

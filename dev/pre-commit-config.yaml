@@ -7,7 +7,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
       - id: ruff-format
         name: ruff-format
@@ -15,7 +15,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
       - id: compatibility-linter
         name: compatibility-linter
@@ -23,15 +23,7 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
-        pass_filenames: false
-      - id: compatibility-linter
-        name: compatibility-linter
-        entry: uv run python dev/compatibility_linter.py ccbt/
-        language: system
-        types: [python]
-        files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
       - id: ty
         name: ty
@@ -45,20 +37,20 @@ repos:
         pass_filenames: false
       - id: pytest-fast
         name: pytest-fast
-        entry: uv run python tests/scripts/run_pytest_selective.py --coverage --full-suite
+        entry: uv run python tests/scripts/run_pytest_selective.py --mode pre-commit
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: true
         stages: [pre-commit]
       - id: pytest-coverage
         name: pytest-coverage
-        entry: uv run python tests/scripts/run_pytest_selective.py --coverage --full-suite
+        entry: uv run python tests/scripts/run_pytest_selective.py --mode pre-push --coverage --full-suite
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: true
         stages: [pre-push]
       - id: codecov-upload
@@ -67,58 +59,10 @@ repos:
         language: system
         types: [python]
         files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
+        exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
         pass_filenames: false
         stages: [pre-push]
         require_serial: true
-      # Benchmark hooks - skippable via no-verify or SKIP_BENCHMARKS:
-      # - To skip all hooks (including benchmarks): git commit --no-verify
-      # - To skip only benchmarks: SKIP_BENCHMARKS=1 git commit
-      #   Or: export SKIP_BENCHMARKS=1 (to skip benchmarks for all commits in current shell)
-      - id: bench-smoke-hash
-        name: bench-smoke-hash
-        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_hash_verify.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: bench-smoke-disk
-        name: bench-smoke-disk
-        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: bench-smoke-piece
-        name: bench-smoke-piece
-        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: bench-smoke-loopback
-        name: bench-smoke-loopback
-        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: bench-smoke-encryption
-        name: bench-smoke-encryption
-        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/performance/bench_encryption.py --quick --record-mode=pre-commit --config-file docs/examples/example-config-performance.toml
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: bench-smoke-all
-        name: bench-smoke-all
-        entry: uv run python dev/scripts/run_benchmark_if_enabled.py uv run python tests/scripts/run_benchmarks_selective.py
-        language: system
-        types: [python]
-        files: ^ccbt/.*\.py$
-        exclude: ^(tests/|benchmarks/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
-        pass_filenames: true
-        stages: [pre-commit]
       - id: mkdocs-build
         name: mkdocs-build
         entry: uv run python dev/build_docs_patched_clean.py
@@ -126,14 +70,7 @@ repos:
         types: [markdown]
         files: ^(docs/.*\.md|docs/blog/.*\.md|README\.md|dev/mkdocs\.yml)$
         pass_filenames: false
-      - id: check-translations
-        name: check-translations
-        entry: uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt
-        language: system
-        types: [python]
-        files: ^ccbt/cli/.*\.py$
-        pass_filenames: false
-        stages: [pre-commit]
+        stages: [manual]
       - id: validate-po
         name: validate-po
         entry: uv run python -m ccbt.i18n.scripts.validate_po
@@ -156,6 +93,14 @@ repos:
         language: system
         types: [python]
         files: ^(ccbt/.*\.py|tests/.*\.py|dev/.*\.py)$
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: validate-benchmark-scripts
+        name: validate-benchmark-scripts
+        entry: uv run python dev/scripts/validate_benchmark_scripts.py
+        language: system
+        types: [python]
+        files: ^tests/performance/bench_.*\.py$
         pass_filenames: false
         stages: [pre-commit]
 

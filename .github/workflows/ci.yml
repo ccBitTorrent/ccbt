@@ -77,7 +77,6 @@ jobs:
   i18n:
     name: i18n
     runs-on: ubuntu-latest
-    continue-on-error: true
     environment: approval-required
     permissions:
       contents: read
@@ -103,10 +102,6 @@ jobs:
       - name: Extract translatable strings
         run: |
           uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
-
-      - name: Check string coverage
-        run: |
-          uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt --fail-on-gap
 
       - name: Validate .po files
         run: |

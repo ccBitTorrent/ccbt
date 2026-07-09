@@ -25,7 +25,7 @@ async def resume_download(
     console: Console,
 ) -> None:
     """Resume a download from a checkpoint."""
-    # CRITICAL FIX: Create session safely if not provided
+    # Note: Create session safely if not provided
     if session is None:
         from ccbt.cli.main import _ensure_local_session_safe
 

@@ -75,22 +75,22 @@ class ReactiveUpdateManager:
         self._data_provider = data_provider
         self._debounce_interval = debounce_interval
         self._max_queue_size = max_queue_size
-        
+
         # Priority queues (one per priority level)
         self._queues: dict[UpdatePriority, deque[UpdateEvent]] = {
             priority: deque() for priority in UpdatePriority
         }
-        
+
         # Subscribers: event_type -> list of callbacks
         self._subscribers: dict[str, list[Callable[[UpdateEvent], None]]] = {}
-        
+
         # Debounce timers: event_type -> last update time
         self._last_update_times: dict[str, float] = {}
-        
+
         # Processing task
         self._processing_task: Optional[asyncio.Task] = None
         self._running = False
-        
+
         # Lock for thread safety
         self._lock = asyncio.Lock()
 
@@ -201,7 +201,7 @@ class ReactiveUpdateManager:
         """Start the reactive update manager."""
         if self._running:
             return
-        
+
         self._running = True
         self._processing_task = asyncio.create_task(self._process_updates())
         logger.debug("Reactive update manager started")
@@ -273,7 +273,7 @@ class ReactiveUpdateManager:
                             event.timestamp = now
                             return
                 # If not found, will add new event below
-            
+
             # Check queue size
             total_size = sum(len(q) for q in self._queues.values())
             if total_size >= self._max_queue_size:
@@ -283,7 +283,7 @@ class ReactiveUpdateManager:
                 else:
                     logger.warning("Update queue full, dropping event")
                     return
-            
+
             # Add new event
             event = UpdateEvent(event_type, data, priority, now)
             self._queues[priority].append(event)
@@ -295,7 +295,7 @@ class ReactiveUpdateManager:
             try:
                 # Process events in priority order (CRITICAL -> HIGH -> NORMAL -> LOW)
                 event: Optional[UpdateEvent] = None
-                
+
                 for priority in [
                     UpdatePriority.CRITICAL,
                     UpdatePriority.HIGH,
@@ -305,7 +305,7 @@ class ReactiveUpdateManager:
                     if self._queues[priority]:
                         event = self._queues[priority].popleft()
                         break
-                
+
                 if event:
                     # Notify subscribers
                     callbacks = self._subscribers.get(event.event_type, [])
@@ -321,7 +321,7 @@ class ReactiveUpdateManager:
                 else:
                     # No events, sleep briefly
                     await asyncio.sleep(0.01)
-                    
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -336,8 +336,8 @@ class ReactiveUpdateManager:
         Args:
             session: Session manager (AsyncSessionManager or DaemonInterfaceAdapter)
         """
-        from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
         from ccbt.daemon.ipc_protocol import EventType
+        from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
 
         if isinstance(session, DaemonInterfaceAdapter):
             # Set up WebSocket event callbacks
@@ -369,7 +369,28 @@ class ReactiveUpdateManager:
                     self.emit("torrent_completed", data, UpdatePriority.CRITICAL)
                 )
 
-            # Register callbacks if session supports it
+            def on_piece_completed(data: dict[str, Any]) -> None:
+                """Handle piece completion event (single bus: B.2)."""
+                asyncio.create_task(
+                    self.emit("piece_completed", data, UpdatePriority.NORMAL)
+                )
+
+            def on_progress_updated(data: dict[str, Any]) -> None:
+                """Handle progress update event (single bus: B.2)."""
+                asyncio.create_task(
+                    self.emit("progress_updated", data, UpdatePriority.NORMAL)
+                )
+
+            def on_global_stats_updated(data: dict[str, Any]) -> None:
+                """Handle global stats update event (single bus: B.2)."""
+                asyncio.create_task(
+                    self.emit("global_stats_updated", data, UpdatePriority.NORMAL)
+                )
+
+            # Register callbacks if session supports it. This is the SINGLE
+            # registration path for daemon WebSocket events on the session —
+            # the App no longer registers its own direct register_event_callback
+            # block (B.2 collapsed the triple subscription paths into one bus).
             if hasattr(session, "register_event_callback"):
                 session.register_event_callback(  # type: ignore[attr-defined]
                     EventType.TORRENT_STATUS_CHANGED, on_torrent_status_changed
@@ -383,6 +404,15 @@ class ReactiveUpdateManager:
                 session.register_event_callback(  # type: ignore[attr-defined]
                     EventType.TORRENT_COMPLETED, on_torrent_completed
                 )
+                session.register_event_callback(  # type: ignore[attr-defined]
+                    EventType.PIECE_COMPLETED, on_piece_completed
+                )
+                session.register_event_callback(  # type: ignore[attr-defined]
+                    EventType.PROGRESS_UPDATED, on_progress_updated
+                )
+                session.register_event_callback(  # type: ignore[attr-defined]
+                    EventType.GLOBAL_STATS_UPDATED, on_global_stats_updated
+                )
                 logger.debug("WebSocket subscriptions set up for reactive updates")
         else:
             # For local session, we'd need to poll or use internal events
@@ -390,7 +420,14 @@ class ReactiveUpdateManager:
             logger.debug("Local session - WebSocket subscriptions not available")
 
     def subscribe_to_adapter(self, adapter: Any) -> None:
-        """Bind daemon adapter callbacks to reactive update events."""
+        """Bind daemon adapter callbacks to reactive update events.
+
+        Uses add_adapter_listener (list-based) instead of direct attribute
+        assignment so multiple subscribers coexist without overwriting each
+        other (R4 fix). The adapter's _handle_websocket_event dispatcher
+        invokes every list listener in addition to the legacy single-slot
+        on_* values.
+        """
         if not adapter:
             return
 
@@ -415,13 +452,25 @@ class ReactiveUpdateManager:
         async def _handle_media_event(payload: dict[str, Any]) -> None:
             await self.emit("media_event", payload, UpdatePriority.HIGH)
 
-        adapter.on_global_stats = _handle_global_stats
-        adapter.on_torrent_list_delta = _handle_torrent_delta
-        adapter.on_peer_metrics = _handle_peer_metrics
-        adapter.on_tracker_event = _handle_tracker_event
-        adapter.on_metadata_event = _handle_metadata_event
-        adapter.on_xet_event = _handle_xet_event
-        adapter.on_media_event = _handle_media_event
+        # Register as list listeners (no overwriting race). Fall back to direct
+        # assignment only if the adapter predates the add_adapter_listener API
+        # (keeps older test doubles working).
+        if hasattr(adapter, "add_adapter_listener"):
+            adapter.add_adapter_listener("on_global_stats", _handle_global_stats)
+            adapter.add_adapter_listener("on_torrent_list_delta", _handle_torrent_delta)
+            adapter.add_adapter_listener("on_peer_metrics", _handle_peer_metrics)
+            adapter.add_adapter_listener("on_tracker_event", _handle_tracker_event)
+            adapter.add_adapter_listener("on_metadata_event", _handle_metadata_event)
+            adapter.add_adapter_listener("on_xet_event", _handle_xet_event)
+            adapter.add_adapter_listener("on_media_event", _handle_media_event)
+        else:  # pragma: no cover - backward compat with pre-B.3 adapter doubles
+            adapter.on_global_stats = _handle_global_stats
+            adapter.on_torrent_list_delta = _handle_torrent_delta
+            adapter.on_peer_metrics = _handle_peer_metrics
+            adapter.on_tracker_event = _handle_tracker_event
+            adapter.on_metadata_event = _handle_metadata_event
+            adapter.on_xet_event = _handle_xet_event
+            adapter.on_media_event = _handle_media_event
 
 
 

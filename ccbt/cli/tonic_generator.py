@@ -215,30 +215,36 @@ async def generate_tonic_from_folder(
 )
 @click.option(
     "--sync-mode",
+    "-s",
     type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
     default="best_effort",
     help="Synchronization mode",
 )
 @click.option(
     "--source-peers",
+    "-p",
     help="Comma-separated list of designated source peer IDs",
 )
 @click.option(
     "--allowlist",
+    "-a",
     "allowlist_path",
     type=click.Path(),
     help="Path to allowlist file",
 )
 @click.option(
     "--git-ref",
+    "-g",
     help="Git commit hash/ref to track (default: current HEAD)",
 )
 @click.option(
     "--announce",
+    "-n",
     help="Primary tracker announce URL",
 )
 @click.option(
     "--generate-link",
+    "-l",
     is_flag=True,
     help="Also generate tonic?: link",
 )

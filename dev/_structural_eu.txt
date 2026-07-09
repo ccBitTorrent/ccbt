@@ -1,0 +1,677 @@
+ID
+IP
+1-2
+2-4
+4-8
+CPU
+DHT
+ETA
+MTU
+URL
+Xet
+uTP
+IPFS
+Nord
+Scrape
+  {msg}
+Dracula
+Gruvbox
+Monokai
+One Dark
+🔍 Rehash
+Catppuccin
+WebTorrent
+  {warning}
+GitHub Dark
+Tokyo Night
+Textual Dark
+VS Code Dark
+  ⚠ {warning}
+PEX: {status}
+Solarized Dark
+{key}: {value}
+Solarized Light
+{key} = {value}
+  UPnP: {status}
+Rehash: {status}
+Scrape: {status}
+[red]{msg}[/red]
+[red]{error}[/red]
+enable_dht={value}
+enable_pex={value}
+  NAT-PMP: {status}
+  - {hash}... ({format})
+- [yellow]{issue}[/yellow]
+[yellow]{warning}[/yellow]
+[green]{message}: {config_file}[/green]
+http://tracker.example.com:8080/announce
+Scanning folder and calculating chunks...
+V1 torrent generation not yet implemented
+Write merged config to global config file
+[cyan]Creating {format} torrent...[/cyan]
+[green]Content saved to:[/green] {output}
+[green]Deselected {count} file(s)[/green]
+[green]Removed torrent from queue[/green]
+[green]Resumed {count} torrent(s)[/green]
+[green]Set priority to {priority}[/green]
+[green]✓ Port mapping successful![/green]
+[red]Failed to force start: {error}[/red]
+[red]✗ Proxy connection test failed[/red]
+[yellow]No cached scrape results[/yellow]
+[yellow]✓[/yellow] uTP transport disabled
+
+[yellow]3. Tracker Configuration[/yellow]
+  [green]✓[/green] Can bind to port {port}
+  [red]✗[/red] NAT manager not initialized
+Enable debug verbosity (equivalent to -vv)
+Error receiving WebSocket events batch: %s
+Error setting DHT aggressive mode: {error}
+Error waiting for daemon with progress: %s
+Failed to set DHT aggressive mode: {error}
+Please enter a torrent path or magnet link
+Please fix validation errors before saving
+Port: {port}, STUN: {stun_count} server(s)
+Priority (0 = normal, 1 = high, -1 = low):
+Tip: full option catalog and file merge → 
+[cyan]Initializing configuration...[/cyan]
+[cyan]Running diagnostic checks...[/cyan]
+
+[cyan]Using custom IPC port: {port}[/cyan]
+[dim]Info hash v1 (SHA-1): {hash}...[/dim]
+[green]Saved alert rules to {path}[/green]
+[red]--value is required with --test[/red]
+[red]Error updating trusted IDs: {e}[/red]
+[red]Failed to get proxy status: {e}[/red]
+[red]Failed to load alert rules: {e}[/red]
+[red]Key file does not exist: {path}[/red]
+[red]Key path must be a file: {path}[/red]
+[red]✗ Failed to remove port mapping[/red]
+[red]✗[/red] Failed to update filter lists
+[yellow]External IP not available[/yellow]
+Connecting to daemon at %s (config_path=%s)
+Enable direct I/O for writes when supported
+Enable trace verbosity (equivalent to -vvv)
+Error executing config.get command: {error}
+PID file contains invalid PID: %d, removing
+State: stopped
+Selected file index: {index}
+Validate only; do not write the config file
+[green]Benchmark results:[/green] {results}
+[green]Checkpoint saved for torrent[/green]
+[green]Locale set to: {locale_code}[/green]
+[green]Moved to position {position}[/green]
+[green]Saved resume data for {hash}[/green]
+[red]Error enabling Xet protocol: {e}[/red]
+[red]Error generating tonic link: {e}[/red]
+[red]Error retrieving cache info: {e}[/red]
+[red]Error: Source directory is empty[/red]
+[red]Invalid value for {key}: {error}[/red]
+[red]Unknown configuration key: {key}[/red]
+[yellow]Checkpoint missing/invalid[/yellow]
+[yellow]External IP:[/yellow] Not available
+[yellow]No filter URLs configured.[/yellow]
+[yellow]Rule not found: {ip_range}[/yellow]
+[yellow]Torrent not found in queue[/yellow]
+uTP configuration reset to defaults via CLI
+- {id}: {severity} rule={rule} value={value}
+DHT data is unavailable in the current mode.
+Disable splash screen (useful for debugging)
+OK (dry-run — merged configuration is valid)
+PID file contains invalid data: %r, removing
+Per-torrent configuration saved successfully
+Security scan completed. No issues detected.
+Select a torrent and sub-tab to view details
+[dim]Info hash v2 (SHA-256): {hash}...[/dim]
+[green]Daemon restarted successfully[/green]
+[green]Deleted checkpoint for {hash}[/green]
+[green]Optimizations saved to {path}[/green]
+[green]✓[/green] Updated config file: {file}
+[red]--name is required to test a rule[/red]
+[red]Error disabling Xet protocol: {e}[/red]
+[red]Error enabling SSL for peers: {e}[/red]
+[red]Error generating .tonic file: {e}[/red]
+[yellow]Could not deselect: {error}[/yellow]
+[yellow]No filter rules configured.[/yellow]
+[yellow]No recover action specified[/yellow]
+{graph_tab_id} - Data provider not available
+
+[yellow]✗ No NAT devices discovered[/yellow]
+Error routing to daemon (PID file exists): %s
+Output directory (default: current directory)
+Parsing files and building hybrid metadata...
+Total Peers: {total} | Active Peers: {active}
+Updated config file with daemon configuration
+Upload Rate Limit (bytes/sec, 0 = unlimited):
+[cyan]Loading filter from: {file_path}[/cyan]
+[cyan]Starting daemon in background...[/cyan]
+[green]Checkpoint for {hash} is valid[/green]
+[green]Checkpoint reloaded for {hash}[/green]
+[green]Daemon is running[/green] (PID: {pid})
+[green]Loaded alert rules from {path}[/green]
+[green]Reset {key} for torrent {hash}[/green]
+[green]Resume data structure is valid[/green]
+[red]Configuration key not found: {key}[/red]
+[red]Error disabling SSL for peers: {e}[/red]
+[red]Error updating discovery mode: {e}[/red]
+[red]Error: Configuration not available[/red]
+[red]Failed to clear active alerts: {e}[/red]
+[yellow]Found checkpoint for: {name}[/yellow]
+[yellow]No security action specified[/yellow]
+
+[yellow]Download interrupted by user[/yellow]
+    - {network} ({mode}, priority: {priority})
+  Use 'ccbt tonic status' to check sync status
+Add magnet succeeded but no info_hash returned
+Advanced configuration (experimental features)
+Error executing {operation} on daemon: {error}
+Failed to get metrics interval from config: %s
+File Browser - Select files to create torrents
+Opened stream in external player via {method}.
+Prefer uTP when both TCP and uTP are available
+Select a sub-tab to view configuration options
+Write merged config to project local ccbt.toml
+[bold]Mapping {protocol} port {port}...[/bold]
+[cyan]Waiting for daemon to be ready...[/cyan]
+[green]Checkpoint refreshed for {hash}[/green]
+[green]✓[/green] Configuration saved to {file}
+[green]✓[/green] Generated .tonic file: {file}
+[red]--name is required to remove a rule[/red]
+[red]Error adding peer to allowlist: {e}[/red]
+[red]Error setting protocol version: {e}[/red]
+[red]Export not available in daemon mode[/red]
+[red]Import not available in daemon mode[/red]
+[red]Unexpected error during resume: {e}[/red]
+[yellow]Failed to generate tonic link[/yellow]
+[yellow]No aliases found in allowlist[/yellow]
+[yellow]Proxy configuration not found[/yellow]
+[yellow]⚠[/yellow] {errors} errors encountered
+⚠️  Daemon restart required to apply changes.
+
+
+[green]✓[/green] No connection issues detected
+  [yellow]⚠[/yellow] DHT client not initialized
+  [yellow]⚠[/yellow] TCP server not initialized
+Click on 'Global' tab to configure this section
+Command executor or data provider not available
+Could not save daemon config to config file: %s
+Data provider or command executor not available
+Download Rate Limit (bytes/sec, 0 = unlimited):
+Failed to load piece selection metrics: {error}
+Public key must be 32 bytes (64 hex characters)
+Validate merged file overlay only; do not write
+[green]Force started {count} torrent(s)[/green]
+[red]Error enabling SSL for trackers: {e}[/red]
+[yellow]No checkpoint found for {hash}[/yellow]
+
+[yellow]6. Session Initialization Test[/yellow]
+  Add the peer first using 'tonic allowlist add'
+Could not send shutdown request, using signal...
+No daemon PID file found - daemon is not running
+No magnet URI provided for add_magnet operation.
+No torrents yet. Use 'add' to start downloading.
+Save checkpoint immediately after setting option
+[bold]Xet Deduplication Cache Statistics[/bold]
+
+[green]✓[/green] Cleaned {cleaned} unused chunks
+[green]✓[/green] Removed filter rule: {ip_range}
+[red]Error disabling SSL for trackers: {e}[/red]
+[red]Error ensuring daemon is running: {e}[/red]
+[red]Error setting client certificate: {e}[/red]
+[red]Error updating configuration: {error}[/red]
+[red]Peer {peer_id} not found in allowlist[/red]
+[yellow]Network optimizer not available[/yellow]
+[yellow]No performance action specified[/yellow]
+[yellow]Refresh completed with warnings[/yellow]
+[yellow]Warning: Checkpoint save failed[/yellow]
+  [red]✗[/red] Session initialization failed: {e}
+Daemon connection: config_path=%s, file_exists=%s
+Failed to load peer quality distribution: {error}
+Magnet link must contain 'xt=urn:btih:' parameter
+No torrent data loaded. Please go back to step 1.
+Patch must be a JSON/TOML object at the top level
+Rate limit configuration (global and per-torrent)
+Security settings (encryption, IP filtering, SSL)
+Timeline data is unavailable in the current mode.
+Unexpected error checking daemon status at %s: %s
+[green]Applying {preset} optimizations...[/green]
+[green]Deleted checkpoint for {info_hash}[/green]
+[green]Torrent force started: {info_hash}[/green]
+[green]✓ Proxy connection test successful[/green]
+[green]✓[/green] Generated new API key for daemon
+[green]✓[/green] Removed alias for peer {peer_id}
+[red]Failed to set proxy configuration: {e}[/red]
+[red]Proxy host and port must be configured[/red]
+[yellow]Automatic repair not implemented[/yellow]
+[yellow]Network statistics not available[/yellow]
+[yellow]No security configuration loaded[/yellow]
+  Protocol not active (session may not be running)
+Connected to {peers} peer(s), fetching metadata...
+Direct session access not available in daemon mode
+Invalid configuration: top-level must be an object
+Section '{section}' is not a configuration section
+[cyan]Starting daemon in foreground mode...[/cyan]
+[dim]  uv run btbt daemon start --foreground[/dim]
+[green]Checkpoint for {info_hash} is valid[/green]
+[green]✓[/green] Added peer {peer_id} to allowlist
+[green]✓[/green] Loaded {total_loaded} total rules
+[red]Certificate file does not exist: {path}[/red]
+[red]Certificate path must be a file: {path}[/red]
+[red]Error removing peer from allowlist: {e}[/red]
+[red]Error setting CA certificates path: {e}[/red]
+[red]Error:[/red] Invalid value for {key}: {value}
+[red]Error:[/red] Unknown configuration key: {key}
+[red]✗[/red] Failed to add filter rule: {ip_range}
+[red]✗[/red] Failed to load rules from {file_path}
+[yellow]No alias found for peer {peer_id}[/yellow]
+[yellow]Warning: IPC client not available[/yellow]
+{graph_tab_id} - Data provider configuration error
+  [green]✓[/green] Session initialized successfully
+Could not read daemon config from ConfigManager: %s
+Magnet command: PID file check - exists=%s, path=%s
+No swarm activity captured for the selected window.
+This will modify your configuration file. Continue?
+[green]Found checkpoint for: {torrent_name}[/green]
+[green]Network configuration looks optimal![/green]
+[green]Reset all options for torrent {hash}[/green]
+[green]Torrent added to daemon: {info_hash}[/green]
+[green]✓[/green] Daemon process started (PID {pid})
+[red]Error: Cannot specify both --v2 and --v1[/red]
+[red]Error: Piece length must be a power of 2[/red]
+[red]Path must be a file or directory: {path}[/red]
+[yellow]No resume data found in checkpoint[/yellow]
+_get_executor() returned: executor=%s, is_daemon=%s
+Global KPIs data is unavailable in the current mode.
+Select files: [a]ll, [n]one, or indices (e.g. 0,2-5)
+Show what would be deleted without actually deleting
+[green]Successfully resumed download: {hash}[/green]
+[green]Tested rule {name} with value {value}[/green]
+[green]✓[/green] uTP configuration reset to defaults
+[red]Error retrieving disk statistics: {error}[/red]
+[red]Error updating parse-policy behavior: {e}[/red]
+[red]Error updating strict discovery mode: {e}[/red]
+[red]Error: Source path does not exist: {path}[/red]
+[yellow]Authenticated swarms not configured[/yellow]
+[yellow]No checkpoint found for {info_hash}[/yellow]
+  Make sure NAT-PMP or UPnP is enabled on your router
+Only options in this top-level section (e.g. network)
+Peer quality data is unavailable in the current mode.
+Usage: disk [show|stats|config <key> <value>|monitor]
+Using daemon config file: port=%d, api_key_present=%s
+[cyan]Checking for existing daemon instance...[/cyan]
+[green]Loaded {count} alert rules from {path}[/green]
+[green]PEX refreshed for torrent: {info_hash}[/green]
+[green]Performing basic configuration scan...[/green]
+[green]Set {key} = {value} for torrent {hash}[/green]
+[green]✓ Torrent created successfully: {path}[/green]
+[red]Error: Info hash must be 40 hex characters[/red]
+[red]Error: Network configuration not available[/red]
+[red]✗[/red] Daemon is already running with PID {pid}
+[yellow]Found checkpoint for: {torrent_name}[/yellow]
+[yellow]Resume data validation found issues:[/yellow]
+[yellow]Warning: Error stopping session: {e}[/yellow]
+{sub_tab} content for torrent {hash}... - Coming soon
+File Browser - Data provider or executor not available
+Invalid magnet link - missing 'xt=urn:btih:' parameter
+Number of pieces to verify for integrity (0 = disable)
+Per-Peer tab - Data provider or executor not available
+Reset specific key only (otherwise resets all options)
+Torrents tab - Data provider or executor not available
+[green]Set file {index} priority to {priority}[/green]
+[green]✓[/green] Removed peer {peer_id} from allowlist
+[red]Error: Failed to get daemon status: {error}[/red]
+[red]Error: Invalid torrent file: {torrent_file}[/red]
+[yellow]Could not get detailed status via IPC[/yellow]
+[yellow]Peer {peer_id} not found in allowlist[/yellow]
+Exceeded maximum wait time (%.1fs) for daemon readiness
+HTTP error checking daemon status at %s: %s (status %d)
+Invalid magnet link format - must start with 'magnet:?'
+No playable media files were detected for this torrent.
+[green]Magnet link added to daemon: {info_hash}[/green]
+[green]Proxy configuration updated successfully[/green]
+[green]✓[/green] Added filter rule: {ip_range} ({mode})
+[green]✓[/green] Loaded {loaded} rules from {file_path}
+[green]✓[/green] Set alias '{alias}' for peer {peer_id}
+[red]Error enabling certificate verification: {e}[/red]
+[red]Error retrieving network statistics: {error}[/red]
+[red]Error updating authenticated swarm mode: {e}[/red]
+[red]Error: Cannot specify both --hybrid and --v1[/red]
+[red]Error: Cannot specify both --v2 and --hybrid[/red]
+[yellow]Active Protocol:[/yellow] None (not discovered)
+[yellow]Could not save to config file: {error}[/yellow]
+[yellow]Failed to reload checkpoint for {hash}[/yellow]
+[yellow]IP filter not initialized or disabled.[/yellow]
+Download swing {delta:.1f} KiB/s (peak {peak:.1f} KiB/s)
+Security scan is not available when connected to daemon.
+State: {state}
+URL: {url}
+Buffer readiness: {buffer:.0%}
+[red]Error disabling certificate verification: {e}[/red]
+[red]Error reading authenticated swarm status: {e}[/red]
+[yellow]Failed to refresh checkpoint for {hash}[/yellow]
+Fetching file list for selection. This may take a moment.
+Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)
+Per-Torrent tab - Data provider or executor not available
+Use 'btbt daemon restart' or restart the daemon manually.
+[blue]Progress: {verified}/{total} pieces verified[/blue]
+[cyan]Testing proxy connection to {host}:{port}...[/cyan]
+[cyan]Updating filter lists from {count} URL(s)...[/cyan]
+[dim]Please restart manually: 'btbt daemon restart'[/dim]
+[green]Proxy configuration saved to {config_file}[/green]
+[yellow]Real-time monitoring not yet implemented[/yellow]
+[yellow]Warning: Failed to select files: {error}[/yellow]
+Daemon is accessible and ready (attempt %d/%d, took %.1fs)
+Migrating checkpoint format from {from_fmt} to {to_fmt}...
+Network configuration (connections, timeouts, rate limits)
+No PID file found, checking for daemon via _get_executor()
+Torrent Controls - Data provider or executor not available
+Tracking {count} torrent(s) across {minutes} minute window
+You can skip waiting and continue with all files selected.
+[dim]Use 'btbt daemon status' to check daemon status[/dim]
+[green]No checkpoints older than {days} days found[/green]
+[green]Per-peer rate limit for {peer_key}: {limit}[/green]
+[green]Tracker added: {url} to torrent {info_hash}[/green]
+[yellow]Warning: Error saving checkpoint: {error}[/yellow]
+DHT is running. {active} active nodes, {peers} peers found.
+Remove tracker not yet implemented. Selected tracker: {url}
+[green]Torrent paused: {info_hash}{checkpoint_info}[/green]
+[yellow]Note:[/yellow] Configuration change is runtime-only
+[yellow]Please use --v2 or --hybrid flags for now.[/yellow]
+Connecting to daemon at %s (PID file exists, config_path=%s)
+Disk I/O configuration (preallocation, hashing, checkpoints)
+General configuration - Data provider/Executor not available
+Network configuration - Data provider/Executor not available
+Peer banning not yet implemented. Selected peer: {ip}:{port}
+Piece selection metrics are unavailable in the current mode.
+Storage configuration - Data provider/Executor not available
+Using default IPC port %d (daemon config file may not exist)
+[dim]Use -v flag for more details or check daemon logs[/dim]
+[green]Torrent resumed: {info_hash}{checkpoint_info}[/green]
+[green]✓[/green] Successfully updated {count} filter list(s)
+[yellow]Checkpoint for {hash} is missing or invalid[/yellow]
+[yellow]No authenticated swarms configuration found[/yellow]
+[yellow]Rich not available, starting fresh download[/yellow]
+[yellow]Warning: Failed to save checkpoint: {error}[/yellow]
+Advanced configuration - Data provider/Executor not available
+No torrent path or magnet provided for add_torrent operation.
+Security configuration - Data provider/Executor not available
+[yellow]No valid indices, keeping default selection.[/yellow]
+Bandwidth configuration - Data provider/Executor not available
+[green]Torrent cancelled: {info_hash}{checkpoint_info}[/green]
+[green]Tracker removed: {url} from torrent {info_hash}[/green]
+[yellow]Configuration changes require daemon restart.[/yellow]
+[yellow]Non-interactive mode, starting fresh download[/yellow]
+  Make sure NAT traversal is enabled and a device is discovered
+Include effective runtime value from loaded config (file + env)
+Metadata is loading. File selection will appear when available.
+Piece selection metrics are not available yet for this torrent.
+Prefer v2: {prefer_v2} | Hybrid: {hybrid} | Timeout: {timeout}s
+Read IPC port %d from daemon config file (authoritative source)
+[green]Set rate limit for {count} peers: {upload} KiB/s[/green]
+[yellow]Warning: Failed to set queue priority: {error}[/yellow]
+- {name}: metric={metric}, cond={condition}, severity={severity}
+API key or Ed25519 key manager required for WebSocket connection
+Cannot connect to daemon. Start daemon with: 'btbt daemon start'
+Supported MVP playback targets include common audio/video files.
+[bold]Removing {protocol} port mapping for port {port}...[/bold]
+[green]Restored checkpoint for: {name}[/green]
+Info hash: {hash}
+
+[dim]Press Ctrl+R in main dashboard to view scrape results[/dim]
+Run additional system compatibility checks after model validation
+Usage: network [show|stats|config <key> <value>|optimize|monitor]
+[green]Peer validation hooks are enabled by configuration[/green]
+[green]Successfully resumed download: {resumed_info_hash}[/green]
+tonic share requires the daemon. Start it with: btbt daemon start
+Connections: {connections}, Signaling: {signaling} ({host}:{port})
+Delete torrent {info_hash}…? Press 'y' to confirm or 'n' to cancel
+Wait for metadata and prompt for file selection (interactive only)
+[green]DHT aggressive mode {mode} for torrent: {info_hash}[/green]
+[yellow]The daemon process crashed during initialization.[/yellow]
+Others can join with: ccbt tonic sync "{link}" --output <directory>
+[green]Per-peer rate limit set: {peer_key} = {upload} KiB/s[/green]
+[yellow]Dry run: Would clean chunks older than {days} days[/yellow]
+[yellow]No config file found - configuration not persisted[/yellow]
+[yellow]Note: Update config file to persist locale setting[/yellow]
+[yellow]⚠[/yellow] Could not save daemon config to config file: {e}
+Patch file format (auto: infer from extension or try JSON then TOML)
+[dim]Please restart the daemon manually: 'btbt daemon restart'[/dim]
+[red]Error: Piece length must be at least 16 KiB (16384 bytes)[/red]
+[yellow]Client certificate set (skipped write in test mode)[/yellow]
+[yellow]SSL for peers disabled (skipped write in test mode)[/yellow]
+Error routing to daemon (no PID file): %s - will create local session
+[green]Integrity verification passed: {count} pieces verified[/green]
+[yellow]Integrity verification failed: {count} pieces failed[/yellow]
+[yellow]Proxy has been disabled (skipped write in test mode)[/yellow]
+Select a section to configure. Press Enter to edit, Escape to go back.
+[red]--name, --metric and --condition are required to add a rule[/red]
+[yellow]Disk I/O manager not running. Statistics unavailable.[/yellow]
+[yellow]SSL for trackers enabled (skipped write in test mode)[/yellow]
+IPCClient.get_daemon_pid: Checking pid_file=%s (home_dir=%s, exists=%s)
+Timeout checking daemon accessibility after %d attempts (elapsed %.1fs)
+[green]✓[/green] Added peer {peer_id} to allowlist with alias '{alias}'
+[yellow]SSL for trackers disabled (skipped write in test mode)[/yellow]
+[yellow]Warning: V1 torrent generation is not yet implemented.[/yellow]
+Invalid tracker URL format. Must start with http://, https://, or udp://
+Set rate limits for this torrent:
+
+Enter 0 or leave empty for unlimited.
+[red]IP filter not initialized. Please enable it in configuration.[/red]
+[yellow]API key not found in config, cannot get detailed status[/yellow]
+[yellow]Please provide the original torrent file or magnet link[/yellow]
+[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]
+Client error checking daemon status at %s: %s (daemon may be starting up)
+Could not connect to daemon (no PID file): %s - will create local session
+Error checking daemon accessibility after %d attempts (elapsed %.1fs): %s
+[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting
+[yellow]Proxy configuration updated (skipped write in test mode)[/yellow]
+[yellow]Would delete {count} checkpoints older than {days} days:[/yellow]
+
+[dim]Press Ctrl+N in main dashboard to manage NAT settings globally[/dim]
+
+[dim]Press Ctrl+X in main dashboard to manage Xet settings globally[/dim]
+Cached: {cache_size}, Total Seeders: {seeders}, Total Leechers: {leechers}
+Full configuration editing requires navigating to the Global Config screen
+Provide a VALUE argument or use --value=... for values with spaces or JSON
+Start daemon in background without waiting for completion (faster startup)
+Verification complete: {verified} verified, {failed} failed out of {total}
+
+[dim]Press Ctrl+I in main dashboard to manage IPFS content and peers[/dim]
+Per-torrent configuration - Data provider/Executor or torrent not available
+[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]
+[dim]Try running with --foreground flag to see detailed error output:[/dim]
+[green]Client certificate set. Configuration saved to {config_file}[/green]
+[green]SSL for peers disabled. Configuration saved to {config_file}[/green]
+DHT client not available. DHT metrics require DHT to be enabled and running.
+[yellow]Checkpoint cannot be auto-resumed - no torrent source found[/yellow]
+
+[dim]Press Ctrl+U in main dashboard to configure uTP settings globally[/dim]
+[green]SSL for trackers enabled. Configuration saved to {config_file}[/green]
+[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)
+Daemon connection timeout (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...
+Security manager not available. Security scanning requires local session mode.
+Timeout checking daemon status at %s (daemon may be starting up or overloaded)
+Value to set (use for strings with spaces or JSON); overrides positional VALUE
+[green]SSL for trackers disabled. Configuration saved to {config_file}[/green]
+Configuration: {type}
+
+This configuration section is not yet fully implemented.
+[yellow]Authenticated swarm setting updated (test mode, write skipped)[/yellow]
+[yellow]No optimizations were applied (already optimal or unsupported)[/yellow]
+Daemon connection error (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...
+Daemon is marked as running but not accessible after %d attempts (elapsed %.1fs)
+[yellow]CA certificates path set to {path} (skipped write in test mode)[/yellow]
+[yellow]SSL for peers enabled (experimental, skipped write in test mode)[/yellow]
+[yellow]SSL certificate verification enabled (skipped write in test mode)[/yellow]
+[yellow]TLS protocol version set to {version} (skipped write in test mode)[/yellow]
+[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet
+[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)
+[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]
+No daemon detected (PID file doesn't exist), creating local session. PID file path: %s
+[yellow]Client certificate set (configuration not persisted - no config file)[/yellow]
+[yellow]SSL for peers disabled (configuration not persisted - no config file)[/yellow]
+[green]CA certificates path set to {path}. Configuration saved to {config_file}[/green]
+Cannot connect to daemon at %s: %s (daemon may not be running or IPC server not started)
+Select queue priority for this torrent:
+
+Higher priority torrents will be started first.
+[yellow]SSL for trackers enabled (configuration not persisted - no config file)[/yellow]
+[green]SSL certificate verification enabled. Configuration saved to {config_file}[/green]
+[green]SSL for peers enabled (experimental). Configuration saved to {config_file}[/green]
+[yellow]SSL for trackers disabled (configuration not persisted - no config file)[/yellow]
+Security scan completed. {blocked} blocked connections, {events} security events detected.
+Timeout checking daemon accessibility (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...
+[green]TLS protocol version set to {version}. Configuration saved to {config_file}[/green]
+[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]
+[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})
+Enter the directory where files should be downloaded:
+
+Leave empty to use current directory.
+Error checking daemon accessibility (attempt %d/%d, elapsed %.1fs): %s, retrying in %.1fs...
+Usage: config [show|get|set|reload] ...
+Shell: btbt config describe | apply | import | schema
+[yellow]Full rehash not implemented in CLI; use resume to trigger piece verification[/yellow]
+[yellow]No file list available within {timeout}s, continuing with default selection.[/yellow]
+[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]
+[yellow]Warning: certificate verification is disabled while SSL is in strict posture[/yellow]
+Connections: {connections} | Packets: {sent}/{received} | Bytes: {bytes_sent}/{bytes_received}
+[yellow]Warning: Configuration changes require daemon restart, but restart was skipped.[/yellow]
+[yellow]CA certificates path set to {path} (configuration not persisted - no config file)[/yellow]
+[yellow]Toggle encryption via --enable-encryption/--disable-encryption on download/magnet[/yellow]
+Daemon is marked as running but not accessible (attempt %d/%d, elapsed %.1fs), retrying in %.1fs...
+[yellow]Authenticated swarm setting updated (configuration not persisted - no config file)[/yellow]
+[yellow]SSL for peers enabled (experimental, configuration not persisted - no config file)[/yellow]
+[yellow]Warning: SSL certificate verification is disabled while SSL is used in strict mode[/yellow]
+Resume from checkpoint if available:
+
+If enabled, the download will resume from the last checkpoint.
+[yellow]SSL certificate verification disabled (not recommended, skipped write in test mode)[/yellow]
+[yellow]SSL certificate verification enabled (configuration not persisted - no config file)[/yellow]
+[yellow]Use --list/--list-active, --add, --remove, --clear-active, --test, --load or --save[/yellow]
+[yellow]TLS protocol version set to {version} (configuration not persisted - no config file)[/yellow]
+[yellow]To see errors in the terminal, run:[/yellow] [dim]uv run btbt daemon start --foreground[/dim]
+replace: file must be a full valid document; merge: deep-merge into existing target TOML then validate
+Windows-specific error checking daemon (os.kill() issue): %s - no PID file found, will create local session
+[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]
+[yellow]SSL certificate verification disabled (not recommended). Configuration saved to {config_file}[/yellow]
+Enter the path to a .torrent file or a magnet link:
+
+Examples:
+  /path/to/file.torrent
+  magnet:?xt=urn:btih:...
+Error checking if daemon is running (Windows-specific issue?): %s - PID file exists, will attempt IPC connection
+[yellow]Torrent not found or not active. Resume data will be automatically saved when torrent completes.[/yellow]
+Daemon is not running. Scrape commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+[yellow]Note: This change is temporary and will be lost on restart. Use config file for persistent changes.[/yellow]
+[yellow]SSL certificate verification disabled (not recommended, configuration not persisted - no config file)[/yellow]
+[green]Optimizations applied successfully![/green]
+[yellow]Note: Some changes may require restart to take effect.[/yellow]
+Daemon is not running. NAT management commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Unknown operation '{operation}' requested but daemon PID file exists. This should not happen - please report this as a bug.
+Daemon is not running. File management commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Socket test returned 10035 (WSAEWOULDBLOCK) on Windows for %s:%d. This may be a false positive - proceeding with HTTP check.
+{connection}  Torrents: {torrents}  Active: {active}  Paused: {paused}  Seeding: {seeding}  D: {download}B/s  U: {upload}B/s
+Daemon is not running. Queue management commands require the daemon to be running.
+Start the daemon with: 'btbt daemon start'
+Select files to download and set priorities:
+  Space: Toggle selection
+  P: Change priority
+  A: Select all
+  D: Deselect all
+Socket connection test to %s:%d failed (result=%d). Port may not be open or firewall blocking. Proceeding with HTTP check anyway.
+Start a stream to expose a localhost HTTP URL for VLC or another external player. Native in-terminal video embedding is out of scope.
+Daemon PID file exists but API key not found (config or daemon config file). Cannot route to daemon. Please check daemon configuration.
+Xet Protocol Options:
+
+Xet enables content-defined chunking and deduplication.
+Useful for reducing storage when downloading similar content.
+CRITICAL: PID file exists (initial=%s, current=%s, path=%s) but code reached local session creation! This will cause port conflicts. Aborting.
+Invalid locale '{current_locale}' specified. Falling back to 'en'. Available locales: en, es, fr, hi, ur, fa, arc, ja, ko, zh, th, sw, ha, yo, eu
+File: {name}
+Port: {port}
+Bytes served: {bytes_served}
+Clients: {clients}
+Last range: {start} - {end}
+Readable bytes: {available}
+Last error: {error}
+IPFS Protocol Options:
+
+IPFS enables content-addressed storage and peer-to-peer content sharing.
+Content can be accessed via IPFS CID after download.
+NAT Traversal Options:
+
+NAT traversal (NAT-PMP/UPnP) automatically maps ports on your router.
+This allows peers to connect to you directly, improving download speeds.
+Scrape Options:
+
+Scraping queries tracker statistics (seeders, leechers, completed downloads).
+Auto-scrape will automatically scrape the tracker when the torrent is added.
+Authentication failed when checking daemon status at %s (status %d). This usually indicates an API key mismatch. Check that the API key in config matches the daemon's API key.
+[yellow]Warning: Daemon is running. Diagnostics will test local session which may cause port conflicts.[/yellow]
+[dim]Consider stopping the daemon first: 'btbt daemon exit'[/dim]
+
+uTP (uTorrent Transport Protocol) Options:
+
+uTP provides reliable, ordered delivery over UDP with delay-based congestion control (BEP 29).
+Useful for better performance on networks with high latency or packet loss.
+help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema
+Daemon PID file exists but cannot connect to daemon: {error}
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check IPC port configuration matches daemon port
+  3. If daemon crashed, restart it: 'btbt daemon start'
+  4. If you want to run locally, stop the daemon: 'btbt daemon exit'
+[red]Failed to start daemon. Cannot proceed without daemon.[/red]
+[yellow]Please check:[/yellow]
+  1. Daemon logs for startup errors
+  2. Port conflicts (check if port is already in use)
+  3. Permissions (ensure you have permission to start daemon)
+
+[cyan]To start daemon manually: 'btbt daemon start'[/cyan]
+Daemon PID file exists but daemon is not accessible after {elapsed:.1f}s.
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check daemon logs for startup errors
+  3. If daemon crashed, restart it: 'btbt daemon start'
+  4. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but daemon is not responding (timeout after {elapsed:.1f}s).
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check daemon logs for errors
+  3. If daemon crashed, restart it: 'btbt daemon start'
+  4. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but error occurred while connecting: {error}.
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check daemon logs for connection errors
+  3. Verify IPC server is accessible on the configured port
+  4. If daemon crashed, restart it: 'btbt daemon start'
+  5. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but cannot connect to daemon (error: {error}).
+The daemon may be starting up or may have crashed.
+
+To resolve:
+  1. Run 'btbt daemon status' to check daemon state
+  2. Check if IPC server is running on the configured port
+  3. Verify API key in config matches daemon's API key
+  4. If daemon crashed, restart it: 'btbt daemon start'
+  5. If you want to run locally, stop the daemon: 'btbt daemon exit'
+Daemon PID file exists but daemon is not responding after {max_total_wait:.1f}s.
+Possible causes:
+  - Daemon is still starting up (wait a few seconds and try again)
+  - Daemon crashed (check logs or run 'btbt daemon status')
+  - IPC server is not accessible (check firewall/network settings)
+
+To resolve:
+  1. Run 'btbt daemon status' to check if daemon is actually running
+  2. If daemon is not running, remove stale PID file: 'btbt daemon exit --force'
+  3. If you want to run locally instead, stop the daemon: 'btbt daemon exit'

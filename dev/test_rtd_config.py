@@ -13,7 +13,6 @@ def test_imports():
         ('mkdocs_static_i18n', 'mkdocs_static_i18n', True),
         ('mkdocstrings', 'mkdocstrings', True),
         ('mkdocs_git_revision_date_localized', 'mkdocs_git_revision_date_localized_plugin', True),
-        ('mkdocs_codeinclude', 'mkdocs_codeinclude_plugin', False),  # Plugin, not directly importable
         ('mkdocs_blog', 'mkdocs_blog', True),
         ('mkdocs_coverage', 'mkdocs_coverage', True),
         ('pymdownx', 'pymdownx', True),
@@ -72,16 +71,16 @@ def test_mkdocs_config():
         else:
             print("  [WARN] No languages found with build=true")
         
-        # Check that .readthedocs.yaml references the build script
+        # Check that dev/.readthedocs.yaml references the build script
         try:
-            with open('.readthedocs.yaml', 'r', encoding='utf-8') as f:
+            with open('dev/.readthedocs.yaml', 'r', encoding='utf-8') as f:
                 rtd_content = f.read()
             if 'build_docs_patched_clean.py' in rtd_content:
-                print("  [OK] .readthedocs.yaml references patched build script")
+                print("  [OK] dev/.readthedocs.yaml references patched build script")
             else:
-                print("  [WARN] .readthedocs.yaml may not use patched build script")
+                print("  [WARN] dev/.readthedocs.yaml may not use patched build script")
         except FileNotFoundError:
-            print("  [WARN] .readthedocs.yaml not found")
+            print("  [WARN] dev/.readthedocs.yaml not found")
         
         return True
     except Exception as e:

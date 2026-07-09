@@ -29,6 +29,7 @@ class TestWebTorrentProtocolImport:
         with patch("ccbt.protocols.webtorrent_module", side_effect=ImportError("aiortc not available")):
             # Reload the module to trigger the import error handling
             import importlib
+
             import ccbt.protocols
 
             # Reload the module to trigger the except block
@@ -42,10 +43,11 @@ class TestWebTorrentProtocolImport:
         """Test AttributeError handling when WebTorrentProtocol doesn't exist (lines 22-23)."""
         # Mock the module import to succeed but AttributeError when accessing WebTorrentProtocol
         mock_module = type("MockModule", (), {})()  # Module without WebTorrentProtocol attribute
-        
+
         with patch("ccbt.protocols.webtorrent_module", mock_module):
             # Reload the module to trigger the AttributeError handling
             import importlib
+
             import ccbt.protocols
 
             # Reload the module to trigger the except block

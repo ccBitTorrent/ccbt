@@ -306,10 +306,10 @@ async def test_ipfs_content_get_integration(ipfs_protocol, mock_ipfs_client):
 
     # Mock cat method directly on the client
     mock_ipfs_client.cat = MagicMock(return_value=expected_content)
-    
+
     # Mock CID verification to return True
     ipfs_protocol._verify_cid_integrity = MagicMock(return_value=True)  # noqa: SLF001
-    
+
     # Mock to_thread to execute the lambda function passed to it
     async def mock_to_thread(func, *_args, **_kwargs):
         """Mock to_thread that executes the lambda function."""
@@ -506,7 +506,7 @@ async def test_ipfs_protocol_lifecycle_integration(ipfs_config, mock_ipfs_client
         # Note: We manually set _ipfs_connected=True, so stop() may not reset it
         # The important thing is that stop() was called without errors
         # State can be disconnected, error, or connected (if stop didn't fully disconnect)
-        assert ipfs_protocol.state.value in ["disconnected", "error", "connected"]  # noqa: SLF001
+        assert ipfs_protocol.state.value in ["disconnected", "error", "connected"]
 
 
 @pytest.mark.asyncio

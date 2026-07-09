@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace, ModuleType
-from typing import Any
+import importlib
 import sys
+from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -32,7 +32,7 @@ def test_debug_error_path(monkeypatch):
         raise RuntimeError("dbg-err")
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
-    result = runner.invoke(cli_main.cli, ["debug"]) 
+    result = runner.invoke(cli_main.cli, ["debug"])
     assert result.exit_code != 0
     assert "Error: dbg-err" in result.output
 
@@ -58,7 +58,7 @@ def test_resume_cli_success_with_checkpoint(monkeypatch):
             return _CP()
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Minimal session and resume_download pass-through
@@ -73,7 +73,7 @@ def test_resume_cli_success_with_checkpoint(monkeypatch):
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     ih = (b"\x00" * 20).hex()
-    result = runner.invoke(cli_main.cli, ["resume", ih]) 
+    result = runner.invoke(cli_main.cli, ["resume", ih])
     assert result.exit_code == 0
 
 
@@ -102,18 +102,18 @@ def test_resume_invalid_hex_and_no_checkpoint(monkeypatch):
             return None
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # invalid hex
-    bad = runner.invoke(cli_main.cli, ["resume", "not-hex"]) 
+    bad = runner.invoke(cli_main.cli, ["resume", "not-hex"])
     assert bad.exit_code != 0
     assert "Invalid info hash format" in bad.output
 
     # valid hex but no checkpoint
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: object())
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    okhex = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()]) 
+    okhex = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()])
     assert okhex.exit_code != 0
     assert "No checkpoint found" in okhex.output
 
@@ -138,12 +138,12 @@ def test_resume_cannot_auto_resume(monkeypatch):
             return _CP()
 
     fake_mod = ModuleType("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: object())
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    res = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()]) 
+    res = runner.invoke(cli_main.cli, ["resume", (b"\x00" * 20).hex()])
     assert res.exit_code != 0
     assert "cannot be auto-resumed" in res.output
 
@@ -156,21 +156,39 @@ def test_magnet_interactive_path(monkeypatch):
     class _Mgr:
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
-            
+
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
-    async def _start_interactive(session, torrent_data, console, resume=False):
+        async def add_magnet(self, _link: str, output_dir=None, resume=False):
+            return (b"\x00" * 20).hex()
+
+    async def _start_interactive(
+        session, magnet_link, info_hash_hex, console, resume=False, output_dir=None
+    ):
         return None
 
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    async def _mock_get_executor():
+        return (None, False)
+
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_interactive_download", _start_interactive)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_interactive_magnet_download", _start_interactive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    res = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "-i"]) 
+    res = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "-i"])
     assert res.exit_code == 0
 
 
@@ -182,7 +200,7 @@ def test_download_interactive_path(monkeypatch):
     class _Mgr:
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -191,7 +209,7 @@ def test_download_interactive_path(monkeypatch):
         return {"info_hash": b"\x00" * 20, "name": "t", "pieces_info": {"piece_hashes": [], "piece_length": 16384, "num_pieces": 0, "total_length": 0}, "file_info": {"total_length": 0}, "announce": ""}
 
     fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
-    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    fake_torrent_utils_mod.load_torrent = _mock_load_torrent
     monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     async def _start_interactive(session, torrent_data, console, resume=False):
@@ -201,7 +219,7 @@ def test_download_interactive_path(monkeypatch):
     monkeypatch.setattr(cli_main, "start_interactive_download", _start_interactive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    res = runner.invoke(cli_main.cli, ["download", __file__, "-i"]) 
+    res = runner.invoke(cli_main.cli, ["download", __file__, "-i"])
     assert res.exit_code == 0
 
 
@@ -213,7 +231,7 @@ def test_download_file_not_found_path(monkeypatch):
     class _Mgr:
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -222,12 +240,12 @@ def test_download_file_not_found_path(monkeypatch):
         raise FileNotFoundError("missing.torrent")
 
     fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
-    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    fake_torrent_utils_mod.load_torrent = _mock_load_torrent
     monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    res = runner.invoke(cli_main.cli, ["download", __file__]) 
+    res = runner.invoke(cli_main.cli, ["download", __file__])
     assert res.exit_code != 0
     assert "File not found" in res.output
 
@@ -269,7 +287,7 @@ def test_debug_happy_path(monkeypatch):
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Sess())
     monkeypatch.setattr(cli_main, "start_debug_mode", _start_debug)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
-    res = runner.invoke(cli_main.cli, ["debug"]) 
+    res = runner.invoke(cli_main.cli, ["debug"])
     assert res.exit_code == 0
 
 
@@ -309,7 +327,7 @@ def test_start_basic_download_with_object_torrent_data(monkeypatch):
             # Use bytes keys like real AsyncSessionManager
             self.torrents: dict[bytes, Any] = {}
             self.lock = asyncio.Lock()
-            
+
         async def add_torrent(self, torrent_data, resume=False):
             """Mock add_torrent that populates torrents dict."""
             from unittest.mock import AsyncMock

@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.config import ConfigManager, init_config
 from ccbt.models import DownloadStats, TorrentCheckpoint
 from ccbt.session import AsyncSessionManager
+from ccbt.storage.checkpoint import CheckpointManager
 
 
 @pytest_asyncio.fixture

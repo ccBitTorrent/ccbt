@@ -6,7 +6,6 @@ encrypted allowlist storage for XET folder sync.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import json
@@ -16,6 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from ccbt.utils.compat import to_thread_compat
 
 logger = logging.getLogger(__name__)
 
@@ -146,14 +147,14 @@ class XetAllowlist:
         if self._loaded:
             return
 
-        exists = await asyncio.to_thread(self.allowlist_path.exists)
+        exists = await to_thread_compat(self.allowlist_path.exists)
         if not exists:
             self._allowlist = {}
             self._loaded = True
             return
 
         try:
-            encrypted_data = await asyncio.to_thread(self.allowlist_path.read_bytes)
+            encrypted_data = await to_thread_compat(self.allowlist_path.read_bytes)
             if not encrypted_data:
                 self._allowlist = {}
                 self._loaded = True
@@ -168,7 +169,7 @@ class XetAllowlist:
                     salt = self._decode_bytes(envelope["salt"])
                     nonce = self._decode_bytes(envelope["nonce"])
                     ciphertext = self._decode_bytes(envelope["ciphertext"])
-                    await asyncio.to_thread(
+                    await to_thread_compat(
                         lambda: self._load_or_create_local_secret(create=False)
                     )
                     aes_gcm = AESGCM(self._derive_encryption_key(salt, create=False))
@@ -210,7 +211,7 @@ class XetAllowlist:
             if not self._loaded:
                 await self.load()
 
-            await asyncio.to_thread(
+            await to_thread_compat(
                 lambda: self._load_or_create_local_secret(create=True)
             )
 
@@ -243,7 +244,7 @@ class XetAllowlist:
                     encoding="utf-8",
                 )
 
-            await asyncio.to_thread(_write_envelope)
+            await to_thread_compat(_write_envelope)
             self._migrate_on_next_save = False
 
             self.logger.info("Saved allowlist with %d peers", len(self._allowlist))

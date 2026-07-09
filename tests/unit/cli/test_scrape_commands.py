@@ -17,7 +17,6 @@ import pytest
 from click.testing import CliRunner
 
 from ccbt.cli.scrape_commands import scrape
-from ccbt.models import ScrapeResult
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli]
 
@@ -65,7 +64,7 @@ class TestScrapeTorrentCommand:
         mock_session.start = AsyncMock()
         mock_session.stop = AsyncMock()
         mock_session_class.return_value = mock_session
-        
+
         result = runner.invoke(scrape, ["torrent", "short"])
 
         assert result.exit_code != 0
@@ -80,7 +79,7 @@ class TestScrapeTorrentCommand:
         mock_session.stop = AsyncMock()
         mock_session.get_scrape_result = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
-        
+
         result = runner.invoke(scrape, ["torrent", "X" * 40])
 
         # Should exit with error (invalid hex or other validation error)
@@ -89,7 +88,7 @@ class TestScrapeTorrentCommand:
     def test_scrape_torrent_success(self, runner, monkeypatch):
         """Test successful scrape torrent command."""
         from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
-        
+
         info_hash_hex = "a" * 40
 
         # Mock ScrapeResult response
@@ -161,7 +160,7 @@ class TestScrapeTorrentCommand:
     def test_scrape_torrent_with_cached_result(self, runner, monkeypatch):
         """Test scrape torrent command with cached result."""
         from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
-        
+
         info_hash_hex = "a" * 40
 
         # Mock ScrapeResult response (cached result)
@@ -203,7 +202,7 @@ class TestScrapeTorrentCommand:
     def test_scrape_torrent_with_force_flag(self, runner, monkeypatch):
         """Test scrape torrent command with --force flag."""
         from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
-        
+
         info_hash_hex = "a" * 40
 
         # Mock ScrapeResult response
@@ -267,7 +266,7 @@ class TestScrapeListCommand:
     def test_scrape_list_empty(self, runner, monkeypatch):
         """Test scrape list with empty cache."""
         from ccbt.daemon.ipc_protocol import ScrapeListResponse
-        
+
         # Mock empty ScrapeListResponse
         mock_list_response = ScrapeListResponse(results=[])
 
@@ -298,8 +297,9 @@ class TestScrapeListCommand:
 
     def test_scrape_list_with_results(self, runner, monkeypatch):
         """Test scrape list with cached results."""
-        from ccbt.daemon.ipc_protocol import ScrapeListResponse, ScrapeResult as IPCScrapeResult
-        
+        from ccbt.daemon.ipc_protocol import ScrapeListResponse
+        from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
+
         info_hash1_hex = "x" * 40
         info_hash2_hex = "y" * 40
 
@@ -393,7 +393,7 @@ class TestScrapeListCommand:
     def test_scrape_torrent_success_no_cache_entry(self, runner, monkeypatch):
         """Test scrape torrent when scrape succeeds but no cache entry found (lines 98-101)."""
         from ccbt.daemon.ipc_protocol import ScrapeResult as IPCScrapeResult
-        
+
         info_hash_hex = "a" * 40
 
         # Mock ScrapeResult response (scrape succeeds)

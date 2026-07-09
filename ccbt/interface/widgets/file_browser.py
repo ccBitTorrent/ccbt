@@ -45,7 +45,6 @@ except ImportError:
     class Static:  # type: ignore[no-redef]
         pass
 
-from rich.panel import Panel
 
 logger = logging.getLogger(__name__)
 
@@ -159,19 +158,19 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
             logger.info("FileBrowserWidget.on_mount: Starting mount process")
             self._file_table = self.query_one("#file-table", DataTable)  # type: ignore[attr-defined]
             self._path_input = self.query_one("#path-input", Input)  # type: ignore[attr-defined]
-            logger.info("FileBrowserWidget.on_mount: Found _file_table: %s, _path_input: %s", 
+            logger.info("FileBrowserWidget.on_mount: Found _file_table: %s, _path_input: %s",
                        self._file_table is not None, self._path_input is not None)
-            
-            # CRITICAL FIX: Add columns first, then populate after widget is fully rendered
+
+            # Note: Add columns first, then populate after widget is fully rendered
             if self._file_table:
                 self._file_table.add_columns("Type", "Name", "Size", "Modified")
                 logger.debug("FileBrowserWidget.on_mount: Added columns to DataTable")
-            
-            # CRITICAL FIX: Ensure widget is visible
+
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
             if self._file_table:
                 self._file_table.display = True  # type: ignore[attr-defined]
-            
+
             # Use call_after_refresh to ensure widget is fully mounted and visible
             self.call_after_refresh(self._refresh_file_list)  # type: ignore[attr-defined]
             logger.debug("FileBrowserWidget.on_mount: Scheduled refresh after mount")
@@ -185,7 +184,7 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
 
     def _refresh_file_list(self) -> None:  # pragma: no cover
         """Refresh the file list for current directory."""
-        # CRITICAL FIX: Re-query _file_table if it's None (may happen if called before on_mount completes)
+        # Note: Re-query _file_table if it's None (may happen if called before on_mount completes)
         if not self._file_table:
             try:
                 self._file_table = self.query_one("#file-table", DataTable)  # type: ignore[attr-defined]
@@ -195,12 +194,12 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
                 # Schedule retry after widget is fully mounted
                 self.call_after_refresh(self._refresh_file_list)  # type: ignore[attr-defined]
                 return
-        
+
         if not self._file_table:
             logger.warning("FileBrowserWidget: _file_table is None, cannot refresh")
             return
 
-        # CRITICAL FIX: Ensure widget is visible before populating
+        # Note: Ensure widget is visible before populating
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("FileBrowserWidget: Widget not attached or not visible, deferring refresh")
             # Schedule refresh for when widget becomes visible
@@ -208,14 +207,14 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
             return
 
         try:
-            # CRITICAL FIX: Ensure columns exist before clearing/adding rows
+            # Note: Ensure columns exist before clearing/adding rows
             # Textual DataTable requires columns to be added before rows
             if not self._file_table.columns:  # type: ignore[attr-defined]
                 self._file_table.add_columns("Type", "Name", "Size", "Modified")
-            
+
             self._file_table.clear()
             current = Path(self._current_path)
-            
+
             logger.debug("FileBrowserWidget: Refreshing file list for path: %s", current)
 
             if not current.exists():
@@ -277,12 +276,12 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
                         )
             except PermissionError:
                 pass  # Already handled above
-            
-            # CRITICAL FIX: Force DataTable refresh after adding rows
+
+            # Note: Force DataTable refresh after adding rows
             # Textual DataTable may need explicit refresh to display new rows
             if hasattr(self._file_table, "refresh"):
                 self._file_table.refresh()  # type: ignore[attr-defined]
-            
+
             logger.debug("FileBrowserWidget: Refreshed file list, added rows to table")
 
         except Exception as e:

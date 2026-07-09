@@ -5,13 +5,14 @@ Tests error paths and edge cases not covered in main test file.
 
 from __future__ import annotations
 
-import pytest
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # Try to import aiortc, skip tests if not available
 try:
-    from aiortc import RTCPeerConnection, RTCDataChannel
+    from aiortc import RTCDataChannel, RTCPeerConnection
 
     HAS_AIORTC = True
 except ImportError:

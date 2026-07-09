@@ -4,6 +4,11 @@
 This script analyzes Python files in ccbt/ to extract import statements
 and build a dependency graph. The graph is cached for performance.
 
+Cache invariants:
+- cache payload includes `schema_version`, `fingerprint`, and `graph`
+- cache is reused only when both schema and fingerprint match
+- legacy cache format triggers automatic rebuild
+
 Usage:
     python tests/scripts/get_dependent_modules.py  # Build and cache graph
     python tests/scripts/get_dependent_modules.py --print  # Print graph
@@ -12,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import logging
 import sys
@@ -29,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Cache file location
 CACHE_FILE = Path(__file__).parent.parent / ".dependency_cache.json"
+CACHE_SCHEMA_VERSION = 2
 
 
 class ImportVisitor(ast.NodeVisitor):
@@ -197,19 +204,40 @@ def load_or_build_graph() -> dict[str, list[str]]:
     Returns:
         Dependency graph dictionary
     """
+    repo_root = Path(__file__).parent.parent.parent
+    ccbt_dir = repo_root / "ccbt"
+
+    def _snapshot_fingerprint(target_dir: Path) -> str:
+        digest = hashlib.sha256()
+        for py_file in sorted(target_dir.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            stat = py_file.stat()
+            digest.update(rel.encode("utf-8"))
+            digest.update(str(stat.st_mtime_ns).encode("utf-8"))
+            digest.update(str(stat.st_size).encode("utf-8"))
+        return digest.hexdigest()
+
+    expected_fingerprint = _snapshot_fingerprint(ccbt_dir) if ccbt_dir.exists() else ""
+
     # Try to load from cache
     if CACHE_FILE.exists():
         try:
             with CACHE_FILE.open() as f:
                 cached = json.load(f)
-                logger.info(f"Loaded dependency graph from cache ({len(cached)} entries)")
-                return cached
+                if isinstance(cached, dict) and "graph" in cached:
+                    schema = int(cached.get("schema_version", 0))
+                    fingerprint = str(cached.get("fingerprint", ""))
+                    if schema == CACHE_SCHEMA_VERSION and fingerprint == expected_fingerprint:
+                        graph = cached.get("graph", {})
+                        logger.info(f"Loaded dependency graph from cache ({len(graph)} entries)")
+                        return graph
+                    logger.info("Dependency cache stale or schema-mismatched; rebuilding graph")
+                else:
+                    logger.info("Legacy dependency cache format detected; rebuilding graph")
         except Exception as e:
             logger.warning(f"Failed to load cache: {e}, rebuilding...")
 
     # Build graph
-    repo_root = Path(__file__).parent.parent.parent
-    ccbt_dir = repo_root / "ccbt"
     if not ccbt_dir.exists():
         logger.error(f"ccbt/ directory not found at {ccbt_dir}")
         return {}
@@ -221,7 +249,15 @@ def load_or_build_graph() -> dict[str, list[str]]:
     try:
         CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with CACHE_FILE.open("w") as f:
-            json.dump(graph, f, indent=2)
+            json.dump(
+                {
+                    "schema_version": CACHE_SCHEMA_VERSION,
+                    "fingerprint": expected_fingerprint,
+                    "graph": graph,
+                },
+                f,
+                indent=2,
+            )
         logger.info(f"Cached dependency graph ({len(graph)} entries)")
     except Exception as e:
         logger.warning(f"Failed to save cache: {e}")

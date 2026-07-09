@@ -1,14 +1,15 @@
 """Daemon main entry point.
 
-from __future__ import annotations
-
-Main entry point for background daemon process.
+IPC add-torrent / add-magnet handlers await ``AsyncSessionManager.add_*`` before
+reporting success so registration is visible to inbound TCP and
+``get_session_for_info_hash`` immediately after the call returns.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import sys
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from ccbt.config.config import init_config
+from ccbt.config.env_bootstrap import maybe_load_dotenv_from_env
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_protocol import EventType
 from ccbt.daemon.ipc_server import IPCServer  # type: ignore[attr-defined]
@@ -25,6 +27,13 @@ from ccbt.session.session import AsyncSessionManager
 from ccbt.utils.logging_config import get_logger, setup_logging
 
 logger = get_logger(__name__)
+
+
+def _flush_log_handlers() -> None:
+    """Best-effort flush so shutdown logs reach files before process exit."""
+    for handler in logging.root.handlers:
+        with contextlib.suppress(Exception):
+            handler.flush()
 
 
 def _is_workspace_id_hex(workspace_id_hex: str) -> bool:
@@ -150,7 +159,7 @@ class DaemonMain:
         """Start daemon process."""
         logger.info("Starting ccBitTorrent daemon...")
 
-        # CRITICAL FIX: Acquire lock file EARLY in startup process
+        # Note: Acquire lock file EARLY in startup process
         # This prevents multiple daemon instances from starting simultaneously
         # Must be done BEFORE any initialization to prevent resource conflicts
         if not self.daemon_manager.acquire_lock():
@@ -214,7 +223,7 @@ class DaemonMain:
         # Setup signal handlers (before writing PID file)
         self.daemon_manager.setup_signal_handlers(self._shutdown_handler)
 
-        # CRITICAL FIX: Initialize security components BEFORE session manager
+        # Note: Initialize security components BEFORE session manager
         # This ensures API key, Ed25519 keys, and TLS are ready before NAT manager starts
         # Security initialization must happen before any network components
         daemon_config = self.config.daemon
@@ -313,7 +322,7 @@ class DaemonMain:
                     "Error initializing metrics collection, continuing without metrics"
                 )
 
-            # CRITICAL FIX: IPC server initialization moved here (after session manager start)
+            # Note: IPC server initialization moved here (after session manager start)
             # Security components were initialized earlier, so we can use them now
             # Get IPC configuration
             ipc_host = daemon_config.ipc_host if daemon_config else "127.0.0.1"
@@ -325,7 +334,7 @@ class DaemonMain:
                 daemon_config.websocket_heartbeat_interval if daemon_config else 30.0
             )
 
-            # CRITICAL FIX: Check if IPC port is available before attempting to bind
+            # Note: Check if IPC port is available before attempting to bind
             from ccbt.utils.port_checker import (
                 get_port_conflict_resolution,
                 is_port_available,
@@ -334,7 +343,7 @@ class DaemonMain:
             bind_host = ipc_host if ipc_host != "0.0.0.0" else "127.0.0.1"  # nosec B104 - IPC server converts 0.0.0.0 to 127.0.0.1 for localhost-only binding
             port_available, port_error = is_port_available(bind_host, ipc_port, "tcp")
             if not port_available:
-                # CRITICAL FIX: Distinguish between permission errors and port conflicts
+                # Note: Distinguish between permission errors and port conflicts
                 # Check for permission denied in multiple ways (error code 10013 on Windows, 13 on Unix)
                 from ccbt.utils.port_checker import get_permission_error_resolution
 
@@ -379,9 +388,11 @@ class DaemonMain:
                 websocket_enabled=websocket_enabled,
                 websocket_heartbeat_interval=websocket_heartbeat,
                 tls_enabled=self._tls_enabled,
+                shutdown_callback=self._shutdown_handler,
+                shutdown_event=self._shutdown_event,
             )
 
-            # CRITICAL FIX: Set up session manager callbacks to emit WebSocket events
+            # Note: Set up session manager callbacks to emit WebSocket events
             # This ensures completion events are properly propagated to clients
             async def on_torrent_complete_callback(info_hash: bytes, name: str) -> None:
                 """Handle torrent completion and emit WebSocket event."""
@@ -428,7 +439,7 @@ class DaemonMain:
             # Set up event bridge to convert utils.events to IPC WebSocket events
             await self.ipc_server.setup_event_bridge()
 
-            # CRITICAL FIX: Verify IPC server is actually accepting HTTP connections before writing PID file
+            # Note: Verify IPC server is actually accepting HTTP connections before writing PID file
             # Socket test alone isn't sufficient - aiohttp might not be ready for HTTP yet
             # This ensures CLI can connect immediately after PID file is written
             import aiohttp
@@ -509,7 +520,7 @@ class DaemonMain:
                 )
                 raise RuntimeError(error_msg)
 
-            # CRITICAL FIX: Write PID file ONLY after IPC server is ready
+            # Note: Write PID file ONLY after IPC server is ready
             # This ensures CLI can connect immediately after PID file is written
             # Lock is already acquired at start of this method
             self.daemon_manager.write_pid(acquire_lock=False)
@@ -695,7 +706,7 @@ class DaemonMain:
 
             logger.info("Daemon started successfully")
         except Exception:
-            # CRITICAL FIX: Remove PID file if startup fails
+            # Note: Remove PID file if startup fails
             # This prevents CLI from thinking daemon is running when it crashed
             logger.exception("Failed to start daemon, cleaning up PID file and lock")
             try:
@@ -761,7 +772,7 @@ class DaemonMain:
 
         try:
             # Wait for shutdown signal
-            # CRITICAL FIX: Use an infinite loop with periodic checks instead of await wait()
+            # Note: Use an infinite loop with periodic checks instead of await wait()
             # On Windows, await event.wait() may not keep the event loop alive if there are no other tasks
             # The IPC server site should create tasks, but we need to ensure the loop stays alive
             logger.debug("Waiting for shutdown signal...")
@@ -782,7 +793,7 @@ class DaemonMain:
             # Don't check sockets - this can be unreliable and cause false positives
             # The site.start() already verified the server is listening
 
-            # CRITICAL FIX: Use a loop with periodic sleep to keep the event loop alive
+            # Note: Use a loop with periodic sleep to keep the event loop alive
             # This ensures the daemon stays running even on Windows where event.wait() might not be enough
             # The periodic sleep creates tasks that keep the event loop from exiting
             # Also verify IPC server is still running periodically
@@ -792,7 +803,7 @@ class DaemonMain:
 
             from ccbt.daemon.debug_utils import debug_log, debug_log_event_loop_state
 
-            # CRITICAL FIX: Initialize keep_alive to None to ensure it's always in scope
+            # Note: Initialize keep_alive to None to ensure it's always in scope
             # This prevents NameError if exception occurs before task creation
             keep_alive: Optional[asyncio.Task] = None
 
@@ -831,7 +842,7 @@ class DaemonMain:
                 debug_log("Entering main loop - waiting for shutdown signal")
                 while not self._shutdown_event.is_set():
                     try:
-                        # CRITICAL FIX: Use wait with timeout for more responsive shutdown
+                        # Note: Use wait with timeout for more responsive shutdown
                         # This allows the loop to check the shutdown event more frequently
                         # while still keeping the event loop alive
                         try:
@@ -844,12 +855,12 @@ class DaemonMain:
                             break
                         except asyncio.TimeoutError:
                             # Timeout is expected - continue loop to check again
-                            # CRITICAL FIX: Check shutdown event immediately after timeout
+                            # Note: Check shutdown event immediately after timeout
                             # This ensures we break immediately if shutdown was requested
                             if self._shutdown_event.is_set():
                                 break
                         except KeyboardInterrupt:
-                            # CRITICAL FIX: Handle KeyboardInterrupt by setting shutdown event and breaking
+                            # Note: Handle KeyboardInterrupt by setting shutdown event and breaking
                             # Don't re-raise - let the signal handler and outer handler deal with it
                             # The signal handler should have already set the shutdown event, but set it here too
                             logger.info(
@@ -863,7 +874,7 @@ class DaemonMain:
                             # Break out of the loop immediately
                             break
 
-                        # CRITICAL FIX: Check shutdown event again before continuing
+                        # Note: Check shutdown event again before continuing
                         # This ensures we break immediately if shutdown was requested during the wait
                         if self._shutdown_event.is_set():
                             break
@@ -914,7 +925,7 @@ class DaemonMain:
                             debug_log_stack("Stack when loop access failed")
                             break
 
-                        # CRITICAL FIX: Check shutdown event one more time before sleep
+                        # Note: Check shutdown event one more time before sleep
                         # This ensures we break immediately if shutdown was requested
                         if self._shutdown_event.is_set():
                             break
@@ -930,7 +941,7 @@ class DaemonMain:
                         )
                         break
                     except KeyboardInterrupt:
-                        # CRITICAL FIX: Handle KeyboardInterrupt by setting shutdown event and breaking
+                        # Note: Handle KeyboardInterrupt by setting shutdown event and breaking
                         # The signal handler should have already set the shutdown event, but set it here too
                         logger.info(
                             "KeyboardInterrupt detected in main loop (outer handler)"
@@ -967,7 +978,7 @@ class DaemonMain:
                             # Reset counter to allow recovery
                             consecutive_errors = 0
 
-                        # CRITICAL FIX: Check shutdown event before sleep
+                        # Note: Check shutdown event before sleep
                         # This ensures we break immediately if shutdown was requested
                         if self._shutdown_event.is_set():
                             break
@@ -978,7 +989,7 @@ class DaemonMain:
                 logger.info("Shutdown signal received")
             finally:
                 # Cancel keep-alive task
-                # CRITICAL FIX: Check if keep_alive exists and is not done before cancelling
+                # Note: Check if keep_alive exists and is not done before cancelling
                 if keep_alive is not None and not keep_alive.done():
                     keep_alive.cancel()
                     with contextlib.suppress(
@@ -992,7 +1003,7 @@ class DaemonMain:
 
             debug_log("Received keyboard interrupt")
             debug_log_stack("Stack after KeyboardInterrupt")
-            # CRITICAL FIX: Set global shutdown flag early to suppress verbose logging
+            # Note: Set global shutdown flag early to suppress verbose logging
             try:
                 from ccbt.utils.shutdown import set_shutdown
 
@@ -1000,12 +1011,12 @@ class DaemonMain:
             except Exception:
                 pass  # Don't fail if shutdown module isn't available
 
-            # CRITICAL FIX: Set shutdown event when KeyboardInterrupt is caught
+            # Note: Set shutdown event when KeyboardInterrupt is caught
             # This ensures shutdown happens even if signal handler didn't execute
             self._shutdown_event.set()
             logger.debug("Shutdown event set from KeyboardInterrupt handler")
 
-            # CRITICAL FIX: Cancel keep-alive task immediately to ensure quick shutdown
+            # Note: Cancel keep-alive task immediately to ensure quick shutdown
             # This prevents the task from continuing to run after KeyboardInterrupt
             if keep_alive is not None and not keep_alive.done():
                 keep_alive.cancel()
@@ -1016,7 +1027,7 @@ class DaemonMain:
                         keep_alive, timeout=1.0
                     )  # Expected during cancellation
 
-            # CRITICAL FIX: Cancel all remaining tasks to ensure clean shutdown
+            # Note: Cancel all remaining tasks to ensure clean shutdown
             # This prevents tasks from blocking shutdown
             try:
                 current_task = asyncio.current_task()
@@ -1038,7 +1049,7 @@ class DaemonMain:
             except Exception as e:
                 logger.debug("Error cancelling tasks: %s", e)
 
-            # CRITICAL FIX: Call stop() directly in KeyboardInterrupt handler
+            # Note: Call stop() directly in KeyboardInterrupt handler
             # This ensures proper shutdown even if asyncio.run() cancels the event loop
             # We do this here instead of relying on the finally block because
             # asyncio.run() may cancel tasks and close the loop before finally executes
@@ -1090,7 +1101,7 @@ class DaemonMain:
             logger.info("Daemon main loop exiting, starting shutdown...")
             debug_log("Daemon main loop exiting, starting shutdown...")
             debug_log_stack("Stack in finally block before stop()")
-            # CRITICAL FIX: Only call stop() if it hasn't been called already
+            # Note: Only call stop() if it hasn't been called already
             # (e.g., from KeyboardInterrupt handler)
             if not self._stopping:
                 try:
@@ -1105,20 +1116,20 @@ class DaemonMain:
 
     async def stop(self) -> None:
         """Stop daemon process with proper shutdown sequence."""
-        # CRITICAL FIX: Make stop() idempotent to prevent double-calling
+        # Note: Make stop() idempotent to prevent double-calling
         if self._stopping:
             logger.debug("Stop() already in progress, skipping duplicate call")
             return
 
         self._stopping = True
 
-        # CRITICAL FIX: Set global shutdown flag early to suppress verbose logging
+        # Note: Set global shutdown flag early to suppress verbose logging
         from ccbt.utils.shutdown import set_shutdown
 
         set_shutdown()
-        logger.info("Stopping daemon...")
+        logger.info("Daemon shutdown sequence started")
 
-        # CRITICAL FIX: Verify daemon is actually running before stopping
+        # Note: Verify daemon is actually running before stopping
         # This prevents issues with stale PID files
         try:
             pid = self.daemon_manager.get_pid()
@@ -1161,6 +1172,14 @@ class DaemonMain:
             except Exception:
                 logger.exception("Error stopping IPC server")
 
+        # Ask all sessions to quiesce before state-save and full stop sequence.
+        if self.session_manager:
+            try:
+                self.session_manager.begin_shutdown_quiesce()
+                logger.debug("Session manager pre-quiesce completed")
+            except Exception:
+                logger.exception("Error in session manager pre-quiesce")
+
         # Save state (after IPC stopped so no handler blocks lock acquisition)
         if self.session_manager:
             try:
@@ -1170,9 +1189,10 @@ class DaemonMain:
                 logger.exception("Error saving state during shutdown")
 
         # Stop session manager (releases all network ports via TCP server, UDP tracker, DHT, NAT)
+        session_manager_stop_failed = False
         if self.session_manager:
             try:
-                # CRITICAL FIX: Add delay before stopping session manager on Windows
+                # Note: Add delay before stopping session manager on Windows
                 # This prevents socket buffer exhaustion (WinError 10055) when closing many sockets at once
                 import sys
 
@@ -1181,7 +1201,7 @@ class DaemonMain:
                 await self.session_manager.stop()
                 logger.debug("Session manager stopped (all ports released)")
             except OSError as e:
-                # CRITICAL FIX: Handle WinError 10055 gracefully during shutdown
+                # Note: Handle WinError 10055 gracefully during shutdown
                 error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
                 if error_code == 10055:
                     logger.warning(
@@ -1189,14 +1209,23 @@ class DaemonMain:
                         "This is a transient Windows issue. Continuing shutdown..."
                     )
                 else:
+                    session_manager_stop_failed = True
                     logger.exception("OSError stopping session manager")
             except Exception:
+                session_manager_stop_failed = True
                 logger.exception("Error stopping session manager")
+
+        if session_manager_stop_failed:
+            logger.error(
+                "Daemon shutdown incomplete: session manager stop raised errors; "
+                "see logs above. Removing PID file anyway."
+            )
 
         # Remove PID file and release lock (must be last)
         self.daemon_manager.remove_pid()
 
         logger.info("Daemon stopped (all ports released, PID file removed)")
+        _flush_log_handlers()
 
 
 async def main() -> int:
@@ -1205,11 +1234,13 @@ async def main() -> int:
 
     parser = argparse.ArgumentParser(description="ccBitTorrent Daemon")
     parser.add_argument(
+        "-c",
         "--config",
         type=str,
         help="Path to config file",
     )
     parser.add_argument(
+        "-f",
         "--foreground",
         action="store_true",
         help="Run in foreground (for debugging)",
@@ -1222,9 +1253,10 @@ async def main() -> int:
         help="Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)",
     )
     parser.add_argument(
+        "-l",
         "--log-level",
         type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        choices=["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set log level directly",
     )
 
@@ -1242,6 +1274,7 @@ async def main() -> int:
     # This ensures we can log errors during initialization
     try:
         debug_log("Initializing configuration...")
+        maybe_load_dotenv_from_env()
         config_manager = init_config(args.config)
         # Set locale from config so any user-facing log or IPC messages use the same locale
         try:
@@ -1252,23 +1285,28 @@ async def main() -> int:
             pass
         debug_log("Configuration initialized, setting up logging...")
 
-        # CRITICAL FIX: Apply verbosity/log-level overrides from CLI arguments
+        # Note: Apply verbosity/log-level overrides from CLI arguments
         # This ensures daemon respects verbosity flags just like CLI commands
+        effective_log_level = config_manager.config.observability.log_level
         if args.log_level:
             from ccbt.models import LogLevel
 
-            config_manager.config.observability.log_level = LogLevel(args.log_level)
+            effective_log_level = LogLevel(args.log_level)
         elif args.verbose > 0:
             from ccbt.cli.verbosity import VerbosityManager
             from ccbt.models import LogLevel
 
             verbosity_manager = VerbosityManager.from_count(args.verbose)
-            if verbosity_manager.is_debug():
-                config_manager.config.observability.log_level = LogLevel.DEBUG
+            if verbosity_manager.is_trace():
+                effective_log_level = verbosity_manager.logging_level_for_verbosity()
+            elif verbosity_manager.is_debug():
+                effective_log_level = LogLevel.DEBUG
             elif verbosity_manager.is_verbose():
-                config_manager.config.observability.log_level = LogLevel.INFO
+                effective_log_level = LogLevel.INFO
 
-        setup_logging(config_manager.config.observability)
+        setup_logging(
+            config_manager.config.observability, effective_log_level=effective_log_level
+        )
         # Get logger after setup_logging
         from ccbt.utils.logging_config import get_logger
 
@@ -1288,7 +1326,7 @@ async def main() -> int:
         logger = logging.getLogger(__name__)
         logger.warning("Using fallback logging configuration")
 
-    # CRITICAL FIX: Set up event loop exception handler to catch unhandled exceptions
+    # Note: Set up event loop exception handler to catch unhandled exceptions
     # in background tasks. This prevents the daemon from crashing when background tasks
     # raise unhandled exceptions (e.g., from session.start() creating tasks).
     # The handler is set up here after the loop is created by asyncio.run()
@@ -1310,7 +1348,7 @@ async def main() -> int:
         # NOTE: KeyboardInterrupt should propagate naturally from the main coroutine
         # We don't catch it here because it needs to reach the KeyboardInterrupt handler in run()
 
-        # CRITICAL FIX: Suppress CancelledError logging during shutdown
+        # Note: Suppress CancelledError logging during shutdown
         # CancelledError is expected when tasks are cancelled during shutdown
         if isinstance(exception, asyncio.CancelledError):
             from ccbt.utils.shutdown import is_shutting_down
@@ -1326,7 +1364,7 @@ async def main() -> int:
             )
             return
 
-        # CRITICAL FIX: Handle Windows socket buffer exhaustion (WinError 10055) gracefully
+        # Note: Handle Windows socket buffer exhaustion (WinError 10055) gracefully
         # This can occur:
         # 1. In the event loop selector during shutdown when many sockets are closed
         # 2. During normal operation when too many sockets are registered simultaneously
@@ -1357,13 +1395,13 @@ async def main() -> int:
                     # The error will propagate but we've logged it
                 return  # Don't log as error - we've handled it above
 
-        # CRITICAL FIX: Suppress verbose logging during shutdown
+        # Note: Suppress verbose logging during shutdown
         from ccbt.utils.shutdown import is_shutting_down
 
         if is_shutting_down():
             # During shutdown, only log critical errors, not routine exceptions
             # This prevents log flooding when tasks are being cancelled
-            # CRITICAL FIX: Suppress PeerConnectionError during shutdown (connection tasks being cancelled)
+            # Note: Suppress PeerConnectionError during shutdown (connection tasks being cancelled)
             if isinstance(exception, Exception):
                 # Check if this is a connection-related error that's expected during shutdown
                 try:
@@ -1442,7 +1480,7 @@ async def main() -> int:
         debug_log("DaemonMain instance created successfully")
         debug_log_stack("Stack after DaemonMain creation")
 
-        # CRITICAL FIX: Run daemon in a way that ensures the event loop stays alive
+        # Note: Run daemon in a way that ensures the event loop stays alive
         # Wrap in try-except to catch any unexpected exits and log them
         try:
             debug_log("Starting daemon.run()...")
@@ -1492,7 +1530,7 @@ async def main() -> int:
         return e.code if isinstance(e.code, int) else 0
     except Exception:
         logger.exception("Fatal error in daemon")
-        # CRITICAL FIX: Ensure PID file is removed on fatal error
+        # Note: Ensure PID file is removed on fatal error
         # This is a safety net in case start() didn't clean up
         if daemon is not None:
             try:
@@ -1504,7 +1542,7 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    # CRITICAL FIX: Suppress ProactorEventLoop _ssock AttributeError on Windows
+    # Note: Suppress ProactorEventLoop _ssock AttributeError on Windows
     # This is a known Python bug where ProactorEventLoop.__del__ tries to access
     # _ssock attribute that doesn't exist in some cases during cleanup
     import sys
@@ -1541,7 +1579,7 @@ if __name__ == "__main__":
 
         sys.excepthook = filtered_excepthook
 
-    # CRITICAL FIX: Use SelectorEventLoop instead of ProactorEventLoop on Windows
+    # Note: Use SelectorEventLoop instead of ProactorEventLoop on Windows
     # ProactorEventLoop has known bugs with UDP sockets (WinError 10022)
     # SelectorEventLoop uses select() which properly supports UDP on Windows
     # Note: Policy should already be set in ccbt/__init__.py, but ensure it here as well
@@ -1572,7 +1610,7 @@ if __name__ == "__main__":
             else:
                 asyncio.set_event_loop_policy(selector_policy)
 
-    # CRITICAL FIX: Add better error handling to prevent premature exit
+    # Note: Add better error handling to prevent premature exit
     # This ensures the daemon stays alive and handles errors gracefully
     # Note: Event loop exception handler is set inside main() after the loop is created
     try:
@@ -1582,7 +1620,7 @@ if __name__ == "__main__":
         # User interrupted - exit cleanly
         sys.exit(0)
     except OSError as e:
-        # CRITICAL FIX: Handle Windows socket buffer exhaustion (WinError 10055)
+        # Note: Handle Windows socket buffer exhaustion (WinError 10055)
         # This can occur:
         # 1. During shutdown when many sockets are closed at once
         # 2. During normal operation when the event loop selector hits buffer limits

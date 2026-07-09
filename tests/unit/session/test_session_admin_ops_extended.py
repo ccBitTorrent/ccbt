@@ -2,8 +2,6 @@
 
 import pytest
 
-from ccbt.models import PieceState
-
 
 @pytest.mark.asyncio
 async def test_refresh_pex_invalid_hex_returns_false():
@@ -229,7 +227,6 @@ async def test_force_announce_exception_returns_false(monkeypatch):
 async def test_checkpoint_backup_torrent_success(monkeypatch, tmp_path):
     """Test checkpoint_backup_torrent successfully backs up checkpoint."""
     from ccbt.session.session import AsyncSessionManager
-    from pathlib import Path
 
     backup_called = []
 
@@ -265,8 +262,9 @@ async def test_checkpoint_backup_torrent_success(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_checkpoint_backup_torrent_invalid_hex_returns_false():
     """Test checkpoint_backup_torrent returns False for invalid hex."""
-    from ccbt.session.session import AsyncSessionManager
     from pathlib import Path
+
+    from ccbt.session.session import AsyncSessionManager
 
     mgr = AsyncSessionManager(".")
     dest = Path("backup.json")
@@ -278,7 +276,6 @@ async def test_checkpoint_backup_torrent_invalid_hex_returns_false():
 async def test_checkpoint_backup_torrent_missing_session_returns_false(tmp_path):
     """Test checkpoint_backup_torrent returns False when session not found."""
     from ccbt.session.session import AsyncSessionManager
-    from pathlib import Path
 
     mgr = AsyncSessionManager(str(tmp_path))
     dest = tmp_path / "backup.json"
@@ -290,7 +287,6 @@ async def test_checkpoint_backup_torrent_missing_session_returns_false(tmp_path)
 async def test_checkpoint_backup_torrent_exception_returns_false(monkeypatch, tmp_path):
     """Test checkpoint_backup_torrent returns False when backup raises exception."""
     from ccbt.session.session import AsyncSessionManager
-    from pathlib import Path
 
     class _CPM:
         async def backup_checkpoint(self, ih, dest):

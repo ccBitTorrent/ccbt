@@ -59,6 +59,10 @@ Run type checking:
 uv run ty check --config-file=dev/ty.toml --output-format=concise
 ```
 
+### CLI options (Click)
+
+New user-facing `@click.option` declarations under `ccbt/cli/` should include a **short form** (for example `@click.option("--format", "-f", …)`) unless the flag is listed in `CLI_SHORT_FLAG_EXCEPTIONS` in [ccbt/cli/cli_short_flag_exceptions.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/cli_short_flag_exceptions.py). Conformance is enforced by `tests/unit/cli/test_cli_short_flag_audit.py`.
+
 ### Testing
 
 We use [pytest](https://pytest.org/) for testing. Configuration is in [dev/pytest.ini](https://github.com/ccBittorrent/ccbt/blob/main/dev/pytest.ini).
@@ -122,6 +126,8 @@ uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html --cov-report
 - Use fixtures for setup/teardown
 - Clean up resources in fixtures, not in test code
 
+**Torrent / piece-manager fixtures:** Reusing the same dict literal or `mock_torrent_data` name across modules without a fresh copy can leak `num_pieces` or `pieces` state into `AsyncPieceManager` tests. Prefer `copy.deepcopy` when sharing a template, or use the `make_torrent_data` helper in `tests/conftest.py` so each test gets an isolated dict.
+
 ### Pre-commit Hooks
 
 All quality checks run automatically via pre-commit hooks configured in [dev/pre-commit-config.yaml](https://github.com/ccBittorrent/ccbt/blob/main/dev/pre-commit-config.yaml). This includes:
@@ -134,8 +140,7 @@ All quality checks run automatically via pre-commit hooks configured in [dev/pre
 - Version validation: Ensures version consistency between `pyproject.toml` and `ccbt/__init__.py`
 - Changelog validation: Ensures `dev/CHANGELOG.md` is updated for code changes
 - MkDocs build validation: `uv run mkdocs build -f dev/mkdocs.yml`
-- Translation validation: `uv run python -m ccbt.i18n.scripts.validate_po`
-- Translation coverage check: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt`
+- Translation validation: `uv run python -m ccbt.i18n.scripts.validate_po` (when `.po` files under `ccbt/i18n/locales/` change)
 
 Run manually:
 ```bash
@@ -143,13 +148,19 @@ uv run pre-commit run --all-files -c dev/pre-commit-config.yaml
 ```
 
 !!! note "Translation (i18n) workflow"
-    When adding or changing user-facing strings:
+    **Local (optional, fast feedback):** When adding or changing user-facing strings, regenerate templates and catalogs as needed:
     1. **Wrap strings** in code with `_()`, `_n()`, or `_p()` (see [.cursor/rules/i18n-patterns.mdc](https://github.com/ccBittorrent/ccbt/blob/main/.cursor/rules/i18n-patterns.mdc)).
-    2. **Extract** strings: `uv run python -m ccbt.i18n.extract ccbt` (writes `ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`).
-    3. **Merge** into locales: `uv run python -m ccbt.i18n.scripts.update_translations`
-    4. **Check coverage**: `uv run python -m ccbt.i18n.scripts.check_string_coverage --source-dir ccbt` (pre-commit runs this on `ccbt/cli/*.py`).
+    2. **Extract** strings: `uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot`
+    3. **Merge** into each locale `.po` with GNU **msgmerge** (or `uv run python -m ccbt.i18n.scripts.translation_workflow --step update` after extract). Requires `msgmerge` on `PATH` (gettext).
+    4. **Fill English**: `uv run python -m ccbt.i18n.scripts.fill_english` (sets `msgstr` = `msgid` for `en`).
     5. **Validate** .po files: `uv run python -m ccbt.i18n.scripts.validate_po`
-    6. **Compile** .mo (optional): `uv run python -m ccbt.i18n.scripts.compile_all`
+    6. **Completeness report** (optional): `uv run python -m ccbt.i18n.scripts.check_completeness`
+    7. **Compile** .mo (optional): `uv run python -m ccbt.i18n.scripts.compile_all`
+
+    **CI (approval-required):** The `i18n` job in `.github/workflows/ci.yml` runs extract, `validate_po`, and `check_completeness`. It does **not** enforce that every new `_()` in source is already in the committed `.pot`; keep templates in sync when you change strings.
+
+    **Maintainers:** Run the manual workflow `.github/workflows/i18n-manual.yml` from the Actions tab for a full gettext pipeline (extract, msgmerge, fill_english, validate, completeness artifact, compile).
+
     Full script reference: [ccbt/i18n/scripts/README.md](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/i18n/scripts/README.md).
 
 ## Development Configuration
@@ -177,7 +188,7 @@ All development configuration files are located in [dev/](dev/):
 - Runs all checks identically to main, including:
   - All linting and type checking
   - Full test suite with coverage
-  - All benchmark checks from [dev/pre-commit-config.yaml:39-68](https://github.com/ccBitTorrent/ccbittorrent/blob/main/dev/pre-commit-config.yaml)
+  - All benchmark checks from [.github/workflows/benchmark.yml](https://github.com/ccBitTorrent/ccbittorrent/blob/main/.github/workflows/benchmark.yml) (CI only; pre-commit validates script syntax via `validate-benchmark-scripts`)
   - Documentation builds
 
 ### Feature Branches
@@ -319,210 +330,6 @@ Documentation is built automatically in CI/CD. See [Documentation Workflow](CI_C
 ### Contributing Blog Posts
 
 We welcome blog post contributions! Blog posts are located in `docs/blog/`.
-
-**Creating a Blog Post:**
-
-1. Create a new markdown file in `docs/blog/` with the format: `YYYY-MM-DD-slug.md`
-2. Include frontmatter:
-   ```yaml
-   ---
-   title: Your Post Title
-   date: YYYY-MM-DD
-   author: Your Name
-   tags:
-     - tag1
-     - tag2
-   ---
-   ```
-3. Use `<!-- more -->` to separate the excerpt from the full content
-4. Follow the existing blog post style and format
-5. Test the blog post appears correctly in the documentation build
-
-**Blog Post Guidelines:**
-
-- Keep posts relevant to ccBitTorrent
-- Use clear, engaging language
-- Include code examples where appropriate
-- Add relevant tags for discoverability
-- Link to related documentation when helpful
-
-### Contributing Translations
-
-Help make ccBitTorrent accessible to users worldwide by contributing translations!
-
-**Translation Process:**
-
-1. **Choose a Language**: Pick a language from the supported list (see [Translation Guide](i18n/translation-guide.md))
-2. **Select Content**: Choose documentation pages to translate
-3. **Create Translation**: Translate content while maintaining:
-   - Markdown formatting
-   - Code examples (keep in original language)
-   - File structure
-   - Link structure
-4. **Test Build**: Verify translations work in the documentation build
-5. **Submit PR**: Create a pull request with your translations
-
-**Translation Guidelines:**
-
-- Maintain technical accuracy
-- Keep code examples in original language
-- Update internal links to translated versions
-- Follow the [Translation Guide](i18n/translation-guide.md) for detailed instructions
-- Test language switcher functionality
-
-For detailed translation instructions, see the [Translation Guide](i18n/translation-guide.md).
-
-## License
-
-This project is licensed under the **GPL** (GNU General Public License). By contributing, you agree that your contributions will be licensed under the same license.
-
-## Getting Help
-
-- **Issues**: Create an issue for bugs or feature requests
-- **Discussions**: Use GitHub Discussions for questions and design discussions
-- **Code Review**: All PRs receive code review from maintainers
-
-## Recognition
-
-Contributors are recognized for their valuable contributions. Significant contributions may be highlighted in release notes and project documentation.
-
-Thank you for contributing to ccBitTorrent!
-
-**Creating a Blog Post:**
-
-1. Create a new markdown file in `docs/blog/` with the format: `YYYY-MM-DD-slug.md`
-2. Include frontmatter:
-   ```yaml
-   ---
-   title: Your Post Title
-   date: YYYY-MM-DD
-   author: Your Name
-   tags:
-     - tag1
-     - tag2
-   ---
-   ```
-3. Use `<!-- more -->` to separate the excerpt from the full content
-4. Follow the existing blog post style and format
-5. Test the blog post appears correctly in the documentation build
-
-**Blog Post Guidelines:**
-
-- Keep posts relevant to ccBitTorrent
-- Use clear, engaging language
-- Include code examples where appropriate
-- Add relevant tags for discoverability
-- Link to related documentation when helpful
-
-### Contributing Translations
-
-Help make ccBitTorrent accessible to users worldwide by contributing translations!
-
-**Translation Process:**
-
-1. **Choose a Language**: Pick a language from the supported list (see [Translation Guide](i18n/translation-guide.md))
-2. **Select Content**: Choose documentation pages to translate
-3. **Create Translation**: Translate content while maintaining:
-   - Markdown formatting
-   - Code examples (keep in original language)
-   - File structure
-   - Link structure
-4. **Test Build**: Verify translations work in the documentation build
-5. **Submit PR**: Create a pull request with your translations
-
-**Translation Guidelines:**
-
-- Maintain technical accuracy
-- Keep code examples in original language
-- Update internal links to translated versions
-- Follow the [Translation Guide](i18n/translation-guide.md) for detailed instructions
-- Test language switcher functionality
-
-For detailed translation instructions, see the [Translation Guide](i18n/translation-guide.md).
-
-## License
-
-This project is licensed under the **GPL** (GNU General Public License). By contributing, you agree that your contributions will be licensed under the same license.
-
-## Getting Help
-
-- **Issues**: Create an issue for bugs or feature requests
-- **Discussions**: Use GitHub Discussions for questions and design discussions
-- **Code Review**: All PRs receive code review from maintainers
-
-## Recognition
-
-Contributors are recognized for their valuable contributions. Significant contributions may be highlighted in release notes and project documentation.
-
-Thank you for contributing to ccBitTorrent!
-
-**Creating a Blog Post:**
-
-1. Create a new markdown file in `docs/blog/` with the format: `YYYY-MM-DD-slug.md`
-2. Include frontmatter:
-   ```yaml
-   ---
-   title: Your Post Title
-   date: YYYY-MM-DD
-   author: Your Name
-   tags:
-     - tag1
-     - tag2
-   ---
-   ```
-3. Use `<!-- more -->` to separate the excerpt from the full content
-4. Follow the existing blog post style and format
-5. Test the blog post appears correctly in the documentation build
-
-**Blog Post Guidelines:**
-
-- Keep posts relevant to ccBitTorrent
-- Use clear, engaging language
-- Include code examples where appropriate
-- Add relevant tags for discoverability
-- Link to related documentation when helpful
-
-### Contributing Translations
-
-Help make ccBitTorrent accessible to users worldwide by contributing translations!
-
-**Translation Process:**
-
-1. **Choose a Language**: Pick a language from the supported list (see [Translation Guide](i18n/translation-guide.md))
-2. **Select Content**: Choose documentation pages to translate
-3. **Create Translation**: Translate content while maintaining:
-   - Markdown formatting
-   - Code examples (keep in original language)
-   - File structure
-   - Link structure
-4. **Test Build**: Verify translations work in the documentation build
-5. **Submit PR**: Create a pull request with your translations
-
-**Translation Guidelines:**
-
-- Maintain technical accuracy
-- Keep code examples in original language
-- Update internal links to translated versions
-- Follow the [Translation Guide](i18n/translation-guide.md) for detailed instructions
-- Test language switcher functionality
-
-For detailed translation instructions, see the [Translation Guide](i18n/translation-guide.md).
-
-## License
-
-This project is licensed under the **GPL** (GNU General Public License). By contributing, you agree that your contributions will be licensed under the same license.
-
-## Getting Help
-
-- **Issues**: Create an issue for bugs or feature requests
-- **Discussions**: Use GitHub Discussions for questions and design discussions
-- **Code Review**: All PRs receive code review from maintainers
-
-## Recognition
-
-Contributors are recognized for their valuable contributions. Significant contributions may be highlighted in release notes and project documentation.
-
-Thank you for contributing to ccBitTorrent!
 
 **Creating a Blog Post:**
 

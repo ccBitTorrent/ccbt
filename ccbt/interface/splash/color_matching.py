@@ -6,7 +6,7 @@ Provides algorithms for matching colors and generating smooth color transitions.
 from __future__ import annotations
 
 import random
-from typing import Any, Optional
+from typing import Optional
 
 from ccbt.interface.splash.animation_config import (
     OCEAN_PALETTE,
@@ -30,7 +30,7 @@ def color_similarity(color1: str, color2: str) -> float:
     """
     if color1 == color2:
         return 1.0
-    
+
     # Normalize colors (remove 'bright_', 'dim ', etc.)
     def normalize_color(color: str) -> str:
         color = color.lower().strip()
@@ -39,13 +39,13 @@ def color_similarity(color1: str, color2: str) -> float:
         if color.startswith("dim "):
             return color[4:]
         return color
-    
+
     norm1 = normalize_color(color1)
     norm2 = normalize_color(color2)
-    
+
     if norm1 == norm2:
         return 0.8  # Same base color, different intensity
-    
+
     # Check for color families
     color_families = {
         "blue": ["blue", "cyan", "turquoise", "deep_sky_blue", "blue_violet"],
@@ -55,11 +55,11 @@ def color_similarity(color1: str, color2: str) -> float:
         "purple": ["purple", "magenta", "blue_violet"],
         "white": ["white", "silver", "bone_white"],
     }
-    
+
     for family, members in color_families.items():
         if norm1 in members and norm2 in members:
             return 0.6  # Same color family
-    
+
     # Check for complementary colors (opposite on color wheel)
     complementary_pairs = [
         ("red", "cyan"),
@@ -67,11 +67,11 @@ def color_similarity(color1: str, color2: str) -> float:
         ("blue", "yellow"),
         ("orange", "blue"),
     ]
-    
+
     for pair in complementary_pairs:
         if (norm1 in pair and norm2 in pair) or (norm2 in pair and norm1 in pair):
             return 0.3  # Complementary colors (somewhat similar)
-    
+
     return 0.1  # Different colors
 
 
@@ -92,16 +92,16 @@ def find_matching_color(
     """
     best_match = None
     best_score = 0.0
-    
+
     for color in palette:
         score = color_similarity(target_color, color)
         if score > best_score:
             best_score = score
             best_match = color
-    
+
     if best_score >= min_similarity:
         return best_match
-    
+
     return None
 
 
@@ -124,13 +124,13 @@ def generate_smooth_transition_palette(
     """
     if not ensure_match or not start_palette or not end_palette:
         return start_palette, end_palette
-    
+
     # Get the last color of start palette
     start_end = start_palette[-1]
-    
+
     # Find matching color in end palette
     matching_color = find_matching_color(start_end, end_palette, min_similarity=0.4)
-    
+
     if matching_color:
         # Reorder end_palette to start with matching color
         if matching_color != end_palette[0]:
@@ -138,7 +138,7 @@ def generate_smooth_transition_palette(
             end_palette = [matching_color] + [
                 c for c in end_palette if c != matching_color
             ]
-    
+
     return start_palette, end_palette
 
 
@@ -161,7 +161,7 @@ def interpolate_color(
         return color1
     if progress >= 1.0:
         return color2
-    
+
     # Simple interpolation: choose color based on progress
     # For better results, we'd need RGB values, but this works for Rich colors
     if progress < 0.5:
@@ -169,11 +169,10 @@ def interpolate_color(
         if "bright_" in color1:
             return color1
         return color1
-    else:
-        # Closer to color2
-        if "bright_" in color2:
-            return color2
+    # Closer to color2
+    if "bright_" in color2:
         return color2
+    return color2
 
 
 def interpolate_palette(
@@ -195,16 +194,16 @@ def interpolate_palette(
         return palette1
     if progress >= 1.0:
         return palette2
-    
+
     # Interpolate by mixing colors from both palettes
     result = []
     max_len = max(len(palette1), len(palette2))
-    
+
     for i in range(max_len):
         color1 = palette1[i % len(palette1)] if palette1 else "white"
         color2 = palette2[i % len(palette2)] if palette2 else "white"
         result.append(interpolate_color(color1, color2, progress))
-    
+
     return result
 
 
@@ -222,7 +221,7 @@ def get_palette_by_name(name: str) -> list[str]:
         "rainbow": RAINBOW_PALETTE,
         "sunset": SUNSET_PALETTE,
     }
-    
+
     return palettes.get(name.lower(), RAINBOW_PALETTE)
 
 
@@ -254,25 +253,25 @@ def select_matching_palettes(
     """
     if available_palettes is None:
         available_palettes = [OCEAN_PALETTE, RAINBOW_PALETTE, SUNSET_PALETTE]
-    
+
     if current_palette is None:
         # Start fresh - pick random palette
         start_palette = random.choice(available_palettes)
     else:
         start_palette = current_palette
-    
+
     # Find end palette that matches start palette's end color
     start_end = start_palette[-1]
     best_match = None
     best_score = 0.0
-    
+
     for palette in available_palettes:
         # Check first color of palette
         score = color_similarity(start_end, palette[0])
         if score > best_score:
             best_score = score
             best_match = palette
-    
+
     if best_match and best_score >= 0.4:
         end_palette = best_match
     else:
@@ -281,7 +280,7 @@ def select_matching_palettes(
         end_palette = generate_smooth_transition_palette(
             start_palette, end_palette, ensure_match=True
         )[1]
-    
+
     return start_palette, end_palette
 
 

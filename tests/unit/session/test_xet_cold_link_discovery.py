@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -142,7 +141,6 @@ async def test_discover_dht_dedupes_with_source() -> None:
 async def test_discover_includes_tracker_peers_when_mock_returns() -> None:
     """When _announce_workspace_trackers is mocked to return peers, they appear in result."""
     from ccbt.session.xet_cold_link_discovery import (
-        _announce_workspace_trackers,
         discover_peers_for_workspace,
     )
 

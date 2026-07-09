@@ -38,6 +38,9 @@ exclude = [
     "tests",
     "benchmarks",
     "ccbt/interface",
+    # Offline translation tooling and generated locale payloads (not runtime i18n)
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
 ]
 
 # Line length
@@ -151,6 +154,30 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "S101",     # assert statements - standard in pytest tests
     "E402",     # module-level import not at top - common pattern with pytestmark
     "S324",     # SHA-1 usage - required for BEP 47 file SHA-1 verification tests
+]
+"tests/unit/discovery/test_dht_bootstrap_readiness.py" = [
+    "SLF001",
+    "D103",
+    "ARG005",
+    "PLR2004",
+]
+"tests/unit/session/test_requestable_driven_tick.py" = [
+    "SLF001",
+    "D103",
+]
+"tests/unit/session/test_immediate_tracker_defer.py" = [
+    "SLF001",
+    "PLR2004",
+]
+"tests/unit/config/test_tracker_immediate_discovery_env.py" = [
+    "PLR2004",
+]
+"tests/unit/config/test_effective_peer_cap_precedence.py" = [
+    "PLR2004",
+    "E501",
+]
+"tests/unit/config/test_windows_network_clamp.py" = [
+    "PLR2004",
 ]
 "tests/performance/bench_*.py" = [
     "T201",     # print statements - required for CLI output

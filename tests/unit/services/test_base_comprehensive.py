@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -19,7 +18,6 @@ from ccbt.services.base import (
     HealthCheck,
     Service,
     ServiceError,
-    ServiceInfo,
     ServiceManager,
     ServiceState,
     get_service_manager,

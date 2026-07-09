@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -12,12 +11,34 @@ if TYPE_CHECKING:
 else:
     try:
         from textual.app import ComposeResult  # type: ignore
+        from textual.reactive import reactive  # type: ignore
         from textual.widgets import Static  # type: ignore
     except ImportError:  # pragma: no cover
         ComposeResult = Any  # type: ignore[assignment,misc]
 
         class Static:  # type: ignore[no-redef]
             """Fallback Static widget when Textual is unavailable."""
+
+            def data_bind(self, **kwargs: Any) -> None:
+                pass
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 from rich.console import Group
 from rich.panel import Panel
@@ -48,6 +69,9 @@ class DHTHealthWidget(Static):  # type: ignore[misc]
     }
     """
 
+    # F2.6.3: bound to TerminalDashboard.dht_health_summary via data_bind.
+    dht_health_summary: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+
     def __init__(
         self,
         data_provider: Optional[Any],
@@ -56,66 +80,24 @@ class DHTHealthWidget(Static):  # type: ignore[misc]
     ) -> None:
         super().__init__(**kwargs)
         self._data_provider = data_provider
-        self._refresh_interval = refresh_interval
-        self._update_task: Optional[Any] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose widget layout."""
         yield Static(id="dht-health-placeholder")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Start periodic updates when the widget is mounted."""
-        self._start_updates()
-
-    def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Stop periodic updates when the widget is removed."""
-        if self._update_task:
-            if hasattr(self._update_task, "stop"):
-                self._update_task.stop()  # type: ignore[attr-defined]
-            elif hasattr(self._update_task, "cancel"):
-                self._update_task.cancel()  # type: ignore[attr-defined]
-            self._update_task = None
-
-    def _start_updates(self) -> None:  # pragma: no cover
-        """Initialize refresh timer."""
-
-        def schedule_update() -> None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.get_event_loop()
-            loop.create_task(self._update_from_provider())
-
+        """Bind to App dht_health_summary reactive (F2.6.3)."""
         try:
-            self._update_task = self.set_interval(self._refresh_interval, schedule_update)  # type: ignore[attr-defined]
-            self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
-        except Exception as exc:
-            logger.error("DHTHealthWidget: Failed to start update loop: %s", exc, exc_info=True)
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
 
-    async def _update_from_provider(self) -> None:
-        """Fetch DHT summary data and update widget output."""
-        if not self._data_provider:
-            self.update(
-                Panel(
-                    _("DHT data is unavailable in the current mode."),
-                    border_style="yellow",
-                )
-            )
-            return
+            self.data_bind(dht_health_summary=TerminalDashboard.dht_health_summary)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("DHTHealthWidget data_bind skipped: %s", exc)
 
-        try:
-            summary = await self._data_provider.get_dht_health_summary()
-        except Exception as exc:
-            logger.error("DHTHealthWidget: Error loading data: %s", exc, exc_info=True)
-            self.update(
-                Panel(
-                    _("Failed to load DHT health data: {error}").format(error=str(exc)),
-                    border_style="red",
-                )
-            )
-            return
-
-        self.update(self._render_summary(summary))
+    def watch_dht_health_summary(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render DHT summary from the bound dict (F2.6.3)."""
+        if isinstance(value, dict) and value:
+            self.update(self._render_summary(value))
 
     def _render_summary(self, summary: dict[str, Any]) -> Panel:
         """Render summary view."""
@@ -137,6 +119,22 @@ class DHTHealthWidget(Static):  # type: ignore[misc]
         stats_text.append("   ")
         stats_text.append(f"{_('Total Queries')}: ", style="bold cyan")
         stats_text.append(str(total_queries), style="white")
+        stats_text.append("   ")
+        stats_text.append(
+            f"{_('Bootstrap recovery attempts')}: ",
+            style="bold cyan",
+        )
+        stats_text.append(
+            str(int(summary.get("total_bootstrap_recovery_attempts", 0))), style="white"
+        )
+        stats_text.append("   ")
+        stats_text.append(
+            f"{_('Bootstrap health')}: ",
+            style="bold cyan",
+        )
+        stats_text.append(
+            str(summary.get("bootstrap_health_state", "unknown")), style="white"
+        )
 
         table = Table(expand=True, box=None, pad_edge=False)
         table.add_column(_("Torrent"), ratio=2, overflow="fold")

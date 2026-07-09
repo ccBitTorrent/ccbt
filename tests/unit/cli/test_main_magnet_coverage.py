@@ -22,14 +22,14 @@ class TestMagnetCommandStructure:
     def test_magnet_command_exists(self):
         """Verify magnet command is registered."""
         from ccbt.cli.main import cli
-        
+
         # Verify command exists
         assert "magnet" in [cmd.name for cmd in cli.commands.values()]
 
     def test_magnet_command_options_exist(self):
         """Verify magnet command options are defined."""
         from ccbt.cli.main import magnet
-        
+
         # Verify command has options
         assert magnet.params is not None
 

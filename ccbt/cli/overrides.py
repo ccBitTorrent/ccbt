@@ -7,11 +7,16 @@ to the configuration system.
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ccbt.cli.ssl_posture import is_strict_ssl_posture
+
 if TYPE_CHECKING:
     from ccbt.config.config import Config, ConfigManager
+
+_logger = logging.getLogger(__name__)
 
 
 def apply_cli_overrides(cfg_mgr: ConfigManager, options: dict[str, Any]) -> None:
@@ -114,8 +119,12 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
         cfg.network.enable_utp = True
     if options.get("disable_utp"):
         cfg.network.enable_utp = False
+    security = getattr(cfg, "security", None)
     if options.get("enable_encryption"):
-        cfg.network.enable_encryption = True
+        if security is not None:
+            security.enable_encryption = True
+        else:
+            cfg.network.enable_encryption = True
     if options.get("enable_webtorrent"):
         cfg.network.webtorrent.enable_webtorrent = True
     if options.get("disable_webtorrent"):
@@ -130,7 +139,10 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
         servers = [s.strip() for s in options["webtorrent_stun_servers"].split(",")]
         cfg.network.webtorrent.webtorrent_stun_servers = servers
     if options.get("disable_encryption"):
-        cfg.network.enable_encryption = False
+        if security is not None:
+            security.enable_encryption = False
+        else:
+            cfg.network.enable_encryption = False
     if options.get("tcp_nodelay"):
         cfg.network.tcp_nodelay = True
     if options.get("no_tcp_nodelay"):
@@ -225,6 +237,22 @@ def _apply_strategy_overrides(cfg: Config, options: dict[str, Any]) -> None:
         )  # type: ignore[attr-defined]
     if options.get("unchoke_interval") is not None:
         cfg.network.unchoke_interval = float(options["unchoke_interval"])  # type: ignore[attr-defined]
+    if options.get("peer_choked_hard_timeout_seconds") is not None:
+        cfg.network.peer_choked_hard_timeout_seconds = float(
+            options["peer_choked_hard_timeout_seconds"],
+        )
+    if options.get("peer_choked_anchor_timeout_seconds") is not None:
+        cfg.network.peer_choked_anchor_timeout_seconds = float(
+            options["peer_choked_anchor_timeout_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_seconds = float(
+            options["peer_choked_solo_grace_seconds"],
+        )
+    if options.get("peer_choked_solo_grace_zero_bytes_cap_seconds") is not None:
+        cfg.network.peer_choked_solo_grace_zero_bytes_cap_seconds = float(
+            options["peer_choked_solo_grace_zero_bytes_cap_seconds"],
+        )
 
 
 def _apply_disk_overrides(cfg: Config, options: dict[str, Any]) -> None:
@@ -458,6 +486,14 @@ def _apply_ssl_overrides(cfg: Config, options: dict[str, Any]) -> None:
             cfg.security.ssl.ssl_client_key = str(key_path)
     if options.get("no_ssl_verify"):
         cfg.security.ssl.ssl_verify_certificates = False
+        _logger.warning(
+            "SSL certificate verification disabled (--no-ssl-verify). "
+            "HTTPS tracker connections will not validate server certificates.",
+        )
+        if is_strict_ssl_posture(cfg.security.ssl):
+            _logger.warning(
+                "Strict SSL posture requested while verification is disabled."
+            )
     if options.get("ssl_protocol_version"):
         cfg.security.ssl.ssl_protocol_version = options["ssl_protocol_version"]
 

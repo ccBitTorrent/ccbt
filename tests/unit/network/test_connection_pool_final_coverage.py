@@ -11,8 +11,8 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 
-from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 from ccbt.models import PeerInfo
+from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 
 
 @pytest_asyncio.fixture
@@ -32,14 +32,14 @@ async def test_is_connection_valid_writer_closed(connection_pool):
     mock_reader.is_closing.return_value = False
     mock_reader.closed = False
     mock_conn.reader = mock_reader
-    
+
     mock_writer = MagicMock()
     mock_writer.is_closing.return_value = False
     mock_writer.closed = True  # Closed writer
     mock_conn.writer = mock_writer
-    
+
     connection = {"connection": mock_conn, "created_at": time.time()}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
     assert not is_valid
 
@@ -52,20 +52,20 @@ async def test_is_connection_valid_socket_error_nonzero(connection_pool):
     mock_reader.is_closing.return_value = False
     mock_reader.closed = False
     mock_conn.reader = mock_reader
-    
+
     mock_writer = MagicMock()
     mock_writer.is_closing.return_value = False
     mock_writer.closed = False
-    
+
     mock_transport = MagicMock()
     mock_sock = MagicMock()
     mock_sock.getsockopt.return_value = 104  # Non-zero error
     mock_writer._transport = mock_transport
     mock_transport._sock = mock_sock
     mock_conn.writer = mock_writer
-    
+
     connection = {"connection": mock_conn, "created_at": time.time()}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
     assert not is_valid
 
@@ -76,15 +76,15 @@ async def test_cleanup_loop_exception_handling(connection_pool):
     # Mock _cleanup_stale_connections to raise exception
     async def mock_cleanup():
         raise Exception("Cleanup failed")
-    
+
     connection_pool._cleanup_stale_connections = mock_cleanup
-    
+
     # Run cleanup loop briefly
     try:
         await asyncio.wait_for(connection_pool._cleanup_loop(), timeout=0.1)
     except asyncio.TimeoutError:
         pass  # Expected - loop runs indefinitely
-    
+
     # Should handle exception gracefully
     assert True
 
@@ -96,7 +96,7 @@ async def test_perform_health_checks_logs_unhealthy(connection_pool):
     peer_info2 = PeerInfo(ip="127.0.0.1", port=6882)
     peer_id1 = f"{peer_info1.ip}:{peer_info1.port}"
     peer_id2 = f"{peer_info2.ip}:{peer_info2.port}"
-    
+
     # Create connection with high usage count
     connection1 = {
         "peer_info": peer_info1,
@@ -106,7 +106,7 @@ async def test_perform_health_checks_logs_unhealthy(connection_pool):
     connection_pool.pool[peer_id1] = connection1
     metrics1 = ConnectionMetrics(usage_count=1001)  # Exceeds max
     connection_pool.metrics[peer_id1] = metrics1
-    
+
     # Create connection with many errors
     connection2 = {
         "peer_info": peer_info2,
@@ -116,15 +116,15 @@ async def test_perform_health_checks_logs_unhealthy(connection_pool):
     connection_pool.pool[peer_id2] = connection2
     metrics2 = ConnectionMetrics(errors=11)  # Exceeds threshold
     connection_pool.metrics[peer_id2] = metrics2
-    
+
     # Acquire semaphores
     await connection_pool.semaphore.acquire()
     await connection_pool.semaphore.acquire()
-    
+
     try:
-        with patch.object(connection_pool.logger, 'debug') as mock_debug:
+        with patch.object(connection_pool.logger, "debug") as mock_debug:
             await connection_pool._perform_health_checks()
-            
+
             # Should log about unhealthy connections
             assert mock_debug.called
     finally:
@@ -139,13 +139,13 @@ async def test_update_connection_metrics(connection_pool):
     """Test update_connection_metrics updates metrics (lines 518-522)."""
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     peer_id = f"{peer_info.ip}:{peer_info.port}"
-    
+
     metrics = ConnectionMetrics()
     connection_pool.metrics[peer_id] = metrics
-    
+
     # Update metrics
     connection_pool.update_connection_metrics(peer_id, 1000, 2000, 5)
-    
+
     assert metrics.bytes_sent == 1000
     assert metrics.bytes_received == 2000
     assert metrics.errors == 5
@@ -156,10 +156,10 @@ async def test_update_connection_metrics_no_metrics(connection_pool):
     """Test update_connection_metrics when metrics don't exist."""
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     peer_id = f"{peer_info.ip}:{peer_info.port}"
-    
+
     # Update metrics for non-existent peer
     connection_pool.update_connection_metrics(peer_id, 1000, 2000, 5)
-    
+
     # Should not crash
     assert True
 

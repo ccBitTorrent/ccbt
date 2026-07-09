@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 __version__ = "0.0.1"
 
 # Ensure a default asyncio event loop exists on import for libraries/tests that
@@ -9,6 +11,7 @@ __version__ = "0.0.1"
 # This avoids RuntimeError: There is no current event loop in thread 'MainThread'.
 try:
     import asyncio
+    import warnings
 
     class _SafeEventLoopPolicy(asyncio.AbstractEventLoopPolicy):
         """Wrapper policy that ensures a loop exists when requested."""
@@ -20,16 +23,19 @@ try:
             try:
                 return asyncio.get_running_loop()
             except RuntimeError:
-                # No running loop - try to get one from base policy first
-                # This allows pytest-asyncio and other tools to manage event loops
-                try:
-                    return self._base.get_event_loop()
-                except RuntimeError:
-                    # Base policy also can't provide a loop - create new one
-                    # This is the fallback for user code that needs a loop
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    return loop
+                # No running loop - try to get thread-default loop from base policy first.
+                # Python 3.12+ deprecates asyncio.get_event_loop() when no loop is set;
+                # suppress only for this delegation so we still return a pytest-managed loop.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    try:
+                        return self._base.get_event_loop()
+                    except RuntimeError:
+                        # Base policy also can't provide a loop - create new one
+                        # This is the fallback for user code that needs a loop
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        return loop
 
         def set_event_loop(self, loop):  # type: ignore[override]
             return self._base.set_event_loop(loop)
@@ -43,7 +49,7 @@ try:
 
         # Child watcher methods (posix); delegate if present
         def get_child_watcher(self):  # type: ignore[override]
-            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific)
+            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific):
                 raise NotImplementedError  # pragma: no cover - NotImplementedError path, tested via test_get_child_watcher_no_base
 
             if hasattr(
@@ -53,7 +59,7 @@ try:
             return _raise_not_implemented()  # pragma: no cover - Same context
 
         def set_child_watcher(self, watcher):  # type: ignore[override]
-            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific)
+            def _raise_not_implemented():  # pragma: no cover - Nested function definition, only executed if base lacks method (platform-specific):
                 raise NotImplementedError  # pragma: no cover - NotImplementedError path, tested via test_set_child_watcher_no_base
 
             if hasattr(
@@ -64,7 +70,7 @@ try:
                 )  # pragma: no cover - Same context
             return _raise_not_implemented()  # pragma: no cover - Same context
 
-    # CRITICAL FIX: On Windows, use SelectorEventLoop instead of ProactorEventLoop
+    # Note: On Windows, use SelectorEventLoop instead of ProactorEventLoop
     # ProactorEventLoop has known bugs with UDP sockets (WinError 10022)
     # This must be set BEFORE wrapping with _SafeEventLoopPolicy
     import sys
@@ -96,7 +102,9 @@ try:
     ):  # pragma: no cover - Exception handling during policy setup, defensive fallback
         # As a fallback, ensure a loop is set at import time
         try:
-            asyncio.get_event_loop()  # pragma: no cover - Same context
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                asyncio.get_event_loop()  # pragma: no cover - Same context
         except RuntimeError:  # pragma: no cover - Same context
             loop = asyncio.new_event_loop()  # pragma: no cover - Same context
             asyncio.set_event_loop(loop)  # pragma: no cover - Same context
@@ -106,6 +114,7 @@ except Exception:  # nosec B110 - If asyncio is unavailable or any error occurs,
 
 # Backward compatibility: Re-export commonly used modules from new locations
 # This allows old imports like "from ccbt.bencode import ..." to continue working
+from ccbt import discovery
 from ccbt.config import config
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
 from ccbt.core import bencode, magnet, torrent
@@ -164,8 +173,9 @@ __all__ = [
     # Config
     "config",
     "decode",
-    # Discovery
     "dht",
+    # Discovery
+    "discovery",
     "encode",
     # Utils
     "events",
@@ -192,64 +202,20 @@ __all__ = [
 ]
 
 
-# Lazy attribute access to prefer submodules over similarly named attributes
-def __getattr__(
-    name: str,
-):  # pragma: no cover - import-time plumbing, tested via test_getattr_async_main
-    if name == "async_main":
-        import importlib
-
-        return importlib.import_module("ccbt.async_main")
+# Lazy attribute access for undefined attributes
+def __getattr__(name: str):  # pragma: no cover - import-time plumbing
+    if name in {
+        "config",
+        "core",
+        "discovery",
+        "peer",
+        "piece",
+        "session",
+        "storage",
+        "utils",
+    }:
+        module = importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
     msg = f"module '{__name__}' has no attribute '{name}'"
     raise AttributeError(msg)
-
-
-# Ensure attribute binding prefers submodule even in long-lived interpreters
-try:  # pragma: no cover - import-time plumbing, tested via module imports
-    import importlib as _importlib
-
-    async_main = _importlib.import_module(
-        "ccbt.async_main"
-    )  # pragma: no cover - Same context
-except Exception:  # pragma: no cover - Exception handling during import, defensive
-    pass  # pragma: no cover - Same context
-
-# Backward compat: if async_main was imported as a function elsewhere, attach
-# commonly patched attributes so patch('ccbt.async_main.X') works.
-try:  # pragma: no cover - import-time plumbing, backward compatibility setup
-    import types as _types
-
-    if isinstance(
-        globals().get("async_main"), _types.FunctionType
-    ):  # pragma: no cover - Edge case: async_main as function, difficult to simulate
-        import ccbt.session.async_main as _am  # pragma: no cover - Same context
-        from ccbt.config.config import (
-            get_config as _get_config,  # pragma: no cover - Same context
-        )
-        from ccbt.core.magnet import (
-            build_minimal_torrent_data as _build_min,
-        )  # pragma: no cover - Same context
-        from ccbt.core.magnet import (
-            parse_magnet as _parse_magnet,
-        )  # pragma: no cover - Same context
-        from ccbt.peer import (
-            AsyncPeerConnectionManager as _APCM,  # noqa: N814
-        )  # pragma: no cover - Same context
-        from ccbt.piece.async_piece_manager import (
-            AsyncPieceManager as _APM,  # noqa: N814
-        )  # pragma: no cover - Same context
-
-        async_main.get_config = _get_config  # pragma: no cover - Same context
-        async_main.AsyncPeerConnectionManager = _APCM  # pragma: no cover - Same context
-        async_main.AsyncPieceManager = _APM  # pragma: no cover - Same context
-        async_main.parse_magnet = _parse_magnet  # pragma: no cover - Same context
-        async_main.build_minimal_torrent_data = (
-            _build_min  # pragma: no cover - Same context
-        )
-        async_main.AsyncDownloadManager = (
-            _am.AsyncDownloadManager
-        )  # pragma: no cover - Same context
-except (
-    Exception
-):  # pragma: no cover - Exception handling during backward compat setup, defensive
-    pass  # pragma: no cover - Same context

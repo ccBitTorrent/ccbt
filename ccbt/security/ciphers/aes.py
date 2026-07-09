@@ -1,7 +1,5 @@
 """AES cipher implementation for BEP 3.
 
-from __future__ import annotations
-
 Uses AES in CFB mode (stream-like behavior) as specified in BEP 3.
 Supports AES-128 and AES-256.
 """
@@ -25,8 +23,8 @@ class AESCipher(CipherSuite):
 
         Args:
             key: Encryption key (16 bytes for AES-128, 32 bytes for AES-256)
-            iv: Initialization vector (16 bytes). If None, generates random IV.
-                Note: For BEP 3, IV handling may need special consideration.
+            iv: Initialization vector (16 bytes). If None, uses the zero IV in
+                non-test call paths.
 
         Raises:
             ValueError: If key size is invalid (must be 16 or 32 bytes)
@@ -37,7 +35,7 @@ class AESCipher(CipherSuite):
             raise ValueError(msg)
 
         self.key = key
-        self.iv = iv or secrets.token_bytes(16)
+        self.iv = iv if iv is not None else (b"\x00" * 16)
 
         if len(self.iv) != 16:
             msg = f"AES IV must be 16 bytes, got {len(self.iv)}"
@@ -101,3 +99,12 @@ class AESCipher(CipherSuite):
 
         """
         return len(self.key)
+
+    @classmethod
+    def with_random_iv_for_testing(cls, key: bytes) -> AESCipher:
+        """Create a test-only AES cipher instance with a random IV.
+
+        This is intentionally test-only and should not be used for negotiated
+        MSE/PE traffic.
+        """
+        return cls(key=key, iv=secrets.token_bytes(16))

@@ -5,8 +5,6 @@ Tests metrics initialization and shutdown in AsyncSessionManager.
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from ccbt.session.session import AsyncSessionManager
@@ -25,13 +23,13 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_metrics_initialized_on_start_when_enabled(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics initialized when enabled in config."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
@@ -52,23 +50,23 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_metrics_not_initialized_when_disabled(
-        self, 
+        self,
         mock_config_disabled,
         mock_network_components
     ):
         """Test metrics not initialized when disabled in config."""
         from ccbt.monitoring import shutdown_metrics
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Ensure clean state
         await shutdown_metrics()
-        
+
         # CRITICAL: Patch session.config directly to use mocked config
         # The session manager caches config in __init__(), so we need to patch it
         session = AsyncSessionManager()
         # Override the cached config with the mocked one
         session.config = mock_config_disabled
-        
+
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
         await session.start()
@@ -77,20 +75,20 @@ class TestAsyncSessionManagerMetricsIntegration:
         assert session.metrics is None
 
         await session.stop()
-        
+
         # Verify metrics still None after stop
         assert session.metrics is None
 
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_metrics_shutdown_on_stop(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics shutdown when session stops."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
@@ -115,7 +113,7 @@ class TestAsyncSessionManagerMetricsIntegration:
     async def test_metrics_shutdown_when_not_initialized(self, mock_network_components):
         """Test shutdown when metrics were never initialized."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
@@ -130,17 +128,17 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_error_handling_on_init_failure(
-        self, 
+        self,
         monkeypatch,
         mock_network_components
     ):
         """Test error handling when init_metrics fails."""
         from ccbt.monitoring import shutdown_metrics
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # Ensure clean state
         await shutdown_metrics()
-        
+
         # Patch get_config to raise an error, which will cause init_metrics to fail internally
         from ccbt import config as config_module
 
@@ -148,7 +146,7 @@ class TestAsyncSessionManagerMetricsIntegration:
             raise RuntimeError("Config error")
 
         monkeypatch.setattr(config_module, "get_config", raise_error)
-        
+
         session = AsyncSessionManager()
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
@@ -159,15 +157,15 @@ class TestAsyncSessionManagerMetricsIntegration:
         assert session.metrics is None
 
         await session.stop()
-        
+
         # Verify metrics still None after stop
         assert session.metrics is None
 
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_error_handling_on_shutdown_failure(
-        self, 
-        mock_config_enabled, 
+        self,
+        mock_config_enabled,
         monkeypatch,
         mock_network_components
     ):
@@ -181,7 +179,7 @@ class TestAsyncSessionManagerMetricsIntegration:
             nonlocal shutdown_called
             shutdown_called = True
             raise Exception("Shutdown error")
-        
+
         # First start normally
         session = AsyncSessionManager()
         # Use network mocks instead of manual NAT mocking
@@ -210,13 +208,13 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     @pytest.mark.timeout_fast
     async def test_metrics_accessible_during_session(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics are accessible via session.metrics during session."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         session = AsyncSessionManager()
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
@@ -232,22 +230,22 @@ class TestAsyncSessionManagerMetricsIntegration:
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
     async def test_multiple_start_stop_cycles(
-        self, 
+        self,
         mock_config_enabled,
         mock_network_components
     ):
         """Test metrics handling across multiple start/stop cycles."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         # CRITICAL: Patch session.config directly to use mocked config
         # The session manager caches config in __init__(), so we need to patch it
         session = AsyncSessionManager()
         # Override the cached config with the mocked one
         session.config = mock_config_enabled
-        
+
         # Use network mocks instead of manual NAT mocking
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # First cycle
         await session.start()
         metrics1 = session.metrics
@@ -256,7 +254,7 @@ class TestAsyncSessionManagerMetricsIntegration:
 
         # Re-apply network mocks before second start
         apply_network_mocks_to_session(session, mock_network_components)
-        
+
         # Second cycle
         await session.start()
         metrics2 = session.metrics
@@ -280,6 +278,7 @@ class TestAsyncSessionManagerMetricsIntegration:
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test
@@ -301,16 +300,16 @@ def mock_config_enabled(monkeypatch):
     mock_observability.event_bus_throttle_monitoring_heartbeat = 1.0
     mock_observability.event_bus_throttle_global_metrics_update = 0.5
     mock_config.observability = mock_observability
-    
+
     # Network config
     mock_config.network = Mock()
     mock_config.network.max_global_peers = 100
     mock_config.network.connection_timeout = 30.0
-    
+
     # NAT config
     mock_config.nat = Mock()
     mock_config.nat.auto_map_ports = False
-    
+
     # Discovery config
     mock_config.discovery = Mock()
     mock_config.discovery.enable_dht = False
@@ -326,6 +325,7 @@ def mock_config_enabled(monkeypatch):
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test

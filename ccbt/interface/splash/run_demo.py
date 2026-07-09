@@ -12,7 +12,7 @@ import sys
 
 if __name__ == "__main__":
     from ccbt.interface.splash.demo_new_system import main
-    
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

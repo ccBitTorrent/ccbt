@@ -37,7 +37,7 @@ def mock_torrent_session():
     mock_manager.select_files = AsyncMock()
     mock_manager.select_file = AsyncMock()  # This is what LocalSessionAdapter actually calls
     mock_manager.set_file_priority = AsyncMock()
-    
+
     mock_session = SimpleNamespace(
         file_selection_manager=mock_manager,
     )
@@ -49,7 +49,7 @@ def mock_session_manager(mock_torrent_session):
     """Create a mock session manager."""
     info_hash_bytes = b"\x00" * 20
     info_hash_hex = info_hash_bytes.hex()
-    
+
     session = AsyncMock()
     session.add_torrent = AsyncMock(return_value=info_hash_hex)
     session.torrents = {info_hash_bytes: mock_torrent_session}
@@ -57,7 +57,7 @@ def mock_session_manager(mock_torrent_session):
     session.lock.__aenter__ = AsyncMock(return_value=None)
     session.lock.__aexit__ = AsyncMock(return_value=None)
     session.queue_manager = None
-    
+
     return session
 
 
@@ -81,14 +81,14 @@ class TestStartInteractiveDownloadFileSelection:
         """Test files_selection applied before interactive mode (lines 2406-2408)."""
         # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
         mock_prompt.return_value = "done"
-        
+
         # Mock the adapter and its select_files method
         mock_adapter = MagicMock()
         mock_adapter.select_files = AsyncMock(return_value={"status": "selected", "file_indices": [0, 1]})
         mock_adapter_class.return_value = mock_adapter
-        
+
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the download_torrent method to exit quickly
         with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
@@ -96,7 +96,7 @@ class TestStartInteractiveDownloadFileSelection:
             mock_interactive.current_info_hash_hex = "0" * 40
             mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
-            
+
             await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
@@ -104,7 +104,7 @@ class TestStartInteractiveDownloadFileSelection:
                 resume=False,
                 files_selection=(0, 1),
             )
-            
+
             # Verify executor called adapter.select_files with correct parameters
             # The executor calls adapter.select_files with positional args: (info_hash, file_indices)
             mock_adapter.select_files.assert_called_once()
@@ -121,9 +121,9 @@ class TestStartInteractiveDownloadFileSelection:
         """Test file_priorities applied before interactive mode (lines 2411-2428)."""
         # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
         mock_prompt.return_value = "done"
-        
+
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the download_torrent method to exit quickly
         with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
@@ -131,7 +131,7 @@ class TestStartInteractiveDownloadFileSelection:
             mock_interactive.current_info_hash_hex = "0" * 40
             mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
-            
+
             await cli_downloads.start_interactive_download(
                 mock_session_manager,
                 torrent_data,
@@ -139,7 +139,7 @@ class TestStartInteractiveDownloadFileSelection:
                 resume=False,
                 file_priorities=("0=high", "1=normal"),
             )
-            
+
             # Verify set_file_priority was called twice
             assert mock_torrent_session.file_selection_manager.set_file_priority.call_count == 2
 
@@ -151,9 +151,9 @@ class TestStartInteractiveDownloadFileSelection:
         """Test file_priorities with invalid format (lines 2420-2428)."""
         # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
         mock_prompt.return_value = "done"
-        
+
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the download_torrent method to exit quickly
         with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
@@ -161,7 +161,7 @@ class TestStartInteractiveDownloadFileSelection:
             mock_interactive.current_info_hash_hex = "0" * 40
             mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
-            
+
             # Test with invalid format (no = separator)
             await cli_downloads.start_interactive_download(
                 mock_session_manager,
@@ -170,7 +170,7 @@ class TestStartInteractiveDownloadFileSelection:
                 resume=False,
                 file_priorities=("invalid-format",),
             )
-            
+
             # Should print warning about invalid priority spec
             assert mock_console.print.called
 
@@ -182,9 +182,9 @@ class TestStartInteractiveDownloadFileSelection:
         """Test file_priorities with invalid priority name (KeyError) (lines 2425-2428)."""
         # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
         mock_prompt.return_value = "done"
-        
+
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the download_torrent method to exit quickly
         with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
@@ -192,7 +192,7 @@ class TestStartInteractiveDownloadFileSelection:
             mock_interactive.current_info_hash_hex = "0" * 40
             mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
-            
+
             # Test with invalid priority name
             await cli_downloads.start_interactive_download(
                 mock_session_manager,
@@ -201,7 +201,7 @@ class TestStartInteractiveDownloadFileSelection:
                 resume=False,
                 file_priorities=("0=invalid_priority",),
             )
-            
+
             # Should print warning about invalid priority spec
             assert mock_console.print.called
 
@@ -213,9 +213,9 @@ class TestStartInteractiveDownloadFileSelection:
         """Test file_priorities with ValueError (invalid file index) (lines 2420-2428)."""
         # Mock Prompt.ask to return "done" immediately to exit interactive file selection loop
         mock_prompt.return_value = "done"
-        
+
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the download_torrent method to exit quickly
         with patch("ccbt.cli.downloads.InteractiveCLI") as mock_interactive_cli:
             mock_interactive = MagicMock()
@@ -223,7 +223,7 @@ class TestStartInteractiveDownloadFileSelection:
             mock_interactive.current_info_hash_hex = "0" * 40
             mock_interactive.running = False  # Exit download loop immediately
             mock_interactive_cli.return_value = mock_interactive
-            
+
             # Test with invalid file index (non-numeric)
             await cli_downloads.start_interactive_download(
                 mock_session_manager,
@@ -232,7 +232,7 @@ class TestStartInteractiveDownloadFileSelection:
                 resume=False,
                 file_priorities=("not-a-number=high",),
             )
-            
+
             # Should print warning about invalid priority spec
             assert mock_console.print.called
 
@@ -250,9 +250,9 @@ class TestStartBasicDownloadFileSelection:
         mock_adapter = MagicMock()
         mock_adapter.select_files = AsyncMock(return_value={"status": "selected", "file_indices": [0, 1]})
         mock_adapter_class.return_value = mock_adapter
-        
+
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the progress monitoring loop to exit immediately
         # Progress is imported from rich.progress in main.py
         with patch("rich.progress.Progress") as mock_progress_class:
@@ -261,7 +261,7 @@ class TestStartBasicDownloadFileSelection:
             mock_progress_instance.__exit__ = MagicMock(return_value=False)
             mock_progress_instance.add_task = MagicMock(return_value=MagicMock())
             mock_progress_class.return_value = mock_progress_instance
-            
+
             # Make the while loop exit quickly by making get_torrent_status return None after first call
             call_count = 0
             async def mock_get_status(*args, **kwargs):
@@ -270,9 +270,9 @@ class TestStartBasicDownloadFileSelection:
                 if call_count > 1:
                     return None  # Exit loop
                 return {"status": "downloading", "progress": 0.5}
-            
+
             mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
-            
+
             try:
                 await cli_downloads.start_basic_download(
                     mock_session_manager,
@@ -284,7 +284,7 @@ class TestStartBasicDownloadFileSelection:
             except (StopIteration, RuntimeError, asyncio.CancelledError):
                 # Expected when loop exits
                 pass
-            
+
             # Verify executor called adapter.select_files with correct parameters
             mock_adapter.select_files.assert_called_once()
             call_args = mock_adapter.select_files.call_args
@@ -299,7 +299,7 @@ class TestStartBasicDownloadFileSelection:
     ):
         """Test file_priorities in basic download (lines 2502-2519)."""
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the progress monitoring loop to exit immediately
         # Progress is imported from rich.progress in main.py
         with patch("rich.progress.Progress") as mock_progress_class:
@@ -308,7 +308,7 @@ class TestStartBasicDownloadFileSelection:
             mock_progress_instance.__exit__ = MagicMock(return_value=False)
             mock_progress_instance.add_task = MagicMock(return_value=MagicMock())
             mock_progress_class.return_value = mock_progress_instance
-            
+
             # Make the while loop exit quickly
             call_count = 0
             async def mock_get_status(*args, **kwargs):
@@ -317,9 +317,9 @@ class TestStartBasicDownloadFileSelection:
                 if call_count > 1:
                     return None
                 return {"status": "downloading", "progress": 0.5}
-            
+
             mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
-            
+
             try:
                 await cli_downloads.start_basic_download(
                     mock_session_manager,
@@ -330,7 +330,7 @@ class TestStartBasicDownloadFileSelection:
                 )
             except (StopIteration, RuntimeError, asyncio.CancelledError):
                 pass
-            
+
             # Verify set_file_priority was called
             assert mock_torrent_session.file_selection_manager.set_file_priority.call_count >= 1
 
@@ -340,7 +340,7 @@ class TestStartBasicDownloadFileSelection:
     ):
         """Test invalid file_priorities in basic download (lines 2516-2519)."""
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
-        
+
         # Mock the progress monitoring loop to exit immediately
         # Progress is imported from rich.progress in main.py
         with patch("rich.progress.Progress") as mock_progress_class:
@@ -349,7 +349,7 @@ class TestStartBasicDownloadFileSelection:
             mock_progress_instance.__exit__ = MagicMock(return_value=False)
             mock_progress_instance.add_task = MagicMock(return_value=MagicMock())
             mock_progress_class.return_value = mock_progress_instance
-            
+
             # Make the while loop exit quickly
             call_count = 0
             async def mock_get_status(*args, **kwargs):
@@ -358,9 +358,9 @@ class TestStartBasicDownloadFileSelection:
                 if call_count > 1:
                     return None
                 return {"status": "downloading", "progress": 0.5}
-            
+
             mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
-            
+
             try:
                 await cli_downloads.start_basic_download(
                     mock_session_manager,
@@ -371,7 +371,7 @@ class TestStartBasicDownloadFileSelection:
                 )
             except (StopIteration, RuntimeError, asyncio.CancelledError):
                 pass
-            
+
             # Should print warning about invalid priority spec
             assert mock_console.print.called
 

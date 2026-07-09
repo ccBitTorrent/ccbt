@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -55,7 +54,7 @@ class TestRaftConsensus:
     async def test_raft_leader_election(self, raft_node):
         """Test Raft leader election."""
         from ccbt.consensus.raft import RaftRole
-        
+
         # Start node
         await raft_node.start()
 

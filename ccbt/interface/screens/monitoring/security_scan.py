@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -70,19 +70,26 @@ class SecurityScanScreen(MonitoringScreen):  # type: ignore[misc]
             content = self.query_one("#content", Static)
             security_events_widget = self.query_one("#security_events", Static)
 
-            # Get security manager from session
+            # Security manager only in local session; daemon has no security scan endpoint yet
+            provider = getattr(self, "_data_provider", None)
             security_manager = None
-            if hasattr(self.session, "security_manager"):
-                security_manager = self.session.security_manager
-            elif hasattr(self.session, "download_manager"):
-                download_manager = self.session.download_manager
-                if hasattr(download_manager, "security_manager"):
-                    security_manager = download_manager.security_manager
+            if not provider:
+                if hasattr(self.session, "security_manager"):
+                    security_manager = self.session.security_manager
+                elif hasattr(self.session, "download_manager"):
+                    download_manager = self.session.download_manager
+                    if hasattr(download_manager, "security_manager"):
+                        security_manager = download_manager.security_manager
 
             if not security_manager:
+                msg = (
+                    _("Security scan is not available when connected to daemon.")
+                    if provider
+                    else _("Security manager not available. Security scanning requires local session mode.")
+                )
                 content.update(
                     Panel(
-                        _("Security manager not available. Security scanning requires local session mode."),
+                        msg,
                         title=_("Security Scan"),
                         border_style="yellow",
                     )
@@ -91,7 +98,7 @@ class SecurityScanScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Get security statistics
             stats = security_manager.get_security_statistics()
-            
+
             # Security statistics table
             stats_table = Table(
                 title=_("Security Statistics"),
@@ -122,11 +129,11 @@ class SecurityScanScreen(MonitoringScreen):  # type: ignore[misc]
                 box=None,
             )
             blacklist_table.add_column(_("IP Address"), style="red", ratio=1)
-            
+
             # Show up to 20 blacklisted IPs
             for ip in list(blacklist_ips)[:20]:
                 blacklist_table.add_row(ip)
-            
+
             if len(blacklist_ips) > 20:
                 blacklist_table.add_row(_("... and {count} more").format(count=len(blacklist_ips) - 20))
 

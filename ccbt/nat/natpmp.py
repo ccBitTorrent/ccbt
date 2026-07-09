@@ -357,8 +357,20 @@ class NATPMPClient:
 
             except socket.timeout:
                 if attempt == NAT_PMP_MAX_RETRIES - 1:
+                    self.logger.info(
+                        "NAT-PMP timed out to gateway %s after %d attempts "
+                        "(UDP %s may be filtered or gateway may not support NAT-PMP)",
+                        self.gateway_ip,
+                        NAT_PMP_MAX_RETRIES,
+                        NAT_PMP_PORT,
+                    )
                     msg = "Timeout getting external IP"
                     raise NATPMPError(msg) from None
+                self.logger.debug(
+                    "NAT-PMP get external IP attempt %d/%d timed out, retrying",
+                    attempt + 1,
+                    NAT_PMP_MAX_RETRIES,
+                )
                 await asyncio.sleep(1)
             except Exception as e:
                 msg = f"Error getting external IP: {e}"
@@ -425,8 +437,18 @@ class NATPMPClient:
 
             except socket.timeout:
                 if attempt == NAT_PMP_MAX_RETRIES - 1:
+                    self.logger.info(
+                        "NAT-PMP port mapping timed out to gateway %s after %d attempts",
+                        self.gateway_ip,
+                        NAT_PMP_MAX_RETRIES,
+                    )
                     msg = "Timeout adding port mapping"
                     raise NATPMPError(msg) from None
+                self.logger.debug(
+                    "NAT-PMP add mapping attempt %d/%d timed out, retrying",
+                    attempt + 1,
+                    NAT_PMP_MAX_RETRIES,
+                )
                 await asyncio.sleep(1)
             except Exception as e:
                 msg = f"Error adding port mapping: {e}"

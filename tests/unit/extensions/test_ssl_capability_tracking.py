@@ -5,14 +5,13 @@ Tests SSL capability extraction and storage from extension handshake data.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.extensions, pytest.mark.security]
 
 from ccbt.extensions.manager import ExtensionManager
-from ccbt.extensions.ssl import SSLExtension
 
 
 class TestSSLCapabilityTracking:
@@ -22,7 +21,7 @@ class TestSSLCapabilityTracking:
         """Test that set_peer_extensions extracts SSL capability from 'm' dict."""
         manager = ExtensionManager()
         peer_id = "test_peer_123"
-        
+
         # Extension handshake with SSL in message map
         extensions = {
             "m": {
@@ -30,9 +29,9 @@ class TestSSLCapabilityTracking:
                 "ssl": 2,  # SSL extension registered with message ID 2
             }
         }
-        
+
         manager.set_peer_extensions(peer_id, extensions)
-        
+
         # Check SSL capability was extracted
         peer_extensions = manager.get_peer_extensions(peer_id)
         assert peer_extensions.get("ssl") is True
@@ -41,7 +40,7 @@ class TestSSLCapabilityTracking:
         """Test that set_peer_extensions handles bytes keys in 'm' dict."""
         manager = ExtensionManager()
         peer_id = "test_peer_456"
-        
+
         # Extension handshake with bytes keys (BEP 10 allows both)
         extensions = {
             b"m": {
@@ -49,9 +48,9 @@ class TestSSLCapabilityTracking:
                 b"ssl": 2,
             }
         }
-        
+
         manager.set_peer_extensions(peer_id, extensions)
-        
+
         # Check SSL capability was extracted
         peer_extensions = manager.get_peer_extensions(peer_id)
         assert peer_extensions.get("ssl") is True
@@ -60,7 +59,7 @@ class TestSSLCapabilityTracking:
         """Test that set_peer_extensions returns False when SSL not in 'm' dict."""
         manager = ExtensionManager()
         peer_id = "test_peer_789"
-        
+
         # Extension handshake without SSL
         extensions = {
             "m": {
@@ -68,9 +67,9 @@ class TestSSLCapabilityTracking:
                 "pex": 2,
             }
         }
-        
+
         manager.set_peer_extensions(peer_id, extensions)
-        
+
         # Check SSL capability is False
         peer_extensions = manager.get_peer_extensions(peer_id)
         assert peer_extensions.get("ssl") is False
@@ -79,7 +78,7 @@ class TestSSLCapabilityTracking:
         """Test that set_peer_extensions uses SSL extension decode_handshake."""
         manager = ExtensionManager()
         peer_id = "test_peer_ssl_decode"
-        
+
         # Extension handshake with direct SSL extension data
         extensions = {
             "ssl": {
@@ -87,15 +86,15 @@ class TestSSLCapabilityTracking:
                 "version": "1.0",
             }
         }
-        
+
         # Mock SSL extension decode_handshake to return True
         ssl_ext = manager.extensions["ssl"]
         original_decode = ssl_ext.decode_handshake
         ssl_ext.decode_handshake = MagicMock(return_value=True)
-        
+
         try:
             manager.set_peer_extensions(peer_id, extensions)
-            
+
             # Check SSL capability was extracted via decode_handshake
             peer_extensions = manager.get_peer_extensions(peer_id)
             assert peer_extensions.get("ssl") is True
@@ -107,7 +106,7 @@ class TestSSLCapabilityTracking:
         """Test peer_supports_extension returns True for SSL when set."""
         manager = ExtensionManager()
         peer_id = "test_peer_supports"
-        
+
         # Set peer extensions with SSL
         extensions = {
             "m": {
@@ -115,7 +114,7 @@ class TestSSLCapabilityTracking:
             }
         }
         manager.set_peer_extensions(peer_id, extensions)
-        
+
         # Check peer_supports_extension
         assert manager.peer_supports_extension(peer_id, "ssl") is True
 
@@ -123,7 +122,7 @@ class TestSSLCapabilityTracking:
         """Test peer_supports_extension returns False for SSL when not set."""
         manager = ExtensionManager()
         peer_id = "test_peer_no_ssl"
-        
+
         # Set peer extensions without SSL
         extensions = {
             "m": {
@@ -131,7 +130,7 @@ class TestSSLCapabilityTracking:
             }
         }
         manager.set_peer_extensions(peer_id, extensions)
-        
+
         # Check peer_supports_extension
         assert manager.peer_supports_extension(peer_id, "ssl") is False
 
@@ -139,7 +138,7 @@ class TestSSLCapabilityTracking:
         """Test peer_supports_extension returns False for SSL when peer not known."""
         manager = ExtensionManager()
         peer_id = "unknown_peer"
-        
+
         # Check peer_supports_extension for unknown peer
         assert manager.peer_supports_extension(peer_id, "ssl") is False
 

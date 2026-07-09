@@ -5,18 +5,41 @@ Displays a beautiful progress bar showing piece availability with colored segmen
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
+    from textual.reactive import reactive
     from textual.widgets import Static
 else:
     try:
+        from textual.reactive import reactive
         from textual.widgets import Static
     except ImportError:
         class Static:  # type: ignore[no-redef]
-            pass
+            def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+                """No-op data_bind when textual is unavailable."""
+                pass
+
+        class reactive:  # type: ignore[no-redef]
+            """Stub reactive descriptor for textual compatibility."""
+
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 from rich.text import Text
 
@@ -51,11 +74,11 @@ PIECE_HEALTH_LABELS = {
 }
 
 __all__ = [
-    "PieceAvailabilityHealthBar",
-    "PIECE_HEALTH_THRESHOLDS",
-    "PIECE_HEALTH_GLYPHS",
     "PIECE_HEALTH_COLORS",
+    "PIECE_HEALTH_GLYPHS",
     "PIECE_HEALTH_LABELS",
+    "PIECE_HEALTH_THRESHOLDS",
+    "PieceAvailabilityHealthBar",
     "determine_piece_health_level",
 ]
 
@@ -86,6 +109,25 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
     }
     """
 
+    # F2.1: reactive bound to TerminalDashboard.selected_torrent_piece_health
+    # via data_bind(). The App sets the reactive after fetching piece health;
+    # the widget self-renders through watch_piece_health.
+    piece_health: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+
+    def on_mount(self) -> None:  # type: ignore[override]
+        """Bind to the App's selected_torrent_piece_health reactive (F2.1.2)."""
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(piece_health=TerminalDashboard.selected_torrent_piece_health)
+        except Exception as exc:  # pragma: no cover - defensive for non-mounted/test contexts
+            logger.debug("PieceAvailabilityHealthBar data_bind skipped: %s", exc)
+
+    def watch_piece_health(self, value: dict[str, Any]) -> None:
+        """Reactive watcher: render the bar from the bound piece-health dict (F2.1.1)."""
+        if isinstance(value, dict):
+            self.update_from_piece_health(value)
+
     def __init__(
         self,
         *args: Any,
@@ -115,9 +157,9 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
             self._max_peers = max(availability) if availability else 1
         else:
             self._max_peers = max(max_peers, 1)
-        
+
         self._render_bar()
-    
+
     def update_from_piece_health(
         self,
         piece_health: dict[str, Any],
@@ -142,28 +184,28 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
         if not self._availability:
             self.update(Text(_("No availability data"), style="dim"))
             return
-        
+
         num_pieces = len(self._availability)
         if num_pieces == 0:
             self.update(Text(_("No pieces"), style="dim"))
             return
-        
+
         # Get terminal width for grid calculation
         try:
             width = self.size.width if hasattr(self, "size") and self.size else 60
         except Exception:
             width = 60
-        
+
         # Calculate grid dimensions
         # Reserve space for labels and callouts (about 20 chars)
         available_width = max(20, width - 20)
         self._grid_cols = available_width // 2  # 2 chars per piece (square + space)
         pieces_per_cell = max(1, num_pieces // (self._grid_rows * self._grid_cols))
-        
+
         # Build multi-line grid
         grid_lines: list[Text] = []
         piece_idx = 0
-        
+
         for row in range(self._grid_rows):
             row_text = Text()
             for col in range(self._grid_cols):
@@ -171,25 +213,25 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
                     # Fill remaining cells with empty squares
                     row_text.append("□ ", style="grey46")
                     continue
-                
+
                 # Get piece data (may aggregate multiple pieces per cell)
                 cell_peer_counts = []
-                for _ in range(pieces_per_cell):
+                for _i in range(pieces_per_cell):
                     if piece_idx < num_pieces:
                         cell_peer_counts.append(self._availability[piece_idx])
                         piece_idx += 1
-                
+
                 if not cell_peer_counts:
                     row_text.append("□ ", style="grey46")
                     continue
-                
+
                 # Use average peer count for cell
                 avg_peer_count = sum(cell_peer_counts) / len(cell_peer_counts)
                 ratio = avg_peer_count / self._max_peers if self._max_peers else 0.0
                 level = determine_piece_health_level(ratio)
                 glyph = PIECE_HEALTH_GLYPHS.get(level, "□")
                 color = PIECE_HEALTH_COLORS.get(level, "grey46")
-                
+
                 # Enhanced prioritized piece highlighting
                 is_prioritized = False
                 if self._piece_health_data:
@@ -210,18 +252,18 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
                         else:
                             glyph = "◆"
                             color = "bright_cyan"
-                
+
                 row_text.append(glyph, style=color)
                 row_text.append(" ", style="dim")
-            
+
             grid_lines.append(row_text)
-        
+
         # Build summary and callouts
         available_pieces = sum(1 for count in self._availability if count > 0)
         total_pieces = len(self._availability)
         availability_pct = (available_pieces / total_pieces * 100) if total_pieces > 0 else 0.0
         avg_peers = sum(self._availability) / total_pieces if total_pieces > 0 else 0.0
-        
+
         # Extract histogram and rare piece info
         histogram = {}
         rare_count = 0
@@ -230,15 +272,15 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
             histogram = self._piece_health_data.get("availability_histogram", {})
             rare_count = histogram.get("rare", 0)
             # Check for pieces being verified (would need piece manager state)
-        
+
         # Build full text with grid and labels
         full_text = Text()
-        
+
         # Add grid
         for row_text in grid_lines:
             full_text.append(row_text)
             full_text.append("\n")
-        
+
         # Add summary line
         summary = Text()
         summary.append(f"{_('Health')}: ", style="cyan")
@@ -252,18 +294,18 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
         summary.append(f"avg {avg_peers:.1f} {_('peers')}", style="dim")
         full_text.append(summary)
         full_text.append("\n")
-        
+
         # Add callouts for rare pieces and other metrics
         callouts = Text()
         if rare_count > 0:
             callouts.append(f"Rare: {rare_count} ", style="orange1")
         if histogram.get("missing", 0) > 0:
             callouts.append(f"Missing: {histogram.get('missing', 0)} ", style="red")
-        
+
         # Enhanced DHT success ratio indicator with color coding
         if self._piece_health_data:
             dht_ratio = self._piece_health_data.get("dht_success_ratio", 0.0)
-            if dht_ratio > 0:
+            if isinstance(dht_ratio, (int, float)) and dht_ratio > 0:
                 dht_pct = dht_ratio * 100
                 if dht_pct >= 80:
                     dht_style = "green"
@@ -272,7 +314,7 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
                 else:
                     dht_style = "red"
                 callouts.append(f"DHT: {dht_pct:.0f}% ", style=dht_style)
-            
+
             # Piece selection strategy indicator
             piece_selection = self._piece_health_data.get("piece_selection", {})
             if isinstance(piece_selection, dict):
@@ -280,7 +322,7 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
                 if strategy:
                     strategy_display = str(strategy).replace("_", " ").title()
                     callouts.append(f"Strategy: {strategy_display} ", style="cyan")
-        
+
         # Piece download progress states (if available from torrent status)
         if self._piece_health_data:
             # Try to get piece states from piece_selection or torrent status
@@ -288,13 +330,13 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
             downloading_count = 0
             verifying_count = 0
             completed_count = 0
-            
+
             # Check for piece states in piece_selection
             if isinstance(piece_selection, dict):
                 downloading_count = piece_selection.get("downloading_pieces", 0) or len(piece_selection.get("downloading", []))
                 verifying_count = piece_selection.get("verifying_pieces", 0) or len(piece_selection.get("verifying", []))
                 completed_count = piece_selection.get("completed_pieces", 0)
-            
+
             # If not found, try to infer from torrent status
             if downloading_count == 0 and verifying_count == 0:
                 # Check if we have pieces_completed info
@@ -304,18 +346,18 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
                     completed_count = pieces_completed
                     # Estimate downloading as pieces with availability but not completed
                     downloading_count = max(0, available_pieces - completed_count)
-            
+
             if downloading_count > 0:
                 callouts.append(f"↓ {downloading_count} ", style="blue")
             if verifying_count > 0:
                 callouts.append(f"✓ {verifying_count} ", style="magenta")
             if completed_count > 0:
                 callouts.append(f"● {completed_count} ", style="green")
-        
+
         if callouts:
             full_text.append(callouts)
             full_text.append("\n")
-        
+
         # Add legend with enhanced information
         legend = Text()
         for level in ("excellent", "healthy", "fragile", "empty"):
@@ -324,13 +366,13 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
             legend.append(" ")
             legend.append(glyph, style=color)
             legend.append(f" {PIECE_HEALTH_LABELS[level]}", style="dim")
-        
+
         # Add prioritized piece indicator to legend
         if self._piece_health_data and self._piece_health_data.get("prioritized_pieces"):
             legend.append("  ")
             legend.append("◆", style="bright_cyan")
             legend.append(" Prioritized", style="dim")
-        
+
         # Add download state indicators to legend
         if self._piece_health_data:
             piece_selection = self._piece_health_data.get("piece_selection", {})
@@ -342,9 +384,9 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
                 legend.append(" Verifying  ", style="dim")
                 legend.append("●", style="green")
                 legend.append(" Completed", style="dim")
-        
+
         full_text.append(legend)
-        
+
         self.update(full_text)
 
     def _get_color_for_availability(self, peer_count: int) -> str:
@@ -358,7 +400,7 @@ class PieceAvailabilityHealthBar(Static):  # type: ignore[misc]
         """
         if self._max_peers == 0:
             return PIECE_HEALTH_COLORS["empty"]
-        
+
         ratio = peer_count / self._max_peers
         level = determine_piece_health_level(ratio)
         return PIECE_HEALTH_COLORS.get(level, "gray50")

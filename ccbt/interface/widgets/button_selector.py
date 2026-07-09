@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from textual.containers import Container
 from textual.message import Message
-from textual.widgets import Button, Static
+from textual.widgets import Button
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -59,7 +59,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
         self._buttons: dict[str, Button] = {}
         self._active_id: Optional[str] = initial_selection or (options[0][0] if options else None)
 
-    def compose(self) -> "ComposeResult":  # pragma: no cover
+    def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose the button selector."""
         for option_id, label in self._options:
             button = Button(
@@ -91,7 +91,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
         """Set active button."""
         if option_id == self._active_id:
             return
-        
+
         # Update button styles
         for opt_id, button in self._buttons.items():
             if opt_id == option_id:
@@ -100,7 +100,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
             else:
                 button.variant = "default"  # type: ignore[attr-defined]
                 button.remove_class("-active")  # type: ignore[attr-defined]
-        
+
         self._active_id = option_id
 
     @property
@@ -115,7 +115,7 @@ class ButtonSelector(Container):  # type: ignore[misc]
 
     class SelectionChanged(Message):  # type: ignore[misc]
         """Message posted when selection changes."""
-        
+
         def __init__(self, selection_id: str) -> None:
             super().__init__()
             self.selection_id = selection_id

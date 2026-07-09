@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 import struct
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -240,7 +239,7 @@ async def test_get_external_ip_success(natpmp_client):
             call_count += 1
             if call_count == 1:  # sendto
                 return mock_socket.sendto(*args)
-            elif call_count == 2:  # recvfrom
+            if call_count == 2:  # recvfrom
                 return mock_socket.recvfrom(*args)
 
         mock_to_thread.side_effect = sync_thread
@@ -296,7 +295,7 @@ async def test_add_port_mapping_success(natpmp_client):
             call_count += 1
             if call_count == 1:  # sendto
                 return mock_socket.sendto(*args)
-            elif call_count == 2:  # recvfrom
+            if call_count == 2:  # recvfrom
                 return mock_socket.recvfrom(*args)
 
         mock_to_thread.side_effect = sync_thread
@@ -339,7 +338,7 @@ async def test_add_port_mapping_error_response(natpmp_client):
             call_count += 1
             if call_count == 1:  # sendto
                 return mock_socket.sendto(*args)
-            elif call_count == 2:  # recvfrom
+            if call_count == 2:  # recvfrom
                 return mock_socket.recvfrom(*args)
 
         mock_to_thread.side_effect = sync_thread
@@ -378,7 +377,7 @@ async def test_delete_port_mapping(natpmp_client):
             call_count += 1
             if call_count == 1:  # sendto
                 return mock_socket.sendto(*args)
-            elif call_count == 2:  # recvfrom
+            if call_count == 2:  # recvfrom
                 return mock_socket.recvfrom(*args)
 
         mock_to_thread.side_effect = sync_thread

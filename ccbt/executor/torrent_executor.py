@@ -14,6 +14,35 @@ from ccbt.executor.base import CommandExecutor, CommandResult
 class TorrentExecutor(CommandExecutor):
     """Executor for torrent commands."""
 
+    @staticmethod
+    def _normalize_torrent_status_payload(status: Any) -> dict[str, Any]:
+        """Convert a status payload to a canonical dict with peer aliases.
+
+        Args:
+            status: Torrent status payload from adapter.
+
+        Returns:
+            Dictionary with `connected_peers` and `active_peers` populated.
+        """
+        if status is None:
+            return {}
+        if hasattr(status, "model_dump"):
+            payload = dict(status.model_dump())
+        elif isinstance(status, dict):
+            payload = dict(status)
+        else:
+            payload = {
+                "value": status,
+            }
+
+        payload["connected_peers"] = int(
+            payload.get("connected_peers", payload.get("num_peers", 0)) or 0
+        )
+        payload["active_peers"] = int(
+            payload.get("active_peers", payload.get("num_seeds", 0)) or 0
+        )
+        return payload
+
     async def execute(
         self,
         command: str,
@@ -122,7 +151,7 @@ class TorrentExecutor(CommandExecutor):
 
         logger = logging.getLogger(__name__)
         try:
-            # CRITICAL FIX: Wrap adapter call in try-except to prevent daemon crashes
+            # Note: Wrap adapter call in try-except to prevent daemon crashes
             # Align timeout with IPC server timeout (120s for magnets, 60s for torrents)
             # This prevents conflicts between executor and IPC server timeouts
             try:
@@ -194,7 +223,10 @@ class TorrentExecutor(CommandExecutor):
         """Get torrent status."""
         try:
             status = await self.adapter.get_torrent_status(info_hash)
-            return CommandResult(success=True, data={"status": status})
+            return CommandResult(
+                success=True,
+                data={"status": self._normalize_torrent_status_payload(status)},
+            )
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 

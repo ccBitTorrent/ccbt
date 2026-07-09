@@ -8,7 +8,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,11 +28,10 @@ def test_get_plugin_manager_returns_singleton():
 
 def test_get_plugin_manager_initializes_once():
     """Test that PluginManager is only initialized once."""
-    from ccbt.plugins import get_plugin_manager
-    from ccbt.plugins.base import PluginManager
-
     # Clear any existing instance
     import ccbt.plugins.base as base_module
+    from ccbt.plugins import get_plugin_manager
+    from ccbt.plugins.base import PluginManager
     base_module._plugin_manager = None  # type: ignore[attr-defined]
 
     manager1 = get_plugin_manager()

@@ -280,7 +280,7 @@ class AsyncFileAssembler:
             self.pieces = torrent_data.get("pieces", [])
             self.num_pieces = torrent_data.get("num_pieces", 0)
 
-            # CRITICAL FIX: Extract files from file_info dict format
+            # Note: Extract files from file_info dict format
             # Files can be in torrent_data["files"] or torrent_data["file_info"]["files"]
             files = torrent_data.get("files", [])
             if not files:
@@ -487,7 +487,7 @@ class AsyncFileAssembler:
             self.name = torrent_data.get("name", self.name)
             self.info_hash = torrent_data.get("info_hash", self.info_hash)
 
-            # CRITICAL FIX: Extract pieces_info first, as it may contain total_length, piece_length, and num_pieces
+            # Note: Extract pieces_info first, as it may contain total_length, piece_length, and num_pieces
             pieces_info = torrent_data.get("pieces_info", {})
             if not isinstance(pieces_info, dict):
                 pieces_info = {}
@@ -501,13 +501,13 @@ class AsyncFileAssembler:
             )
             self.pieces = torrent_data.get("pieces", self.pieces)
 
-            # CRITICAL FIX: Extract num_pieces from pieces_info if not directly available
+            # Note: Extract num_pieces from pieces_info if not directly available
             # num_pieces can be in torrent_data["num_pieces"] or torrent_data["pieces_info"]["num_pieces"]
             self.num_pieces = torrent_data.get("num_pieces", self.num_pieces)
             if self.num_pieces == 0 or self.num_pieces is None:
                 self.num_pieces = pieces_info.get("num_pieces", self.num_pieces)
 
-            # CRITICAL FIX: Calculate num_pieces from total_length and piece_length if still not available
+            # Note: Calculate num_pieces from total_length and piece_length if still not available
             if (
                 (self.num_pieces == 0 or self.num_pieces is None)
                 and self.total_length > 0
@@ -523,7 +523,7 @@ class AsyncFileAssembler:
                     self.piece_length,
                 )
 
-            # CRITICAL FIX: Extract files from file_info dict format
+            # Note: Extract files from file_info dict format
             # Files can be in torrent_data["files"] or torrent_data["file_info"]["files"]
             files = torrent_data.get("files", [])
             if not files:
@@ -618,7 +618,7 @@ class AsyncFileAssembler:
         ]
 
         if not piece_segments:
-            # CRITICAL FIX: Log detailed error information
+            # Note: Log detailed error information
             self.logger.error(
                 "No file segments found for piece %d (num_pieces=%d, file_segments=%d, files=%d). "
                 "This may indicate metadata is incomplete or file_segments weren't built correctly.",
@@ -1305,7 +1305,7 @@ class AsyncFileAssembler:
 
         self.logger.info("Finalized %d files with attributes", len(processed_files))
 
-        # CRITICAL FIX: Verify all expected files exist and are accessible
+        # Note: Verify all expected files exist and are accessible
         # This ensures files are properly built and can be accessed
         expected_files = []
         for file_info in self.files:
@@ -1350,7 +1350,7 @@ class AsyncFileAssembler:
                 len(expected_files),
             )
 
-        # CRITICAL FIX: Flush all pending disk I/O operations
+        # Note: Flush all pending disk I/O operations
         # This ensures all writes are actually written to disk before returning
         if self._disk_io_started and hasattr(self.disk_io, "flush"):
             try:
@@ -1365,7 +1365,7 @@ class AsyncFileAssembler:
             except Exception as e:
                 self.logger.warning("Failed to flush disk I/O: %s", e)
 
-        # CRITICAL FIX: Sync filesystem to ensure files are visible
+        # Note: Sync filesystem to ensure files are visible
         # On some systems, files may be buffered and not visible until synced
         # Note: os.sync() doesn't exist in Python's os module
         # File flushing above should be sufficient for most cases
@@ -1387,7 +1387,7 @@ class AsyncFileAssembler:
                 len(expected_files),
             )
 
-        # CRITICAL FIX: Wait for all pending writes to complete, then sync files to disk
+        # Note: Wait for all pending writes to complete, then sync files to disk
         # This ensures all buffered writes are flushed to disk so files are fully written
         # and can be opened correctly immediately after download completes
         if self.disk_io:
@@ -1453,7 +1453,7 @@ class AsyncFileAssembler:
                         elapsed,
                     )
 
-                # CRITICAL FIX: Flush all pending writes before syncing
+                # Note: Flush all pending writes before syncing
                 flush_all_writes = getattr(self.disk_io, "_flush_all_writes", None)
                 if flush_all_writes:
                     self.logger.info("Flushing all pending writes before sync")

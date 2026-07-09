@@ -15,23 +15,19 @@ Covers all missing lines in ccbt/protocols/base.py:
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import (
     Protocol,
-    ProtocolCapabilities,
     ProtocolManager,
     ProtocolState,
-    ProtocolStats,
     ProtocolType,
 )
-from ccbt.utils.events import Event, EventType
 
 
 class _TestProtocolImpl(Protocol):
@@ -102,9 +98,9 @@ class TestProtocolStateTransitions:
     async def test_set_state_with_runtime_error(self):
         """Test _set_state when no event loop is running (line 232-234)."""
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Mock emit_event to raise RuntimeError
-        with patch('ccbt.protocols.base.emit_event', side_effect=RuntimeError("No event loop")):
+        with patch("ccbt.protocols.base.emit_event", side_effect=RuntimeError("No event loop")):
             # This should not raise, just skip event emission
             protocol.set_state(ProtocolState.CONNECTED)
             assert protocol.state == ProtocolState.CONNECTED
@@ -112,14 +108,14 @@ class TestProtocolStateTransitions:
     def test_is_healthy_sync(self):
         """Test synchronous health check (line 242)."""
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Disconnected - not healthy
         assert not protocol.is_healthy()
-        
+
         # Connected - healthy
         protocol.set_state(ProtocolState.CONNECTED)
         assert protocol.is_healthy()
-        
+
         # Active - healthy
         protocol.set_state(ProtocolState.ACTIVE)
         assert protocol.is_healthy()
@@ -128,7 +124,7 @@ class TestProtocolStateTransitions:
     async def test_async_context_manager_entry(self):
         """Test async context manager entry (line 246)."""
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         async with protocol:
             assert protocol.state == ProtocolState.CONNECTED
 
@@ -136,10 +132,10 @@ class TestProtocolStateTransitions:
     async def test_async_context_manager_exit(self):
         """Test async context manager exit (line 251)."""
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         async with protocol:
             pass
-        
+
         assert protocol.state == ProtocolState.DISCONNECTED
 
 
@@ -153,9 +149,9 @@ class TestProtocolManagerLifecycle:
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
         manager.register_protocol(protocol)
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock) as mock_emit:
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock) as mock_emit:
             result = await manager.start_protocol(ProtocolType.BITTORRENT)
-            
+
             assert result is True
             assert ProtocolType.BITTORRENT in manager.active_protocols
             assert protocol.state == ProtocolState.CONNECTED
@@ -165,7 +161,7 @@ class TestProtocolManagerLifecycle:
     async def test_start_protocol_not_found(self):
         """Test starting non-existent protocol (line 358)."""
         manager = ProtocolManager()
-        
+
         result = await manager.start_protocol(ProtocolType.BITTORRENT)
         assert result is False
 
@@ -176,9 +172,9 @@ class TestProtocolManagerLifecycle:
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT, fail_start=True)
         manager.register_protocol(protocol)
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock) as mock_emit:
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock) as mock_emit:
             result = await manager.start_protocol(ProtocolType.BITTORRENT)
-            
+
             assert result is False
             assert ProtocolType.BITTORRENT not in manager.active_protocols
             # Should emit protocol error event
@@ -192,9 +188,9 @@ class TestProtocolManagerLifecycle:
         manager.register_protocol(protocol)
         manager.active_protocols.add(ProtocolType.BITTORRENT)
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock) as mock_emit:
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock) as mock_emit:
             result = await manager.stop_protocol(ProtocolType.BITTORRENT)
-            
+
             assert result is True
             assert ProtocolType.BITTORRENT not in manager.active_protocols
             assert protocol.state == ProtocolState.DISCONNECTED
@@ -204,7 +200,7 @@ class TestProtocolManagerLifecycle:
     async def test_stop_protocol_not_found(self):
         """Test stopping non-existent protocol (line 395)."""
         manager = ProtocolManager()
-        
+
         result = await manager.stop_protocol(ProtocolType.BITTORRENT)
         assert result is False
 
@@ -216,9 +212,9 @@ class TestProtocolManagerLifecycle:
         manager.register_protocol(protocol)
         manager.active_protocols.add(ProtocolType.BITTORRENT)
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock) as mock_emit:
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock) as mock_emit:
             result = await manager.stop_protocol(ProtocolType.BITTORRENT)
-            
+
             assert result is False
             # Should emit protocol error event
             assert mock_emit.called
@@ -232,9 +228,9 @@ class TestProtocolManagerLifecycle:
         manager.register_protocol(protocol1)
         manager.register_protocol(protocol2)
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock):
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock):
             results = await manager.start_all_protocols()
-            
+
             assert len(results) == 2
             assert results[ProtocolType.BITTORRENT] is True
             assert results[ProtocolType.WEBTORRENT] is True
@@ -250,9 +246,9 @@ class TestProtocolManagerLifecycle:
         manager.active_protocols.add(ProtocolType.BITTORRENT)
         manager.active_protocols.add(ProtocolType.WEBTORRENT)
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock):
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock):
             results = await manager.stop_all_protocols()
-            
+
             assert len(results) == 2
             assert results[ProtocolType.BITTORRENT] is True
             assert results[ProtocolType.WEBTORRENT] is True
@@ -286,13 +282,13 @@ class TestProtocolConnectionManagement:
     async def test_connect_peers_concurrently_with_exception(self):
         """Test concurrent connections with protocol exception (lines 490-493)."""
         manager = ProtocolManager()
-        
+
         # Mock protocol to raise exception
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
         async def failing_connect(*args, **kwargs):
             raise Exception("Connection failed")
         protocol.connect_peer = failing_connect
-        
+
         manager.register_protocol(protocol)
         manager.active_protocols.add(ProtocolType.BITTORRENT)
 
@@ -331,13 +327,13 @@ class TestProtocolConnectionManagement:
         """Test connecting peers with exceptions in results (lines 511-518)."""
         manager = ProtocolManager()
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Make connect_peer return exceptions for some peers
         async def mixed_connect(peer_info):
             if peer_info.port == 6881:
                 return True
             raise Exception("Connection failed")
-        
+
         protocol.connect_peer = mixed_connect
         manager.register_protocol(protocol)
         manager.active_protocols.add(ProtocolType.BITTORRENT)
@@ -572,12 +568,12 @@ class TestConcurrentOperations:
         """Test concurrent announcements with exceptions (lines 649-671)."""
         manager = ProtocolManager()
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Make announce_torrent raise exception
         async def failing_announce(*args, **kwargs):
             raise Exception("Announce failed")
         protocol.announce_torrent = failing_announce
-        
+
         manager.register_protocol(protocol)
         manager.active_protocols.add(ProtocolType.BITTORRENT)
 
@@ -651,12 +647,12 @@ class TestIntegrationPaths:
         """Test announcing torrent with exception (lines 713-725)."""
         manager = ProtocolManager()
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Make announce_torrent raise exception
         async def failing_announce(*args, **kwargs):
             raise Exception("Announce failed")
         protocol.announce_torrent = failing_announce
-        
+
         manager.register_protocol(protocol)
         manager.active_protocols.add(ProtocolType.BITTORRENT)
 
@@ -671,7 +667,7 @@ class TestIntegrationPaths:
             num_pieces=1,
         )
 
-        with patch('ccbt.protocols.base.emit_event', new_callable=AsyncMock) as mock_emit:
+        with patch("ccbt.protocols.base.emit_event", new_callable=AsyncMock) as mock_emit:
             results = await manager.announce_torrent_all(torrent)
 
             assert ProtocolType.BITTORRENT in results
@@ -701,12 +697,12 @@ class TestIntegrationPaths:
         """Test health check with exception (lines 736-737)."""
         manager = ProtocolManager()
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Make health_check raise exception
         async def failing_health_check():
             raise Exception("Health check failed")
         protocol.health_check = failing_health_check
-        
+
         manager.register_protocol(protocol)
 
         results = await manager.health_check_all()
@@ -735,12 +731,12 @@ class TestIntegrationPaths:
         """Test synchronous health check with exception (lines 748-749)."""
         manager = ProtocolManager()
         protocol = _TestProtocolImpl(ProtocolType.BITTORRENT)
-        
+
         # Make is_healthy raise exception
         def failing_health_check():
             raise Exception("Health check failed")
         protocol.is_healthy = failing_health_check
-        
+
         manager.register_protocol(protocol)
 
         results = manager.health_check_all_sync()

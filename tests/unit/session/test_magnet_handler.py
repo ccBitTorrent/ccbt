@@ -49,6 +49,7 @@ class TestMagnetHandler:
         mock_session.magnet_info = MagnetInfo(
             info_hash=b"x" * 20,
             display_name="test",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
         )
@@ -67,6 +68,7 @@ class TestMagnetHandler:
         mock_session.magnet_info = MagnetInfo(
             info_hash=b"x" * 20,
             display_name="test",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
         )
@@ -103,6 +105,7 @@ class TestMagnetHandler:
         mock_session.magnet_info = MagnetInfo(
             info_hash=b"x" * 20,
             display_name="test",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2],

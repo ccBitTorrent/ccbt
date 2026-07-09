@@ -37,7 +37,6 @@ from ccbt.config.config import get_config
 from ccbt.config.config_capabilities import SystemCapabilities
 from ccbt.interface.commands.executor import CommandExecutor
 from ccbt.interface.screens.base import MonitoringScreen
-from ccbt.storage.disk_io_init import get_disk_io_manager
 
 
 class DiskAnalysisScreen(MonitoringScreen):  # type: ignore[misc]
@@ -80,10 +79,9 @@ class DiskAnalysisScreen(MonitoringScreen):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and initialize command executor."""
-        # Initialize command executor
         if not hasattr(self, "_command_executor") or self._command_executor is None:
             self._command_executor = CommandExecutor(self.session)
-        await self._refresh_data()
+        await super().on_mount()
 
     async def _refresh_data(self) -> None:  # pragma: no cover
         """Refresh disk analysis display."""
@@ -136,7 +134,13 @@ class DiskAnalysisScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Get disk I/O statistics
             try:
-                disk_io = get_disk_io_manager()
+                disk_io = None
+                if hasattr(self, "session"):
+                    disk_io = getattr(self.session, "disk_io_manager", None)
+                if disk_io is None:
+                    from ccbt.storage.disk_io_init import get_disk_io_manager
+
+                    disk_io = get_disk_io_manager()
                 if disk_io and disk_io._running:  # type: ignore[attr-defined]
                     stats = disk_io.stats
                     cache_stats = disk_io.get_cache_stats()

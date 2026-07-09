@@ -27,7 +27,7 @@ from ccbt.utils.logging_config import get_logger, log_info_normal
 logger = get_logger(__name__)
 console = Console()
 
-# CRITICAL FIX: Suppress Windows ProactorEventLoop cleanup warnings
+# Note: Suppress Windows ProactorEventLoop cleanup warnings
 # This is a known Python bug (https://bugs.python.org/issue39232) where
 # ProactorEventLoop cleanup raises AttributeError for _ssock during __del__
 # The error occurs during garbage collection and doesn't affect functionality
@@ -84,6 +84,7 @@ def daemon():
 
 
 @daemon.command("start")
+@click.pass_context
 @click.option(
     "--foreground",
     "-f",
@@ -98,11 +99,13 @@ def daemon():
 )
 @click.option(
     "--port",
+    "-p",
     type=int,
     help=_("Override IPC server port"),
 )
 @click.option(
     "--generate-api-key",
+    "-K",
     "regenerate_api_key",
     is_flag=True,
     help=_("Generate new API key"),
@@ -125,6 +128,7 @@ def daemon():
 )
 @click.option(
     "--no-wait",
+    "-B",
     "--background-only",
     is_flag=True,
     help=_(
@@ -138,6 +142,7 @@ def daemon():
     help=_("Disable splash screen (useful for debugging)"),
 )
 def start(
+    ctx: click.Context,
     foreground: bool,
     config: Optional[str],
     port: Optional[int],
@@ -149,7 +154,10 @@ def start(
     no_splash: bool,
 ) -> None:
     """Start the daemon process."""
-    from ccbt.cli.verbosity import VerbosityManager
+    from ccbt.cli.verbosity import (
+        VerbosityManager,
+        apply_cli_verbosity_to_observability,
+    )
 
     # Combine -v count with --vv and --vvv flags
     if vvv:
@@ -157,14 +165,21 @@ def start(
     elif vv:
         verbose = max(verbose, 2)  # --vv is equivalent to -vv
 
+    parent_verbosity = 0
+    if ctx.obj:
+        parent_verbosity = int(ctx.obj.get("verbosity", 0) or 0)
+    merged_verbosity = max(parent_verbosity, verbose)
+
     start_time = time.time()
-    verbosity = VerbosityManager.from_count(verbose)
+    verbosity = VerbosityManager.from_count(merged_verbosity)
 
     # Initialize config
     if verbosity.is_verbose():
         console.print(_("[cyan]Initializing configuration...[/cyan]"))
     config_manager = init_config(config)
     cfg = config_manager.config
+    if hasattr(cfg, "observability"):
+        apply_cli_verbosity_to_observability(cfg.observability, merged_verbosity)
 
     # Ensure daemon config exists
     daemon_config_created = False
@@ -284,12 +299,12 @@ def start(
             detector = get_detector()
             if detector.should_show_splash("daemon.start"):
                 splash_manager = SplashManager.from_verbosity_count(
-                    verbose, console=console
+                    merged_verbosity, console=console
                 )
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
                 with contextlib.suppress(Exception):
-                    splash_manager.update_progress_message("Starting daemon process...")
+                    logger.debug("Starting daemon process...")
 
                 # Start splash screen in background thread
                 def run_splash():
@@ -298,7 +313,6 @@ def start(
                             splash_manager.show_splash_for_task(
                                 task_name="daemon start",
                                 max_duration=expected_duration,
-                                show_progress=True,
                             )
                         )
 
@@ -324,7 +338,7 @@ def start(
             await daemon_main.run()
 
         try:
-            # CRITICAL FIX: Use asyncio.run() - it properly handles KeyboardInterrupt
+            # Note: Use asyncio.run() - it properly handles KeyboardInterrupt
             # The daemon's run() method also catches KeyboardInterrupt and ensures cleanup
             # On Windows, asyncio.run() should properly propagate KeyboardInterrupt
             asyncio.run(_run_foreground())
@@ -344,7 +358,7 @@ def start(
                         "Shutdown event set from CLI KeyboardInterrupt handler"
                     )
 
-                # CRITICAL FIX: If stop() wasn't called yet (event loop was cancelled before handler ran),
+                # Note: If stop() wasn't called yet (event loop was cancelled before handler ran),
                 # try to ensure shutdown completes in a new event loop
                 if not daemon_main_ref.is_stopping:
                     try:
@@ -406,12 +420,12 @@ def start(
             detector = get_detector()
             if detector.should_show_splash("daemon.start"):
                 splash_manager = SplashManager.from_verbosity_count(
-                    verbose, console=console
+                    merged_verbosity, console=console
                 )
                 expected_duration = detector.get_expected_duration("daemon.start")
                 # Update splash message to indicate daemon is starting
                 with contextlib.suppress(Exception):
-                    splash_manager.update_progress_message("Starting daemon process...")
+                    logger.debug("Starting daemon process...")
 
                 # Start splash screen in background thread
                 def run_splash():
@@ -420,7 +434,6 @@ def start(
                             splash_manager.show_splash_for_task(
                                 task_name="daemon start",
                                 max_duration=expected_duration,
-                                show_progress=True,
                             )
                         )
 
@@ -432,6 +445,8 @@ def start(
             extra_args: list[str] = []
             if config_manager.config_file and config_manager.config_file.exists():
                 extra_args.extend(["--config", str(config_manager.config_file)])
+            if merged_verbosity:
+                extra_args.append(f"-{'v' * merged_verbosity}")
             pid = daemon_manager.start(
                 foreground=False,
                 extra_args=extra_args if extra_args else None,
@@ -487,9 +502,7 @@ def start(
                 # Update splash message to indicate initialization
                 if splash_manager:
                     with contextlib.suppress(Exception):
-                        splash_manager.update_progress_message(
-                            "Initializing daemon components..."
-                        )
+                        logger.debug("Initializing daemon components...")
 
                 if verbosity.is_verbose():
                     console.print(_("[cyan]Waiting for daemon to be ready...[/cyan]"))
@@ -521,9 +534,7 @@ def start(
                     # Update splash screen message to indicate initialization complete
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.update_progress_message(
-                                "Daemon initialization complete!"
-                            )  # Ignore errors updating splash
+                            logger.debug("Daemon initialization complete!")
                     # Small additional delay to ensure "Daemon initialization complete" message has been logged
                     time.sleep(0.5)
                     console.print(
@@ -534,7 +545,7 @@ def start(
                     # Clear splash screen only after daemon initialization is fully complete
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.clear_progress_messages()
+                            splash_manager.stop_splash()
                 else:
                     console.print(
                         _(
@@ -615,9 +626,7 @@ def _wait_for_daemon(
                     # Update splash to indicate waiting for full initialization
                     if splash_manager and last_stage != "waiting":
                         try:
-                            splash_manager.update_progress_message(
-                                "Waiting for daemon to be ready..."
-                            )
+                            logger.debug("Waiting for daemon to be ready...")
                             last_stage = "waiting"
                         except Exception:
                             pass
@@ -632,7 +641,7 @@ def _wait_for_daemon(
             # Update splash message during wait
             if splash_manager and last_stage != "checking":
                 try:
-                    splash_manager.update_progress_message("Checking daemon status...")
+                    logger.debug("Checking daemon status...")
                     last_stage = "checking"
                 except Exception:
                     pass
@@ -823,7 +832,7 @@ def _wait_for_daemon_with_progress(
                     # Update splash screen with stage description
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.update_progress_message(stage_desc)
+                            logger.debug(stage_desc)
 
                 if progress and task is not None:
                     progress.update(task, description=stage_desc)
@@ -834,7 +843,7 @@ def _wait_for_daemon_with_progress(
                     # Update splash to indicate waiting for full initialization
                     if splash_manager:
                         with contextlib.suppress(Exception):
-                            splash_manager.update_progress_message(
+                            logger.debug(
                                 "Waiting for daemon initialization to complete..."
                             )
                     # Small delay to ensure daemon has fully initialized (including "Daemon initialization complete" message)
@@ -884,11 +893,13 @@ def _wait_for_daemon_with_progress(
 @daemon.command("exit")
 @click.option(
     "--force",
+    "-f",
     is_flag=True,
     help=_("Force kill without graceful shutdown"),
 )
 @click.option(
     "--timeout",
+    "-t",
     type=float,
     default=30.0,
     help=_("Shutdown timeout in seconds"),
@@ -952,6 +963,12 @@ def exit_daemon(force: bool, timeout: float) -> None:
                                     ).format(elapsed=elapsed),
                                 )
                                 time.sleep(0.5)
+                    else:
+                        click.echo(
+                            _(
+                                "Daemon rejected graceful shutdown request, using signal fallback..."
+                            )
+                        )
                 except Exception as e:
                     logger.debug(_("Error sending shutdown request: %s"), e)
                     click.echo(_("Could not send shutdown request, using signal..."))

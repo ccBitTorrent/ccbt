@@ -41,7 +41,7 @@ jobs:
       
       - name: Run Bandit security scan
         run: |
-          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks
+          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks,ccbt/i18n/scripts,ccbt/i18n/locale_data
       
       - name: Upload Bandit report
         if: always()

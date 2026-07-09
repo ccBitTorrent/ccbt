@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import patch
 
 import pytest
 
@@ -33,16 +32,16 @@ class TestCircuitBreakerAsyncWrapperOpenState:
     async def test_circuit_breaker_async_open_raises_immediately(self):
         """Test CircuitBreaker async_wrapper - open state raises immediately (lines 223-225)."""
         breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
-        
+
         # Open the circuit
         breaker.failure_count = 1
         breaker.state = "open"
         breaker.last_failure_time = time.time()
-        
+
         @breaker
         async def async_func():
             return "success"
-        
+
         # Should raise immediately (line 225)
         with pytest.raises(CircuitBreakerError, match="Circuit breaker is open"):
             await async_func()
@@ -51,16 +50,16 @@ class TestCircuitBreakerAsyncWrapperOpenState:
     async def test_circuit_breaker_async_open_transitions_to_half_open(self):
         """Test CircuitBreaker async_wrapper - open state transitions to half-open (lines 220-222)."""
         breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=0.1)
-        
+
         # Open the circuit but with expired timeout
         breaker.failure_count = 1
         breaker.state = "open"
         breaker.last_failure_time = time.time() - 1.0  # Expired
-        
+
         @breaker
         async def async_func():
             return "success"
-        
+
         # Should transition to half-open and succeed (line 221)
         result = await async_func()
         assert result == "success"
@@ -70,12 +69,12 @@ class TestCircuitBreakerAsyncWrapperOpenState:
     async def test_circuit_breaker_async_await_func_path(self):
         """Test CircuitBreaker async_wrapper - await func path (line 229)."""
         breaker = CircuitBreaker(failure_threshold=5)
-        
+
         @breaker
         async def async_func():
             await asyncio.sleep(0.01)
             return "async_result"
-        
+
         result = await async_func()
         assert result == "async_result"
         assert breaker.state == "closed"
@@ -89,9 +88,9 @@ class TestCircuitBreakerInternalMethods:
         breaker = CircuitBreaker(failure_threshold=5)
         breaker.state = "half-open"
         breaker.failure_count = 3
-        
+
         breaker._on_success()
-        
+
         assert breaker.state == "closed"
         assert breaker.failure_count == 0
 
@@ -100,9 +99,9 @@ class TestCircuitBreakerInternalMethods:
         breaker = CircuitBreaker(failure_threshold=5)
         breaker.state = "closed"
         breaker.failure_count = 2
-        
+
         breaker._on_success()
-        
+
         assert breaker.state == "closed"
         assert breaker.failure_count == 0
 
@@ -111,9 +110,9 @@ class TestCircuitBreakerInternalMethods:
         breaker = CircuitBreaker(failure_threshold=5)
         breaker.state = "closed"
         initial_time = time.time()
-        
+
         breaker._on_failure()
-        
+
         assert breaker.failure_count == 1
         assert breaker.state == "closed"
         assert breaker.last_failure_time >= initial_time
@@ -123,9 +122,9 @@ class TestCircuitBreakerInternalMethods:
         breaker = CircuitBreaker(failure_threshold=2)
         breaker.state = "closed"
         breaker.failure_count = 1
-        
+
         breaker._on_failure()
-        
+
         assert breaker.failure_count == 2
         assert breaker.state == "open"
 
@@ -135,9 +134,9 @@ class TestCircuitBreakerInternalMethods:
         breaker.failure_count = 2
         breaker.last_failure_time = 1234567890.0
         breaker.state = "half-open"
-        
+
         state = breaker.get_state()
-        
+
         assert state["state"] == "half-open"
         assert state["failure_count"] == 2
         assert state["last_failure_time"] == 1234567890.0
@@ -152,11 +151,11 @@ class TestRateLimiterAcquire:
     async def test_rate_limiter_acquire_returns_false_when_limited(self):
         """Test RateLimiter.acquire() - returns False when rate limited (line 332)."""
         limiter = RateLimiter(max_requests=2, time_window=1.0)
-        
+
         # Fill up the rate limit
         assert await limiter.acquire() is True
         assert await limiter.acquire() is True
-        
+
         # Next request should be rate limited (line 332)
         assert await limiter.acquire() is False
 
@@ -171,7 +170,7 @@ class TestWithRateLimitAsyncWrapper:
         async def async_func():
             await asyncio.sleep(0.01)
             return "async_result"
-        
+
         result = await async_func()
         assert result == "async_result"
 
@@ -184,7 +183,7 @@ class TestDecoratorReturnPaths:
         @with_rate_limit(max_requests=10, time_window=1.0)
         def sync_func():
             return "sync_result"
-        
+
         # Should return sync_wrapper
         result = sync_func()
         assert result == "sync_result"
@@ -192,22 +191,22 @@ class TestDecoratorReturnPaths:
     def test_circuit_breaker_returns_sync_wrapper(self):
         """Test CircuitBreaker returns sync_wrapper for sync function (line 266)."""
         breaker = CircuitBreaker()
-        
+
         @breaker
         def sync_func():
             return "sync_result"
-        
+
         result = sync_func()
         assert result == "sync_result"
 
     def test_with_timeout_returns_sync_wrapper(self):
         """Test with_timeout returns sync_wrapper for sync function (line 183)."""
         from ccbt.utils.resilience import with_timeout
-        
+
         @with_timeout(1.0)
         def sync_func():
             return "sync_result"
-        
+
         result = sync_func()
         assert result == "sync_result"
 

@@ -96,7 +96,7 @@ class ScrapeResultsScreen(MonitoringScreen):  # type: ignore[misc]
             results_table = self.query_one("#results_table", Static)
 
             # Get all cached scrape results
-            # CRITICAL FIX: Handle both AsyncSessionManager and DaemonInterfaceAdapter
+            # Note: Handle both AsyncSessionManager and DaemonInterfaceAdapter
             scrape_results = []
             if hasattr(self.session, "scrape_cache_lock") and hasattr(self.session, "scrape_cache"):
                 # Direct session manager access

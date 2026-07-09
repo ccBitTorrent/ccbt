@@ -7,7 +7,6 @@ using SQLite for local caching and DHT for peer-to-peer chunk discovery.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import sqlite3
@@ -16,6 +15,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ccbt.models import PeerInfo, XetFileMetadata
+from ccbt.utils.compat import sha1_compat, to_thread_compat
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class XetDeduplication:
         # Ensure parent directory exists
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # CRITICAL FIX: Add retry logic for Windows file locking issues
+        # Note: Add retry logic for Windows file locking issues
         # On Windows, the database file might be locked from a previous run
         # Retry with exponential backoff to handle transient file locking
         import sys
@@ -252,7 +252,7 @@ class XetDeduplication:
 
         """
         async with self._db_lock:
-            return await asyncio.to_thread(
+            return await to_thread_compat(
                 self._check_chunk_exists_sync,
                 chunk_hash,
             )
@@ -274,19 +274,35 @@ class XetDeduplication:
         storage_file = self.chunk_store_path / chunk_hash.hex()
         storage_file.write_bytes(chunk_data)
         current_time = time.time()
-        self.db.execute(
-            """INSERT INTO chunks (hash, size, storage_path, created_at, last_accessed)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
-                chunk_hash,
-                len(chunk_data),
-                str(storage_file),
-                current_time,
-                current_time,
-            ),
-        )
-        self.db.commit()
-        return storage_file
+        try:
+            self.db.execute(
+                """INSERT INTO chunks (hash, size, storage_path, created_at, last_accessed)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    chunk_hash,
+                    len(chunk_data),
+                    str(storage_file),
+                    current_time,
+                    current_time,
+                ),
+            )
+            self.db.commit()
+            return storage_file
+        except sqlite3.IntegrityError:
+            # Another writer inserted the same chunk hash first. Reuse existing entry.
+            self.db.execute(
+                "UPDATE chunks SET ref_count = ref_count + 1, last_accessed = ? WHERE hash = ?",
+                (current_time, chunk_hash),
+            )
+            cursor = self.db.execute(
+                "SELECT storage_path FROM chunks WHERE hash = ?",
+                (chunk_hash,),
+            )
+            row = cursor.fetchone()
+            self.db.commit()
+            if row and row[0]:
+                return Path(row[0])
+            return storage_file
 
     async def store_chunk(
         self,
@@ -314,7 +330,7 @@ class XetDeduplication:
         existing = await self.check_chunk_exists(chunk_hash)
         if existing:
             async with self._db_lock:
-                await asyncio.to_thread(
+                await to_thread_compat(
                     self._increment_chunk_ref_sync,
                     chunk_hash,
                 )
@@ -329,7 +345,7 @@ class XetDeduplication:
             return existing
 
         async with self._db_lock:
-            storage_file = await asyncio.to_thread(
+            storage_file = await to_thread_compat(
                 self._store_new_chunk_sync,
                 chunk_hash,
                 chunk_data,
@@ -396,7 +412,7 @@ class XetDeduplication:
         """
         try:
             async with self._db_lock:
-                skipped = await asyncio.to_thread(
+                skipped = await to_thread_compat(
                     self._add_file_chunk_reference_sync,
                     file_path,
                     chunk_hash,
@@ -644,7 +660,7 @@ class XetDeduplication:
             metadata_json = json.dumps(metadata_dict)
 
             async with self._db_lock:
-                await asyncio.to_thread(
+                await to_thread_compat(
                     self._store_file_metadata_sync,
                     metadata,
                     metadata_json,
@@ -686,7 +702,7 @@ class XetDeduplication:
         """
         try:
             async with self._db_lock:
-                metadata_dict = await asyncio.to_thread(
+                metadata_dict = await to_thread_compat(
                     self._get_file_metadata_sync,
                     file_path,
                 )
@@ -738,7 +754,7 @@ class XetDeduplication:
         try:
             # Convert 32-byte chunk hash to 20-byte DHT key
             # Use SHA-1 of the chunk hash to ensure proper DHT distribution
-            dht_key = hashlib.sha1(chunk_hash, usedforsecurity=False).digest()
+            dht_key = sha1_compat(chunk_hash, usedforsecurity=False).digest()
 
             self.logger.debug(
                 "Querying DHT for chunk %s (DHT key: %s)",

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ccbt.nat.port_mapping import PortMapping, PortMappingManager
+from ccbt.nat.port_mapping import PortMappingManager
 
 
 @pytest.fixture
@@ -206,7 +205,7 @@ async def test_cleanup_expired_cancels_tasks(port_mapping_manager):
     )
     task = mapping.renewal_task
     assert task is not None
-    
+
     # Manually expire it
     mapping.expires_at = time.time() - 1
 

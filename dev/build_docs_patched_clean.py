@@ -27,7 +27,8 @@ except ImportError as e:
     print("Please install dependencies from dev/requirements-rtd.txt:", file=sys.stderr)
     print("  pip install -r dev/requirements-rtd.txt", file=sys.stderr)
     print("", file=sys.stderr)
-    print("For Read the Docs builds, ensure .readthedocs.yaml is in the root directory", file=sys.stderr)
+    print("For Read the Docs builds, ensure dev/.readthedocs.yaml exists and RTD", file=sys.stderr)
+    print("Admin → Advanced → Configuration file is set to dev/.readthedocs.yaml", file=sys.stderr)
     print("and that python.install section includes dev/requirements-rtd.txt", file=sys.stderr)
     sys.exit(1)
 

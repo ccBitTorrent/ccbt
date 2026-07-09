@@ -6,7 +6,6 @@ Tests error paths and edge cases in HTTP server implementation.
 from __future__ import annotations
 
 import asyncio
-import socket
 
 import pytest
 
@@ -85,7 +84,7 @@ class TestMetricsCollectorHTTPErrorHandling:
             pytest.skip("HTTP server not started")
 
         # Patch shutdown to raise exception
-        
+
         original_shutdown = metrics._http_server.shutdown
 
         def raise_error():

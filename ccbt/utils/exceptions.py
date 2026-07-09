@@ -34,6 +34,16 @@ class NetworkError(CCBTError):
 class TrackerError(NetworkError):
     """Tracker communication errors."""
 
+    def __init__(
+        self,
+        message: str,
+        details: Optional[dict[str, Any]] = None,
+        tracker_failure_handled: bool = False,
+    ):
+        """Initialize tracker error with explicit handled flag."""
+        super().__init__(message, details)
+        self.tracker_failure_handled = tracker_failure_handled
+
 
 class PeerConnectionError(NetworkError):
     """Peer connection errors."""

@@ -7,7 +7,11 @@ handshake processing, and initial peer setup.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import logging
+from typing import Any, Optional
+
+from ccbt.peer.inbound_protocol_classifier import InboundProtocolKind
+from ccbt.security.swarm_auth_policy import evaluate_inbound_admission
 
 
 class IncomingPeerHandler:
@@ -16,6 +20,77 @@ class IncomingPeerHandler:
     def __init__(self, session: Any) -> None:
         """Initialize the incoming peer handler with an AsyncTorrentSession instance."""
         self.s = session  # AsyncTorrentSession instance
+        self.logger = getattr(session, "logger", logging.getLogger(__name__))
+
+    @staticmethod
+    def _transport_hint(protocol_kind: InboundProtocolKind) -> str:
+        if protocol_kind == InboundProtocolKind.MSE_P2P:
+            return "mse"
+        return "plain"
+
+    @staticmethod
+    def _supports_ltep(handshake: Any) -> bool:
+        reserved_bytes = getattr(handshake, "reserved_bytes", None)
+        return bool(
+            isinstance(reserved_bytes, (bytes, bytearray))
+            and len(reserved_bytes) >= 6
+            and bool(reserved_bytes[5] & 0x10)
+        )
+
+    @staticmethod
+    def _is_strict_mode(session: Any) -> bool:
+        security = getattr(session, "config", None)
+        if security is None:
+            return False
+        return (
+            getattr(getattr(security, "authenticated_swarms", None), "mode", "off")
+            == "strict"
+        )
+
+    def _allow_inbound_admission(
+        self,
+        writer: asyncio.StreamWriter,
+        handshake: Any,
+        peer_ip: str,
+        peer_port: int,
+        protocol_classification: Optional[InboundProtocolKind],
+    ) -> bool:
+        protocol_hint = self._transport_hint(
+            protocol_classification or InboundProtocolKind.UNKNOWN
+        )
+        if self._is_strict_mode(self.s) and not self._supports_ltep(handshake):
+            self.logger.warning(
+                "Rejecting strict authenticated-swarm queued peer %s:%d: no reserved LTEP bit",
+                peer_ip,
+                peer_port,
+            )
+            return False
+        decision = evaluate_inbound_admission(
+            peer_socket=writer,
+            parsed_handshake=handshake,
+            session=self.s,
+            transport_hint=protocol_hint,
+        )
+
+        if not decision.allowed:
+            if decision.mode == "strict" and decision.reason_code == "missing_schema":
+                self.logger.debug(
+                    "Deferring strict swarm-auth admission for queued peer %s:%d until extension handshake",
+                    peer_ip,
+                    peer_port,
+                )
+                return True
+
+            self.logger.warning(
+                "Inbound swarm-auth admission denied for queued peer %s:%d (mode=%s reason=%s)",
+                peer_ip,
+                peer_port,
+                decision.mode,
+                decision.reason_code,
+            )
+            return False
+
+        return True
 
     async def accept_incoming_peer(
         self,
@@ -24,6 +99,7 @@ class IncomingPeerHandler:
         handshake: Any,
         peer_ip: str,
         peer_port: int,
+        protocol_classification: Optional[InboundProtocolKind] = None,
     ) -> None:
         """Accept an incoming peer connection.
 
@@ -33,9 +109,10 @@ class IncomingPeerHandler:
             handshake: Handshake data
             peer_ip: Peer IP address
             peer_port: Peer port number
+            protocol_classification: Classified inbound protocol type
 
         """
-        # CRITICAL FIX: Access peer_manager via download_manager (it's stored there)
+        # Note: Access peer_manager via download_manager (it's stored there)
         # Fallback to direct peer_manager attribute if it exists (set by some setup code)
         peer_manager = getattr(self.s, "download_manager", None)
         if peer_manager:
@@ -49,9 +126,31 @@ class IncomingPeerHandler:
                 peer_ip,
                 peer_port,
             )
+            if not self._allow_inbound_admission(
+                writer,
+                handshake,
+                peer_ip,
+                peer_port,
+                protocol_classification,
+            ):
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:
+                    pass
+                return
             try:
                 queue = self.s.get_incoming_peer_queue()
-                await queue.put((reader, writer, handshake, peer_ip, peer_port))
+                await queue.put(
+                    (
+                        reader,
+                        writer,
+                        handshake,
+                        protocol_classification or InboundProtocolKind.UNKNOWN,
+                        peer_ip,
+                        peer_port,
+                    )
+                )
                 self.s.logger.debug(
                     "Queued incoming peer %s:%d (queue size: %d)",
                     peer_ip,
@@ -88,6 +187,20 @@ class IncomingPeerHandler:
                 await writer.wait_closed()
                 return
 
+        if not self._allow_inbound_admission(
+            writer,
+            handshake,
+            peer_ip,
+            peer_port,
+            protocol_classification,
+        ):
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
+
         # Route to peer manager's accept_incoming method
         if hasattr(peer_manager, "accept_incoming"):
             try:
@@ -102,7 +215,7 @@ class IncomingPeerHandler:
                     writer.close()
                     await writer.wait_closed()
                 except (ConnectionResetError, OSError):
-                    # CRITICAL FIX: Handle Windows ConnectionResetError (WinError 10054) gracefully
+                    # Note: Handle Windows ConnectionResetError (WinError 10054) gracefully
                     # Remote host closed connection - this is normal
                     pass
                 except Exception:
@@ -130,6 +243,7 @@ class IncomingPeerHandler:
                         reader,
                         writer,
                         handshake,
+                        protocol_classification,
                         peer_ip,
                         peer_port,
                     ) = await asyncio.wait_for(
@@ -141,7 +255,13 @@ class IncomingPeerHandler:
                 max_wait = 30.0
                 wait_interval = 0.5
                 waited = 0.0
-                # CRITICAL FIX: Check peer_manager via download_manager
+                self.s.logger.debug(
+                    "Processing queued incoming peer %s:%d with protocol classification %s",
+                    peer_ip,
+                    peer_port,
+                    protocol_classification.value if protocol_classification else None,
+                )
+                # Note: Check peer_manager via download_manager
                 peer_manager = None
                 while waited < max_wait and not self.s.stopped:
                     # Try to get peer_manager from download_manager
@@ -171,6 +291,20 @@ class IncomingPeerHandler:
                         peer_ip,
                         peer_port,
                     )
+                    try:
+                        writer.close()
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+                    continue
+
+                if not self._allow_inbound_admission(
+                    writer,
+                    handshake,
+                    peer_ip,
+                    peer_port,
+                    protocol_classification,
+                ):
                     try:
                         writer.close()
                         await writer.wait_closed()

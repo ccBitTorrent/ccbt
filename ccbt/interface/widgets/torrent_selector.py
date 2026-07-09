@@ -19,11 +19,13 @@ else:
 try:
     from textual.containers import Container, Horizontal
     from textual.message import Message
+    from textual.reactive import reactive
     from textual.widgets import Input, Select, Static
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
 
     class Horizontal:  # type: ignore[no-redef]
         pass
@@ -36,6 +38,27 @@ except ImportError:
 
     class Static:  # type: ignore[no-redef]
         pass
+
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +86,9 @@ class TorrentSelector(Container):  # type: ignore[misc]
     }
     """
 
+    # F2.3.3: reactive bound to TerminalDashboard.torrents_data via data_bind.
+    torrents_data: reactive = reactive([])  # type: ignore[assignment]
+
     def __init__(
         self,
         data_provider: DataProvider,
@@ -84,34 +110,66 @@ class TorrentSelector(Container):  # type: ignore[misc]
         """Compose the torrent selector."""
         with Horizontal():
             yield Static("Torrent:", id="torrent-select-label")
-            # CRITICAL FIX: Removed search input - no longer necessary
-            yield Select([("Loading...", "")], id="torrent-select", prompt="Select torrent")
+            # Note: Removed search input - no longer necessary
+            yield Select(
+                [("Loading...", "")], id="torrent-select", prompt="Select torrent"
+            )
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the torrent selector."""
         try:
-            # CRITICAL FIX: Ensure widget is visible
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
             self._select_widget = self.query_one("#torrent-select", Select)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Ensure child widget is visible
+            # Note: Ensure child widget is visible
             if self._select_widget:
                 self._select_widget.display = True  # type: ignore[attr-defined]
-            # Load torrent list
+            # F2.3.3: bind to the App torrents_data reactive (replaces the
+            # set_interval(2.0, self._refresh_torrent_list) self-poll).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(torrents_data=TerminalDashboard.torrents_data)
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug("TorrentSelector data_bind skipped: %s", exc)
+            # Load torrent list once on mount (the reactive drives subsequent
+            # updates via watch_torrents_data).
             self.call_later(self._refresh_torrent_list)  # type: ignore[attr-defined]
-            # Schedule periodic refresh
-            self.set_interval(2.0, self._refresh_torrent_list)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error mounting torrent selector: %s", e, exc_info=True)
 
-    async def _refresh_torrent_list(self) -> None:  # pragma: no cover
-        """Refresh the list of available torrents."""
+    def watch_torrents_data(
+        self, value: list[dict[str, Any]]
+    ) -> None:  # pragma: no cover
+        """Reactive watcher: repopulate the Select from the bound list (F2.3.3)."""
+        import asyncio as _asyncio
+
+        _asyncio.create_task(self._refresh_torrent_list(torrents_override=value))
+
+    async def _refresh_torrent_list(
+        self, torrents_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:  # pragma: no cover
+        """Refresh the list of available torrents.
+
+        Args:
+            torrents_override: When provided (from the torrents_data reactive
+                watcher), skip the ``list_torrents()`` fetch and use this list.
+        """
         if not self._data_provider or not self._select_widget:
             return
-        
+
         try:
-            torrents = await self._data_provider.list_torrents()
-            logger.debug("TorrentSelector: Retrieved %d torrents from data provider", len(torrents) if torrents else 0)
-            
+            if torrents_override is not None:
+                torrents = list(torrents_override)
+            else:
+                torrents = await self._data_provider.list_torrents()
+            logger.debug(
+                "TorrentSelector: Retrieved %d torrents from data provider",
+                len(torrents) if torrents else 0,
+            )
+
             # Build options list
             options: list[tuple[str, str]] = []
             for torrent in torrents:
@@ -121,19 +179,21 @@ class TorrentSelector(Container):  # type: ignore[misc]
                 # Format: "Name (Status)"
                 display_name = f"{name} ({status})"
                 options.append((display_name, info_hash))
-            
+
             self._torrent_options = options
             logger.debug("TorrentSelector: Built %d options for dropdown", len(options))
-            
+
             # Update Select widget
             if options:
                 # Get current selection
                 current_value = self._selected_info_hash
-                # CRITICAL FIX: Clear and repopulate - use set_options with proper format
+                # Note: Clear and repopulate - use set_options with proper format
                 try:
                     self._select_widget.set_options(options)  # type: ignore[attr-defined]
-                    logger.debug("TorrentSelector: Set %d options in Select widget", len(options))
-                    # CRITICAL FIX: Force refresh of Select widget to ensure it displays
+                    logger.debug(
+                        "TorrentSelector: Set %d options in Select widget", len(options)
+                    )
+                    # Note: Force refresh of Select widget to ensure it displays
                     if hasattr(self._select_widget, "refresh"):
                         self._select_widget.refresh()  # type: ignore[attr-defined]
                     # Restore selection if still valid
@@ -141,7 +201,7 @@ class TorrentSelector(Container):  # type: ignore[misc]
                         # Find index of current selection
                         for idx, (_, ih) in enumerate(options):
                             if ih == current_value:
-                                # CRITICAL FIX: Textual Select expects index or tuple value
+                                # Note: Textual Select expects index or tuple value
                                 try:
                                     self._select_widget.value = idx  # type: ignore[attr-defined]
                                 except (TypeError, ValueError):
@@ -152,7 +212,9 @@ class TorrentSelector(Container):  # type: ignore[misc]
                     logger.error("Error setting Select options: %s", e, exc_info=True)
             else:
                 self._select_widget.set_options([("No torrents", "")])  # type: ignore[attr-defined]
-                logger.debug("TorrentSelector: No torrents available, showing placeholder")
+                logger.debug(
+                    "TorrentSelector: No torrents available, showing placeholder"
+                )
         except Exception as e:
             logger.error("Error refreshing torrent list: %s", e, exc_info=True)
 
@@ -165,24 +227,39 @@ class TorrentSelector(Container):  # type: ignore[misc]
         if not hasattr(event, "value"):
             logger.debug("TorrentSelector: Select.Changed event has no value attribute")
             return
-        
+
         event_value = event.value
-        logger.debug("TorrentSelector: Select.Changed event.value = %r (type: %s)", event_value, type(event_value).__name__)
-        
+        logger.debug(
+            "TorrentSelector: Select.Changed event.value = %r (type: %s)",
+            event_value,
+            type(event_value).__name__,
+        )
+
         info_hash: Optional[str] = None
-        
+
         # Handle different value formats from Textual Select
         if isinstance(event_value, tuple) and len(event_value) == 2:
             # Tuple format: (display_name, info_hash)
             _, info_hash = event_value
-            logger.debug("TorrentSelector: Extracted info_hash from tuple: %s", info_hash[:8] if info_hash else "None")
+            logger.debug(
+                "TorrentSelector: Extracted info_hash from tuple: %s",
+                info_hash[:8] if info_hash else "None",
+            )
         elif isinstance(event_value, int):
             # Integer index: Look up in _torrent_options
             if 0 <= event_value < len(self._torrent_options):
                 _, info_hash = self._torrent_options[event_value]
-                logger.debug("TorrentSelector: Extracted info_hash from index %d: %s", event_value, info_hash[:8] if info_hash else "None")
+                logger.debug(
+                    "TorrentSelector: Extracted info_hash from index %d: %s",
+                    event_value,
+                    info_hash[:8] if info_hash else "None",
+                )
             else:
-                logger.warning("TorrentSelector: Index %d out of range (options: %d)", event_value, len(self._torrent_options))
+                logger.warning(
+                    "TorrentSelector: Index %d out of range (options: %d)",
+                    event_value,
+                    len(self._torrent_options),
+                )
         elif isinstance(event_value, str):
             # String: Could be info_hash directly, or empty string from "Loading..." option
             if event_value:
@@ -190,29 +267,56 @@ class TorrentSelector(Container):  # type: ignore[misc]
                 for _, ih in self._torrent_options:
                     if ih == event_value:
                         info_hash = event_value
-                        logger.debug("TorrentSelector: Matched string value as info_hash: %s", info_hash[:8])
+                        logger.debug(
+                            "TorrentSelector: Matched string value as info_hash: %s",
+                            info_hash[:8],
+                        )
                         break
                 if not info_hash:
                     # Try to match as display_name
                     for display_name, ih in self._torrent_options:
                         if display_name == event_value:
                             info_hash = ih
-                            logger.debug("TorrentSelector: Matched string value as display_name, info_hash: %s", info_hash[:8] if info_hash else "None")
+                            logger.debug(
+                                "TorrentSelector: Matched string value as display_name, info_hash: %s",
+                                info_hash[:8] if info_hash else "None",
+                            )
                             break
             else:
                 # Empty string - likely from "Loading..." option, ignore
-                logger.debug("TorrentSelector: Empty string value (likely 'Loading...' option), ignoring")
+                logger.debug(
+                    "TorrentSelector: Empty string value (likely 'Loading...' option), ignoring"
+                )
                 return
-        
+
         # Only emit event if we have a valid info_hash
         if info_hash:
             self._selected_info_hash = info_hash
-            logger.debug("TorrentSelector: Emitting TorrentSelected event for info_hash: %s", info_hash[:8])
+            logger.debug(
+                "TorrentSelector: Emitting TorrentSelected event for info_hash: %s",
+                info_hash[:8],
+            )
+            # F2.3.3: drive the App selected_torrent_info_hash reactive so the
+            # per-torrent screens self-render (kept the TorrentSelected message
+            # for any external consumer).
+            try:
+                app = getattr(self, "app", None)
+                if app is not None and hasattr(app, "selected_torrent_info_hash"):
+                    app.selected_torrent_info_hash = info_hash
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug(
+                    "TorrentSelector: could not set app.selected_torrent_info_hash: %s",
+                    exc,
+                )
             # Emit custom event for parent to handle
             self.post_message(self.TorrentSelected(info_hash))  # type: ignore[attr-defined]
         else:
-            logger.warning("TorrentSelector: Could not extract info_hash from event.value = %r", event_value)
-
+            logger.warning(
+                "TorrentSelector: Could not extract info_hash from event.value = %r",
+                event_value,
+            )
 
     def get_selected_info_hash(self) -> Optional[str]:
         """Get the currently selected torrent info hash.
@@ -221,10 +325,10 @@ class TorrentSelector(Container):  # type: ignore[misc]
             Info hash in hex format or None
         """
         return self._selected_info_hash
-    
+
     def set_value(self, info_hash: str) -> None:  # pragma: no cover
         """Set the selected torrent by info hash.
-        
+
         Args:
             info_hash: Info hash to select
         """
@@ -235,7 +339,7 @@ class TorrentSelector(Container):  # type: ignore[misc]
         for idx, (display_name, ih) in enumerate(self._torrent_options):
             if ih == info_hash:
                 try:
-                    # CRITICAL FIX: Textual Select expects index, not tuple
+                    # Note: Textual Select expects index, not tuple
                     self._select_widget.value = idx  # type: ignore[attr-defined]
                     # Force refresh
                     if hasattr(self._select_widget, "refresh"):
@@ -259,22 +363,3 @@ class TorrentSelector(Container):  # type: ignore[misc]
             """
             super().__init__()
             self.info_hash = info_hash
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

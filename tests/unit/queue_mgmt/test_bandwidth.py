@@ -11,7 +11,12 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.queue]
 
-from ccbt.models import BandwidthAllocationMode, QueueConfig, QueueEntry, TorrentPriority
+from ccbt.models import (
+    BandwidthAllocationMode,
+    QueueConfig,
+    QueueEntry,
+    TorrentPriority,
+)
 from ccbt.queue.bandwidth import BandwidthAllocator
 
 
@@ -279,7 +284,7 @@ class TestBandwidthAllocatorEqual:
         # Directly test the defensive check in _allocate_equal
         # This tests the defensive code path that handles empty active_torrents list
         empty_list: list[tuple[bytes, QueueEntry]] = []
-        
+
         # Should return immediately without error
         await bandwidth_allocator._allocate_equal(
             empty_list,
@@ -287,7 +292,7 @@ class TestBandwidthAllocatorEqual:
             500,
             mock_session_manager,
         )
-        
+
         # Should not call set_rate_limits
         assert mock_session_manager.set_rate_limits.call_count == 0
 

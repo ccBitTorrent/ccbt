@@ -1,12 +1,17 @@
 """Integration tests for uTP full handshake (active and passive)."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 from ccbt.transport.utp_socket import UTPSocketManager
 
 
@@ -181,15 +186,15 @@ class TestHandshakeWithExtensions:
         conn.set_transport(socket_manager.transport)
         # Don't call initialize_transport - it might reset state or interfere
         # Just set the transport directly
-        
+
         # Set connection to SYN_SENT state (as if we sent a SYN)
         conn.state = UTPConnectionState.SYN_SENT
         conn.seq_nr = 1  # Set sequence number
-        
+
         # window_scale starts at 0 (no scaling)
         # The negotiation logic now handles this: if our_scale is 0, it uses peer's scale
         # So we don't need to set it explicitly
-        
+
         # Verify state is set correctly
         assert conn.state == UTPConnectionState.SYN_SENT, f"Expected SYN_SENT, got {conn.state}"
 
@@ -247,15 +252,15 @@ class TestDataTransmission:
         # Set a large send window so data can be sent
         connection.send_window = 100000
         connection.recv_window = 65535
-        
+
         data = b"test data" * 100  # Larger than MTU
 
         # Send data (will buffer it)
         send_task = asyncio.create_task(connection.send(data))
-        
+
         # Wait a bit for packets to be created
         await asyncio.sleep(0.1)
-        
+
         # Cancel send task (it may be waiting on window)
         send_task.cancel()
         try:

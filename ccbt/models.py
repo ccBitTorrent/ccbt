@@ -8,10 +8,15 @@ Provides validated data models for type safety and runtime validation.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional, TypedDict
+from typing import Any, Literal, Optional, TypedDict, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+
+from ccbt.security.encryption import EncryptionMode
+from ccbt.security.mse_handshake import CipherType
+from ccbt.security.swarm_identity import canonicalize_swarm_id
 
 
 class LogLevel(str, Enum):
@@ -19,9 +24,30 @@ class LogLevel(str, Enum):
 
     DEBUG = "DEBUG"
     INFO = "INFO"
+    TRACE = "TRACE"
     WARNING = "WARNING"
     ERROR = "ERROR"
     CRITICAL = "CRITICAL"
+
+
+class AdaptiveTimeoutHealthPeerSource(str, Enum):
+    """Which peer counts drive adaptive DHT/handshake timeout health bands."""
+
+    EFFECTIVE = "effective"
+    """Use max(transport_live, active_post_handshake) from swarm signals."""
+
+    ACTIVE_ONLY = "active_only"
+    """Use post-handshake active peers only (legacy behavior)."""
+
+
+@dataclass(frozen=True, slots=True)
+class SwarmTimeoutSignals:
+    """Peer counts for adaptive timeout health (handshake / DHT query timeouts)."""
+
+    active_post_handshake_count: int
+    transport_live_count: int
+    requestable_count: int
+    total_connections: int
 
 
 class PieceSelectionStrategy(str, Enum):
@@ -106,6 +132,15 @@ class OptimizationProfile(str, Enum):
     CUSTOM = "custom"  # Custom configuration
 
 
+class SwarmDiscoveryMode(str, Enum):
+    """Discovery modes for authenticated swarm policy."""
+
+    FULL = "full"
+    TRACKERS_ONLY = "trackers_only"
+    DHT_ONLY = "dht_only"
+    PEX_OFF = "pex_off"
+
+
 class MessageType(int, Enum):
     """BitTorrent message types."""
 
@@ -138,6 +173,10 @@ class PeerInfo(BaseModel):
         False,
         description="Whether connection to this peer is using SSL/TLS encryption",
     )
+    _tracker_encryption_preference: Optional[str] = PrivateAttr(default=None)
+    _peer_encryption_preference: Optional[str] = PrivateAttr(default=None)
+    _peer_pex_prefer_encrypt: Optional[bool] = PrivateAttr(default=None)
+    _peer_pex_flags: Optional[int] = PrivateAttr(default=None)
 
     @field_validator("ip")
     @classmethod
@@ -164,6 +203,41 @@ class PeerInfo(BaseModel):
         return self.ip == other.ip and self.port == other.port
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+ConnectSubmitStatusLiteral = Literal[
+    "owner_started",
+    "queued_reentrant",
+    "noop_empty",
+    "noop_shutdown",
+]
+
+
+class ConnectSubmitResult(BaseModel):
+    """Outcome of :meth:`~ccbt.peer.async_peer_connection.AsyncPeerConnectionManager.connect_to_peers`.
+
+    Non-owner submissions merge into the pending queue and return ``queued_reentrant``.
+    """
+
+    model_config = {"frozen": True, "extra": "forbid"}
+
+    status: ConnectSubmitStatusLiteral = Field(
+        ...,
+        description="owner_started | queued_reentrant | noop_empty | noop_shutdown",
+    )
+    upstream_peer_count: int = Field(
+        0, ge=0, description="Peers in this submit call (input list length)."
+    )
+    queued_peer_count: int = Field(
+        0,
+        ge=0,
+        description="Newly queued PeerInfo rows (reentrant path); 0 for owner/noop.",
+    )
+    queue_depth_after: int = Field(
+        0,
+        ge=0,
+        description="Pending queue depth after this call (reentrant path).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -508,6 +582,18 @@ class TorrentInfo(BaseModel):
         default=False,
         description="Whether torrent is marked as private (BEP 27)",
     )
+    swarm_id: Optional[str] = Field(
+        default=None,
+        description="Optional authenticated swarm identifier for authorization policies.",
+    )
+
+    @field_validator("swarm_id")
+    @classmethod
+    def validate_swarm_id(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize optional swarm ids to canonical IDs."""
+        if v is None:
+            return None
+        return canonicalize_swarm_id(v)
 
     # File information
     files: list[FileInfo] = Field(default_factory=list, description="File list")
@@ -705,13 +791,27 @@ class NetworkConfig(BaseModel):
         default=50,
         ge=1,
         le=1000,
-        description="Maximum peers per torrent",
+        description=(
+            "Maximum peers per torrent after static load precedence "
+            "(file → profile → env → platform clamp). Per-torrent options may override at session bind."
+        ),
     )
     pipeline_depth: int = Field(
         default=16,
         ge=1,
         le=128,
         description="Request pipeline depth",
+    )
+    sparse_pipeline_stale_payload_cancel_s: float = Field(
+        default=120.0,
+        ge=0.0,
+        le=600.0,
+        description=(
+            "When at most one peer can accept requests and a connection's pipeline is "
+            "nearly full, cancel the oldest outstanding block requests if no piece payload "
+            "arrived for this many seconds (0 disables). Conservative recovery for stalled "
+            "single-supplier swarms."
+        ),
     )
     block_size_kib: int = Field(
         default=16,
@@ -784,7 +884,10 @@ class NetworkConfig(BaseModel):
     )
     enable_encryption: bool = Field(
         default=False,
-        description="Enable protocol encryption",
+        description=(
+            "Deprecated mirror of security.enable_encryption (MSE/PE); "
+            "kept for file compatibility — synced at config load"
+        ),
     )
     socket_rcvbuf_kib: int = Field(
         default=256,
@@ -854,13 +957,13 @@ class NetworkConfig(BaseModel):
         description="Enable adaptive handshake timeouts based on peer health",
     )
     handshake_timeout_desperation_min: float = Field(
-        default=30.0,
+        default=25.0,
         ge=10.0,
         le=120.0,
         description="Minimum handshake timeout in seconds for desperation mode (< 5 peers)",
     )
     handshake_timeout_desperation_max: float = Field(
-        default=60.0,
+        default=45.0,
         ge=30.0,
         le=180.0,
         description="Maximum handshake timeout in seconds for desperation mode (< 5 peers)",
@@ -888,6 +991,34 @@ class NetworkConfig(BaseModel):
         ge=20.0,
         le=180.0,
         description="Maximum handshake timeout in seconds for healthy mode (20+ peers)",
+    )
+    # Legacy removal tracked under project todo legacy-markers-deprecation (False = old band max).
+    handshake_timeout_desperation_interpolate: bool = Field(
+        default=True,
+        description=(
+            "When True (recommended), scale desperation handshake timeout between min and max using "
+            "effective peer count within the desperation band. False uses max only in that band "
+            "(legacy compatibility; deprecated for new deployments)."
+        ),
+    )
+    adaptive_timeout_health_peer_source: AdaptiveTimeoutHealthPeerSource = Field(
+        default=AdaptiveTimeoutHealthPeerSource.EFFECTIVE,
+        description=(
+            "Peer count source for adaptive timeout health: effective=max(transport, active), "
+            "or active_only for post-handshake active peers only"
+        ),
+    )
+    adaptive_timeout_desperation_max_peers: int = Field(
+        default=5,
+        ge=0,
+        le=1000,
+        description="Peer counts below this (after health source) use desperation timeout band",
+    )
+    adaptive_timeout_normal_max_peers: int = Field(
+        default=20,
+        ge=1,
+        le=10000,
+        description="Peer counts below this use normal band; at or above use healthy band",
     )
 
     # Connection health and validation settings (BitTorrent spec compliant)
@@ -959,6 +1090,24 @@ class NetworkConfig(BaseModel):
         default=True,
         description="Send INTERESTED message after metadata exchange completes (BEP 3 compliant)",
     )
+    bitfield_have_wait_timeout_s: float = Field(
+        default=120.0,
+        ge=30.0,
+        le=600.0,
+        description=(
+            "Seconds to wait after handshake for bitfield or HAVE before disconnecting "
+            "idle post-handshake peers."
+        ),
+    )
+    bitfield_have_wait_metadata_incomplete_multiplier: float = Field(
+        default=2.0,
+        ge=1.0,
+        le=5.0,
+        description=(
+            "Multiply bitfield/HAVE wait when torrent metadata is incomplete (magnets). "
+            "1.0 disables extension (same timeout as complete metadata)."
+        ),
+    )
     graceful_disconnect_enabled: bool = Field(
         default=True,
         description="Enable graceful disconnection with proper protocol messages",
@@ -974,6 +1123,24 @@ class NetworkConfig(BaseModel):
         ge=5,
         le=100,
         description="Maximum concurrent connection attempts to prevent OS socket exhaustion (BitTorrent spec compliant)",
+    )
+    connect_to_peers_parallel_batches: int = Field(
+        default=1,
+        ge=1,
+        le=8,
+        description=(
+            "Maximum concurrent connect_to_peers batches per torrent (1 = legacy single-flight). "
+            "Values above 1 reduce discovery callback queueing but increase parallel handshake load."
+        ),
+    )
+    mse_initiator_timeout_scale_zero_active: float = Field(
+        default=1.0,
+        ge=0.25,
+        le=1.0,
+        description=(
+            "Multiply MSE initiator timeout by this factor when this torrent has zero "
+            "active post-handshake peers (encryption preferred mode; 1.0 = unchanged)."
+        ),
     )
     connection_failure_threshold: int = Field(
         default=3,
@@ -1034,6 +1201,214 @@ class NetworkConfig(BaseModel):
         description="Maximum upload slots",
     )
 
+    # Tit-for-tat / reciprocation (upload side encourages remote UNCHOKE)
+    reciprocation_choked_peer_score_boost: float = Field(
+        default=0.12,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "Extra score for peers that choke us while we are interested — prioritizes our "
+            "upload slots toward them to encourage reciprocal unchoke"
+        ),
+    )
+    reciprocation_remote_not_interested_boost: float = Field(
+        default=0.06,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "Extra score when remote is not yet interested in us but we need their data — "
+            "helps them discover HAVEs via our unchoke + their requests"
+        ),
+    )
+    reciprocation_max_combined_boost: float = Field(
+        default=0.25,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Upper bound on the sum of reciprocation score bonuses applied per peer "
+            "(choked + remote-not-interested)."
+        ),
+    )
+    low_download_diversity_threshold: int = Field(
+        default=1,
+        ge=0,
+        le=20,
+        description=(
+            "If count of peers that have unchoked us (and we are interested) is at most this "
+            "value, optionally unchoke all active peers on our side (anti-deadlock)"
+        ),
+    )
+    low_download_diversity_full_unchoke: bool = Field(
+        default=True,
+        description=(
+            "When True and unchoked-by-remote count <= low_download_diversity_threshold, "
+            "unchoke every active peer (not only top max_upload_slots). "
+            "Comparison uses inclusive <= on the effective unchoked-source count."
+        ),
+    )
+    low_download_diversity_use_hysteresis: bool = Field(
+        default=False,
+        description=(
+            "When True, stay in low-diversity full-unchoke until unchoked-by-remote count "
+            "exceeds threshold + low_download_diversity_exit_margin (reduces flapping)."
+        ),
+    )
+    low_download_diversity_exit_margin: int = Field(
+        default=1,
+        ge=1,
+        le=10,
+        description="Extra unchoked sources required to exit hysteresis mode (see use_hysteresis).",
+    )
+    low_download_diversity_max_peers: int = Field(
+        default=0,
+        ge=0,
+        le=500,
+        description=(
+            "Cap peers unchoked in low-diversity mode (0 = no cap, all active). "
+            "When set, ranks by reciprocation peer score and takes top N."
+        ),
+    )
+    leech_heavy_swarm_total_upload_bps_threshold: float = Field(
+        default=2048.0,
+        ge=0.0,
+        description=(
+            "Sum of active peers' upload_rate below this (bytes/s) treats the swarm as "
+            "leech-heavy for choking score weights (download-weighted blend)."
+        ),
+    )
+    inbound_unknown_hash_warning_sample_interval: int = Field(
+        default=32,
+        ge=2,
+        le=10000,
+        description=(
+            "Emit WARNING for unknown inbound info_hash at most every N events per hash prefix; "
+            "others log at DEBUG only."
+        ),
+    )
+    inbound_max_probation_inflight_per_hash: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        description="Max concurrent inbound registration probations per info-hash prefix.",
+    )
+    inbound_registration_wait_cap_no_sessions_s: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=900.0,
+        description="Session lookup cap when no torrents are registered yet.",
+    )
+    inbound_registration_wait_cap_default_s: float = Field(
+        default=15.0,
+        ge=1.0,
+        le=300.0,
+        description="Default session lookup cap when other torrents exist.",
+    )
+    inbound_registration_wait_cap_storm_s: float = Field(
+        default=8.0,
+        ge=1.0,
+        le=120.0,
+        description="Shorter lookup cap when unknown-hash prefix count exceeds storm threshold.",
+    )
+    inbound_registration_wait_cap_metadata_pending_s: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=900.0,
+        description="Lookup cap when a magnet session is registered but metadata is still pending.",
+    )
+    inbound_grace_poll_seconds_no_sessions_s: float = Field(
+        default=8.0,
+        ge=0.5,
+        le=120.0,
+        description="Grace poll after probation cap when no sessions exist.",
+    )
+    inbound_grace_poll_seconds_storm_s: float = Field(
+        default=1.5,
+        ge=0.1,
+        le=60.0,
+        description="Grace poll after probation cap under unknown-hash storm.",
+    )
+    inbound_grace_poll_seconds_default_s: float = Field(
+        default=2.5,
+        ge=0.1,
+        le=60.0,
+        description="Default grace poll after probation cap.",
+    )
+    inbound_probation_window_s: float = Field(
+        default=8.0,
+        ge=0.5,
+        le=300.0,
+        description="Inbound registration probation window (no other sessions).",
+    )
+    inbound_probation_window_storm_s: float = Field(
+        default=4.0,
+        ge=0.5,
+        le=120.0,
+        description="Probation window when unknown-hash prefix is in storm territory.",
+    )
+    inbound_probation_retry_interval_s: float = Field(
+        default=0.5,
+        ge=0.05,
+        le=5.0,
+        description="Sleep between inbound probation session polls.",
+    )
+    inbound_unknown_hash_storm_threshold: int = Field(
+        default=12,
+        ge=1,
+        le=256,
+        description="Unknown-hash occurrences per prefix before storm caps apply.",
+    )
+    inbound_probation_wait_queue_max_total: int = Field(
+        default=256,
+        ge=0,
+        le=8192,
+        description=(
+            "Global cap on inbound peers waiting for a per-hash probation slot when "
+            "inbound_max_probation_inflight_per_hash is saturated; 0 disables the queue "
+            "(legacy grace-poll-only behavior)."
+        ),
+    )
+    inbound_probation_queued_max_wait_s: float = Field(
+        default=120.0,
+        ge=0.0,
+        le=3600.0,
+        description=(
+            "Maximum seconds an inbound peer may wait in the probation queue before "
+            "expiry; 0 disables queued-wait expiry."
+        ),
+    )
+
+    choke_only_slot_replacement_enabled: bool = Field(
+        default=False,
+        description=(
+            "When True, disconnect oldest remote-choked interested peers to free slots "
+            "if no peer is requestable and the swarm is near max_peers_per_torrent."
+        ),
+    )
+    choke_only_slot_replacement_min_active_peers: int = Field(
+        default=4,
+        ge=2,
+        le=256,
+        description="Minimum active peers before choke-only slot replacement may run.",
+    )
+    choke_only_slot_replacement_min_choke_ratio: float = Field(
+        default=0.85,
+        ge=0.5,
+        le=1.0,
+        description="Minimum decayed choke-state ratio to treat a peer as persistently choked.",
+    )
+    choke_only_slot_replacement_max_disconnect_fraction: float = Field(
+        default=0.15,
+        ge=0.01,
+        le=0.5,
+        description="Upper bound on fraction of active peers to disconnect per evaluation tick.",
+    )
+    choke_only_slot_replacement_at_limit_fraction: float = Field(
+        default=0.95,
+        ge=0.5,
+        le=1.0,
+        description="Only run when active connections are at least this fraction of max_peers_per_torrent.",
+    )
+
     # Choking strategy
     optimistic_unchoke_interval: float = Field(
         default=30.0,
@@ -1041,11 +1416,58 @@ class NetworkConfig(BaseModel):
         le=600.0,
         description="Optimistic unchoke interval in seconds",
     )
+    optimistic_unchoke_top_candidates: int = Field(
+        default=3,
+        ge=1,
+        le=16,
+        description="Pick optimistic unchoke from this many top-ranked candidates.",
+    )
+    optimistic_unchoke_use_jitter: bool = Field(
+        default=True,
+        description=(
+            "When True, random choice among top candidates; when False, deterministic "
+            "tie-break (latency, then connection start time)."
+        ),
+    )
     unchoke_interval: float = Field(
         default=10.0,
         ge=1.0,
         le=600.0,
         description="Unchoke interval in seconds",
+    )
+    peer_choked_hard_timeout_seconds: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=600.0,
+        description=(
+            "Base seconds to wait for remote UNCHOKE before hard recovery (non-anchor peers). "
+            "Solo/all-choked graces extend this via peer_choked_solo_grace_seconds."
+        ),
+    )
+    peer_choked_anchor_timeout_seconds: float = Field(
+        default=75.0,
+        ge=10.0,
+        le=900.0,
+        description="Seconds to wait for UNCHOKE from seed-anchor peers before hard recovery.",
+    )
+    peer_choked_solo_grace_seconds: float = Field(
+        default=180.0,
+        ge=30.0,
+        le=3600.0,
+        description=(
+            "When at most one active peer exists (or nobody is requestable yet), extend "
+            "hard-unchoke deadline to at least this many seconds to avoid dropping the only TCP path."
+        ),
+    )
+    peer_choked_solo_grace_zero_bytes_cap_seconds: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=3600.0,
+        description=(
+            "When >0 and the peer has delivered zero bytes with no outstanding requests, "
+            "cap solo grace at this many seconds (min with peer_choked_solo_grace_seconds). "
+            "0 disables the cap."
+        ),
     )
 
     # IMPROVEMENT: Choking optimization weights
@@ -1092,6 +1514,40 @@ class NetworkConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="Weight for geographic proximity in peer quality ranking (0.0-1.0). Lower values allow connecting to distant/slower peers.",
+    )
+    peer_quality_probation_timeout: float = Field(
+        default=60.0,
+        ge=8.0,
+        le=600.0,
+        description=(
+            "Seconds before disconnecting peers still in quality probation without "
+            "bitfield/HAVE/data (slow handshakes need a higher value)."
+        ),
+    )
+    peer_quality_probation_sparse_choke_grace_seconds: float = Field(
+        default=90.0,
+        ge=0.0,
+        le=3600.0,
+        description=(
+            "Grace for sparse swarms before pruning active-but-choking probation peers."
+        ),
+    )
+    peer_recycle_sparse_backoff_cap_seconds: float = Field(
+        default=10.0,
+        ge=0.0,
+        le=300.0,
+        description=(
+            "Cap failure-retry backoff for stale-unchoke recycling in sparse swarms."
+        ),
+    )
+    recycle_pressure_threshold: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Pressure ratio threshold for sparse-swarm recycle heuristics "
+            "(active / capacity)."
+        ),
     )
 
     # Tracker settings
@@ -1140,6 +1596,41 @@ class NetworkConfig(BaseModel):
         ge=60,
         le=3600,
         description="Tracker DNS cache TTL in seconds",
+    )
+    tracker_network_failure_quarantine_seconds: float = Field(
+        default=90.0,
+        ge=15.0,
+        le=3600.0,
+        description=(
+            "Seconds to quarantine a tracker after repeated medium-tier network failures "
+            "(timeouts, refused, DNS, etc.)"
+        ),
+    )
+    tracker_payload_failure_quarantine_seconds: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=3600.0,
+        description=(
+            "Seconds to quarantine a tracker after invalid/non-bencode payloads (critical/high tier)"
+        ),
+    )
+    tracker_dns_refused_escalation_streak: int = Field(
+        default=5,
+        ge=2,
+        le=100,
+        description=(
+            "After this many consecutive failures, DNS/refused-class medium-tier failures "
+            "quarantine sooner and use a longer cooldown multiplier"
+        ),
+    )
+    tracker_zero_active_batches_before_dht_short_circuit: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description=(
+            "After this many tracker-driven batches with zero active peers, shorten deferral "
+            "so DHT can start sooner (magnet / thin swarms)"
+        ),
     )
     protocol_v2: ProtocolV2Config = Field(
         default_factory=ProtocolV2Config,
@@ -1368,6 +1859,19 @@ class NetworkConfig(BaseModel):
         description="Maximum gap in KiB for coalescing adjacent requests",
     )
 
+    @model_validator(mode="after")
+    def validate_adaptive_timeout_peer_bands(self) -> NetworkConfig:
+        """Ensure normal band upper bound is strictly above desperation bound."""
+        d = self.adaptive_timeout_desperation_max_peers
+        n = self.adaptive_timeout_normal_max_peers
+        if n <= d:
+            msg = (
+                "adaptive_timeout_normal_max_peers must be greater than "
+                "adaptive_timeout_desperation_max_peers"
+            )
+            raise ValueError(msg)
+        return self
+
 
 class NATConfig(BaseModel):
     """NAT traversal configuration."""
@@ -1445,6 +1949,55 @@ class AttributeConfig(BaseModel):
         default=True,
         description="Apply hidden attribute for files with attr='h' (Windows)",
     )
+
+
+class MaxPeersPerTorrentProvenance(BaseModel):
+    """How ``network.max_peers_per_torrent`` was resolved during static config load.
+
+    Per-torrent session options are not represented here; they override at peer-manager bind.
+    """
+
+    optimization_profile: str = Field(
+        description="Optimization profile key after overlay (e.g. balanced, custom).",
+    )
+    value_after_file: Optional[int] = Field(
+        None,
+        description="Explicit or coerced value after TOML normalize, before profile overlay.",
+    )
+    value_after_profile: Optional[int] = Field(
+        None,
+        description="Value after profile overlay, before environment merge.",
+    )
+    value_after_env: Optional[int] = Field(
+        None,
+        description="Value after environment merge, before Windows clamp.",
+    )
+    value_after_platform_clamp: Optional[int] = Field(
+        None,
+        description="Value after Windows strict clamp (same as after_env when not clamped).",
+    )
+    final: int = Field(description="Effective validated value on ``Config.network``.")
+    env_ccbt_max_peers_per_torrent_set: bool = Field(
+        default=False,
+        description="True when ``CCBT_MAX_PEERS_PER_TORRENT`` was set in the environment.",
+    )
+    windows_platform_clamp_applied_to_mpt: bool = Field(
+        default=False,
+        description="True when Windows strict compatibility reduced ``max_peers_per_torrent``.",
+    )
+
+    def as_log_context(self) -> dict[str, Any]:
+        """Structured fields for grep-stable session logs."""
+        return {
+            "optimization_profile": self.optimization_profile,
+            "mpt_after_file": self.value_after_file,
+            "mpt_after_profile": self.value_after_profile,
+            "mpt_after_env": self.value_after_env,
+            "mpt_after_platform_clamp": self.value_after_platform_clamp,
+            "mpt_final": self.final,
+            "env_ccbt_max_peers_per_torrent_set": self.env_ccbt_max_peers_per_torrent_set,
+            "windows_platform_clamp_applied_to_mpt": self.windows_platform_clamp_applied_to_mpt,
+        }
 
 
 class DiskConfig(BaseModel):
@@ -1891,6 +2444,18 @@ class StrategyConfig(BaseModel):
         le=50,
         description="Number of pieces to analyze for phase detection in adaptive hybrid mode",
     )
+    peer_selector_ml_ranking_weight: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "Blend weight for ccbt.ml.peer_selector.PeerSelector scores in outbound peer "
+            "ranking; 0 disables (default). Cold-start scores are deterministic (hashed "
+            "ip:port); piece-completion metrics update the same PeerSelector when > 0. "
+            "Heuristics dominate below ~0.2. Tie-break ordering in the peer manager may "
+            "still use random noise."
+        ),
+    )
 
 
 class OptimizationConfig(BaseModel):
@@ -1962,6 +2527,209 @@ class DiscoveryConfig(BaseModel):
             "router.bitcomet.com:6881",
         ],
         description="DHT bootstrap nodes",
+    )
+    bootstrap_seed_replay_limit: int = Field(
+        default=6,
+        ge=1,
+        le=20,
+        description=(
+            "Number of bootstrap seed nodes to try per retry cycle when rotating peers"
+        ),
+    )
+    dht_bootstrap_retries_max: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Maximum rebootstrap attempts before backoff throttling",
+    )
+    bootstrap_retry_memo_ttl_s: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=3600.0,
+        description=(
+            "Replay memo TTL between repeated bootstrap attempts for the same reason"
+        ),
+    )
+    dht_bootstrap_memo_ttl_s: float = Field(
+        default=120.0,
+        ge=1.0,
+        le=3600.0,
+        description="Memo TTL for zero-state bootstrap recovery suppression",
+    )
+    dht_dns_host_backoff_initial_s: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=120.0,
+        description=(
+            "Initial cooldown after a bootstrap DNS failure, per hostname "
+            "(exponential backoff; avoids tight identical resolver retries)"
+        ),
+    )
+    dht_dns_host_backoff_max_s: float = Field(
+        default=120.0,
+        ge=5.0,
+        le=900.0,
+        description="Maximum per-host DNS failure backoff window",
+    )
+    dht_dns_host_backoff_multiplier: float = Field(
+        default=2.0,
+        ge=1.2,
+        le=8.0,
+        description="Multiplier applied per consecutive DNS failure for the same host",
+    )
+    dht_zero_state_reprobe_wait_s: float = Field(
+        default=45.0,
+        ge=1.0,
+        le=600.0,
+        description=(
+            "Base wait time before retrying bootstrap when routing table is empty"
+        ),
+    )
+    dht_empty_state_backoff_factor: float = Field(
+        default=1.5,
+        ge=1.0,
+        le=10.0,
+        description=(
+            "Backoff multiplier for repeated zero-node DHT bootstrap outcomes"
+        ),
+    )
+    dht_rebootstrap_timeout_s: float = Field(
+        default=45.0,
+        ge=1.0,
+        le=600.0,
+        description="Timeout for periodic DHT rebootstrap fallback calls",
+    )
+    dht_bootstrap_timeout_s: float = Field(
+        default=45.0,
+        ge=1.0,
+        le=600.0,
+        description="Timeout for forced bootstrap calls when ensuring node coverage",
+    )
+    low_peer_threshold: int = Field(
+        default=1,
+        ge=0,
+        le=20,
+        description="Active-peer threshold that triggers low-peer recovery handling",
+    )
+    low_peer_suppression_window_s: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=600.0,
+        description="Window to suppress repeated low-peer recovery actions",
+    )
+    peer_count_low_skip_dht_requires_usable_path: bool = Field(
+        default=True,
+        description=(
+            "When True, skip DHT after tracker handoff only if the swarm has a usable "
+            "download/metadata path (has_usable_download_path), not merely more TCP actives."
+        ),
+    )
+    requestable_driven_discovery_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable periodic requestable-peer-driven discovery (bootstrap pressure, "
+            "DHT interval compression, pending connect resume)."
+        ),
+    )
+    target_requestable_peers: int = Field(
+        default=12,
+        ge=0,
+        le=200,
+        description=(
+            "Target count of requestable peers (can_request); sub-target ticks drive "
+            "extra discovery coordination."
+        ),
+    )
+    requestable_tick_interval_s: float = Field(
+        default=15.0,
+        ge=2.0,
+        le=600.0,
+        description="Minimum seconds between requestable-driven discovery ticks per torrent.",
+    )
+    requestable_force_dht_when_zero: bool = Field(
+        default=True,
+        description=(
+            "When active peers exist but none are requestable, prioritize DHT bootstrap "
+            "readiness and compress inter-query delays."
+        ),
+    )
+    max_connect_burst_per_tick: int = Field(
+        default=16,
+        ge=1,
+        le=256,
+        description=(
+            "Cap for DHT / requestable-driven discovery connect pressure per tick "
+            "(see dht_setup burst_cap). Not used for UDP/HTTP immediate tracker callbacks; "
+            "use tracker_immediate_connect_burst_* for those."
+        ),
+    )
+    tracker_immediate_connect_burst_total: int = Field(
+        default=16,
+        ge=1,
+        le=512,
+        description=(
+            "Max peers passed from a single tracker immediate-callback into "
+            "connect_peers_to_download per response (before pending-queue overflow)."
+        ),
+    )
+    tracker_immediate_connect_burst_per_source: int = Field(
+        default=16,
+        ge=1,
+        le=512,
+        description=(
+            "Per tracker_url|peer_source cap within tracker immediate callback batching."
+        ),
+    )
+    tracker_immediate_connect_window_s: float = Field(
+        default=20.0,
+        ge=1.0,
+        le=300.0,
+        description=(
+            "Rolling window (seconds) for immediate tracker callback circuit breaker "
+            "(zero-active streak path)."
+        ),
+    )
+    tracker_immediate_connect_window_cap: int = Field(
+        default=6,
+        ge=1,
+        le=64,
+        description=(
+            "Max immediate tracker callbacks allowed within tracker_immediate_connect_window_s "
+            "before deferring peers to the pending queue."
+        ),
+    )
+    tracker_immediate_per_source_cap_mode: str = Field(
+        default="half_max_peers",
+        description=(
+            "half_max_peers: per-source limit min(burst, max(1, max_peers_per_torrent//2)). "
+            "full_max_peers: min(burst_per_source, max_peers_per_torrent)."
+        ),
+    )
+    tracker_immediate_per_tracker_cooldown_enabled: bool = Field(
+        default=True,
+        description=(
+            "Scope immediate tracker debounce cooldown by tracker URL. "
+            "When false, a single global cooldown timestamp is shared."
+        ),
+    )
+    max_tracker_urls_per_torrent: int = Field(
+        default=0,
+        ge=0,
+        le=10000,
+        description=(
+            "After host:port dedupe in session tracker collection, cap URL count (0 = unlimited). "
+            "Limits concurrent announces on torrents with very large tracker lists."
+        ),
+    )
+    announce_max_trackers_per_round: int = Field(
+        default=0,
+        ge=0,
+        le=2048,
+        description=(
+            "Per announce loop iteration, contact at most this many tracker URLs from the "
+            "deduped list, rotating the window each round (0 = contact all in one round). "
+            "Private torrents always use the full list. Reduces simultaneous UDP/HTTP tracker load."
+        ),
     )
 
     # DHT adaptive interval settings
@@ -2093,6 +2861,15 @@ class DiscoveryConfig(BaseModel):
         default=True,
         description="Automatically scrape trackers when adding torrents",
     )
+    tracker_stopped_announce_timeout_s: float = Field(
+        default=5.0,
+        ge=0.5,
+        le=60.0,
+        description=(
+            "Wall-clock budget for best-effort tracker event=stopped announces "
+            "when a torrent session shuts down (HTTP and UDP)"
+        ),
+    )
 
     # Default trackers for magnet links without tr= parameters
     default_trackers: list[str] = Field(
@@ -2106,6 +2883,69 @@ class DiscoveryConfig(BaseModel):
             "udp://tracker.openbittorrent.com:80/announce",
         ],
         description="Default trackers to use for magnet links without tr= parameters",
+    )
+    tracker_udp_pending_soft_cap_per_host: int = Field(
+        default=24,
+        ge=4,
+        le=256,
+        description=(
+            "Max in-flight UDP tracker waits per tracker host on the shared UDP client "
+            "(BEP 15 multiplex)."
+        ),
+    )
+    tracker_udp_max_pending_requests: int = Field(
+        default=128,
+        ge=16,
+        le=512,
+        description="Hard cap on pending UDP tracker response futures process-wide.",
+    )
+    tracker_udp_wait_pacing_load_ratio: float = Field(
+        default=0.5,
+        ge=0.1,
+        le=0.95,
+        description=(
+            "When pending exceeds this fraction of the adaptive cap, pace registering "
+            "new UDP tracker waits (reduces thundering herd under multi-torrent load)."
+        ),
+    )
+    tracker_ingress_hold_pending_queue_threshold: int = Field(
+        default=200,
+        ge=0,
+        le=100000,
+        description=(
+            "Per-torrent pending peer queue depth at which new tracker ingress merges "
+            "are held (0 disables). Session applies min(config, max(64, 2*MPT+3*burst)) "
+            "so large values still engage on low max_peers_per_torrent."
+        ),
+    )
+    # Legacy removal tracked under project todo legacy-markers-deprecation (do not drop silently).
+    strict_tracker_source_connect_priority: bool = Field(
+        default=True,
+        description=(
+            "When True (recommended), tracker-sourced peers are ordered before DHT/PEX for "
+            "outbound connect ranking and pending-queue drain (within each group, score order "
+            "is preserved). False restores legacy interleave/source weights and FIFO pending "
+            "merge order; deprecated for compatibility and may be removed in a future release."
+        ),
+    )
+    strict_tracker_pending_dht_pex_boost: int = Field(
+        default=2,
+        ge=0,
+        le=32,
+        description=(
+            "Under strict tracker connect priority, splice up to this many PEX/DHT pending "
+            "peers immediately after the tracker prefix window so deep tracker tails do not "
+            "starve alternate discovery paths (0 disables)."
+        ),
+    )
+    strict_tracker_pending_tracker_prefix: int = Field(
+        default=8,
+        ge=0,
+        le=256,
+        description=(
+            "Tracker-class pending peers to connect before boosted PEX/DHT slots when "
+            "strict_tracker_pending_dht_pex_boost is greater than zero."
+        ),
     )
 
     # PEX
@@ -2297,6 +3137,27 @@ class DiscoveryConfig(BaseModel):
         le=100,
         description="Maximum number of samples per index key (BEP 51). Default 8 samples.",
     )
+
+    @model_validator(mode="after")
+    def _dedupe_default_tracker_urls(self) -> DiscoveryConfig:
+        from ccbt.discovery.tracker_dedupe import dedupe_tracker_urls_by_host_port
+
+        if self.default_trackers:
+            object.__setattr__(
+                self,
+                "default_trackers",
+                dedupe_tracker_urls_by_host_port(list(self.default_trackers)),
+            )
+        return self
+
+    @field_validator("tracker_immediate_per_source_cap_mode")
+    @classmethod
+    def _normalize_tracker_immediate_per_source_cap_mode(cls, v: str) -> str:
+        normalized = str(v).strip().lower().replace("-", "_")
+        if normalized in {"half_max_peers", "full_max_peers"}:
+            return normalized
+        msg = "tracker_immediate_per_source_cap_mode must be half_max_peers or full_max_peers"
+        raise ValueError(msg)
 
 
 class ObservabilityConfig(BaseModel):
@@ -2619,6 +3480,102 @@ class QueueConfig(BaseModel):
     )
 
 
+_ALLOWED_MSE_CIPHER_TOKENS = frozenset(token.name.lower() for token in CipherType)
+_ALLOWED_ENCRYPTION_MODES = frozenset(mode.value for mode in EncryptionMode)
+
+
+class AuthenticatedSwarmsConfig(BaseModel):
+    """Authenticated swarm policy settings."""
+
+    mode: str = Field(
+        default="off",
+        description="Swarm auth admission mode: off, opportunistic, strict",
+    )
+    discovery_mode: SwarmDiscoveryMode = Field(
+        default=SwarmDiscoveryMode.TRACKERS_ONLY,
+        description="Discovery surface for authenticated swarm mode.",
+    )
+
+    @field_validator("discovery_mode", mode="before")
+    @classmethod
+    def _normalize_discovery_mode_aliases(cls, value: Any) -> Any:
+        """Accept human-friendly hyphenated aliases (e.g. trackers-only)."""
+        if isinstance(value, SwarmDiscoveryMode):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower().replace("-", "_")
+        return value
+
+    discovery_strict_for_strict_mode: bool = Field(
+        default=True,
+        description="Whether strict mode forces strict discovery behavior.",
+    )
+    trusted_swarm_ids: list[str] = Field(
+        default_factory=list,
+        description="List of trusted swarm identifiers (hex, uuid, or base32).",
+    )
+    strict_ltep_handshake_timeout_s: float = Field(
+        default=30.0,
+        ge=1.0,
+        description=(
+            "Seconds to wait for an inbound peer's extension handshake when "
+            "strict authenticated-swarm mode is active and the peer advertises BEP 10 support."
+        ),
+    )
+    fail_closed_on_parse_errors: bool = Field(
+        default=False,
+        description="When true, parse/validation failures keep strict mode closed.",
+    )
+    trust_store_path: Optional[str] = Field(
+        default=None,
+        description="Optional path for JSON trust store (for future module wiring).",
+    )
+    trust_store_refresh_interval_s: float = Field(
+        default=60.0,
+        ge=1.0,
+        description="Trust store refresh interval seconds.",
+    )
+    revocation_profile_path: Optional[str] = Field(
+        default=None,
+        description="Optional path for revocation profile JSON (for future module wiring).",
+    )
+    revocation_refresh_interval_s: float = Field(
+        default=300.0,
+        ge=1.0,
+        description="Revocation profile refresh interval seconds.",
+    )
+
+    @field_validator("mode")
+    @classmethod
+    def _validate_mode(cls, v: str) -> str:
+        normalized = v.strip().lower()
+        if normalized not in {"off", "opportunistic", "strict"}:
+            msg = "mode must be one of: off, opportunistic, strict"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("discovery_mode")
+    @classmethod
+    def _normalize_discovery_mode(
+        cls, value: Union[str, SwarmDiscoveryMode]
+    ) -> SwarmDiscoveryMode:
+        """Normalize discovery mode string forms to enum values."""
+        if isinstance(value, SwarmDiscoveryMode):
+            return value
+        normalized = str(value).strip().lower().replace("-", "_")
+        return SwarmDiscoveryMode(normalized)
+
+    @field_validator("trusted_swarm_ids")
+    @classmethod
+    def _validate_trusted_swarm_ids(cls, v: list[str]) -> list[str]:
+        """Normalize and deduplicate trusted swarm id filters."""
+        return [
+            canonicalize_swarm_id(value)
+            for value in v
+            if isinstance(value, str) and value.strip()
+        ]
+
+
 class SecurityConfig(BaseModel):
     """Security related configuration."""
 
@@ -2631,11 +3588,13 @@ class SecurityConfig(BaseModel):
 
     enable_encryption: bool = Field(
         default=False,
-        description="Enable protocol encryption",
+        description="Enable MSE/PE (BEP 3) peer traffic obfuscation when connecting to peers",
     )
     encryption_mode: str = Field(
         default="preferred",
-        description="Encryption mode: disabled, preferred, or required",
+        description=(
+            "MSE/PE mode: disabled, preferred, required (case-insensitive on load)"
+        ),
     )
     encryption_dh_key_size: int = Field(
         default=768,
@@ -2647,7 +3606,7 @@ class SecurityConfig(BaseModel):
     )
     encryption_allowed_ciphers: list[str] = Field(
         default_factory=lambda: ["rc4", "aes"],
-        description="List of allowed cipher types",
+        description="Allowed MSE cipher tokens: rc4, aes, chacha20 (normalized to lowercase)",
     )
     encryption_allow_plain_fallback: bool = Field(
         default=True,
@@ -2679,6 +3638,47 @@ class SecurityConfig(BaseModel):
         default_factory=lambda: SSLConfig(),  # type: ignore[name-defined]
         description="SSL/TLS configuration",
     )
+    authenticated_swarms: AuthenticatedSwarmsConfig = Field(
+        default_factory=AuthenticatedSwarmsConfig,
+        description="Authenticated swarm admission and discovery policy.",
+    )
+
+    @field_validator("encryption_mode")
+    @classmethod
+    def validate_encryption_mode(cls, v: str) -> str:
+        """Normalize and validate encryption mode."""
+        key = v.lower().strip()
+        if key not in _ALLOWED_ENCRYPTION_MODES:
+            msg = (
+                f"encryption_mode must be one of {sorted(_ALLOWED_ENCRYPTION_MODES)}, "
+                f"got {v!r}"
+            )
+            raise ValueError(msg)
+        return key
+
+    @field_validator("encryption_allowed_ciphers")
+    @classmethod
+    def validate_encryption_allowed_ciphers(cls, v: list[str]) -> list[str]:
+        """Normalize cipher names and filter invalid duplicates."""
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_cipher in v:
+            cipher_value = (
+                raw_cipher if isinstance(raw_cipher, str) else str(raw_cipher)
+            )
+            tok = cipher_value.lower().strip()
+            if not tok:
+                continue
+            if tok not in _ALLOWED_MSE_CIPHER_TOKENS:
+                msg = (
+                    f"encryption_allowed_ciphers: unknown token {raw_cipher!r}; "
+                    f"allowed {sorted(_ALLOWED_MSE_CIPHER_TOKENS)}"
+                )
+                raise ValueError(msg)
+            if tok not in seen:
+                normalized.append(tok)
+                seen.add(tok)
+        return normalized
 
 
 class MLConfig(BaseModel):
@@ -2942,11 +3942,14 @@ class PluginsConfig(BaseModel):
 
 
 class SSLConfig(BaseModel):
-    """SSL/TLS configuration."""
+    """TLS for HTTPS trackers and optional experimental peer TLS (BEP 10 extension)."""
 
     enable_ssl_trackers: bool = Field(
         default=True,
-        description="Enable SSL/TLS for tracker connections (HTTPS)",
+        description=(
+            "Use TLS for https:// tracker announces only. "
+            "UDP trackers (BEP 15) have no TLS in the standard protocol."
+        ),
     )
     enable_ssl_peers: bool = Field(
         default=False,
@@ -2980,9 +3983,19 @@ class SSLConfig(BaseModel):
         default=True,
         description="Allow peers with invalid certificates (for opportunistic encryption)",
     )
+    ssl_tracker_pins: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional tracker hostname -> SHA-256 certificate pin map for HTTPS trackers. "
+            "Define only when tracker pinning is explicitly enabled."
+        ),
+    )
     ssl_extension_enabled: bool = Field(
         default=True,
-        description="Enable SSL/TLS extension protocol (BEP 47) for opportunistic encryption",
+        description=(
+            "Enable experimental peer TLS via BEP 10 extension messages "
+            "(not BEP 47; BEP 47 is padding files / file attributes)"
+        ),
     )
     ssl_extension_opportunistic: bool = Field(
         default=True,
@@ -3968,6 +4981,11 @@ class Config(BaseModel):
                 self.network.global_down_kib = self.limits.global_down_kib
             if self.limits.global_up_kib and not self.network.global_up_kib:
                 self.network.global_up_kib = self.limits.global_up_kib
+
+        # MSE/PE toggle: canonical field is security.enable_encryption
+        if self.network.enable_encryption and not self.security.enable_encryption:
+            self.security.enable_encryption = True
+        self.network.enable_encryption = self.security.enable_encryption
 
         return self
 

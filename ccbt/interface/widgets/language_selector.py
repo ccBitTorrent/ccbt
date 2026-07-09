@@ -47,8 +47,8 @@ except ImportError:
     class Static:  # type: ignore[no-redef]
         pass
 
-from ccbt.i18n import _is_valid_locale, get_locale, set_locale
 from ccbt.i18n import _ as translate
+from ccbt.i18n import _is_valid_locale, get_locale, set_locale
 
 logger = logging.getLogger(__name__)
 
@@ -151,10 +151,10 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
         try:
             self._select_widget = self.query_one("#language-select", Select)  # type: ignore[attr-defined]
             self._info_widget = self.query_one("#language-info", Static)  # type: ignore[attr-defined]
-            
+
             # Update info with current language
             self._update_language_info()
-            
+
             # Set up event handler for select changes
             if self._select_widget:
                 self._select_widget.can_focus = True  # type: ignore[attr-defined]
@@ -169,7 +169,7 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
         """
         options: list[tuple[str, str]] = []
         current_locale = get_locale()
-        
+
         for locale_code, (flag, native_name, english_name) in LANGUAGE_MAP.items():
             # Only include languages that have translation files
             if _is_valid_locale(locale_code):
@@ -179,21 +179,21 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
                 else:
                     display = f"{flag} {native_name} ({english_name})"
                 options.append((display, locale_code))
-        
+
         # Sort by English name for consistency
         options.sort(key=lambda x: LANGUAGE_MAP.get(x[1], ("", "", x[1]))[2])
-        
+
         return options
 
     def _update_language_info(self) -> None:  # pragma: no cover
         """Update language info display."""
         if not self._info_widget:
             return
-        
+
         current_locale = get_locale()
         lang_info = LANGUAGE_MAP.get(current_locale, ("", current_locale, current_locale))
         flag, native_name, english_name = lang_info
-        
+
         info_text = translate("Current language: {flag} {name}").format(
             flag=flag, name=native_name
         )
@@ -207,20 +207,20 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
         """
         if not hasattr(event, "value") or not event.value:
             return
-        
+
         try:
             # event.value is the selected locale code (string)
             new_locale = event.value
             if not new_locale or new_locale == self._current_locale:
                 return
-            
-            # CRITICAL FIX: Create async task properly to avoid hanging
+
+            # Note: Create async task properly to avoid hanging
             # We're already in the app's event loop, so just create the task directly
             import asyncio
             asyncio.create_task(self._change_language(new_locale))
         except Exception as e:
             logger.debug("Error handling language change: %s", e)
-    
+
     async def _change_language(self, new_locale: str) -> None:  # pragma: no cover
         """Change language asynchronously.
         
@@ -229,7 +229,7 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
         """
         if not new_locale or new_locale == self._current_locale:
             return
-        
+
         try:
             # Validate locale
             if not _is_valid_locale(new_locale):
@@ -239,11 +239,11 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
                         translate("Invalid language: {locale}").format(locale=new_locale)
                     )
                 return
-            
+
             # Set locale
             set_locale(new_locale)
             self._current_locale = new_locale
-            
+
             # Update config via executor
             # Note: This requires a config.update command in the executor
             try:
@@ -266,11 +266,11 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
                 import os
                 os.environ["CCBT_UI_LOCALE"] = new_locale
                 logger.debug("Could not update config via executor, using environment: %s", e)
-            
+
             # Update info display
             self._update_language_info()
-            
-            # CRITICAL FIX: Post message to app so it propagates to all widgets
+
+            # Note: Post message to app so it propagates to all widgets
             # Textual messages bubble up through the widget tree, but we need to ensure
             # the app receives it to coordinate the refresh
             try:
@@ -282,7 +282,7 @@ class LanguageSelectorWidget(Container):  # type: ignore[misc]
                 logger.info("LanguageChanged message posted for locale: %s", new_locale)
             except Exception as e:
                 logger.error("Error posting LanguageChanged message: %s", e, exc_info=True)
-            
+
             # Notify user that interface is updating
             if self._info_widget:
                 self._info_widget.update(

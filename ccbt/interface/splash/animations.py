@@ -7,11 +7,6 @@ from __future__ import annotations
 
 import asyncio
 
-from ccbt.interface.splash.animation_config import (
-    OCEAN_PALETTE,
-    RAINBOW_PALETTE,
-    SUNSET_PALETTE,
-)
 from ccbt.interface.splash.animation_helpers import AnimationController, ColorPalette
 from ccbt.interface.splash.ascii_art import (
     CCBT_TITLE,
@@ -26,7 +21,6 @@ from ccbt.interface.splash.ascii_art import (
     SAILING_SHIP_TRINIDAD,
     SUBTITLE,
 )
-from ccbt.interface.splash.color_themes import COLOR_TEMPLATES
 
 
 class AnimationSegments:

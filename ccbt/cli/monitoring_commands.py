@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sys
 from typing import Any, Optional
 
 import click
@@ -21,17 +22,19 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
 
 
 @click.command("dashboard")
-@click.option("--refresh", type=float, default=1.0, help="Refresh interval (s)")
+@click.option(
+    "--refresh",
+    "-r",
+    type=float,
+    default=1.0,
+    help="Refresh interval (s)",
+)
 @click.option(
     "--rules",
+    "-f",
     type=click.Path(),
     default=None,
     help="Path to alert rules JSON to load on start",
-)
-@click.option(
-    "--no-daemon",
-    is_flag=True,
-    help="[DEPRECATED] Dashboard requires daemon; option is ignored",
 )
 @click.option(
     "--no-splash",
@@ -39,9 +42,7 @@ SESSION_CREATION_FAILED_MSG = "Session creation failed"
     is_flag=True,
     help="Disable splash screen (useful for debugging)",
 )
-def dashboard(
-    refresh: float, rules: Optional[str], no_daemon: bool, no_splash: bool
-) -> None:
+def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
     """Start terminal monitoring dashboard (Textual)."""
     console = Console()
 
@@ -63,25 +64,14 @@ def dashboard(
 
     # Start splash screen if enabled (only for daemon mode)
     splash_manager = None
-    if not no_daemon:
-        splash_manager, _splash_thread = _show_startup_splash(
-            no_splash=no_splash,
-            verbosity_count=verbosity_count,
-            console=console,
-        )
-
+    splash_manager, _splash_thread = _show_startup_splash(
+        no_splash=no_splash,
+        verbosity_count=verbosity_count,
+        console=console,
+    )
     session: Optional[Any] = (
         None  # Optional[AsyncSessionManager | DaemonInterfaceAdapter]
     )
-
-    if no_daemon:
-        console.print(
-            _(
-                "[red]Dashboard requires daemon mode. "
-                "The --no-daemon option is deprecated and not supported.[/red]"
-            )
-        )
-        raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
     # ALWAYS use daemon - try to ensure it's running
     try:
         success, ipc_client = asyncio.run(
@@ -101,8 +91,7 @@ def dashboard(
                     "  1. Daemon logs for startup errors\n"
                     "  2. Port conflicts (check if port is already in use)\n"
                     "  3. Permissions (ensure you have permission to start daemon)\n\n"
-                    "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]\n"
-                    "[cyan]To use local session (not recommended): 'btbt dashboard --no-daemon'[/cyan]"
+                    "[cyan]To start daemon manually: 'btbt daemon start'[/cyan]"
                 )
             )
             raise click.ClickException(DAEMON_STARTUP_FAILED_MSG)
@@ -117,11 +106,14 @@ def dashboard(
         raise click.ClickException(SESSION_CREATION_FAILED_MSG)
 
     try:
-        # Ensure daemon adapter is connected before launching Textual app.
-        if hasattr(session, "start") and callable(session.start):
-            start_result = session.start()
-            if asyncio.iscoroutine(start_result):
-                asyncio.run(start_result)
+        # CRITICAL: Do NOT call session.start() here in a throwaway asyncio.run().
+        # Doing so binds the aiohttp ClientSession + WebSocket tasks to a loop that
+        # closes before Textual starts its own loop, leaving the adapter with a dead
+        # connection (_websocket_connected=True on a closed loop). The adapter is
+        # started inside Textual's event loop by TerminalDashboard.on_mount ->
+        # _ensure_adapter_ready() -> await self.session.start(). The IPCClient's
+        # _ensure_session() recreates the aiohttp session on Textual's loop on first
+        # use, so the IPCClient returned by _ensure_daemon_running() is safe to reuse.
 
         # If rules path provided, pre-load into global alert manager before launching
         if rules:
@@ -142,23 +134,38 @@ def dashboard(
         # Pass splash_manager to run_dashboard so it can end when dashboard is rendered
         run_dashboard(session, refresh=refresh, splash_manager=splash_manager)
     except KeyboardInterrupt:
+        # Treat user interrupt as graceful dashboard exit instead of an error.
+        console.print(_("[yellow]Dashboard stopped (interrupt received).[/yellow]"))
         # Clear splash on interrupt
         if splash_manager:
             with contextlib.suppress(Exception):
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
+        return
+    except click.Abort:
+        # Click maps EOF/terminal abort to click.Abort. For Textual this often means
+        # the command was launched without an interactive TTY, so the dashboard cannot
+        # stay attached to a terminal UI.
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise click.ClickException(
+                _(
+                    "Dashboard requires an interactive terminal (TTY). "
+                    "Please run 'btbt dashboard --no-splash' in a regular terminal window."
+                )
+            ) from None
+        # Interactive terminal + abort: keep Click's native behavior.
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         # Clear splash on error
         if splash_manager:
             with contextlib.suppress(Exception):
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
         console.print(_("[red]Dashboard error: {e}[/red]").format(e=e))
         raise
     finally:
         # Ensure splash is cleared on exit
         if splash_manager:
             try:
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
                 # Restore log level if it was suppressed
                 import logging
 
@@ -171,44 +178,52 @@ def dashboard(
 
 
 @click.command("alerts")
-@click.option("--list", "list_", is_flag=True, help="List alert rules")
-@click.option("--list-active", is_flag=True, help="List active alerts")
-@click.option("--add", "add_rule", is_flag=True, help="Add an alert rule")
-@click.option("--remove", "remove_rule", is_flag=True, help="Remove an alert rule")
-@click.option("--clear-active", is_flag=True, help="Resolve all active alerts")
+@click.option("--list", "-L", "list_", is_flag=True, help="List alert rules")
+@click.option("--list-active", "-I", is_flag=True, help="List active alerts")
+@click.option("--add", "-a", "add_rule", is_flag=True, help="Add an alert rule")
+@click.option(
+    "--remove", "-R", "remove_rule", is_flag=True, help="Remove an alert rule"
+)
+@click.option("--clear-active", "-C", is_flag=True, help="Resolve all active alerts")
 @click.option(
     "--test",
+    "-t",
     "test_rule",
     is_flag=True,
     help="Test a rule by evaluating a value",
 )
 @click.option(
     "--load",
+    "-l",
     type=click.Path(),
     default=None,
     help="Load alert rules from JSON file",
 )
 @click.option(
     "--save",
+    "-s",
     type=click.Path(),
     default=None,
     help="Save alert rules to JSON file",
 )
-@click.option("--name", type=str, default=None, help="Rule name")
-@click.option("--metric", type=str, default=None, help="Metric name for rule")
+@click.option("--name", "-n", type=str, default=None, help="Rule name")
+@click.option("--metric", "-m", type=str, default=None, help="Metric name for rule")
 @click.option(
     "--condition",
+    "-c",
     type=str,
     default=None,
     help="Condition expression, e.g., 'value > 80'",
 )
 @click.option(
     "--severity",
+    "-e",
     type=click.Choice(["info", "warning", "error", "critical"]),
     default="warning",
 )
 @click.option(
     "--value",
+    "-V",
     type=str,
     default=None,
     help="Value to evaluate when using --test",
@@ -379,6 +394,7 @@ def alerts(
 @click.command("metrics")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["json", "prometheus"]),
     default="json",
@@ -386,29 +402,34 @@ def alerts(
 )
 @click.option(
     "--output",
+    "-o",
     type=click.Path(),
     default=None,
     help="Output file (defaults to stdout)",
 )
 @click.option(
     "--duration",
+    "-d",
     type=float,
     default=0.0,
     help="Collect for N seconds (0 = once)",
 )
 @click.option(
     "--interval",
+    "-i",
     type=float,
     default=None,
     help="Collection interval seconds (defaults to config)",
 )
 @click.option(
     "--include-system",
+    "-s",
     is_flag=True,
     help="Include system metrics snapshot in JSON output",
 )
 @click.option(
     "--include-performance",
+    "-p",
     is_flag=True,
     help="Include performance metrics snapshot in JSON output",
 )

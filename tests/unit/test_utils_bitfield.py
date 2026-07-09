@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ccbt.utils.bitfield import parse_bitfield, count_bits
+from ccbt.utils.bitfield import count_bits, parse_bitfield
 
 
 def test_parse_bitfield_basic() -> None:

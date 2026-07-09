@@ -467,16 +467,48 @@ class MetricsCollector:
                 )
 
                 # Calculate swarm health score (0.0-1.0)
-                # Health = (average_availability / max(active_peers, 1)) * (1.0 - (rarest_availability == 0))
-                if metrics.active_peers > 0:
-                    availability_ratio = (
-                        metrics.average_piece_availability / metrics.active_peers
-                    )
+                # Use max(active_peers, connected_peers) so choke/stall periods do not
+                # under-count peers that are connected but momentarily idle on rate counters.
+                peer_denom = max(
+                    int(metrics.active_peers or 0),
+                    int(metrics.connected_peers or 0),
+                    1,
+                )
+                if peer_denom > 0 and (
+                    metrics.active_peers > 0 or metrics.connected_peers > 0
+                ):
+                    availability_ratio = metrics.average_piece_availability / peer_denom
                     completeness_penalty = (
                         0.0 if metrics.rarest_piece_availability == 0 else 0.2
                     )
+                    productive_peers = int(status.get("productive_peers", 0) or 0)
+                    requestable_peers = int(status.get("requestable_peers", 0) or 0)
+                    requestability_signal = (requestable_peers * 0.7) + (
+                        productive_peers * 0.3
+                    )
+                    requestability_ratio = min(1.0, requestability_signal / peer_denom)
+                    throughput_rate = float(metrics.download_rate or 0.0) + float(
+                        metrics.upload_rate or 0.0
+                    )
+                    throughput_ratio = min(
+                        1.0, throughput_rate / (peer_denom * 20000.0)
+                    )
+                    base_health = availability_ratio * (1.0 - completeness_penalty)
                     metrics.swarm_health_score = min(
-                        1.0, availability_ratio * (1.0 - completeness_penalty)
+                        1.0,
+                        (base_health * 0.75)
+                        + (requestability_ratio * 0.15)
+                        + (throughput_ratio * 0.10),
+                    )
+                elif (
+                    metrics.rarest_piece_availability > 0
+                    and metrics.average_piece_availability > 0
+                ):
+                    # Disconnected: piece manager may still hold a last-known availability
+                    # snapshot. Cap low so UI/metrics are not stuck at zero vs. a dead swarm.
+                    metrics.swarm_health_score = min(
+                        0.35,
+                        metrics.average_piece_availability / 15.0,
                     )
                 else:
                     metrics.swarm_health_score = 0.0

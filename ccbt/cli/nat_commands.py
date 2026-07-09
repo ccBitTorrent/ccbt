@@ -190,15 +190,20 @@ def nat_discover(_ctx) -> None:
 
 
 @nat.command("map")
-@click.option("--port", type=int, required=True, help="Port to map")
+@click.option("-p", "--port", type=int, required=True, help="Port to map")
 @click.option(
+    "-P",
     "--protocol",
     type=click.Choice(["tcp", "udp"]),
     default="tcp",
     help="Protocol (tcp or udp)",
 )
 @click.option(
-    "--external-port", type=int, default=0, help="External port (0 for automatic)"
+    "-e",
+    "--external-port",
+    type=int,
+    default=0,
+    help="External port (0 for automatic)",
 )
 @click.pass_context
 def nat_map(_ctx, port: int, protocol: str, external_port: int) -> None:
@@ -271,8 +276,9 @@ def nat_map(_ctx, port: int, protocol: str, external_port: int) -> None:
 
 
 @nat.command("unmap")
-@click.option("--port", type=int, required=True, help="External port to unmap")
+@click.option("-p", "--port", type=int, required=True, help="External port to unmap")
 @click.option(
+    "-P",
     "--protocol",
     type=click.Choice(["tcp", "udp"]),
     default="tcp",

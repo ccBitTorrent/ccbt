@@ -3,8 +3,9 @@
 We only import and instantiate key components to ensure they are available.
 """
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
 
 
 def test_alert_manager_singleton():
@@ -29,8 +30,8 @@ import asyncio
 
 import pytest
 
-from ccbt.interface.terminal_dashboard import TerminalDashboard
 from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
+from ccbt.interface.terminal_dashboard import TerminalDashboard
 
 
 @pytest.mark.asyncio
@@ -56,23 +57,24 @@ async def test_dashboard_poll_once():
     app = TerminalDashboard(session, refresh_interval=0.5)
 
     # Mock the executor's get_global_stats method
-    from ccbt.interface.data_provider import DataProvider
     mock_data_provider = MagicMock()
-    mock_data_provider.get_global_stats = AsyncMock(return_value={
-        "num_torrents": 0,
-        "num_active": 0,
-        "num_paused": 0,
-        "num_seeding": 0,
-        "download_rate": 0.0,
-        "upload_rate": 0.0,
-        "average_progress": 0.0,
-    })
+    mock_data_provider.get_global_stats = AsyncMock(
+        return_value={
+            "num_torrents": 0,
+            "num_active": 0,
+            "num_paused": 0,
+            "num_seeding": 0,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+            "average_progress": 0.0,
+        }
+    )
     mock_data_provider.get_status = AsyncMock(return_value={})
     app._data_provider = mock_data_provider
 
     # Mount-like initialization
     await session.start()
-    await app._poll_once()
+    await app._poll_once_impl()
     # Don't call stop() to avoid asyncio.suppress issue (separate bug)
     # await session.stop()
 
@@ -112,6 +114,6 @@ def test_dashboard_auto_refresh():
     session.get_status = fake_get_status
 
     # Simulate one poll
-    asyncio.run(app._poll_once())
+    asyncio.run(app._poll_once_impl())
     # No exception implies success path
     assert True

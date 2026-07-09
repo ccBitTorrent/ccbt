@@ -20,7 +20,7 @@ else:
 
 try:
     from textual.containers import Container
-    from textual.widgets import Static, Tabs, Tab
+    from textual.widgets import Static, Tab, Tabs
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
@@ -89,7 +89,7 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
             Tab(_("Advanced"), id="sub-tab-advanced"),
             id="preferences-sub-tabs",
         )
-        
+
         # Content area for sub-tab content
         with Container(id="preferences-sub-content"):
             yield Static(_("Select a sub-tab to view configuration options"), id="sub-content-placeholder")
@@ -114,13 +114,13 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
             return
         if sub_tab_id == self._active_sub_tab_id:
             return
-        
+
         # Clear existing content
         try:
             self._content_area.remove_children()  # type: ignore[attr-defined]
         except Exception:
             pass
-        
+
         # Get data provider and command executor from parent (TerminalDashboard or MainTabsContainer)
         data_provider = None
         command_executor = None
@@ -139,14 +139,16 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                     command_executor = parent._command_executor  # type: ignore[attr-defined]
         except Exception:
             pass
-        
+
         # Load appropriate screen based on sub-tab
         if sub_tab_id == "sub-tab-general":
             # General tab: Show language selector and global config
             if data_provider and command_executor:
-                from ccbt.interface.widgets.language_selector import LanguageSelectorWidget
                 from ccbt.interface.widgets.config_wrapper import ConfigScreenWrapper
-                
+                from ccbt.interface.widgets.language_selector import (
+                    LanguageSelectorWidget,
+                )
+
                 # Language selector at top
                 lang_selector = LanguageSelectorWidget(
                     data_provider,
@@ -154,7 +156,7 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                     id="language-selector"
                 )
                 self._content_area.mount(lang_selector)  # type: ignore[attr-defined]
-                
+
                 # Global config wrapper below
                 wrapper = ConfigScreenWrapper(
                     "global",

@@ -25,13 +25,12 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
-from ccbt.utils.exceptions import MessageError
 from ccbt.models import MessageType
 from ccbt.peer.peer import (
     AsyncMessageDecoder,
@@ -39,18 +38,17 @@ from ccbt.peer.peer import (
     CancelMessage,
     ChokeMessage,
     Handshake,
-    HandshakeError,
     HaveMessage,
     InterestedMessage,
     KeepAliveMessage,
     MessageBuffer,
-    MessageDecoder,
     NotInterestedMessage,
     OptimizedMessageDecoder,
     PieceMessage,
     RequestMessage,
     UnchokeMessage,
 )
+from ccbt.utils.exceptions import MessageError
 
 
 class TestHandshakeCoverageGaps:
@@ -370,7 +368,7 @@ class TestMessageBufferErrorHandling:
         """Test add_data with decode error (line 927-961)."""
         decoder = OptimizedMessageDecoder()
         # Invalid message - too short (less than 4 bytes for length prefix)
-        invalid_data = bytes(b"\x00\x00\x00")  # Only 3 bytes
+        invalid_data = b"\x00\x00\x00"  # Only 3 bytes
         messages = decoder.add_data(invalid_data)
         assert messages == []
 
@@ -380,13 +378,13 @@ class TestMessageBufferErrorHandling:
         decoder.buffer = bytearray(b"\x00\x00\x00\x05\x00\x00\x00\x00\x00")
         decoder.buffer_size = 9
         decoder.buffer_view = memoryview(decoder.buffer)
-        
+
         # Simulate view becoming None after length check
         def mock_unpack_length(view):
             decoder.buffer_view = None  # View becomes None
             return (5,)
-        
-        with patch.object(decoder, '_unpack_length', side_effect=mock_unpack_length):
+
+        with patch.object(decoder, "_unpack_length", side_effect=mock_unpack_length):
             result = decoder._decode_next_message()
             # Should return None when view becomes None
             assert result is None
@@ -489,9 +487,9 @@ class TestMessageBufferAdditionalEdgeCases:
         """Test add_message exception handling (line 1112-1113)."""
         buffer = MessageBuffer()
         message = ChokeMessage()
-        
+
         # Mock encode to raise exception
-        with patch.object(message, 'encode', side_effect=Exception("Encode failed")):
+        with patch.object(message, "encode", side_effect=Exception("Encode failed")):
             result = buffer.add_message(message)
             assert result is False
 
@@ -528,7 +526,7 @@ class TestBufferAdditionalEdgeCases:
         """Test add_data with incomplete message (line 1179-1180)."""
         decoder = OptimizedMessageDecoder()
         # Incomplete message - only length prefix (says 5 bytes but we only have 4)
-        incomplete = bytes(b"\x00\x00\x00\x05")
+        incomplete = b"\x00\x00\x00\x05"
         messages = decoder.add_data(incomplete)
         assert messages == []  # Incomplete, so no messages returned
 
@@ -536,7 +534,7 @@ class TestBufferAdditionalEdgeCases:
         """Test add_data with multiple messages (line 1224-1225)."""
         decoder = OptimizedMessageDecoder()
         # Two keepalive messages
-        data = bytes(b"\x00\x00\x00\x00\x00\x00\x00\x00")
+        data = b"\x00\x00\x00\x00\x00\x00\x00\x00"
         messages = decoder.add_data(data)
         assert len(messages) == 2
         assert all(isinstance(m, KeepAliveMessage) for m in messages)
@@ -559,11 +557,11 @@ class TestExceptionHandling:
     def test_add_message_exception_handling(self):
         """Test add_message exception handling (line 1326-1328)."""
         buffer = MessageBuffer()
-        
+
         # Create a mock message that raises exception during encoding
         mock_message = MagicMock()
         mock_message.encode.side_effect = Exception("Encoding failed")
-        
+
         result = buffer.add_message(mock_message)
         assert result is False
 
@@ -588,6 +586,7 @@ class TestSocketOptimizerEdgeCases:
     def test_optimize_socket(self):
         """Test optimize_socket function (line 1357)."""
         import socket
+
         from ccbt.peer.peer import optimize_socket
         # Create a test socket
         test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1062,19 +1061,20 @@ class TestSocketOptimizerAdditionalPaths:
     def test_optimize_socket_with_config_buffers(self):
         """Test optimize_socket with config buffer sizes (line 1179-1180)."""
         import socket
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock
+
         from ccbt.peer.peer import SocketOptimizer
-        
+
         optimizer = SocketOptimizer()
         test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
+
         try:
             # Mock config.network to have socket buffer attributes
             mock_network = MagicMock()
             mock_network.socket_rcvbuf = 65536
             mock_network.socket_sndbuf = 65536
             optimizer.config.network = mock_network
-            
+
             optimizer.optimize_socket(test_sock)
             # Should use config values (line 1179-1180)
         finally:
@@ -1082,25 +1082,26 @@ class TestSocketOptimizerAdditionalPaths:
 
     def test_get_optimal_buffer_sizes_type_validation(self):
         """Test get_optimal_buffer_sizes with invalid config types (line 1251-1259)."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from ccbt.peer.peer import SocketOptimizer
-        
+
         optimizer = SocketOptimizer()
-        
+
         # Mock config with invalid buffer types
         mock_config = MagicMock()
         mock_config.network.socket_rcvbuf = "invalid"  # Not int/float
         mock_config.network.socket_sndbuf = 65536
-        
-        with patch.object(optimizer, 'config', mock_config):
+
+        with patch.object(optimizer, "config", mock_config):
             with pytest.raises(TypeError, match="Expected int or float for base_rcvbuf"):
                 optimizer.get_optimal_buffer_sizes(10)
-        
+
         # Test with invalid sndbuf
         mock_config.network.socket_rcvbuf = 65536
         mock_config.network.socket_sndbuf = "invalid"  # Not int/float
-        
-        with patch.object(optimizer, 'config', mock_config):
+
+        with patch.object(optimizer, "config", mock_config):
             with pytest.raises(TypeError, match="Expected int or float for base_sndbuf"):
                 optimizer.get_optimal_buffer_sizes(10)
 

@@ -13,10 +13,33 @@ from typing import TYPE_CHECKING, Any, Optional
 from aiohttp import web
 
 from ccbt.models import PieceSelectionStrategy, PieceState
+from ccbt.utils.compat import to_thread_compat
 from ccbt.utils.events import Event, emit_event
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+MEDIA_STREAM_METRIC_ACTIVE_STREAMS = "ccbt_media_stream_active_streams"
+MEDIA_STREAM_METRIC_ACTIVE_CLIENTS = "ccbt_media_stream_active_clients"
+MEDIA_STREAM_METRIC_BYTES_SERVED_TOTAL = "ccbt_media_stream_bytes_served_total"
+MEDIA_STREAM_METRIC_REQUESTS_TOTAL = "ccbt_media_stream_requests_total"
+MEDIA_STREAM_METRIC_BUFFER_PROGRESS = "ccbt_media_stream_buffer_progress"
+MEDIA_STREAM_METRIC_AVAILABLE_BYTES = "ccbt_media_stream_available_bytes"
+MEDIA_STREAM_METRIC_READY_LATENCY_SECONDS = "ccbt_media_stream_ready_latency_seconds"
+MEDIA_STREAM_METRIC_REQUEST_THROUGHPUT_BYTES_PER_SECOND = (
+    "ccbt_media_stream_request_throughput_bytes_per_second"
+)
+MEDIA_STREAM_METRIC_REQUEST_DURATION_SECONDS = (
+    "ccbt_media_stream_request_duration_seconds"
+)
+MEDIA_STREAM_METRIC_WAIT_SECONDS = "ccbt_media_stream_wait_seconds"
+MEDIA_STREAM_METRIC_ERRORS_TOTAL = "ccbt_media_stream_errors_total"
+MEDIA_STREAM_METRIC_REQUEST_RESULT_AUTH = "auth_failed"
+MEDIA_STREAM_METRIC_REQUEST_RESULT_TIMEOUT = "timeout"
+MEDIA_STREAM_METRIC_REQUEST_RESULT_RANGE_ERROR = "range_error"
+MEDIA_STREAM_METRIC_REQUEST_RESULT_SUCCESS = "success"
+MEDIA_STREAM_REQUEST_ERROR_UNKNOWN = "unknown_error"
 
 
 def _open_seek(path: Any, start: int) -> Any:
@@ -82,6 +105,8 @@ class MediaStreamRuntime:
     token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     state: str = "starting"
     bytes_served: int = 0
+    _startup_monotonic: float = field(default=0.0, init=False, repr=False)
+    _ready_latency_recorded: bool = field(default=False, init=False, repr=False)
     client_count: int = 0
     current_range_start: Optional[int] = None
     current_range_end: Optional[int] = None
@@ -102,7 +127,19 @@ class MediaStreamRuntime:
 
     def __post_init__(self) -> None:
         """Finish derived initialization."""
+        self._startup_monotonic = time.monotonic()
         self.token_expires_at = time.time() + self.token_ttl_seconds
+
+    def _collect_metric(
+        self, method: str, name: str, value: float, labels: dict[str, str]
+    ) -> None:
+        """Safely emit metrics to the global collector."""
+        with contextlib.suppress(Exception):
+            from ccbt.monitoring import get_metrics_collector
+
+            collector = get_metrics_collector()
+            callback = getattr(collector, method)
+            callback(name, value, labels)
 
     @property
     def stream_url(self) -> Optional[str]:
@@ -113,22 +150,36 @@ class MediaStreamRuntime:
 
     async def start(self) -> None:
         """Start the localhost HTTP range server."""
-        await self._enable_streaming_mode()
-        app = web.Application()
-        app.router.add_get("/stream", self._handle_stream_request)
-        self.runner = web.AppRunner(app)
-        await self.runner.setup()
-        self.site = web.TCPSite(
-            self.runner,
-            self.bind_host,
-            self.requested_port,
+        self._collect_metric(
+            "increment_gauge",
+            MEDIA_STREAM_METRIC_ACTIVE_STREAMS,
+            1,
+            {},
         )
+        self._startup_monotonic = time.monotonic()
+        self._ready_latency_recorded = False
         try:
+            await self._enable_streaming_mode()
+            app = web.Application()
+            app.router.add_get("/stream", self._handle_stream_request)
+            self.runner = web.AppRunner(app)
+            await self.runner.setup()
+            self.site = web.TCPSite(
+                self.runner,
+                self.bind_host,
+                self.requested_port,
+            )
             await self.site.start()
             await self._capture_bound_port()
             await self._emit_event("media_stream_started")
             await self.refresh_readiness()
         except Exception:
+            self._collect_metric(
+                "increment_gauge",
+                MEDIA_STREAM_METRIC_ACTIVE_STREAMS,
+                -1,
+                {},
+            )
             if self.site is not None:
                 with contextlib.suppress(Exception):
                     await self.site.stop()
@@ -139,6 +190,18 @@ class MediaStreamRuntime:
 
     async def stop(self) -> None:
         """Stop the stream and restore piece-selection settings."""
+        self._collect_metric(
+            "increment_gauge",
+            MEDIA_STREAM_METRIC_ACTIVE_STREAMS,
+            -1,
+            {},
+        )
+        self._collect_metric(
+            "set_gauge",
+            MEDIA_STREAM_METRIC_ACTIVE_CLIENTS,
+            0,
+            {},
+        )
         async with self._lock:
             self.state = "stopped"
         await self._restore_piece_selection()
@@ -173,6 +236,18 @@ class MediaStreamRuntime:
         async with self._lock:
             self.available_bytes = available_bytes
             self.buffer_progress = progress
+        self._collect_metric(
+            "set_gauge",
+            MEDIA_STREAM_METRIC_BUFFER_PROGRESS,
+            float(progress),
+            {},
+        )
+        self._collect_metric(
+            "set_gauge",
+            MEDIA_STREAM_METRIC_AVAILABLE_BYTES,
+            float(available_bytes),
+            {},
+        )
         if available_bytes >= minimum_ready_bytes or available_bytes >= self.file_size:
             await self._set_state("ready")
         else:
@@ -233,47 +308,137 @@ class MediaStreamRuntime:
 
     async def _handle_stream_request(self, request: web.Request) -> web.StreamResponse:
         """Serve a HEAD/GET request with byte-range support."""
-        self._validate_token(request)
-        if self.file_size <= 0:
-            raise web.HTTPNotFound(text="Selected file is empty")
+        started_at = time.perf_counter()
+        try:
+            self._validate_token(request)
+            if self.file_size <= 0:
+                raise web.HTTPNotFound(text="Selected file is empty")
 
-        method = request.method.upper()
-        start, end, status_code = _parse_range_header(
-            request.headers.get("Range"),
-            self.file_size,
+            method = request.method.upper()
+            start, end, status_code = _parse_range_header(
+                request.headers.get("Range"),
+                self.file_size,
+            )
+            await self._record_range_request(start, end)
+            available_end = await self._wait_for_requested_bytes(start)
+            if available_end < start:
+                raise web.HTTPServiceUnavailable(
+                    text="Requested media range is not buffered yet",
+                    headers={"Retry-After": "1"},
+                )
+
+            end = min(end, available_end)
+            if end < self.file_size - 1 and status_code == 200:
+                status_code = 206
+            headers = {
+                "Accept-Ranges": "bytes",
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(max(end - start + 1, 0)),
+            }
+            if status_code == 206:
+                headers["Content-Range"] = f"bytes {start}-{end}/{self.file_size}"
+
+            if method == "HEAD":
+                self._record_request_completed(
+                    MEDIA_STREAM_METRIC_REQUEST_RESULT_SUCCESS,
+                    started_at,
+                    0,
+                )
+                return web.Response(status=status_code, headers=headers)
+
+            response = web.StreamResponse(status=status_code, headers=headers)
+            await response.prepare(request)
+            await self._increment_clients()
+            try:
+                bytes_written = await self._write_stream_bytes(response, start, end)
+            finally:
+                await self._decrement_clients()
+                with contextlib.suppress(Exception):
+                    await response.write_eof()
+            self._record_request_completed(
+                MEDIA_STREAM_METRIC_REQUEST_RESULT_SUCCESS,
+                started_at,
+                bytes_written,
+            )
+            return response
+        except web.HTTPUnauthorized:
+            self._record_request_failed(
+                MEDIA_STREAM_METRIC_REQUEST_RESULT_AUTH,
+            )
+            raise
+        except web.HTTPRequestRangeNotSatisfiable:
+            self._record_request_failed(
+                MEDIA_STREAM_METRIC_REQUEST_RESULT_RANGE_ERROR,
+            )
+            raise
+        except web.HTTPServiceUnavailable:
+            self._record_request_failed(
+                MEDIA_STREAM_METRIC_REQUEST_RESULT_TIMEOUT,
+            )
+            raise
+        except web.HTTPException:
+            self._record_request_failed(
+                MEDIA_STREAM_REQUEST_ERROR_UNKNOWN,
+            )
+            raise
+        except Exception:
+            self._record_request_failed(
+                MEDIA_STREAM_REQUEST_ERROR_UNKNOWN,
+            )
+            raise
+
+    def _record_request_completed(
+        self,
+        result: str,
+        started_at: float,
+        bytes_written: int,
+    ) -> None:
+        """Record request completion metrics."""
+        latency = time.monotonic() - started_at
+        self._collect_metric(
+            "increment_counter",
+            MEDIA_STREAM_METRIC_REQUESTS_TOTAL,
+            1,
+            {"result": result},
         )
-        await self._record_range_request(start, end)
-        available_end = await self._wait_for_requested_bytes(start)
-        if available_end < start:
-            raise web.HTTPServiceUnavailable(
-                text="Requested media range is not buffered yet",
-                headers={"Retry-After": "1"},
+        self._collect_metric(
+            "increment_counter",
+            MEDIA_STREAM_METRIC_BYTES_SERVED_TOTAL,
+            bytes_written,
+            {},
+        )
+        if bytes_written > 0:
+            request_throughput = bytes_written / max(latency, 0.001)
+            self._collect_metric(
+                "record_histogram",
+                MEDIA_STREAM_METRIC_REQUEST_THROUGHPUT_BYTES_PER_SECOND,
+                request_throughput,
+                {"result": result},
+            )
+            self._collect_metric(
+                "record_histogram",
+                MEDIA_STREAM_METRIC_REQUEST_DURATION_SECONDS,
+                latency,
+                {"result": result},
             )
 
-        end = min(end, available_end)
-        if end < self.file_size - 1 and status_code == 200:
-            status_code = 206
-        headers = {
-            "Accept-Ranges": "bytes",
-            "Content-Type": "application/octet-stream",
-            "Content-Length": str(max(end - start + 1, 0)),
-        }
-        if status_code == 206:
-            headers["Content-Range"] = f"bytes {start}-{end}/{self.file_size}"
-
-        if method == "HEAD":
-            return web.Response(status=status_code, headers=headers)
-
-        response = web.StreamResponse(status=status_code, headers=headers)
-        await response.prepare(request)
-        await self._increment_clients()
-        try:
-            await self._write_stream_bytes(response, start, end)
-        finally:
-            await self._decrement_clients()
-            with contextlib.suppress(Exception):
-                await response.write_eof()
-        return response
+    def _record_request_failed(
+        self,
+        result: str,
+    ) -> None:
+        """Record failed request metrics."""
+        self._collect_metric(
+            "increment_counter",
+            MEDIA_STREAM_METRIC_REQUESTS_TOTAL,
+            1,
+            {"result": result},
+        )
+        self._collect_metric(
+            "increment_counter",
+            MEDIA_STREAM_METRIC_ERRORS_TOTAL,
+            1,
+            {"reason": result},
+        )
 
     def _validate_token(self, request: web.Request) -> None:
         """Reject requests with a missing or expired token."""
@@ -288,30 +453,41 @@ class MediaStreamRuntime:
         response: web.StreamResponse,
         start: int,
         end: int,
-    ) -> None:
+    ) -> int:
         """Write the selected byte range to the client."""
         remaining = end - start + 1
-        handle = await asyncio.to_thread(_open_seek, self.file_path, start)
+        bytes_written = 0
+        handle = await to_thread_compat(_open_seek, self.file_path, start)
         try:
             while remaining > 0:
                 read_size = min(self.chunk_size, remaining)
-                chunk = await asyncio.to_thread(handle.read, read_size)
+                chunk = await to_thread_compat(handle.read, read_size)
                 if not chunk:
                     break
                 await response.write(chunk)
                 remaining -= len(chunk)
+                bytes_written += len(chunk)
                 async with self._lock:
                     self.bytes_served += len(chunk)
         finally:
-            await asyncio.to_thread(handle.close)
+            await to_thread_compat(handle.close)
+        return bytes_written
 
     async def _wait_for_requested_bytes(self, start_offset: int) -> int:
         """Wait briefly for the requested range to become locally readable."""
+        wait_started_at = time.monotonic()
         deadline = time.monotonic() + self.request_wait_timeout_seconds
         while True:
             available_bytes = await self._estimate_available_bytes(start_offset)
             if available_bytes > start_offset:
                 await self.refresh_readiness()
+                wait_time = time.monotonic() - wait_started_at
+                self._collect_metric(
+                    "record_histogram",
+                    MEDIA_STREAM_METRIC_WAIT_SECONDS,
+                    wait_time,
+                    {"result": "ready"},
+                )
                 return available_bytes - 1
             await self._set_state("buffering")
             if time.monotonic() >= deadline:
@@ -319,6 +495,13 @@ class MediaStreamRuntime:
             await asyncio.sleep(0.25)
         available_bytes = await self._estimate_available_bytes(start_offset)
         await self.refresh_readiness()
+        wait_time = time.monotonic() - wait_started_at
+        self._collect_metric(
+            "record_histogram",
+            MEDIA_STREAM_METRIC_WAIT_SECONDS,
+            wait_time,
+            {"result": "timeout"},
+        )
         return available_bytes - 1
 
     async def _record_range_request(self, start: int, end: int) -> None:
@@ -338,10 +521,10 @@ class MediaStreamRuntime:
 
     async def _estimate_available_bytes(self, start_offset: int) -> int:
         """Estimate how many contiguous bytes are locally readable."""
-        exists = await asyncio.to_thread(self.file_path.exists)
+        exists = await to_thread_compat(self.file_path.exists)
         if not exists:
             return 0
-        stat_result = await asyncio.to_thread(self.file_path.stat)
+        stat_result = await to_thread_compat(self.file_path.stat)
         on_disk_size = min(stat_result.st_size, self.file_size)
         mapper = getattr(self.file_selection_manager, "mapper", None)
         pieces = getattr(self.piece_manager, "pieces", None)
@@ -382,11 +565,25 @@ class MediaStreamRuntime:
         """Increment active client count."""
         async with self._lock:
             self.client_count += 1
+            active_clients = self.client_count
+        self._collect_metric(
+            "set_gauge",
+            MEDIA_STREAM_METRIC_ACTIVE_CLIENTS,
+            float(active_clients),
+            {},
+        )
 
     async def _decrement_clients(self) -> None:
         """Decrement active client count."""
         async with self._lock:
             self.client_count = max(0, self.client_count - 1)
+            active_clients = self.client_count
+        self._collect_metric(
+            "set_gauge",
+            MEDIA_STREAM_METRIC_ACTIVE_CLIENTS,
+            float(active_clients),
+            {},
+        )
 
     async def _enable_streaming_mode(self) -> None:
         """Switch the torrent's piece manager into streaming-aware mode."""
@@ -426,6 +623,15 @@ class MediaStreamRuntime:
         if state == "buffering":
             await self._emit_event("media_stream_buffering")
         elif state == "ready":
+            if not self._ready_latency_recorded:
+                readiness_latency = time.monotonic() - self._startup_monotonic
+                self._collect_metric(
+                    "record_histogram",
+                    MEDIA_STREAM_METRIC_READY_LATENCY_SECONDS,
+                    readiness_latency,
+                    {},
+                )
+                self._ready_latency_recorded = True
             await self._emit_event("media_stream_ready")
         elif state == "error":
             await self._emit_event("media_stream_error")

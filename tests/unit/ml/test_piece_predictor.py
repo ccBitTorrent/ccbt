@@ -1,8 +1,9 @@
 """Tests for ML piece predictor."""
 
-import pytest
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from ccbt.ml.piece_predictor import (
     DownloadPattern,
@@ -38,9 +39,9 @@ class TestPiecePredictor:
         """Test piece download time prediction."""
         piece_index = 0
         piece_size = 16384
-        
-        with patch('ccbt.events.emit_event', new_callable=AsyncMock), \
-             patch.object(predictor, '_extract_piece_features', return_value={
+
+        with patch("ccbt.events.emit_event", new_callable=AsyncMock), \
+             patch.object(predictor, "_extract_piece_features", return_value={
                  "piece_size": float(piece_size),
                  "network_quality": 0.8,
                  "peer_availability": 0.7,
@@ -48,13 +49,13 @@ class TestPiecePredictor:
                  "success_rate": 0.9,
                  "piece_priority": 0.5,
              }), \
-             patch.object(predictor, '_predict_download_time', return_value=2.0), \
-             patch.object(predictor, '_predict_success_rate', return_value=0.9), \
-             patch.object(predictor, '_calculate_priority_score', return_value=0.7), \
-             patch.object(predictor, '_calculate_completion_probability', return_value=0.8):
-            
+             patch.object(predictor, "_predict_download_time", return_value=2.0), \
+             patch.object(predictor, "_predict_success_rate", return_value=0.9), \
+             patch.object(predictor, "_calculate_priority_score", return_value=0.7), \
+             patch.object(predictor, "_calculate_completion_probability", return_value=0.8):
+
             prediction = await predictor.predict_piece_download_time(piece_index, piece_size)
-        
+
         assert isinstance(prediction, PiecePrediction)
         assert prediction.piece_index == piece_index
         assert prediction.predicted_download_time == 2.0
@@ -79,8 +80,8 @@ class TestPiecePredictor:
     async def test_select_optimal_pieces_with_piece_info(self, predictor, sample_piece_info):
         """Test selecting optimal pieces with existing piece info."""
         predictor.piece_info[0] = sample_piece_info
-        
-        with patch.object(predictor, 'predict_piece_download_time', return_value=PiecePrediction(
+
+        with patch.object(predictor, "predict_piece_download_time", return_value=PiecePrediction(
             piece_index=0,
             predicted_download_time=2.0,
             predicted_success_rate=0.9,
@@ -90,7 +91,7 @@ class TestPiecePredictor:
             prediction_time=time.time(),
         )):
             result = await predictor.select_optimal_pieces([0], count=5)
-        
+
         assert result == [0]
 
     @pytest.mark.asyncio
@@ -105,17 +106,17 @@ class TestPiecePredictor:
                 status=PieceStatus.MISSING,
                 priority=PiecePriority.MEDIUM,
             )
-        
+
         # Mock predictions with different priority scores
         predictions = [
             PiecePrediction(0, 2.0, 0.9, 0.9, 0.8, 0.8, time.time()),  # Highest priority
             PiecePrediction(1, 1.5, 0.8, 0.7, 0.7, 0.8, time.time()),  # Medium priority
             PiecePrediction(2, 3.0, 0.7, 0.5, 0.6, 0.8, time.time()),  # Lowest priority
         ]
-        
-        with patch.object(predictor, 'predict_piece_download_time', side_effect=predictions):
+
+        with patch.object(predictor, "predict_piece_download_time", side_effect=predictions):
             result = await predictor.select_optimal_pieces([0, 1, 2], count=2)
-        
+
         assert len(result) == 2
         assert result == [0, 1]  # Should be sorted by priority score
 
@@ -131,7 +132,7 @@ class TestPiecePredictor:
             "actual_download_time": 2.0,
             "predicted_download_time": 1.8,
         }
-        
+
         # Should not raise exception for non-existent piece
         await predictor.update_piece_performance(0, performance_data)
 
@@ -139,7 +140,7 @@ class TestPiecePredictor:
     async def test_update_piece_performance_existing_piece(self, predictor, sample_piece_info):
         """Test updating performance for existing piece."""
         predictor.piece_info[0] = sample_piece_info
-        
+
         performance_data = {
             "download_start_time": time.time(),
             "download_complete_time": time.time() + 2.0,
@@ -149,16 +150,16 @@ class TestPiecePredictor:
             "actual_download_time": 2.0,
             "predicted_download_time": 1.8,
         }
-        
-        with patch.object(predictor, '_update_download_pattern', new_callable=AsyncMock), \
-             patch.object(predictor, '_online_learning', new_callable=AsyncMock):
-            
+
+        with patch.object(predictor, "_update_download_pattern", new_callable=AsyncMock), \
+             patch.object(predictor, "_online_learning", new_callable=AsyncMock):
+
             await predictor.update_piece_performance(0, performance_data)
-        
+
         piece_info = predictor.piece_info[0]
         assert piece_info.download_start_time == performance_data["download_start_time"]
         assert piece_info.download_complete_time == performance_data["download_complete_time"]
-        # CRITICAL FIX: Use approximate comparison for floating-point duration
+        # Note: Use approximate comparison for floating-point duration
         # Floating-point arithmetic can introduce small precision errors
         assert abs(piece_info.download_duration - 2.0) < 0.001
         assert piece_info.download_speed == 8192.0
@@ -168,17 +169,17 @@ class TestPiecePredictor:
     async def test_update_piece_performance_failed_download(self, predictor, sample_piece_info):
         """Test updating performance for failed download."""
         predictor.piece_info[0] = sample_piece_info
-        
+
         performance_data = {
             "success": False,
             "download_time": 2.0,
         }
-        
-        with patch.object(predictor, '_update_download_pattern', new_callable=AsyncMock), \
-             patch.object(predictor, '_online_learning', new_callable=AsyncMock):
-            
+
+        with patch.object(predictor, "_update_download_pattern", new_callable=AsyncMock), \
+             patch.object(predictor, "_online_learning", new_callable=AsyncMock):
+
             await predictor.update_piece_performance(0, performance_data)
-        
+
         piece_info = predictor.piece_info[0]
         assert piece_info.status == PieceStatus.FAILED
         assert piece_info.retry_count == 1
@@ -187,7 +188,7 @@ class TestPiecePredictor:
     async def test_analyze_download_patterns_empty(self, predictor):
         """Test analyzing download patterns with no pieces."""
         result = await predictor.analyze_download_patterns()
-        
+
         assert result["total_pieces"] == 0
         assert result["completed_pieces"] == 0
         assert result["failed_pieces"] == 0
@@ -207,7 +208,7 @@ class TestPiecePredictor:
             download_duration=2.0,
             download_speed=8192.0,
         )
-        
+
         predictor.piece_info[1] = PieceInfo(
             piece_index=1,
             size=16384,
@@ -216,7 +217,7 @@ class TestPiecePredictor:
             download_duration=0.0,
             download_speed=0.0,
         )
-        
+
         # Add download patterns
         predictor.download_patterns[0] = DownloadPattern(
             piece_index=0,
@@ -227,9 +228,9 @@ class TestPiecePredictor:
             pattern_type="sequential",
             completion_probability=0.9,
         )
-        
+
         result = await predictor.analyze_download_patterns()
-        
+
         assert result["total_pieces"] == 2
         assert result["completed_pieces"] == 1
         assert result["failed_pieces"] == 1
@@ -241,7 +242,7 @@ class TestPiecePredictor:
     def test_get_piece_info_existing(self, predictor, sample_piece_info):
         """Test getting existing piece info."""
         predictor.piece_info[0] = sample_piece_info
-        
+
         result = predictor.get_piece_info(0)
         assert result == sample_piece_info
 
@@ -253,7 +254,7 @@ class TestPiecePredictor:
     def test_get_all_piece_info(self, predictor, sample_piece_info):
         """Test getting all piece info."""
         predictor.piece_info[0] = sample_piece_info
-        
+
         all_info = predictor.get_all_piece_info()
         assert len(all_info) == 1
         assert all_info[0] == sample_piece_info
@@ -270,7 +271,7 @@ class TestPiecePredictor:
             completion_probability=0.9,
         )
         predictor.download_patterns[0] = pattern
-        
+
         result = predictor.get_download_pattern(0)
         assert result == pattern
 
@@ -285,9 +286,9 @@ class TestPiecePredictor:
         predictor.piece_info[0] = PieceInfo(piece_index=0, size=16384, hash=b"hash")
         predictor.stats["total_predictions"] = 10
         predictor.stats["accurate_predictions"] = 8
-        
+
         stats = predictor.get_ml_statistics()
-        
+
         assert "total_predictions" in stats
         assert "accurate_predictions" in stats
         assert "prediction_accuracy" in stats
@@ -301,7 +302,7 @@ class TestPiecePredictor:
         """Test cleanup of old data."""
         current_time = time.time()
         old_time = current_time - 4000  # 4000 seconds ago
-        
+
         # Add old piece info
         old_piece = PieceInfo(
             piece_index=0,
@@ -310,7 +311,7 @@ class TestPiecePredictor:
             last_attempt=old_time,
         )
         predictor.piece_info[0] = old_piece
-        
+
         # Add recent piece info
         recent_piece = PieceInfo(
             piece_index=1,
@@ -319,17 +320,17 @@ class TestPiecePredictor:
             last_attempt=current_time,
         )
         predictor.piece_info[1] = recent_piece
-        
+
         # Add performance history for old piece
         predictor.performance_history[0] = [100, 200, 300]
-        
+
         # Cleanup data older than 1 hour
         predictor.cleanup_old_data(max_age_seconds=3600)
-        
+
         # Old piece should be removed
         assert 0 not in predictor.piece_info
         assert 0 not in predictor.performance_history
-        
+
         # Recent piece should remain
         assert 1 in predictor.piece_info
 
@@ -338,7 +339,7 @@ class TestPiecePredictor:
         """Test piece feature extraction."""
         piece_index = 0
         piece_size = 16384
-        
+
         # Add piece info
         predictor.piece_info[piece_index] = PieceInfo(
             piece_index=piece_index,
@@ -349,7 +350,7 @@ class TestPiecePredictor:
             download_duration=2.0,
             download_speed=8192.0,
         )
-        
+
         # Add download pattern
         predictor.download_patterns[piece_index] = DownloadPattern(
             piece_index=piece_index,
@@ -360,13 +361,13 @@ class TestPiecePredictor:
             pattern_type="sequential",
             completion_probability=0.8,
         )
-        
-        with patch.object(predictor, '_estimate_network_quality', return_value=0.8), \
-             patch.object(predictor, '_estimate_peer_availability', return_value=0.7), \
-             patch.object(predictor, '_estimate_piece_rarity', return_value=0.6):
-            
+
+        with patch.object(predictor, "_estimate_network_quality", return_value=0.8), \
+             patch.object(predictor, "_estimate_peer_availability", return_value=0.7), \
+             patch.object(predictor, "_estimate_piece_rarity", return_value=0.6):
+
             features = await predictor._extract_piece_features(piece_index, piece_size)
-        
+
         assert features["piece_index"] == float(piece_index)
         assert features["piece_size"] == float(piece_size)
         assert features["piece_priority"] == 0.8  # HIGH priority
@@ -385,9 +386,9 @@ class TestPiecePredictor:
             "network_quality": 0.8,
             "peer_availability": 0.7,
         }
-        
+
         predicted_time = await predictor._predict_download_time(features)
-        
+
         assert predicted_time > 0.0
         assert predicted_time >= 0.1  # Minimum time
 
@@ -399,9 +400,9 @@ class TestPiecePredictor:
             "peer_availability": 0.7,
             "piece_rarity": 0.6,
         }
-        
+
         success_rate = await predictor._predict_success_rate(features)
-        
+
         assert 0.0 <= success_rate <= 1.0
 
     @pytest.mark.asyncio
@@ -413,9 +414,9 @@ class TestPiecePredictor:
             "network_quality": 0.7,
             "peer_availability": 0.6,
         }
-        
+
         score = await predictor._calculate_priority_score(features)
-        
+
         assert 0.0 <= score <= 1.0
 
     @pytest.mark.asyncio
@@ -426,9 +427,9 @@ class TestPiecePredictor:
             "peer_availability": 0.7,
             "success_rate": 0.9,
         }
-        
+
         prob = await predictor._calculate_completion_probability(features)
-        
+
         assert 0.0 <= prob <= 1.0
 
     @pytest.mark.asyncio
@@ -440,12 +441,12 @@ class TestPiecePredictor:
             "download_speed": 8192.0,
             "success": True,
         }
-        
-        with patch.object(predictor, '_determine_pattern_type', return_value="sequential"), \
-             patch.object(predictor, '_calculate_completion_probability', return_value=0.8):
-            
+
+        with patch.object(predictor, "_determine_pattern_type", return_value="sequential"), \
+             patch.object(predictor, "_calculate_completion_probability", return_value=0.8):
+
             await predictor._update_download_pattern(piece_index, performance_data)
-        
+
         pattern = predictor.download_patterns[piece_index]
         assert pattern.piece_index == piece_index
         assert pattern.download_times == [2.0]
@@ -458,7 +459,7 @@ class TestPiecePredictor:
     async def test_update_download_pattern_existing_pattern(self, predictor):
         """Test updating existing download pattern."""
         piece_index = 0
-        
+
         # Create existing pattern
         predictor.download_patterns[piece_index] = DownloadPattern(
             piece_index=piece_index,
@@ -469,18 +470,18 @@ class TestPiecePredictor:
             pattern_type="sequential",
             completion_probability=0.9,
         )
-        
+
         performance_data = {
             "download_time": 1.8,
             "download_speed": 9000,
             "success": True,
         }
-        
-        with patch.object(predictor, '_determine_pattern_type', return_value="sequential"), \
-             patch.object(predictor, '_calculate_completion_probability', return_value=0.8):
-            
+
+        with patch.object(predictor, "_determine_pattern_type", return_value="sequential"), \
+             patch.object(predictor, "_calculate_completion_probability", return_value=0.8):
+
             await predictor._update_download_pattern(piece_index, performance_data)
-        
+
         pattern = predictor.download_patterns[piece_index]
         assert len(pattern.download_times) == 2
         assert len(pattern.download_speeds) == 2
@@ -499,7 +500,7 @@ class TestPiecePredictor:
             pattern_type="unknown",
             completion_probability=0.8,
         )
-        
+
         pattern_type = await predictor._determine_pattern_type(0)
         assert pattern_type == "sequential"
 
@@ -515,7 +516,7 @@ class TestPiecePredictor:
             pattern_type="unknown",
             completion_probability=0.8,
         )
-        
+
         pattern_type = await predictor._determine_pattern_type(0)
         assert pattern_type == "reverse_sequential"
 
@@ -531,7 +532,7 @@ class TestPiecePredictor:
             pattern_type="unknown",
             completion_probability=0.8,
         )
-        
+
         pattern_type = await predictor._determine_pattern_type(0)
         assert pattern_type == "random"
 
@@ -547,7 +548,7 @@ class TestPiecePredictor:
             pattern_type="unknown",
             completion_probability=0.8,
         )
-        
+
         pattern_type = await predictor._determine_pattern_type(0)
         assert pattern_type == "unknown"
 
@@ -581,7 +582,7 @@ class TestPiecePredictor:
     async def test_online_learning_insufficient_samples(self, predictor):
         """Test online learning with insufficient samples."""
         predictor.performance_history[0] = [1.0, 2.0]  # Only 2 samples
-        
+
         # Should not raise exception
         await predictor._online_learning(0, {})
 
@@ -592,8 +593,8 @@ class TestPiecePredictor:
         predictor.performance_history[0] = [
             0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7
         ]
-        
-        with patch.object(predictor, '_adjust_models_positive') as mock_adjust:
+
+        with patch.object(predictor, "_adjust_models_positive") as mock_adjust:
             await predictor._online_learning(0, {})
             mock_adjust.assert_called_once_with(0)
 
@@ -604,8 +605,8 @@ class TestPiecePredictor:
         predictor.performance_history[0] = [
             3.0, 2.8, 2.6, 2.4, 2.2, 2.0, 1.8, 1.6, 1.4, 1.2, 1.0, 0.8, 0.6, 0.4, 0.2
         ]
-        
-        with patch.object(predictor, '_adjust_models_negative') as mock_adjust:
+
+        with patch.object(predictor, "_adjust_models_negative") as mock_adjust:
             await predictor._online_learning(0, {})
             mock_adjust.assert_called_once_with(0)
 

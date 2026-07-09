@@ -264,8 +264,6 @@ class TestSecurityManager:
     @pytest.mark.asyncio
     async def test_cleanup_expired_entries(self, security_manager):
         """Test cleaning up expired blacklist entries."""
-        import time
-
         # Add expired entry
         security_manager.add_to_blacklist(
             "192.168.1.1", "Test", expires_in=-100, source="test"
@@ -285,8 +283,6 @@ class TestSecurityManager:
     @pytest.mark.asyncio
     async def test_validate_peer_expired_entry(self, security_manager, sample_peer_info):
         """Test that expired entries are removed during validation."""
-        import time
-
         # Add expired entry
         security_manager.add_to_blacklist(
             sample_peer_info.ip, "Test", expires_in=-100, source="test"

@@ -22,11 +22,14 @@ else:
 
 try:
     from textual.containers import Container, Horizontal, Vertical
-    from textual.widgets import Sparkline, Static, DataTable
+    from textual.reactive import reactive
+    from textual.widgets import DataTable, Sparkline, Static
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
+            pass
 
     class Horizontal:  # type: ignore[no-redef]
         pass
@@ -42,6 +45,26 @@ except ImportError:
 
     class DataTable:  # type: ignore[no-redef]
         pass
+
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
 
 from rich.console import Group
 from rich.panel import Panel
@@ -130,7 +153,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         """Mount the graph widget."""
         try:
             self._sparkline = self.query_one("#graph-sparkline", Sparkline)  # type: ignore[attr-defined]
-            # CRITICAL FIX: Initialize with varying data pattern so Sparkline renders a visible line
+            # Note: Initialize with varying data pattern so Sparkline renders a visible line
             # A flat line (all same value) may not be visible - use a simple wave pattern
             if self._sparkline:
                 # Create a simple visible pattern: [0.1, 0.2, 0.1, 0.2, ...] repeated
@@ -168,7 +191,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         if self._sparkline and self._data_history:
             try:
                 self._sparkline.data = self._data_history  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
             except Exception as e:
@@ -191,7 +214,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
             piece_index = event_data.get("piece_index", "?")
             event_label = f"Piece {piece_index} Completed"
         self._add_event_annotation(time.time(), event_type, event_label, event_data.get("info_hash"))
-        
+
         # Default implementation: trigger refresh if this widget cares about piece events
         # Subclasses can override to handle specific events
         try:
@@ -233,7 +256,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
                         event_data.get("info_hash"),
                     )
                     break
-        
+
         # Default implementation: trigger refresh
         try:
             if self._data_provider:
@@ -261,11 +284,10 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
             import time
             event_label = event_type.replace("PEER_", "").replace("_", " ").title()
             self._add_event_annotation(time.time(), event_type, event_label, event_data.get("info_hash"))
-        
+
         # Default implementation: no-op (most widgets don't care about peer events)
         # Subclasses like PeerQualitySummaryWidget can override
-        pass
-    
+
     def on_tracker_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle tracker-related events (TRACKER_ANNOUNCE_STARTED, TRACKER_ANNOUNCE_SUCCESS, etc.).
         
@@ -292,7 +314,6 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         polling via their existing update mechanisms.
         """
         # Default: no-op (widgets use their own polling mechanisms)
-        pass
 
 
 class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
@@ -362,7 +383,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         color: $primary;
     }
     
-    #download-sparkline, #upload-sparkline {
+    #download-sparkline,     #upload-sparkline {
         height: 10;
         min-height: 10;
         width: 1fr;
@@ -370,7 +391,11 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         color: $primary;
     }
     """
-    
+
+    # F2.5.1: bound to TerminalDashboard global_stats + rate_samples via data_bind.
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    rate_samples: reactive = reactive([], layout=False)  # type: ignore[assignment]
+
     def compose(self) -> Any:  # pragma: no cover
         """Compose the upload/download graph widget."""
         yield Static("Upload & Download Speed", id="graph-title")
@@ -387,8 +412,8 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._download_sparkline = self.query_one("#download-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._upload_sparkline = self.query_one("#upload-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._event_annotations_widget = self.query_one("#event-annotations", Static)  # type: ignore[attr-defined]
-            
-            # CRITICAL FIX: Initialize with VARYING data pattern so Sparklines render a visible line
+
+            # Note: Initialize with VARYING data pattern so Sparklines render a visible line
             # A flat line (all same value) may not be visible - use a simple wave pattern
             # Create a visible pattern: [0.1, 0.2, 0.1, 0.2, ...] repeated for 20 points
             initial_data = [0.1 + (i % 2) * 0.1 for i in range(20)]
@@ -408,33 +433,77 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._upload_sparkline.styles.min_height = 10  # type: ignore[attr-defined]
                 self._upload_sparkline.refresh()  # type: ignore[attr-defined]
                 logger.debug("UploadDownloadGraphWidget: Initialized upload sparkline with %d varying data points", len(initial_data))
-            
-            # CRITICAL FIX: Start periodic updates if data provider is available
-            if self._data_provider:
-                logger.debug("UploadDownloadGraphWidget: Starting update loop with data provider")
-                self._start_updates()
-                # CRITICAL FIX: Trigger immediate update after widget is fully mounted
-                # Use call_after_refresh to ensure widget is ready and event loop is accessible
-                def trigger_initial_update() -> None:
-                    """Trigger initial data update after widget is ready."""
-                    try:
-                        import asyncio
-                        # Get the running event loop
-                        try:
-                            loop = asyncio.get_running_loop()
-                        except RuntimeError:
-                            loop = asyncio.get_event_loop()
-                        # Create task in the correct event loop
-                        task = loop.create_task(self._update_from_provider())
-                        logger.debug("UploadDownloadGraphWidget: Scheduled initial update task: %s", task)
-                    except Exception as e:
-                        logger.error("UploadDownloadGraphWidget: Error scheduling initial update: %s", e, exc_info=True)
-                
-                self.call_after_refresh(trigger_initial_update)  # type: ignore[attr-defined]
-            else:
-                logger.warning("UploadDownloadGraphWidget: No data provider available - graphs will not update")
+
+            # F2.5.1: bind to App reactives (replaces set_interval self-poll via _start_updates).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(
+                    global_stats=TerminalDashboard.global_stats,
+                    rate_samples=TerminalDashboard.rate_samples,
+                )
+            except Exception as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug("UploadDownloadGraphWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.error("Error mounting upload/download graph: %s", e, exc_info=True)
+
+    def watch_global_stats(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: append rates from bound global_stats (F2.5.1)."""
+        if isinstance(value, dict):
+            self.update_from_stats(value)
+
+    def watch_rate_samples(self, value: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Reactive watcher: replace history from bound rate_samples (F2.5.1)."""
+        if isinstance(value, list):
+            self._apply_rate_samples(value)
+
+    def _apply_rate_samples(self, samples: list[Any]) -> None:  # pragma: no cover
+        """Populate download/upload histories from a rate-samples list (F2.5.1)."""
+        if not samples:
+            if not self._download_history:
+                self._download_history = [0.0] * min(10, self._max_samples)
+            if not self._upload_history:
+                self._upload_history = [0.0] * min(10, self._max_samples)
+            self._update_display()
+            return
+
+        def get_timestamp(s: Any) -> float:
+            if isinstance(s, dict):
+                return float(s.get("timestamp", 0.0))
+            if hasattr(s, "timestamp"):
+                return float(getattr(s, "timestamp", 0.0))
+            return 0.0
+
+        sorted_samples = sorted(samples, key=get_timestamp)
+        download_rates: list[float] = []
+        upload_rates: list[float] = []
+        timestamps: list[float] = []
+
+        for sample in sorted_samples:
+            if isinstance(sample, dict):
+                timestamps.append(float(sample.get("timestamp", 0.0)))
+                download_rates.append(float(sample.get("download_rate", 0.0)) / 1024.0)
+                upload_rates.append(float(sample.get("upload_rate", 0.0)) / 1024.0)
+            elif hasattr(sample, "timestamp") and hasattr(sample, "download_rate") and hasattr(sample, "upload_rate"):
+                timestamps.append(float(getattr(sample, "timestamp", 0.0)))
+                download_rates.append(float(getattr(sample, "download_rate", 0.0)) / 1024.0)
+                upload_rates.append(float(getattr(sample, "upload_rate", 0.0)) / 1024.0)
+
+        if download_rates:
+            self._download_history = download_rates[-self._max_samples :]
+        elif not self._download_history:
+            num_points = min(20, self._max_samples)
+            self._download_history = [0.1 + (i % 2) * 0.1 for i in range(num_points)]
+
+        if upload_rates:
+            self._upload_history = upload_rates[-self._max_samples :]
+        elif not self._upload_history:
+            num_points = min(20, self._max_samples)
+            self._upload_history = [0.1 + (i % 2) * 0.1 for i in range(num_points)]
+
+        self._timestamps = timestamps[-self._max_samples :] if timestamps else []
+        self._update_display()
+        self._update_event_annotations()
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the widget and stop updates."""
@@ -450,28 +519,28 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates from data provider."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
-                # CRITICAL FIX: Get the event loop and create task properly
+                # Note: Get the event loop and create task properly
                 # Textual widgets run in the app's event loop, so we can get it directly
                 try:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
                     # No running loop, try to get event loop
                     loop = asyncio.get_event_loop()
-                
+
                 # Create task in the correct event loop
                 task = loop.create_task(self._update_from_provider())
                 logger.debug("UploadDownloadGraphWidget: Created async update task: %s", task)
             except Exception as e:
                 logger.error("Error scheduling graph update: %s", e, exc_info=True)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately using call_after_refresh to ensure widget is ready
             self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
@@ -488,10 +557,10 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._upload_history = [0.0] * min(10, self._max_samples)
             self._update_display()
             return
-        
+
         try:
             # Fetch rate samples (last 120 seconds by default)
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             # If daemon is busy (e.g., adding torrent), don't block UI for 30+ seconds
             logger.debug("UploadDownloadGraphWidget: Fetching rate samples from data provider...")
             try:
@@ -507,107 +576,9 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 logger.debug("UploadDownloadGraphWidget: Error fetching rate samples (will retry next cycle): %s", e)
                 # Keep existing display, don't update
                 return
-            
+
             logger.debug("UploadDownloadGraphWidget: Retrieved %d rate samples", len(samples) if samples else 0)
-            
-            if not samples:
-                logger.debug("UploadDownloadGraphWidget: No rate samples returned from provider")
-                # Show zero data if no samples
-                if not self._download_history:
-                    self._download_history = [0.0] * min(10, self._max_samples)
-                if not self._upload_history:
-                    self._upload_history = [0.0] * min(10, self._max_samples)
-                self._update_display()
-                return
-            
-            # Extract download and upload rates from samples
-            # Samples format: [{"timestamp": ..., "download_rate": ..., "upload_rate": ...}, ...]
-            # OR: [RateSample(...), ...] from Pydantic models
-            # CRITICAL: Ensure samples are sorted by timestamp for proper time-based display
-            if samples:
-                # Sort by timestamp to ensure chronological order
-                def get_timestamp(s: Any) -> float:
-                    """Extract timestamp from sample (dict or Pydantic model)."""
-                    if isinstance(s, dict):
-                        return float(s.get("timestamp", 0.0))
-                    elif hasattr(s, "timestamp"):
-                        return float(getattr(s, "timestamp", 0.0))
-                    return 0.0
-                
-                samples = sorted(samples, key=get_timestamp)
-            
-            download_rates: list[float] = []
-            upload_rates: list[float] = []
-            timestamps: list[float] = []
-            
-            for sample in samples:
-                # Handle both dict and Pydantic model formats
-                if isinstance(sample, dict):
-                    # Extract timestamp for time-based display
-                    timestamp = float(sample.get("timestamp", 0.0))
-                    timestamps.append(timestamp)
-                    # Convert bytes/sec to KiB/s
-                    download_kib = float(sample.get("download_rate", 0.0)) / 1024.0
-                    upload_kib = float(sample.get("upload_rate", 0.0)) / 1024.0
-                    download_rates.append(download_kib)
-                    upload_rates.append(upload_kib)
-                elif hasattr(sample, "timestamp") and hasattr(sample, "download_rate") and hasattr(sample, "upload_rate"):
-                    # Handle RateSample Pydantic model objects
-                    timestamp = float(getattr(sample, "timestamp", 0.0))
-                    timestamps.append(timestamp)
-                    download_kib = float(getattr(sample, "download_rate", 0.0)) / 1024.0
-                    upload_kib = float(getattr(sample, "upload_rate", 0.0)) / 1024.0
-                    download_rates.append(download_kib)
-                    upload_rates.append(upload_kib)
-                else:
-                    logger.warning("UploadDownloadGraphWidget: Unknown sample format: %s", type(sample))
-            
-            logger.debug("UploadDownloadGraphWidget: Extracted %d download rates, %d upload rates, %d timestamps", 
-                         len(download_rates), len(upload_rates), len(timestamps))
-            
-            # CRITICAL FIX: Always update histories with actual time series data
-            # Use the real data even if it's all zeros - Sparklines can render zero data
-            # Only use placeholder pattern if we have NO data at all (empty list)
-            if download_rates:
-                # Keep only the most recent samples (time-ordered) - USE REAL DATA
-                self._download_history = download_rates[-self._max_samples :]
-                logger.debug("UploadDownloadGraphWidget: Download history updated with %d REAL data points (range: %.2f - %.2f KiB/s)", 
-                           len(self._download_history), 
-                           min(self._download_history) if self._download_history else 0.0,
-                           max(self._download_history) if self._download_history else 0.0)
-            else:
-                # No data available - only use placeholder if history is empty
-                if not self._download_history:
-                    # Initialize with VARYING pattern so line is visible (not flat)
-                    num_points = min(20, self._max_samples)
-                    self._download_history = [0.1 + (i % 2) * 0.1 for i in range(num_points)]
-                    logger.debug("UploadDownloadGraphWidget: Initialized download history with placeholder pattern (no data yet)")
-            
-            if upload_rates:
-                # Keep only the most recent samples (time-ordered) - USE REAL DATA
-                self._upload_history = upload_rates[-self._max_samples :]
-                logger.debug("UploadDownloadGraphWidget: Upload history updated with %d REAL data points (range: %.2f - %.2f KiB/s)", 
-                           len(self._upload_history),
-                           min(self._upload_history) if self._upload_history else 0.0,
-                           max(self._upload_history) if self._upload_history else 0.0)
-            else:
-                # No data available - only use placeholder if history is empty
-                if not self._upload_history:
-                    # Initialize with VARYING pattern so line is visible (not flat)
-                    num_points = min(20, self._max_samples)
-                    self._upload_history = [0.1 + (i % 2) * 0.1 for i in range(num_points)]
-                    logger.debug("UploadDownloadGraphWidget: Initialized upload history with placeholder pattern (no data yet)")
-            
-            # Store timestamps for time-based ordering (Sparkline uses sequential index, but we ensure chronological order)
-            self._timestamps = timestamps[-self._max_samples :] if timestamps else []
-            
-            logger.debug("UploadDownloadGraphWidget: Final histories - download: %d points, upload: %d points, timestamps: %d", 
-                        len(self._download_history), len(self._upload_history), len(self._timestamps))
-            
-            # Update sparklines
-            self._update_display()
-            # Update event annotations
-            self._update_event_annotations()
+            self._apply_rate_samples(samples or [])
         except Exception as e:
             logger.error("Error updating upload/download graph from provider: %s", e, exc_info=True)
             # Still update display with existing data or zeros
@@ -620,15 +591,15 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
     def _update_display(self) -> None:  # pragma: no cover
         """Update the graph display for UploadDownloadGraphWidget."""
-        # CRITICAL FIX: Try to update even if not fully attached yet (for initial render)
+        # Note: Try to update even if not fully attached yet (for initial render)
         # Only skip if explicitly hidden
         if hasattr(self, "display") and self.display is False:  # type: ignore[attr-defined]
             logger.debug("UploadDownloadGraphWidget: Widget explicitly hidden, skipping display update")
             return
-        
+
         try:
             if self._download_sparkline:
-                # CRITICAL FIX: Always set data - use real data even if all zeros
+                # Note: Always set data - use real data even if all zeros
                 # Sparklines can render zero data, but need at least some variation to be visible
                 if self._download_history and len(self._download_history) > 0:
                     # Ensure data has some variation - if all zeros, add slight variation for visibility
@@ -639,10 +610,10 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                         display_data = [0.0] * len(self._download_history)
                     else:
                         display_data = self._download_history
-                    
+
                     self._download_sparkline.data = display_data  # type: ignore[attr-defined]
-                    logger.debug("UploadDownloadGraphWidget: Updated download sparkline with %d data points (range: %.2f - %.2f KiB/s)", 
-                              len(display_data), 
+                    logger.debug("UploadDownloadGraphWidget: Updated download sparkline with %d data points (range: %.2f - %.2f KiB/s)",
+                              len(display_data),
                               data_min,
                               data_max)
                 else:
@@ -650,7 +621,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
                     self._download_sparkline.data = placeholder  # type: ignore[attr-defined]
                     logger.debug("UploadDownloadGraphWidget: Updated download sparkline with placeholder pattern (no data yet)")
-                # CRITICAL FIX: Ensure widget is visible and refresh
+                # Note: Ensure widget is visible and refresh
                 self._download_sparkline.display = True  # type: ignore[attr-defined]
                 # Force repaint by calling refresh
                 if hasattr(self._download_sparkline, "refresh"):
@@ -660,10 +631,10 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._download_sparkline.update()  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error updating download sparkline: %s", e, exc_info=True)
-        
+
         try:
             if self._upload_sparkline:
-                # CRITICAL FIX: Always set data - use real data even if all zeros
+                # Note: Always set data - use real data even if all zeros
                 if self._upload_history and len(self._upload_history) > 0:
                     # Ensure data has some variation - if all zeros, add slight variation for visibility
                     data_min = min(self._upload_history) if self._upload_history else 0.0
@@ -673,9 +644,9 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                         display_data = [0.0] * len(self._upload_history)
                     else:
                         display_data = self._upload_history
-                    
+
                     self._upload_sparkline.data = display_data  # type: ignore[attr-defined]
-                    logger.debug("UploadDownloadGraphWidget: Updated upload sparkline with %d data points (range: %.2f - %.2f KiB/s)", 
+                    logger.debug("UploadDownloadGraphWidget: Updated upload sparkline with %d data points (range: %.2f - %.2f KiB/s)",
                               len(display_data),
                               data_min,
                               data_max)
@@ -684,7 +655,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
                     self._upload_sparkline.data = placeholder  # type: ignore[attr-defined]
                     logger.debug("UploadDownloadGraphWidget: Updated upload sparkline with placeholder pattern (no data yet)")
-                # CRITICAL FIX: Ensure widget is visible and refresh
+                # Note: Ensure widget is visible and refresh
                 self._upload_sparkline.display = True  # type: ignore[attr-defined]
                 # Force repaint by calling refresh
                 if hasattr(self._upload_sparkline, "refresh"):
@@ -694,16 +665,16 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._upload_sparkline.update()  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error updating upload sparkline: %s", e, exc_info=True)
-        
-        # CRITICAL FIX: Trigger parent widget refresh to ensure repaint
+
+        # Note: Trigger parent widget refresh to ensure repaint
         try:
             self.refresh()  # Refresh parent widget to trigger repaint
         except Exception:
             pass
-        
+
         # Update event annotations
         self._update_event_annotations()
-    
+
     def _add_event_annotation(self, timestamp: float, event_type: str, label: str, info_hash: Optional[str] = None) -> None:
         """Add an event annotation to the timeline.
         
@@ -721,30 +692,30 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         })
         # Keep only recent events
         self._event_timeline = self._event_timeline[-self._max_events:]
-    
+
     def _update_event_annotations(self) -> None:
         """Update the event annotations display."""
         if not self._event_annotations_widget:
             return
-        
+
         try:
             import time
             current_time = time.time()
-            
+
             # Filter events within the graph time window (last 120 seconds)
             time_window = 120.0
             recent_events = [
                 e for e in self._event_timeline
                 if current_time - e["timestamp"] <= time_window
             ]
-            
+
             if not recent_events:
                 self._event_annotations_widget.update("")
                 return
-            
+
             # Sort by timestamp (oldest first)
             recent_events.sort(key=lambda e: e["timestamp"])
-            
+
             # Create annotation text
             annotation_parts: list[str] = []
             for event in recent_events[-10:]:  # Show last 10 events
@@ -755,7 +726,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     age_str = f"{int(age_seconds / 60)}m ago"
                 else:
                     age_str = f"{int(age_seconds / 3600)}h ago"
-                
+
                 # Color code by event type
                 if "TRACKER" in event["type"]:
                     color = "cyan"
@@ -765,9 +736,9 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     color = "yellow"
                 else:
                     color = "white"
-                
+
                 annotation_parts.append(f"[{color}]{event['label']}[/{color}] ({age_str})")
-            
+
             if annotation_parts:
                 annotation_text = " • ".join(annotation_parts)
                 self._event_annotations_widget.update(f"[dim]Events:[/dim] {annotation_text}")
@@ -776,9 +747,25 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         except Exception as e:
             logger.debug("Error updating event annotations: %s", e)
 
+    def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
+        """Update graph with statistics (append rolling history from global_stats)."""
+        try:
+            download_rate = float(stats.get("download_rate", 0.0)) / 1024.0
+            upload_rate = float(stats.get("upload_rate", 0.0)) / 1024.0
+            self._download_history.append(download_rate)
+            self._upload_history.append(upload_rate)
+            self._download_history = self._download_history[-self._max_samples :]
+            self._upload_history = self._upload_history[-self._max_samples :]
+            self._update_display()
+        except Exception as e:
+            logger.debug("Error updating upload/download graph from stats: %s", e)
+
 
 class PieceHealthPictogram(Container):  # type: ignore[misc]
     """Render per-piece availability as a colored square pictogram."""
+
+    # F2.6.5: bound to TerminalDashboard.selected_torrent_piece_health via data_bind.
+    selected_torrent_piece_health: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     PieceHealthPictogram {
@@ -824,49 +811,24 @@ class PieceHealthPictogram(Container):  # type: ignore[misc]
             self._legend = self.query_one("#piece-health-legend", Static)  # type: ignore[attr-defined]
         except Exception as exc:
             logger.debug("PieceHealthPictogram: failed to query children: %s", exc)
-        self._start_updates()
-
-    def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Stop refresh loop."""
-        if self._update_task:
-            if hasattr(self._update_task, "stop"):
-                self._update_task.stop()  # type: ignore[attr-defined]
-            elif hasattr(self._update_task, "cancel"):
-                self._update_task.cancel()  # type: ignore[attr-defined]
-            self._update_task = None
-
-    def _start_updates(self) -> None:
-        """Kick off periodic updates."""
-        if not self._data_provider:
-            if self._stats:
-                self._stats.update("Data provider unavailable")
-            return
-
-        import asyncio
-
-        def schedule_update() -> None:
-            try:
-                asyncio.create_task(self._update_from_provider())
-            except Exception as exc:
-                logger.debug("PieceHealthPictogram: schedule error: %s", exc)
-
         try:
-            # CRITICAL FIX: Reduced interval from 3.0s to 1.5s for tighter updates
-            self._update_task = self.set_interval(1.5, schedule_update)  # type: ignore[attr-defined]
-            self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
-        except Exception as exc:
-            logger.debug("PieceHealthPictogram: failed to start timer: %s", exc)
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
 
-    async def _update_from_provider(self) -> None:
-        """Fetch piece health payload and update the pictogram."""
-        if not self._data_provider or not self._stats or not self._content:
+            self.data_bind(
+                selected_torrent_piece_health=TerminalDashboard.selected_torrent_piece_health,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.debug("PieceHealthPictogram data_bind skipped: %s", exc)
+
+    def watch_selected_torrent_piece_health(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render pictogram from bound piece health (F2.6.5)."""
+        if isinstance(value, dict) and value:
+            self._render_piece_health(value)
+
+    def _render_piece_health(self, data: dict[str, Any]) -> None:
+        """Render pictogram from piece health payload."""
+        if not self._stats or not self._content:
             return
-
-        try:
-            data = await self._data_provider.get_piece_health(self._info_hash)
-        except Exception as exc:
-            logger.debug("PieceHealthPictogram: error fetching piece data: %s", exc)
-            data = {}
 
         availability = data.get("availability", []) or []
         if not availability:
@@ -918,6 +880,50 @@ class PieceHealthPictogram(Container):  # type: ignore[misc]
                 legend.append(f" {PIECE_HEALTH_LABELS[level]}  ", style="dim")
             self._legend.update(legend)
 
+    def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Stop refresh loop."""
+        if self._update_task:
+            if hasattr(self._update_task, "stop"):
+                self._update_task.stop()  # type: ignore[attr-defined]
+            elif hasattr(self._update_task, "cancel"):
+                self._update_task.cancel()  # type: ignore[attr-defined]
+            self._update_task = None
+
+    def _start_updates(self) -> None:
+        """Kick off periodic updates."""
+        if not self._data_provider:
+            if self._stats:
+                self._stats.update("Data provider unavailable")
+            return
+
+        import asyncio
+
+        def schedule_update() -> None:
+            try:
+                asyncio.create_task(self._update_from_provider())
+            except Exception as exc:
+                logger.debug("PieceHealthPictogram: schedule error: %s", exc)
+
+        try:
+            # Note: Reduced interval from 3.0s to 1.5s for tighter updates
+            self._update_task = self.set_interval(1.5, schedule_update)  # type: ignore[attr-defined]
+            self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
+        except Exception as exc:
+            logger.debug("PieceHealthPictogram: failed to start timer: %s", exc)
+
+    async def _update_from_provider(self) -> None:
+        """Fetch piece health payload and update the pictogram."""
+        if not self._data_provider or not self._stats or not self._content:
+            return
+
+        try:
+            data = await self._data_provider.get_piece_health(self._info_hash)
+        except Exception as exc:
+            logger.debug("PieceHealthPictogram: error fetching piece data: %s", exc)
+            data = {}
+
+        self._render_piece_health(data)
+
     @staticmethod
     def _downsample_availability(values: list[int], max_segments: int) -> list[int]:
         """Downsample a long availability list to a fixed number of segments."""
@@ -937,31 +943,12 @@ class PieceHealthPictogram(Container):  # type: ignore[misc]
             sampled.append(int(sum(segment) / len(segment)))
         return sampled
 
-    def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
-        """Update graph with statistics (for compatibility with GraphsSectionContainer).
-        
-        Args:
-            stats: Dictionary containing download_rate and upload_rate
-        """
-        try:
-            download_rate = float(stats.get("download_rate", 0.0)) / 1024.0  # Convert to KiB/s
-            upload_rate = float(stats.get("upload_rate", 0.0)) / 1024.0  # Convert to KiB/s
-            
-            self._download_history.append(download_rate)
-            self._upload_history.append(upload_rate)
-            
-            # Keep only last max_samples
-            self._download_history = self._download_history[-self._max_samples :]
-            self._upload_history = self._upload_history[-self._max_samples :]
-            
-            # Update display
-            self._update_display()
-        except Exception as e:
-            logger.debug("Error updating upload/download graph from stats: %s", e)
-
 
 class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     """Graph widget for disk I/O metrics."""
+
+    # F2.6.6: bound to TerminalDashboard.disk_io_metrics via data_bind.
+    disk_io_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     DiskGraphWidget {
@@ -1039,7 +1026,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._read_sparkline = self.query_one("#read-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._write_sparkline = self.query_one("#write-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._cache_sparkline = self.query_one("#cache-sparkline", Sparkline)  # type: ignore[attr-defined]
-            
+
             # Initialize with zero data so graphs render immediately
             if self._read_sparkline:
                 self._read_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
@@ -1047,12 +1034,33 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 self._write_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
             if self._cache_sparkline:
                 self._cache_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-            
-            # Start periodic updates if data provider is available
-            if self._data_provider:
-                self._start_updates()
+
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(disk_io_metrics=TerminalDashboard.disk_io_metrics)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("DiskGraphWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.debug("Error mounting disk graph: %s", e)
+
+    def watch_disk_io_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: append disk metrics from bound dict (F2.6.6)."""
+        if isinstance(value, dict) and value:
+            self._apply_disk_io_metrics(value)
+
+    def _apply_disk_io_metrics(self, metrics: dict[str, Any]) -> None:  # pragma: no cover
+        """Update disk I/O sparkline histories from metrics dict."""
+        read_throughput_mb = float(metrics.get("read_throughput", 0.0)) / 1024.0
+        write_throughput_mb = float(metrics.get("write_throughput", 0.0)) / 1024.0
+        cache_hit_rate = float(metrics.get("cache_hit_rate", 0.0))
+        self._read_history.append(read_throughput_mb)
+        self._write_history.append(write_throughput_mb)
+        self._cache_hit_history.append(cache_hit_rate)
+        self._read_history = self._read_history[-self._max_samples :]
+        self._write_history = self._write_history[-self._max_samples :]
+        self._cache_hit_history = self._cache_hit_history[-self._max_samples :]
+        self._update_display()
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the widget and stop updates."""
@@ -1068,7 +1076,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates from data provider."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
@@ -1076,11 +1084,11 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 asyncio.create_task(self._update_from_provider())
             except Exception as e:
                 logger.debug("Error scheduling disk graph update: %s", e)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -1097,10 +1105,10 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._cache_hit_history = [0.0] * min(10, self._max_samples)
             self._update_display()
             return
-        
+
         try:
             # Fetch disk I/O metrics
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 metrics = await asyncio.wait_for(
                     self._data_provider.get_disk_io_metrics(),
@@ -1112,7 +1120,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             except Exception as e:
                 logger.debug("DiskGraphWidget: Error fetching disk I/O metrics (will retry next cycle): %s", e)
                 return
-            
+
             if not metrics:
                 logger.debug("DiskGraphWidget: No disk I/O metrics returned from provider")
                 # Show zero data if no metrics
@@ -1124,32 +1132,8 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._cache_hit_history = [0.0] * min(10, self._max_samples)
                 self._update_display()
                 return
-            
-            # Extract metrics (already in correct units from get_disk_io_metrics)
-            read_throughput_mb = metrics.get("read_throughput", 0.0) / 1024.0  # Convert KiB/s to MB/s
-            write_throughput_mb = metrics.get("write_throughput", 0.0) / 1024.0  # Convert KiB/s to MB/s
-            cache_hit_rate = metrics.get("cache_hit_rate", 0.0)  # Already in percentage
-            
-            # Update histories
-            self._read_history.append(read_throughput_mb)
-            self._write_history.append(write_throughput_mb)
-            self._cache_hit_history.append(cache_hit_rate)
-            
-            # Keep only last max_samples
-            self._read_history = self._read_history[-self._max_samples :]
-            self._write_history = self._write_history[-self._max_samples :]
-            self._cache_hit_history = self._cache_hit_history[-self._max_samples :]
-            
-            # Ensure we have at least some data for display
-            if not self._read_history:
-                self._read_history = [0.0] * min(10, self._max_samples)
-            if not self._write_history:
-                self._write_history = [0.0] * min(10, self._max_samples)
-            if not self._cache_hit_history:
-                self._cache_hit_history = [0.0] * min(10, self._max_samples)
-            
-            # Update sparklines
-            self._update_display()
+
+            self._apply_disk_io_metrics(metrics)
         except Exception as e:
             logger.error("Error updating disk graph from provider: %s", e, exc_info=True)
             # Still update display with existing data or zeros
@@ -1169,7 +1153,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._read_sparkline.data = self._read_history  # type: ignore[attr-defined]
                 else:
                     self._read_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._read_sparkline, "refresh"):
                     self._read_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1180,7 +1164,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._write_sparkline.data = self._write_history  # type: ignore[attr-defined]
                 else:
                     self._write_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._write_sparkline, "refresh"):
                     self._write_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1191,7 +1175,7 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._cache_sparkline.data = self._cache_hit_history  # type: ignore[attr-defined]
                 else:
                     self._cache_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._cache_sparkline, "refresh"):
                     self._cache_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1200,6 +1184,9 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
 class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     """Graph widget for network timing metrics."""
+
+    # F2.6.7: bound to TerminalDashboard.network_quality via data_bind.
+    network_quality: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     NetworkGraphWidget {
@@ -1272,18 +1259,36 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         try:
             self._utp_sparkline = self.query_one("#utp-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._overhead_sparkline = self.query_one("#overhead-sparkline", Sparkline)  # type: ignore[attr-defined]
-            
+
             # Initialize with zero data so graphs render immediately
             if self._utp_sparkline:
                 self._utp_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
             if self._overhead_sparkline:
                 self._overhead_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-            
-            # Start periodic updates if data provider is available
-            if self._data_provider:
-                self._start_updates()
+
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(network_quality=TerminalDashboard.network_quality)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("NetworkGraphWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.debug("Error mounting network graph: %s", e)
+
+    def watch_network_quality(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: append network timing from bound dict (F2.6.7)."""
+        if isinstance(value, dict) and value:
+            self._apply_network_quality(value)
+
+    def _apply_network_quality(self, metrics: dict[str, Any]) -> None:  # pragma: no cover
+        """Update network sparkline histories from metrics dict."""
+        utp_delay_ms = float(metrics.get("utp_delay_ms", 0.0))
+        overhead_kib = float(metrics.get("network_overhead_rate", 0.0))
+        self._utp_delay_history.append(utp_delay_ms)
+        self._overhead_history.append(overhead_kib)
+        self._utp_delay_history = self._utp_delay_history[-self._max_samples :]
+        self._overhead_history = self._overhead_history[-self._max_samples :]
+        self._update_display()
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the widget and stop updates."""
@@ -1299,7 +1304,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates from data provider."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
@@ -1307,11 +1312,11 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 asyncio.create_task(self._update_from_provider())
             except Exception as e:
                 logger.debug("Error scheduling network graph update: %s", e)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -1329,10 +1334,10 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 self._overhead_history = [0.0] * min(10, self._max_samples)
             self._update_display()
             return
-        
+
         try:
             # Fetch network timing metrics
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 metrics = await asyncio.wait_for(
                     self._data_provider.get_network_timing_metrics(),
@@ -1344,7 +1349,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             except Exception as e:
                 logger.debug("NetworkGraphWidget: Error fetching network timing metrics (will retry next cycle): %s", e)
                 return
-            
+
             if not metrics:
                 logger.debug("NetworkGraphWidget: No network timing metrics returned from provider")
                 # Show zero data if no metrics
@@ -1354,21 +1359,8 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._overhead_history = [0.0] * min(10, self._max_samples)
                 self._update_display()
                 return
-            
-            # Extract metrics (already in correct units)
-            utp_delay_ms = metrics.get("utp_delay_ms", 0.0)
-            overhead_kib = metrics.get("network_overhead_rate", 0.0)
-            
-            # Update histories
-            self._utp_delay_history.append(utp_delay_ms)
-            self._overhead_history.append(overhead_kib)
-            
-            # Keep only last max_samples
-            self._utp_delay_history = self._utp_delay_history[-self._max_samples :]
-            self._overhead_history = self._overhead_history[-self._max_samples :]
-            
-            # Update sparklines
-            self._update_display()
+
+            self._apply_network_quality(metrics)
         except Exception as e:
             logger.error("Error updating network graph from provider: %s", e, exc_info=True)
             # Still update display with existing data or zeros
@@ -1392,7 +1384,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._utp_sparkline.data = self._utp_delay_history  # type: ignore[attr-defined]
                 else:
                     self._utp_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._utp_sparkline, "refresh"):
                     self._utp_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1403,7 +1395,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._overhead_sparkline.data = self._overhead_history  # type: ignore[attr-defined]
                 else:
                     self._overhead_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._overhead_sparkline, "refresh"):
                     self._overhead_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1412,6 +1404,9 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
 class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     """Graph widget for download speed only."""
+
+    # F2.5.2: bound to TerminalDashboard.global_stats via data_bind.
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -1434,12 +1429,24 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         """Mount the download graph widget."""
         try:
             self._sparkline = self.query_one("#graph-sparkline", Sparkline)  # type: ignore[attr-defined]
-            
-            # Start periodic updates if data provider is available
-            if self._data_provider:
-                self._start_updates()
+
+            # F2.5.2: bind to App global_stats (replaces set_interval self-poll).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(global_stats=TerminalDashboard.global_stats)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("DownloadGraphWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.debug("Error mounting download graph: %s", e)
+
+    def watch_global_stats(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: append download rate from bound global_stats (F2.5.2)."""
+        if isinstance(value, dict):
+            rate = float(value.get("download_rate", 0.0)) / 1024.0
+            self._download_history.append(rate)
+            self._download_history = self._download_history[-self._max_samples :]
+            self._update_display()
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the widget and stop updates."""
@@ -1455,7 +1462,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates from data provider."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
@@ -1463,9 +1470,9 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 asyncio.create_task(self._update_from_provider())
             except Exception as e:
                 logger.debug("Error scheduling download graph update: %s", e)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
@@ -1482,10 +1489,10 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 self._download_history = [0.0] * min(10, self._max_samples)
             self._update_display()
             return
-        
+
         try:
             # Fetch rate samples
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 samples = await asyncio.wait_for(
                     self._data_provider.get_rate_samples(seconds=120),
@@ -1497,7 +1504,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             except Exception as e:
                 logger.debug("DownloadGraphWidget: Error fetching rate samples (will retry next cycle): %s", e)
                 return
-            
+
             if not samples:
                 logger.debug("DownloadGraphWidget: No rate samples returned from provider")
                 # Show zero data if no samples
@@ -1505,7 +1512,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._download_history = [0.0] * min(10, self._max_samples)
                 self._update_display()
                 return
-            
+
             # Extract download rates
             download_rates: list[float] = []
             for sample in samples:
@@ -1513,14 +1520,14 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     # Convert bytes/sec to KiB/s
                     download_kib = sample.get("download_rate", 0.0) / 1024.0
                     download_rates.append(download_kib)
-            
+
             # Update history
             if download_rates:
                 self._download_history = download_rates[-self._max_samples :]
             else:
                 # Initialize with zeros if no data
                 self._download_history = [0.0] * min(10, self._max_samples)
-            
+
             # Update sparkline
             self._update_display()
         except Exception as e:
@@ -1538,7 +1545,7 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._sparkline.data = self._download_history  # type: ignore[attr-defined]
                 else:
                     self._sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1547,6 +1554,9 @@ class DownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
 class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     """Graph widget for upload speed only."""
+
+    # F2.5.2: bound to TerminalDashboard.global_stats via data_bind.
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -1569,12 +1579,24 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         """Mount the upload graph widget."""
         try:
             self._sparkline = self.query_one("#graph-sparkline", Sparkline)  # type: ignore[attr-defined]
-            
-            # Start periodic updates if data provider is available
-            if self._data_provider:
-                self._start_updates()
+
+            # F2.5.2: bind to App global_stats (replaces set_interval self-poll).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(global_stats=TerminalDashboard.global_stats)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("UploadGraphWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.debug("Error mounting upload graph: %s", e)
+
+    def watch_global_stats(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: append upload rate from bound global_stats (F2.5.2)."""
+        if isinstance(value, dict):
+            rate = float(value.get("upload_rate", 0.0)) / 1024.0
+            self._upload_history.append(rate)
+            self._upload_history = self._upload_history[-self._max_samples :]
+            self._update_display()
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the widget and stop updates."""
@@ -1590,7 +1612,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates from data provider."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
@@ -1598,9 +1620,9 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 asyncio.create_task(self._update_from_provider())
             except Exception as e:
                 logger.debug("Error scheduling upload graph update: %s", e)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
@@ -1617,10 +1639,10 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 self._upload_history = [0.0] * min(10, self._max_samples)
             self._update_display()
             return
-        
+
         try:
             # Fetch rate samples
-            # CRITICAL FIX: Use shorter timeout for UI responsiveness
+            # Note: Use shorter timeout for UI responsiveness
             try:
                 samples = await asyncio.wait_for(
                     self._data_provider.get_rate_samples(seconds=120),
@@ -1632,7 +1654,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             except Exception as e:
                 logger.debug("UploadGraphWidget: Error fetching rate samples (will retry next cycle): %s", e)
                 return
-            
+
             if not samples:
                 logger.debug("UploadGraphWidget: No rate samples returned from provider")
                 # Show zero data if no samples
@@ -1640,7 +1662,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._upload_history = [0.0] * min(10, self._max_samples)
                 self._update_display()
                 return
-            
+
             # Extract upload rates
             upload_rates: list[float] = []
             for sample in samples:
@@ -1648,14 +1670,14 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     # Convert bytes/sec to KiB/s
                     upload_kib = sample.get("upload_rate", 0.0) / 1024.0
                     upload_rates.append(upload_kib)
-            
+
             # Update history
             if upload_rates:
                 self._upload_history = upload_rates[-self._max_samples :]
             else:
                 # Initialize with zeros if no data
                 self._upload_history = [0.0] * min(10, self._max_samples)
-            
+
             # Update sparkline
             self._update_display()
         except Exception as e:
@@ -1673,7 +1695,7 @@ class UploadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._sparkline.data = self._upload_history  # type: ignore[attr-defined]
                 else:
                     self._sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -1736,6 +1758,9 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
     }
     """
 
+    # F2.5.3: bound to TerminalDashboard.selected_torrent_status via data_bind.
+    selected_torrent_status: reactive = reactive(None, layout=False)  # type: ignore[assignment]
+
     def __init__(
         self,
         info_hash_hex: str,
@@ -1765,7 +1790,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
     def compose(self) -> Any:  # pragma: no cover
         """Compose the per-torrent graph widget."""
         yield Static(f"Torrent Performance: {self.info_hash_hex[:16]}...", id="title")
-        
+
         with Container(id="graphs-section"):
             with Container(id="speed-graphs"):
                 yield Static("Download Speed (KiB/s):", id="download-label")
@@ -1774,11 +1799,11 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 yield Sparkline(id="upload-sparkline")
                 yield Static("Piece Download Rate (pieces/s):", id="piece-rate-label")
                 yield Sparkline(id="piece-rate-sparkline")
-            
+
             with Container(id="peer-performance"):
                 yield Static("Top Performing Peers", id="peer-label")
                 yield DataTable(id="peer-table", zebra_stripes=True)
-        
+
         with Container(id="metrics-section"):
             with Container(id="metrics-left"):
                 yield Static("Progress:", id="progress-label")
@@ -1787,7 +1812,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 yield Static("0/0", id="pieces-value")
                 yield Static("Swarm Availability:", id="availability-label")
                 yield Static("0.0%", id="availability-value")
-            
+
             with Container(id="metrics-right"):
                 yield Static("Connected Peers:", id="peers-label")
                 yield Static("0", id="peers-value")
@@ -1816,7 +1841,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
             self._upload_sparkline = self.query_one("#upload-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._piece_rate_sparkline = self.query_one("#piece-rate-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._peer_table = self.query_one("#peer-table", DataTable)  # type: ignore[attr-defined]
-            
+
             # Initialize sparklines with zero data so they render immediately
             if self._download_sparkline:
                 self._download_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
@@ -1824,7 +1849,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 self._upload_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
             if self._piece_rate_sparkline:
                 self._piece_rate_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-            
+
             if self._peer_table:
                 self._peer_table.add_columns(
                     "Peer",
@@ -1833,9 +1858,15 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     "Latency (ms)",
                     "Pieces",
                 )
-            
+
             if self._data_provider:
-                self._start_updates()
+                # F2.5.3: bind to App selected_torrent_status (replaces set_interval self-poll).
+                try:
+                    from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                    self.data_bind(selected_torrent_status=TerminalDashboard.selected_torrent_status)
+                except Exception as exc:  # pragma: no cover
+                    logger.debug("PerTorrentGraphWidget data_bind skipped: %s", exc)
                 # Register nested widgets for event-driven updates
                 try:
                     swarm_widget = self.query_one("#per-torrent-swarm-health", SwarmHealthDotPlot)  # type: ignore[attr-defined]
@@ -1848,7 +1879,25 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     logger.debug("Error registering nested widgets in PerTorrentGraphWidget: %s", e)
         except Exception as e:
             logger.debug("Error mounting per-torrent graph: %s", e)
-    
+
+    def watch_selected_torrent_status(self, value: Any) -> None:  # pragma: no cover
+        """Reactive watcher: append per-torrent rates from bound status (F2.5.3)."""
+        if not isinstance(value, dict):
+            return
+        ih = value.get("info_hash") or value.get("info_hash_hex")
+        if ih and ih != self.info_hash_hex:
+            return
+        download_rate_kib = float(value.get("download_rate", 0.0)) / 1024.0
+        upload_rate_kib = float(value.get("upload_rate", 0.0)) / 1024.0
+        piece_rate = float(value.get("piece_download_rate", value.get("piece_rate", 0.0)))
+        self._download_history.append(download_rate_kib)
+        self._upload_history.append(upload_rate_kib)
+        self._piece_rate_history.append(piece_rate)
+        self._download_history = self._download_history[-self._max_samples :]
+        self._upload_history = self._upload_history[-self._max_samples :]
+        self._piece_rate_history = self._piece_rate_history[-self._max_samples :]
+        self._update_display()
+
     def _register_nested_widget(self, widget: Any) -> None:
         """Register a nested widget with the adapter for event-driven updates.
         
@@ -1878,7 +1927,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
@@ -1886,11 +1935,11 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 asyncio.create_task(self._update_from_provider())
             except Exception as e:
                 logger.debug("Error scheduling per-torrent graph update: %s", e)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -1905,7 +1954,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
         try:
             # Fetch per-torrent performance metrics
             metrics = await self._data_provider.get_per_torrent_performance(self.info_hash_hex)
-            
+
             if not metrics:
                 return
 
@@ -1913,16 +1962,16 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
             download_rate_kib = metrics.get("download_rate", 0.0) / 1024.0
             upload_rate_kib = metrics.get("upload_rate", 0.0) / 1024.0
             piece_rate = metrics.get("piece_download_rate", 0.0)
-            
+
             self._download_history.append(download_rate_kib)
             self._upload_history.append(upload_rate_kib)
             self._piece_rate_history.append(piece_rate)
-            
+
             # Keep only last max_samples
             self._download_history = self._download_history[-self._max_samples :]
             self._upload_history = self._upload_history[-self._max_samples :]
             self._piece_rate_history = self._piece_rate_history[-self._max_samples :]
-            
+
             # Update sparklines
             try:
                 if self._download_sparkline:
@@ -1930,7 +1979,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                         self._download_sparkline.data = self._download_history  # type: ignore[attr-defined]
                     else:
                         self._download_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                    # Note: Force refresh to ensure Sparkline repaints
                     if hasattr(self._download_sparkline, "refresh"):
                         self._download_sparkline.refresh()  # type: ignore[attr-defined]
             except Exception as e:
@@ -1941,7 +1990,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                         self._upload_sparkline.data = self._upload_history  # type: ignore[attr-defined]
                     else:
                         self._upload_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                    # Note: Force refresh to ensure Sparkline repaints
                     if hasattr(self._upload_sparkline, "refresh"):
                         self._upload_sparkline.refresh()  # type: ignore[attr-defined]
             except Exception as e:
@@ -1952,14 +2001,14 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                         self._piece_rate_sparkline.data = self._piece_rate_history  # type: ignore[attr-defined]
                     else:
                         self._piece_rate_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                    # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                    # Note: Force refresh to ensure Sparkline repaints
                     if hasattr(self._piece_rate_sparkline, "refresh"):
                         self._piece_rate_sparkline.refresh()  # type: ignore[attr-defined]
                     else:
                         self._piece_rate_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
             except Exception as e:
                 logger.debug("Error updating piece rate sparkline: %s", e)
-            
+
             # Update metrics display
             progress = metrics.get("progress", 0.0) * 100.0
             pieces_completed = metrics.get("pieces_completed", 0)
@@ -1968,7 +2017,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
             connected_peers = metrics.get("connected_peers", 0)
             active_peers = metrics.get("active_peers", 0)
             bytes_downloaded = metrics.get("bytes_downloaded", 0)
-            
+
             # Format bytes
             if bytes_downloaded > 1024 * 1024 * 1024:
                 downloaded_str = f"{bytes_downloaded / (1024 * 1024 * 1024):.2f} GB"
@@ -1978,7 +2027,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 downloaded_str = f"{bytes_downloaded / 1024:.2f} KB"
             else:
                 downloaded_str = f"{bytes_downloaded} B"
-            
+
             # Update static widgets
             try:
                 self.query_one("#progress-value", Static).update(f"{progress:.1f}%")  # type: ignore[attr-defined]
@@ -1989,7 +2038,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                 self.query_one("#downloaded-value", Static).update(downloaded_str)  # type: ignore[attr-defined]
             except Exception as e:
                 logger.debug("Error updating metrics display: %s", e)
-            
+
             # Update peer table
             if self._peer_table:
                 self._peer_table.clear()
@@ -2000,7 +2049,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     upload_kib = peer.get("upload_rate", 0.0) / 1024.0
                     latency_ms = peer.get("request_latency", 0.0) * 1000.0
                     pieces_received = peer.get("pieces_received", 0)
-                    
+
                     self._peer_table.add_row(
                         peer_key,
                         f"{download_kib:.1f}",
@@ -2020,7 +2069,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     self._download_sparkline.data = self._download_history  # type: ignore[attr-defined]
                 else:
                     self._download_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._download_sparkline, "refresh"):
                     self._download_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -2031,7 +2080,7 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
                     self._upload_sparkline.data = self._upload_history  # type: ignore[attr-defined]
                 else:
                     self._upload_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-                # CRITICAL FIX: Force refresh to ensure Sparkline repaints
+                # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._upload_sparkline, "refresh"):
                     self._upload_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -2045,14 +2094,14 @@ class PerTorrentGraphWidget(Container):  # type: ignore[misc]
         """
         download_rate = float(stats.get("download_rate", 0.0)) / 1024.0  # Convert to KiB/s
         upload_rate = float(stats.get("upload_rate", 0.0)) / 1024.0  # Convert to KiB/s
-        
+
         self._download_history.append(download_rate)
         self._upload_history.append(upload_rate)
-        
+
         # Keep only last max_samples
         self._download_history = self._download_history[-self._max_samples :]
         self._upload_history = self._upload_history[-self._max_samples :]
-        
+
         # Update sparklines
         self._update_display()
 
@@ -2132,28 +2181,28 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
     def compose(self) -> Any:  # pragma: no cover
         """Compose the performance graph widget.
         
-        CRITICAL FIX: Don't create widgets in compose() - just yield placeholders.
+        Note: Don't create widgets in compose() - just yield placeholders.
         Widgets will be created in on_mount() to avoid blocking compose().
         """
         with Container(id="upload-download-section"):
             yield Static("Upload & Download Speed", id="ud-title")
-            # CRITICAL FIX: Don't create widget here - just yield a placeholder container
+            # Note: Don't create widget here - just yield a placeholder container
             # The actual widget will be created in on_mount() to avoid blocking
             with Container(id="ud-graph-container"):
                 yield Static("Loading graph...", id="ud-graph-placeholder")
-    
+
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the performance graph widget.
         
-        CRITICAL FIX: Create the UploadDownloadGraphWidget here instead of in compose()
+        Note: Create the UploadDownloadGraphWidget here instead of in compose()
         to avoid blocking compose() and causing pending callback warnings.
         """
         logger.debug("PerformanceGraphWidget.on_mount: Starting mount (data_provider=%s)", self._data_provider is not None)
         try:
-            # CRITICAL FIX: Ensure widget is visible
+            # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
-            
-            # CRITICAL FIX: Create widget in on_mount() instead of compose()
+
+            # Note: Create widget in on_mount() instead of compose()
             if self._data_provider:
                 # Try to create widget immediately, with fallback to call_after_refresh
                 try:
@@ -2168,9 +2217,11 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                                 placeholder.remove()  # type: ignore[attr-defined]
                         except Exception as e:
                             logger.debug("PerformanceGraphWidget: Placeholder not found or already removed: %s", e)
-                        
+
                         # Create and mount the actual widget
-                        from ccbt.interface.widgets.graph_widget import UploadDownloadGraphWidget
+                        from ccbt.interface.widgets.graph_widget import (
+                            UploadDownloadGraphWidget,
+                        )
                         self._upload_download_widget = UploadDownloadGraphWidget(
                             data_provider=self._data_provider,
                             id="ud-graph"
@@ -2182,7 +2233,7 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                         # Register nested widget for event-driven updates
                         self._register_nested_widget(self._upload_download_widget)
                         logger.debug("PerformanceGraphWidget: UploadDownloadGraphWidget created and mounted successfully")
-                        # CRITICAL FIX: Schedule an update after widget is fully attached
+                        # Note: Schedule an update after widget is fully attached
                         def ensure_widget_initialized() -> None:
                             try:
                                 if self._upload_download_widget:
@@ -2207,7 +2258,9 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                                             placeholder.remove()  # type: ignore[attr-defined]
                                     except Exception:
                                         pass
-                                    from ccbt.interface.widgets.graph_widget import UploadDownloadGraphWidget
+                                    from ccbt.interface.widgets.graph_widget import (
+                                        UploadDownloadGraphWidget,
+                                    )
                                     self._upload_download_widget = UploadDownloadGraphWidget(
                                         data_provider=self._data_provider,
                                         id="ud-graph"
@@ -2218,7 +2271,7 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                                     # Register nested widget for event-driven updates
                                     self._register_nested_widget(self._upload_download_widget)
                                     logger.debug("PerformanceGraphWidget: UploadDownloadGraphWidget created after refresh")
-                                    # CRITICAL FIX: Schedule an update after widget is fully attached
+                                    # Note: Schedule an update after widget is fully attached
                                     def ensure_widget_initialized() -> None:
                                         try:
                                             if self._upload_download_widget:
@@ -2255,28 +2308,8 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
             logger.error("Error mounting PerformanceGraphWidget: %s", e, exc_info=True)
 
     def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
-        """Update graph with statistics (forward to nested UploadDownloadGraphWidget).
-        
-        Args:
-            stats: Dictionary containing download_rate and upload_rate
-        """
-        try:
-            # Forward update to nested widget if it exists
-            if self._upload_download_widget:
-                self._upload_download_widget.update_from_stats(stats)
-            else:
-                # Try to find it if not yet set
-                try:
-                    from ccbt.interface.widgets.graph_widget import UploadDownloadGraphWidget
-                    nested_widget = self.query_one(UploadDownloadGraphWidget)  # type: ignore[attr-defined]
-                    if nested_widget:
-                        nested_widget.update_from_stats(stats)
-                        self._upload_download_widget = nested_widget
-                except Exception:
-                    # Widget not yet mounted, ignore
-                    pass
-        except Exception as e:
-            logger.debug("Error updating PerformanceGraphWidget from stats: %s", e)
+        """Legacy no-op: nested UploadDownloadGraphWidget self-renders via ``data_bind`` (F2.5)."""
+        _ = stats
 
     def on_piece_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle piece-related events by triggering refresh of child widget."""
@@ -2311,7 +2344,6 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
 
     def on_peer_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle peer-related events (not typically relevant for this widget)."""
-        pass
 
     def _register_nested_widget(self, widget: Any) -> None:
         """Register a nested widget with the adapter for event-driven updates.
@@ -2331,6 +2363,9 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
 
 class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
     """Graph widget for system resources (CPU, Memory, Disk)."""
+
+    # F2.6.8: bound to TerminalDashboard.system_metrics via data_bind.
+    system_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     SystemResourcesGraphWidget {
@@ -2424,7 +2459,7 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
             self._cpu_sparkline = self.query_one("#cpu-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._memory_sparkline = self.query_one("#memory-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._disk_sparkline = self.query_one("#disk-sparkline", Sparkline)  # type: ignore[attr-defined]
-            
+
             # Initialize with zero data so graphs render immediately
             if self._cpu_sparkline:
                 self._cpu_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
@@ -2432,12 +2467,57 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
                 self._memory_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
             if self._disk_sparkline:
                 self._disk_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
-            
-            # Start periodic updates if data provider is available
-            if self._data_provider:
-                self._start_updates()
+
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(system_metrics=TerminalDashboard.system_metrics)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("SystemResourcesGraphWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.debug("Error mounting system resources graph: %s", e)
+
+    def watch_system_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: append system metrics from bound dict (F2.6.8)."""
+        if isinstance(value, dict) and value:
+            self._apply_system_metrics(value)
+
+    def _apply_system_metrics(self, metrics: dict[str, Any]) -> None:  # pragma: no cover
+        """Update CPU/memory/disk sparkline histories from metrics dict."""
+        cpu = float(metrics.get("cpu_usage", 0.0))
+        memory = float(metrics.get("memory_usage", 0.0))
+        disk = float(metrics.get("disk_usage", 0.0))
+        self._cpu_history.append(cpu)
+        self._memory_history.append(memory)
+        self._disk_history.append(disk)
+        self._cpu_history = self._cpu_history[-self._max_samples :]
+        self._memory_history = self._memory_history[-self._max_samples :]
+        self._disk_history = self._disk_history[-self._max_samples :]
+        self._update_display()
+
+    def _update_display(self) -> None:  # pragma: no cover
+        """Update the system resources sparkline display."""
+        try:
+            if self._cpu_sparkline:
+                self._cpu_sparkline.data = self._cpu_history or [0.0] * 10  # type: ignore[attr-defined]
+                if hasattr(self._cpu_sparkline, "refresh"):
+                    self._cpu_sparkline.refresh()  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.error("Error updating CPU sparkline: %s", e, exc_info=True)
+        try:
+            if self._memory_sparkline:
+                self._memory_sparkline.data = self._memory_history or [0.0] * 10  # type: ignore[attr-defined]
+                if hasattr(self._memory_sparkline, "refresh"):
+                    self._memory_sparkline.refresh()  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.error("Error updating memory sparkline: %s", e, exc_info=True)
+        try:
+            if self._disk_sparkline:
+                self._disk_sparkline.data = self._disk_history or [0.0] * 10  # type: ignore[attr-defined]
+                if hasattr(self._disk_sparkline, "refresh"):
+                    self._disk_sparkline.refresh()  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.error("Error updating disk sparkline: %s", e, exc_info=True)
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the widget and stop updates."""
@@ -2451,7 +2531,7 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
     def _start_updates(self) -> None:  # pragma: no cover
         """Start periodic updates from data provider."""
         import asyncio
-        
+
         def schedule_update() -> None:
             """Schedule async update (wrapper for set_interval)."""
             try:
@@ -2459,11 +2539,11 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
                 asyncio.create_task(self._update_from_provider())
             except Exception as e:
                 logger.debug("Error scheduling system resources graph update: %s", e)
-        
+
         try:
-            # CRITICAL FIX: set_interval doesn't work with async functions directly
+            # Note: set_interval doesn't work with async functions directly
             # Use wrapper function that creates async task
-            # CRITICAL FIX: Reduced interval from 2.0s to 1.0s for tighter performance updates
+            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
             self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
             # Trigger initial update immediately
             self.call_later(schedule_update)  # type: ignore[attr-defined]
@@ -2473,29 +2553,20 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
     def on_piece_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle piece-related events (system resources don't typically care about pieces)."""
         # System resources are not directly affected by piece events
-        pass
 
     def on_progress_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle progress update events (system resources may be affected by overall activity)."""
-        # Trigger refresh to update system metrics
-        try:
-            if hasattr(self, "_update_from_provider"):
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self._update_from_provider())  # type: ignore[attr-defined]
-                except RuntimeError:
-                    pass
-        except Exception as e:
-            logger.debug("SystemResourcesGraphWidget.on_progress_event: Error: %s", e)
+        # F2.6.8: metrics arrive via App system_metrics reactive; no self-poll.
 
     def on_peer_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle peer-related events (not typically relevant for system resources)."""
-        pass
 
 
 class SwarmHealthDotPlot(Container):  # type: ignore[misc]
     """Graph widget that renders swarm availability using patterned dot plots with gradients."""
+
+    # F2.5.4: bound to TerminalDashboard.swarm_health_samples via data_bind.
+    swarm_health_samples: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     SwarmHealthDotPlot {
@@ -2544,7 +2615,77 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
             self._legend = self.query_one("#swarm-health-legend", Static)  # type: ignore[attr-defined]
         except Exception as exc:
             logger.debug("SwarmHealthDotPlot: failed to query children: %s", exc)
-        self._start_updates()
+        # F2.5.4: bind to App swarm_health_samples (replaces set_interval self-poll).
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(swarm_health_samples=TerminalDashboard.swarm_health_samples)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("SwarmHealthDotPlot data_bind skipped: %s", exc)
+
+    def watch_swarm_health_samples(self, value: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Reactive watcher: render dot plot from bound swarm samples (F2.5.4)."""
+        if isinstance(value, list):
+            self._render_swarm_samples(value)
+
+    def _render_swarm_samples(self, samples: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Render swarm health table from sample list (F2.5.4)."""
+        if not self._content:
+            return
+        if not samples:
+            self._content.update("No swarm activity yet")
+            if self._legend:
+                self._legend.update("")
+            return
+
+        table = Table(show_header=True, box=None, expand=True, padding=(0, 1))
+        table.add_column("Torrent", style="cyan", ratio=1)
+        table.add_column("Availability", ratio=2)
+        table.add_column("Trend", style="dim", ratio=1)
+        table.add_column("Rates", style="green", ratio=1)
+
+        strongest_sample = max(samples, key=lambda s: float(s.get("swarm_availability", 0.0)))
+        rarity_percentiles: Optional[dict[str, float]] = None
+
+        for sample in samples:
+            info_hash = sample.get("info_hash", "")
+            ratio = float(sample.get("swarm_availability", 0.0))
+            name = sample.get("name") or info_hash[:16] if info_hash else "unknown"
+            if not rarity_percentiles:
+                rarity_percentiles = sample.get("rarity_percentiles")
+
+            dots = self._build_patterned_dot_grid(ratio, sample)
+            trend_indicator = self._get_trend_indicator(sample, info_hash)
+
+            if ratio < 0.25:
+                name = f"{name} [red][!][/red]"
+
+            rates = self._format_rate_pair(
+                float(sample.get("download_rate", 0.0)),
+                float(sample.get("upload_rate", 0.0)),
+            )
+            table.add_row(name, dots, trend_indicator, rates)
+            self._previous_samples[info_hash] = sample
+
+        table_panel = Panel(table, title="Swarm Availability", border_style="blue")
+        if rarity_percentiles:
+            rarity_panel = self._render_rarity_percentiles(rarity_percentiles)
+            content = Group(table_panel, rarity_panel)
+        else:
+            content = table_panel
+        self._content.update(content)
+
+        if self._legend:
+            legend = Text()
+            legend.append("●", style="green")
+            legend.append(" = excellent, ", style="dim")
+            legend.append("◐", style="yellow")
+            legend.append(" = healthy, ", style="dim")
+            legend.append("◌", style="orange1")
+            legend.append(" = fragile, ", style="dim")
+            legend.append("□", style="grey46")
+            legend.append(" = empty", style="dim")
+            self._legend.update(legend)
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Stop update loop when unmounted."""
@@ -2590,66 +2731,7 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
             logger.debug("SwarmHealthDotPlot: error fetching swarm samples: %s", exc)
             samples = []
 
-        if not samples:
-            self._content.update("No swarm activity yet")
-            if self._legend:
-                self._legend.update("")
-            return
-
-        table = Table(show_header=True, box=None, expand=True, padding=(0, 1))
-        table.add_column("Torrent", style="cyan", ratio=1)
-        table.add_column("Availability", ratio=2)
-        table.add_column("Trend", style="dim", ratio=1)
-        table.add_column("Rates", style="green", ratio=1)
-
-        strongest_sample = max(samples, key=lambda s: float(s.get("swarm_availability", 0.0)))
-        rarity_percentiles: Optional[dict[str, float]] = None
-
-        for sample in samples:
-            info_hash = sample.get("info_hash", "")
-            ratio = float(sample.get("swarm_availability", 0.0))
-            name = sample.get("name") or info_hash[:16] if info_hash else "unknown"
-            if not rarity_percentiles:
-                rarity_percentiles = sample.get("rarity_percentiles")
-            
-            # Build two-row patterned dot grid
-            dots = self._build_patterned_dot_grid(ratio, sample)
-            
-            # Calculate trend
-            trend_indicator = self._get_trend_indicator(sample, info_hash)
-            
-            # Add annotation for critical torrents
-            if ratio < 0.25:
-                name = f"{name} [red][!][/red]"
-            
-            rates = self._format_rate_pair(
-                float(sample.get("download_rate", 0.0)),
-                float(sample.get("upload_rate", 0.0)),
-            )
-            table.add_row(name, dots, trend_indicator, rates)
-            
-            # Store current sample for next trend calculation
-            self._previous_samples[info_hash] = sample
-
-        table_panel = Panel(table, title="Swarm Availability", border_style="blue")
-        if rarity_percentiles:
-            rarity_panel = self._render_rarity_percentiles(rarity_percentiles)
-            content = Group(table_panel, rarity_panel)
-        else:
-            content = table_panel
-        self._content.update(content)
-
-        if self._legend:
-            legend = Text()
-            legend.append("●", style="green")
-            legend.append(" = excellent, ", style="dim")
-            legend.append("◐", style="yellow")
-            legend.append(" = healthy, ", style="dim")
-            legend.append("◌", style="orange1")
-            legend.append(" = fragile, ", style="dim")
-            legend.append("□", style="grey46")
-            legend.append(" = empty", style="dim")
-            self._legend.update(legend)
+        self._render_swarm_samples(samples or [])
 
     def _render_rarity_percentiles(self, percentiles: dict[str, float]) -> Panel:
         """Render rarity percentile summary panel."""
@@ -2687,7 +2769,7 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
             color = fill_color if idx < filled else "grey35"
             pattern.append(char, style=color)
         return pattern
-    
+
     def _build_patterned_dot_grid(self, ratio: float, sample: dict[str, Any]) -> Text:
         """Create a two-row patterned dot grid with gradients.
         
@@ -2698,18 +2780,18 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
         connected_peers = int(sample.get("connected_peers", 0))
         active_peers = int(sample.get("active_peers", 0))
         peer_factor = min(1.0, (active_peers / max(connected_peers, 1)) if connected_peers > 0 else 0.0)
-        
+
         # Two rows of dots
         dots_per_row = self._dot_count // 2
         total_dots = self._dot_count
-        
+
         pattern = Text()
         fill_color = self._color_for_ratio(ratio)
         peer_buckets = self._calculate_peer_buckets(sample, total_dots)
-        
+
         # Calculate filled dots
         filled = int(round(total_dots * max(0.0, min(1.0, ratio))))
-        
+
         for idx in range(total_dots):
             if idx < filled:
                 # Use gradient: solid for high availability, half-filled for medium, outline for low
@@ -2728,33 +2810,33 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
             else:
                 char = "□"  # Empty square
                 color = "grey46"
-            
+
             pattern.append(char, style=color)
             bucket = peer_buckets[idx] if idx < len(peer_buckets) else (0, 0)
             pattern.append(self._format_peer_bucket(*bucket), style="grey50")
-            
+
             # Add newline after first row
             if idx == dots_per_row - 1:
                 pattern.append("\n")
-        
+
         return pattern
-    
+
     def _get_trend_indicator(self, sample: dict[str, Any], info_hash: str) -> str:
         """Get trend indicator arrow based on previous sample."""
         if not info_hash or info_hash not in self._previous_samples:
             return "—"  # No trend data yet
-        
+
         previous = self._previous_samples[info_hash]
         current_avail = float(sample.get("swarm_availability", 0.0))
         previous_avail = float(previous.get("swarm_availability", 0.0))
-        
+
         delta = current_avail - previous_avail
         delta_percentage = delta * 100
         threshold = 0.05  # 5% change threshold
 
         def _format_delta(value: float) -> str:
             return f"{value:+.1f}pp"
-        
+
         if delta > threshold:
             return f"[green]↑ {_format_delta(delta_percentage)}[/green]"  # Improving
         if delta < -threshold:
@@ -2865,6 +2947,9 @@ class SwarmHealthDotPlot(Container):  # type: ignore[misc]
 class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
     """Widget showing global peer quality distributions."""
 
+    # F2.6.9: bound to TerminalDashboard.peer_quality_distribution via data_bind.
+    peer_quality_distribution: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+
     DEFAULT_CSS = """
     PeerQualitySummaryWidget {
         height: 1fr;
@@ -2906,7 +2991,55 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
                 self._table.add_columns("Peer", "↓ (KiB/s)", "↑ (KiB/s)", "Quality")
         except Exception as exc:
             logger.debug("PeerQualitySummaryWidget: failed to set up table: %s", exc)
-        self._start_updates()
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            self.data_bind(peer_quality_distribution=TerminalDashboard.peer_quality_distribution)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("PeerQualitySummaryWidget data_bind skipped: %s", exc)
+
+    def watch_peer_quality_distribution(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render summary from bound distribution (F2.6.9)."""
+        if isinstance(value, dict) and value:
+            self._apply_peer_quality_distribution(value)
+
+    def _apply_peer_quality_distribution(self, distribution: dict[str, Any]) -> None:
+        """Refresh UI from peer quality distribution dict."""
+        if not self._summary or not self._table:
+            return
+
+        total_peers = int(distribution.get("total_peers", 0))
+        quality_tiers = distribution.get("quality_tiers", {}) or {}
+        top_peers = distribution.get("top_peers", []) or []
+
+        summary_text = (
+            f"Total: {total_peers} | "
+            f"Excellent: {quality_tiers.get('excellent', 0)} | "
+            f"Good: {quality_tiers.get('good', 0)} | "
+            f"Fair: {quality_tiers.get('fair', 0)} | "
+            f"Poor: {quality_tiers.get('poor', 0)}"
+        )
+        self._summary.update(summary_text)
+
+        self._table.clear()
+        sorted_peers = sorted(
+            top_peers,
+            key=lambda p: (
+                float(p.get("download_rate", 0.0)) + float(p.get("upload_rate", 0.0))
+            ),
+            reverse=True,
+        )[:6]
+        for peer in sorted_peers:
+            peer_label = peer.get("peer_key") or f"{peer.get('ip', '?')}:{peer.get('port', '?')}"
+            down = float(peer.get("download_rate", 0.0)) / 1024.0
+            up = float(peer.get("upload_rate", 0.0)) / 1024.0
+            quality = self._format_quality(down + up)
+            self._table.add_row(
+                str(peer_label),
+                f"{down:.1f}",
+                f"{up:.1f}",
+                quality,
+            )
 
     def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Cancel periodic updates when removed."""
@@ -2933,7 +3066,7 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
                 logger.debug("PeerQualitySummaryWidget: schedule error: %s", exc)
 
         try:
-            # CRITICAL FIX: Reduced interval from 3.0s to 1.5s for tighter updates
+            # Note: Reduced interval from 3.0s to 1.5s for tighter updates
             self._update_task = self.set_interval(1.5, schedule_update)  # type: ignore[attr-defined]
             self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
         except Exception as exc:
@@ -2950,40 +3083,12 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
             logger.debug("PeerQualitySummaryWidget: error fetching metrics: %s", exc)
             metrics = {}
 
-        total_peers = int(metrics.get("total_peers", 0))
-        active_peers = int(metrics.get("active_peers", 0))
-        peers = metrics.get("peers", []) or []
-
-        distribution = self._rank_peers(peers)
-        summary_text = (
-            f"Total: {total_peers} • Active: {active_peers} | "
-            f"Excellent: {distribution['excellent']} | "
-            f"Good: {distribution['good']} | "
-            f"Fair: {distribution['fair']} | "
-            f"Poor: {distribution['poor']}"
-        )
-        self._summary.update(summary_text)
-
-        self._table.clear()
-        top_peers = sorted(
-            peers,
-            key=lambda p: (
-                float(p.get("total_download_rate", 0.0)) + float(p.get("total_upload_rate", 0.0))
-            ),
-            reverse=True,
-        )[:6]
-
-        for peer in top_peers:
-            peer_label = peer.get("peer_key") or f"{peer.get('ip', '?')}:{peer.get('port', '?')}"
-            down = float(peer.get("total_download_rate", 0.0)) / 1024.0
-            up = float(peer.get("total_upload_rate", 0.0)) / 1024.0
-            quality = self._format_quality(down + up)
-            self._table.add_row(
-                str(peer_label),
-                f"{down:.1f}",
-                f"{up:.1f}",
-                quality,
-            )
+        distribution = {
+            "total_peers": int(metrics.get("total_peers", 0)),
+            "quality_tiers": self._rank_peers(metrics.get("peers", []) or []),
+            "top_peers": metrics.get("peers", []) or [],
+        }
+        self._apply_peer_quality_distribution(distribution)
 
     @staticmethod
     def _rank_peers(peers: list[dict[str, Any]]) -> dict[str, int]:
@@ -2991,8 +3096,7 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
         distribution = {"excellent": 0, "good": 0, "fair": 0, "poor": 0}
         for peer in peers or []:
             total_rate = (
-                float(peer.get("total_download_rate", 0.0))
-                + float(peer.get("total_upload_rate", 0.0))
+                float(peer.get("download_rate", 0.0)) + float(peer.get("upload_rate", 0.0))
             ) / 1024.0  # KiB/s
             if total_rate >= 1024:
                 distribution["excellent"] += 1
@@ -3018,32 +3122,11 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
     def on_piece_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle piece-related events (not directly relevant for peer quality)."""
         # Peer quality is more about peer performance than piece events
-        pass
 
     def on_progress_event(self, event_type: str, event_data: dict[str, Any]) -> None:
         """Handle progress update events (may affect peer quality metrics)."""
-        # Trigger refresh to update peer metrics
-        try:
-            if hasattr(self, "_update_from_provider"):
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self._update_from_provider())
-                except RuntimeError:
-                    pass
-        except Exception as e:
-            logger.debug("PeerQualitySummaryWidget.on_progress_event: Error: %s", e)
+        # F2.6.9: metrics arrive via App peer_quality_distribution reactive.
 
     def on_peer_event(self, event_type: str, event_data: dict[str, Any]) -> None:
-        """Handle peer-related events by triggering refresh (this widget cares about peers)."""
-        try:
-            if hasattr(self, "_update_from_provider"):
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self._update_from_provider())
-                except RuntimeError:
-                    pass
-        except Exception as e:
-            logger.debug("PeerQualitySummaryWidget.on_peer_event: Error: %s", e)
+        """Handle peer-related events (metrics arrive via App reactive)."""
 

@@ -19,6 +19,7 @@ from ccbt.session.xet_sync_manager import XetSyncManager
 from ccbt.storage.xet_chunking import GearhashChunker
 from ccbt.storage.xet_deduplication import XetDeduplication
 from ccbt.storage.xet_hashing import XetHasher
+from ccbt.utils.compat import to_thread_compat
 from ccbt.utils.events import Event, EventType, emit_event
 
 if TYPE_CHECKING:
@@ -582,39 +583,83 @@ class XetFolder:
         target_path = self.folder_path / entry.file_path
 
         if entry.deleted:
-            exists = await asyncio.to_thread(target_path.exists)
+            exists = await to_thread_compat(target_path.exists)
             if exists:
-                await asyncio.to_thread(lambda: target_path.unlink(missing_ok=True))
+                await to_thread_compat(lambda: target_path.unlink(missing_ok=True))
             await self._refresh_metadata_snapshot()
             self.sync_manager.set_last_error(None)
             self.logger.info("Deleted synced file: %s", entry.file_path)
             return
 
-        file_metadata = entry.file_metadata or self.sync_manager.get_file_metadata(
-            entry.file_path
-        )
-        if file_metadata is None:
-            file_metadata = self._get_file_metadata_from_snapshot(entry.file_path)
-        if (
-            file_metadata is None
-            and self.session_manager is not None
-            and self.workspace_id is not None
-            and hasattr(self.session_manager, "fetch_xet_metadata")
-        ):
-            metadata_bytes = await self.session_manager.fetch_xet_metadata(
-                self.workspace_id.hex()
-            )
-            if metadata_bytes is not None:
-                await self.apply_remote_metadata_snapshot(metadata_bytes)
-                file_metadata = self.sync_manager.get_file_metadata(entry.file_path)
-                if file_metadata is None:
-                    file_metadata = self._get_file_metadata_from_snapshot(
-                        entry.file_path
-                    )
-        if file_metadata is None:
-            msg = f"Missing file metadata for {entry.file_path}"
-            raise FileNotFoundError(msg)
+        def _metadata_matches_update(
+            metadata: Optional[XetFileMetadata],
+            expected_chunk_hash: bytes,
+        ) -> bool:
+            if expected_chunk_hash == bytes(32):
+                return True
+            chunk_hashes = getattr(metadata, "chunk_hashes", None)
+            if isinstance(chunk_hashes, list) and expected_chunk_hash in chunk_hashes:
+                return True
+            file_hash = getattr(metadata, "file_hash", None)
+            return file_hash is not None and file_hash == expected_chunk_hash
 
+        metadata_refreshed = False
+        entry_metadata = entry.file_metadata
+        while True:
+            file_metadata = entry_metadata or self.sync_manager.get_file_metadata(
+                entry.file_path
+            )
+            if file_metadata is None:
+                file_metadata = self._get_file_metadata_from_snapshot(entry.file_path)
+            if (
+                file_metadata is None
+                and self.session_manager is not None
+                and self.workspace_id is not None
+                and hasattr(self.session_manager, "fetch_xet_metadata")
+            ):
+                metadata_bytes = await self.session_manager.fetch_xet_metadata(
+                    self.workspace_id.hex()
+                )
+                if metadata_bytes is not None:
+                    await self.apply_remote_metadata_snapshot(metadata_bytes)
+                    file_metadata = self.sync_manager.get_file_metadata(entry.file_path)
+                    if file_metadata is None:
+                        file_metadata = self._get_file_metadata_from_snapshot(
+                            entry.file_path
+                        )
+            if file_metadata is None:
+                msg = f"Missing file metadata for {entry.file_path}"
+                raise FileNotFoundError(msg)
+            if entry.chunk_hash != bytes(32) and not _metadata_matches_update(
+                file_metadata, entry.chunk_hash
+            ):
+                file_hash_value = (
+                    file_metadata.file_hash.hex()[:16]
+                    if hasattr(file_metadata, "file_hash")
+                    and file_metadata.file_hash is not None
+                    else "None"
+                )
+                msg = (
+                    f"Incoming file metadata hash mismatch for {entry.file_path}: "
+                    f"expected={entry.chunk_hash.hex()[:16]} file_hash="
+                    f"{file_hash_value}"
+                )
+                if not metadata_refreshed and (
+                    self.session_manager is not None
+                    and self.workspace_id is not None
+                    and hasattr(self.session_manager, "fetch_xet_metadata")
+                ):
+                    metadata_refreshed = True
+                    metadata_bytes = await self.session_manager.fetch_xet_metadata(
+                        self.workspace_id.hex()
+                    )
+                    if metadata_bytes is not None:
+                        await self.apply_remote_metadata_snapshot(metadata_bytes)
+                        entry_metadata = None
+                        continue
+                self.sync_manager.set_last_error(msg)
+                raise FileNotFoundError(msg)
+            break
         file_chunks: list[bytes] = []
         actual_chunk_hashes: list[bytes] = []
         for chunk_hash in file_metadata.chunk_hashes:
@@ -629,7 +674,7 @@ class XetFolder:
                 msg = f"Missing chunk {chunk_hash.hex()[:16]} for {entry.file_path}"
                 self.sync_manager.set_last_error(msg)
                 raise FileNotFoundError(msg)
-            chunk_bytes = await asyncio.to_thread(chunk_path.read_bytes)
+            chunk_bytes = await to_thread_compat(chunk_path.read_bytes)
             actual_chunk_hash = self.hasher.compute_chunk_hash(
                 chunk_bytes, algorithm=self.hash_algorithm
             )
@@ -653,7 +698,7 @@ class XetFolder:
             target_path.parent.mkdir(parents=True, exist_ok=True)
             target_path.write_bytes(rebuilt_data[: file_metadata.total_size])
 
-        await asyncio.to_thread(_write_materialized_file)
+        await to_thread_compat(_write_materialized_file)
 
         # Update git ref in sync manager if changed
         if self.git_versioning:
@@ -687,6 +732,12 @@ class XetFolder:
                 self.logger.debug("Error updating git ref: %s", e)
 
         await self._refresh_metadata_snapshot()
+        latest_metadata = await self._build_file_metadata(entry.file_path)
+        if latest_metadata is not None:
+            self.sync_manager.file_metadata_by_path[entry.file_path] = latest_metadata
+        elif file_metadata is not None:
+            # Fallback to update payload metadata only when local rebuild is unavailable.
+            self.sync_manager.file_metadata_by_path[entry.file_path] = file_metadata
         self._bootstrap_pending = False
         self.sync_manager.set_last_error(None)
         self.logger.info("Update processed: %s", entry.file_path)
@@ -776,11 +827,11 @@ class XetFolder:
         if self.cas_client is None:
             return None
         file_path_obj = self.folder_path / file_path
-        exists = await asyncio.to_thread(file_path_obj.exists)
-        if not exists or not await asyncio.to_thread(file_path_obj.is_file):
+        exists = await to_thread_compat(file_path_obj.exists)
+        if not exists or not await to_thread_compat(file_path_obj.is_file):
             return None
 
-        file_data = await asyncio.to_thread(file_path_obj.read_bytes)
+        file_data = await to_thread_compat(file_path_obj.read_bytes)
         chunk_hashes: list[bytes] = []
         offset = 0
         for chunk_data in self.chunker.chunk_buffer(file_data):
@@ -851,7 +902,7 @@ class XetFolder:
                     out.append(p)
                 return out
 
-            workspace_files = await asyncio.to_thread(_list_workspace_files)
+            workspace_files = await to_thread_compat(_list_workspace_files)
 
             for file_path_obj in workspace_files:
                 relative_path = str(file_path_obj.relative_to(self.folder_path))
@@ -929,4 +980,4 @@ class XetFolder:
         chunk_path = await self.dedup.check_chunk_exists(chunk_hash)
         if chunk_path is None:
             return None
-        return await asyncio.to_thread(chunk_path.read_bytes)
+        return await to_thread_compat(chunk_path.read_bytes)

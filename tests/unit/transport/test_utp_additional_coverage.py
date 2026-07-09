@@ -1,7 +1,7 @@
 """Additional tests to improve coverage for utp.py."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,9 +13,8 @@ from ccbt.transport.utp import (
     UTPPacketType,
 )
 from ccbt.transport.utp_extensions import (
-    ECNExtension,
-    SACKExtension,
     SACKBlock,
+    SACKExtension,
     UTPExtensionType,
 )
 
@@ -114,7 +113,7 @@ class TestPacketHandling:
         # Give async tasks time to start
         await asyncio.sleep(0.1)
         assert connection.state == UTPConnectionState.CONNECTED
-        
+
         # Cleanup
         await connection.close()
 
@@ -312,8 +311,6 @@ class TestStatePacketHandling:
 
     def test_handle_state_packet_with_sack(self, connection):
         """Test handling state packet with SACK extension."""
-        from ccbt.transport.utp_extensions import UTPExtensionType
-
         connection.negotiated_extensions.add(UTPExtensionType.SACK)
 
         # Add packets to send buffer
@@ -414,7 +411,6 @@ class TestSACKBlockGeneration:
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
         conn.transport = MagicMock()
         conn.state = UTPConnectionState.CONNECTED
-        from ccbt.transport.utp_extensions import UTPExtensionType
 
         conn.negotiated_extensions.add(UTPExtensionType.SACK)
         return conn
@@ -515,26 +511,26 @@ class TestConnectMethod:
             await asyncio.wait_for(connect_task, timeout=0.1)
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
-        
+
         # Ensure connection timeout task is cleaned up
-        if hasattr(connection, '_connection_timeout_task') and connection._connection_timeout_task:
+        if hasattr(connection, "_connection_timeout_task") and connection._connection_timeout_task:
             if not connection._connection_timeout_task.done():
                 connection._connection_timeout_task.cancel()
                 try:
                     await asyncio.wait_for(connection._connection_timeout_task, timeout=0.1)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
-        
+
         # Clean up any background tasks
-        if hasattr(connection, '_retransmission_task') and connection._retransmission_task:
+        if hasattr(connection, "_retransmission_task") and connection._retransmission_task:
             if not connection._retransmission_task.done():
                 connection._retransmission_task.cancel()
                 try:
                     await asyncio.wait_for(connection._retransmission_task, timeout=0.1)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
-        
-        if hasattr(connection, '_send_task') and connection._send_task:
+
+        if hasattr(connection, "_send_task") and connection._send_task:
             if not connection._send_task.done():
                 connection._send_task.cancel()
                 try:
@@ -563,7 +559,7 @@ class TestSendMethod:
         connection.send_window = 100000  # Large enough window
         connection.send_buffer.clear()  # Clear any existing packets
         connection.max_unacked_packets = 100  # Ensure limit is reasonable
-        
+
         data = b"test data" * 100
 
         # Send data with timeout to prevent hanging
@@ -966,12 +962,9 @@ class TestInitializeTransport:
         mock_socket_manager.get_transport.return_value = mock_transport
         mock_socket_manager._generate_connection_id.return_value = 54321
         mock_socket_manager.register_connection = MagicMock()
+        conn.utp_socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance",
-            return_value=mock_socket_manager,
-        ):
-            await conn.initialize_transport()
+        await conn.initialize_transport()
 
         # Verify transport was set
         assert conn.transport == mock_transport
@@ -993,12 +986,9 @@ class TestInitializeTransport:
         mock_socket_manager.get_transport.return_value = mock_transport
         mock_socket_manager._generate_connection_id.return_value = 99999
         mock_socket_manager.register_connection = MagicMock()
+        conn.utp_socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance",
-            return_value=mock_socket_manager,
-        ):
-            await conn.initialize_transport()
+        await conn.initialize_transport()
 
         # Verify connection ID was generated
         assert conn.connection_id == 99999

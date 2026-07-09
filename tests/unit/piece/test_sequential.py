@@ -102,7 +102,7 @@ class TestFilePrioritySorting:
         """Test sorting without file selection manager."""
         piece_indices = [5, 2, 8, 1, 9]
         sorted_indices = piece_manager._sort_by_file_priority(piece_indices)
-        
+
         # Should just sort numerically
         assert sorted_indices == sorted(piece_indices)
 
@@ -113,12 +113,12 @@ class TestFilePrioritySorting:
         mock_file_manager = MagicMock()
         mock_file_manager.get_selected_files.return_value = [0, 1]
         mock_file_manager.get_files_for_piece.return_value = [0]
-        
+
         piece_manager.file_selection_manager = mock_file_manager
-        
+
         piece_indices = [2, 5, 1, 8]
         sorted_indices = piece_manager._sort_by_file_priority(piece_indices)
-        
+
         # Should return sorted list (order depends on file priority)
         assert len(sorted_indices) == len(piece_indices)
 
@@ -134,9 +134,10 @@ class TestSequentialFallback:
         piece_manager.config.strategy.sequential_window = 5
 
         # Add peers with low availability for window pieces
-        from ccbt.piece.async_piece_manager import PeerAvailability
         from unittest.mock import AsyncMock, patch
-        
+
+        from ccbt.piece.async_piece_manager import PeerAvailability
+
         # Create peers but ensure average availability is below threshold
         # With threshold 0.5 and 1 peer, we need avg_availability < 0.5
         # So we'll set pieces to have 0 availability (not available)
@@ -145,16 +146,16 @@ class TestSequentialFallback:
         # Peer has no pieces in window (pieces 0-4)
         peer_avail.pieces = set()
         piece_manager.peer_availability[peer_key] = peer_avail
-        
+
         # Ensure piece frequencies are 0 for window pieces
         for i in range(5):
             piece_manager.piece_frequency[i] = 0
-        
+
         # Mock _select_rarest_first to avoid timeout
-        with patch.object(piece_manager, '_select_rarest_first', new_callable=AsyncMock) as mock_rarest:
+        with patch.object(piece_manager, "_select_rarest_first", new_callable=AsyncMock) as mock_rarest:
             # Run fallback selection - should fallback to rarest-first
             await piece_manager._select_sequential_with_fallback()
-            
+
             # Verify fallback was called
             mock_rarest.assert_called_once()
 
@@ -166,25 +167,26 @@ class TestSequentialFallback:
         piece_manager.config.strategy.sequential_window = 5
 
         # Add peers with high availability
-        from ccbt.piece.async_piece_manager import PeerAvailability
         from unittest.mock import AsyncMock, patch
-        
+
+        from ccbt.piece.async_piece_manager import PeerAvailability
+
         for i in range(5):
             peer_key = f"peer{i}"
             peer_avail = PeerAvailability(peer_key)
             # All peers have first 5 pieces
             peer_avail.pieces = {0, 1, 2, 3, 4}
             piece_manager.peer_availability[peer_key] = peer_avail
-            
+
             for piece_idx in range(5):
                 piece_manager.piece_frequency[piece_idx] = 5
 
         # Mock both methods to avoid timeout
-        with patch.object(piece_manager, '_select_sequential', new_callable=AsyncMock) as mock_seq, \
-             patch.object(piece_manager, '_select_rarest_first', new_callable=AsyncMock) as mock_rarest:
+        with patch.object(piece_manager, "_select_sequential", new_callable=AsyncMock) as mock_seq, \
+             patch.object(piece_manager, "_select_rarest_first", new_callable=AsyncMock) as mock_rarest:
             # Run fallback selection
             await piece_manager._select_sequential_with_fallback()
-            
+
             # Should use sequential (not rarest-first) when availability is high
             mock_seq.assert_called_once()
             mock_rarest.assert_not_called()
@@ -197,7 +199,7 @@ class TestStreamingMode:
     async def test_streaming_mode_selection(self, piece_manager):
         """Test streaming-optimized sequential selection."""
         from unittest.mock import AsyncMock, patch
-        
+
         # Enable streaming mode
         piece_manager.config.strategy.streaming_mode = True
         piece_manager.config.strategy.sequential_window = 10
@@ -205,12 +207,12 @@ class TestStreamingMode:
         # Simulate some download progress
         piece_manager.bytes_downloaded = 1024 * 1024  # 1MB
         piece_manager.download_start_time -= 2.0  # 2 seconds ago
-        
+
         # Mock the internal call to avoid timeout
-        with patch.object(piece_manager, '_select_sequential_with_window', new_callable=AsyncMock) as mock_window:
+        with patch.object(piece_manager, "_select_sequential_with_window", new_callable=AsyncMock) as mock_window:
             # Run streaming selection
             await piece_manager._select_sequential_streaming()
-            
+
             # Should have called window selection
             mock_window.assert_called_once()
 
@@ -218,15 +220,15 @@ class TestStreamingMode:
     async def test_streaming_mode_without_flag(self, piece_manager):
         """Test streaming mode falls back to regular sequential when disabled."""
         from unittest.mock import AsyncMock, patch
-        
+
         # Disable streaming mode
         piece_manager.config.strategy.streaming_mode = False
 
         # Mock sequential to verify it's called
-        with patch.object(piece_manager, '_select_sequential', new_callable=AsyncMock) as mock_seq:
+        with patch.object(piece_manager, "_select_sequential", new_callable=AsyncMock) as mock_seq:
             # Run streaming selection
             await piece_manager._select_sequential_streaming()
-            
+
             # Should fall back to regular sequential
             mock_seq.assert_called_once()
 
@@ -234,10 +236,10 @@ class TestStreamingMode:
     async def test_sequential_with_custom_window(self, piece_manager):
         """Test sequential selection with custom window size."""
         custom_window = 15
-        
+
         # This method doesn't call other async methods that could hang, so should be safe
         await piece_manager._select_sequential_with_window(custom_window)
-        
+
         # Should have executed without error
         assert True
 
@@ -245,30 +247,30 @@ class TestStreamingMode:
     async def test_handle_streaming_seek(self, piece_manager):
         """Test seek operation during streaming download."""
         from unittest.mock import AsyncMock, patch
-        
+
         target_piece = 5
-        
+
         # Initial position
         assert piece_manager._current_sequential_piece == 0
-        
+
         # Mock sequential to avoid timeout
-        with patch.object(piece_manager, '_select_sequential', new_callable=AsyncMock) as mock_seq:
+        with patch.object(piece_manager, "_select_sequential", new_callable=AsyncMock) as mock_seq:
             # Perform seek
             await piece_manager.handle_streaming_seek(target_piece)
-            
+
             # Verify position updated
             assert piece_manager._current_sequential_piece == target_piece
-            
+
             # Verify sequential was called
             mock_seq.assert_called_once()
-            
+
             # Verify priority increased for seek window pieces
             seek_window_start = max(0, target_piece - 2)
             seek_window_end = min(
                 target_piece + piece_manager.config.strategy.sequential_window,
                 len(piece_manager.pieces),
             )
-            
+
             for piece_idx in range(seek_window_start, seek_window_end):
                 if piece_idx in piece_manager.get_missing_pieces():
                     # Priority should be increased (base priority + 500)
@@ -288,7 +290,7 @@ class TestDownloadRate:
         # Simulate some download
         piece_manager.bytes_downloaded = 1024 * 1024  # 1MB
         piece_manager.download_start_time -= 1.0  # 1 second ago
-        
+
         rate = piece_manager.get_download_rate()
         assert rate > 0
         assert rate == pytest.approx(1024 * 1024, rel=0.1)  # ~1MB/s
@@ -297,11 +299,11 @@ class TestDownloadRate:
     async def test_get_download_rate_zero_time(self, piece_manager):
         """Test download rate with zero elapsed time."""
         import time
-        
+
         # Set start time to now and bytes downloaded to some value
         piece_manager.bytes_downloaded = 1024
         piece_manager.download_start_time = time.time()  # Set to now (zero elapsed)
-        
+
         rate = piece_manager.get_download_rate()
         # With zero elapsed time, should return 0.0 (division by zero protection)
         assert rate == 0.0
@@ -327,7 +329,7 @@ class TestSequentialEdgeCases:
         """Test sequential selection with empty window."""
         # Set very small window
         piece_manager.config.strategy.sequential_window = 1
-        
+
         # Mark pieces 0-4 as complete
         for i in range(5):
             piece_manager.pieces[i].state = PieceState.VERIFIED
@@ -335,7 +337,7 @@ class TestSequentialEdgeCases:
 
         # Run selection
         await piece_manager._select_sequential()
-        
+
         # Should handle gracefully
         assert True
 
@@ -343,19 +345,19 @@ class TestSequentialEdgeCases:
     async def test_sequential_selection_with_file_manager_and_window(self, piece_manager):
         """Test sequential selection when file manager exists and window has pieces."""
         from unittest.mock import MagicMock
-        
+
         # Mock file selection manager
         mock_file_manager = MagicMock()
         mock_file_manager.get_selected_files.return_value = [0]
         mock_file_manager.get_files_for_piece.return_value = [0]
         piece_manager.file_selection_manager = mock_file_manager
-        
+
         # Set window size
         piece_manager.config.strategy.sequential_window = 5
-        
+
         # Run selection - should call _sort_by_file_priority
         await piece_manager._select_sequential()
-        
+
         # Should have executed (file manager branch covered)
         assert True
 
@@ -366,10 +368,10 @@ class TestSequentialEdgeCases:
         for i in range(len(piece_manager.pieces)):
             piece_manager.pieces[i].state = PieceState.VERIFIED
             piece_manager.verified_pieces.add(i)
-        
+
         # Reset tracked position
         piece_manager._current_sequential_piece = 0
-        
+
         # Should return 0 when no missing pieces
         result = piece_manager._get_current_sequential_piece()
         assert result == 0
@@ -381,7 +383,7 @@ class TestSequentialEdgeCases:
         for i in range(len(piece_manager.pieces)):
             piece_manager.pieces[i].state = PieceState.VERIFIED
             piece_manager.verified_pieces.add(i)
-        
+
         # Should return early without error
         await piece_manager._select_sequential_with_window(10)
         assert True
@@ -390,16 +392,16 @@ class TestSequentialEdgeCases:
     async def test_sequential_with_window_file_manager(self, piece_manager):
         """Test _select_sequential_with_window with file selection manager."""
         from unittest.mock import MagicMock
-        
+
         # Mock file selection manager
         mock_file_manager = MagicMock()
         mock_file_manager.get_selected_files.return_value = [0]
         mock_file_manager.get_files_for_piece.return_value = [0]
         piece_manager.file_selection_manager = mock_file_manager
-        
+
         # Run selection with window
         await piece_manager._select_sequential_with_window(5)
-        
+
         # Should have executed (file manager branch covered)
         assert True
 
@@ -407,12 +409,12 @@ class TestSequentialEdgeCases:
     async def test_sequential_fallback_no_missing(self, piece_manager):
         """Test _select_sequential_with_fallback when no missing pieces."""
         import asyncio
-        
+
         # Mark all pieces as verified
         for i in range(len(piece_manager.pieces)):
             piece_manager.pieces[i].state = PieceState.VERIFIED
             piece_manager.verified_pieces.add(i)
-        
+
         # Should return early without error
         # Add timeout to prevent hanging if there's a blocking operation
         await asyncio.wait_for(

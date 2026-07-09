@@ -1,0 +1,25 @@
+{
+  "benchmark": "hash_verify",
+  "config": "default",
+  "meta": {
+    "git": {
+      "commit_hash_short": "base"
+    }
+  },
+  "scenarios": [
+    {
+      "scenario": "size=1",
+      "dimensions": {
+        "size_bytes": 1048576
+      },
+      "metrics": {
+        "elapsed": {
+          "mean": 1.0
+        },
+        "throughput": {
+          "mean": 100.0
+        }
+      }
+    }
+  ]
+}

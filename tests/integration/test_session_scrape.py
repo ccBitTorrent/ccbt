@@ -5,11 +5,9 @@ Tests AsyncSessionManager.force_scrape() integration with protocol and tracker c
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 pytestmark = [pytest.mark.integration, pytest.mark.session]
 

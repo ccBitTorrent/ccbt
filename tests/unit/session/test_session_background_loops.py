@@ -1,6 +1,9 @@
 """Tests for session background loops."""
 
 import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from ccbt.models import TorrentCheckpoint
@@ -81,6 +84,297 @@ async def test_status_loop_cancel_breaks_cleanly(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout_fast
+async def test_status_loop_emits_structured_stall_marker(monkeypatch):
+    """Status loop should emit the richer stall marker when requests are active but peers are unproductive."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "stall-test",
+        "info_hash": b"3" * 20,
+        "pieces_info": {"num_pieces": 1, "piece_length": 16384, "piece_hashes": [b"x" * 20], "total_length": 16384},
+        "file_info": {"total_length": 16384},
+    }
+
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+    session.download_manager = SimpleNamespace(_download_started=True)
+    session.peer_manager = SimpleNamespace(_schedule_pending_resume=MagicMock())
+    session.piece_manager = SimpleNamespace(
+        peer_availability={"198.51.100.1:6881": object()},
+        get_piece_selection_metrics=lambda: {
+            "active_block_requests": 4,
+            "hash_verification_failures": 2,
+        },
+    )
+
+    async def mock_get_status():
+        return {
+            "progress": 0.25,
+            "connected_peers": 3,
+            "productive_peers": 0,
+            "requestable_peers": 1,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float):
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert any(
+        call.args and "STALL_MARKER" in call.args[0]
+        for call in session.logger.warning.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_status_loop_emits_no_piece_info_marker(monkeypatch):
+    """Status loop should flag payload starvation when peers never advertise availability."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "piece-info-stall",
+        "info_hash": b"4" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+    session.download_manager = SimpleNamespace(_download_started=True)
+    session.peer_manager = SimpleNamespace(_schedule_pending_resume=MagicMock())
+    session.piece_manager = SimpleNamespace(
+        peer_availability={},
+        get_piece_selection_metrics=lambda: {
+            "active_block_requests": 0,
+            "hash_verification_failures": 0,
+        },
+    )
+
+    async def mock_get_status():
+        return {
+            "progress": 0.25,
+            "connected_peers": 1,
+            "productive_peers": 0,
+            "requestable_peers": 1,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float):
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert any(
+        call.args and "no piece availability" in call.args[0]
+        for call in session.logger.warning.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_status_loop_logs_tracker_resolution_anomaly(monkeypatch):
+    """Status loop should surface tracker resolution anomalies once they are observed."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "tracker-anomaly",
+        "info_hash": b"6" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+    session.download_manager = SimpleNamespace(_download_started=True)
+    session.peer_manager = SimpleNamespace(_schedule_pending_resume=MagicMock())
+    session.piece_manager = SimpleNamespace(
+        peer_availability={},
+        get_piece_selection_metrics=lambda: {
+            "active_block_requests": 0,
+            "hash_verification_failures": 0,
+        },
+    )
+    session.tracker = SimpleNamespace(
+        get_session_metrics=lambda: {
+            "tracker.example.com": {"resolution_anomaly_count": 2}
+        }
+    )
+
+    async def mock_get_status():
+        return {
+            "progress": 0.0,
+            "connected_peers": 0,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float):
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert any(
+        call.args and "TRACKER_RESOLUTION_ANOMALY" in call.args[0]
+        for call in session.logger.warning.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_status_loop_routing_table_size_non_stalled_path(monkeypatch):
+    """DHT zero-node duration must not raise UnboundLocalError when download is not stall-flagged."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "routing-table-metrics",
+        "info_hash": b"8" * 20,
+        "pieces_info": {
+            "num_pieces": 0,
+            "piece_length": 16384,
+            "piece_hashes": [],
+            "total_length": 0,
+        },
+        "file_info": {"total_length": 0},
+    }
+
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+    session.download_manager = SimpleNamespace(_download_started=True, file_assembler=None)
+    session.session_manager = None
+
+    async def mock_summary() -> dict[str, int]:
+        return {
+            "active_connections": 1,
+            "total_connections": 1,
+            "requestable_connections": 0,
+            "remote_choked_connections": 0,
+            "pipeline_saturated_connections": 0,
+            "productive_connections": 1,
+            "handshake_complete_connections": 1,
+            "extension_capable_connections": 0,
+            "metadata_capable_connections": 0,
+        }
+
+    session.peer_manager = SimpleNamespace(
+        connections={},
+        get_connection_summary=AsyncMock(side_effect=mock_summary),
+        _inbound_probation_wait_queue_depth=0,
+        _pending_peer_queue=[],
+        _reconnection_suppressed_cycles_total=0,
+        _reconnection_forced_overlap_cycles_total=0,
+    )
+    session.piece_manager = SimpleNamespace(
+        peer_availability={},
+        verified_pieces=[],
+        num_pieces=0,
+        get_piece_selection_metrics=lambda: {
+            "active_block_requests": 0,
+            "hash_verification_failures": 0,
+        },
+    )
+
+    async def mock_get_status() -> dict:
+        return {
+            "progress": 0.0,
+            "connected_peers": 1,
+            "productive_peers": 1,
+            "requestable_peers": 0,
+            "download_rate": 1024.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float) -> None:
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert session.logger.exception.call_count == 0
+    assert hasattr(session, "_cached_status")
+    assert isinstance(session._cached_status, dict)
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_session_stop_cancels_metadata_tasks() -> None:
+    """Session stop should cancel tracked metadata tasks before shutdown completes."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "stop-test",
+        "info_hash": b"5" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+
+    session = AsyncTorrentSession(td, ".")
+    session.config.disk.checkpoint_enabled = False
+    session.lifecycle_controller = SimpleNamespace(on_stop=AsyncMock())
+    session.download_manager = SimpleNamespace(
+        stop=AsyncMock(),
+        download_complete=False,
+    )
+    session.piece_manager = SimpleNamespace(stop=AsyncMock())
+    session.tracker = SimpleNamespace(stop=AsyncMock(), session=None)
+    session.pex_manager = None
+    session._incoming_queue_task = None
+    session._dht_discovery_task = None
+
+    metadata_task = asyncio.create_task(asyncio.sleep(30))
+    session.add_metadata_task(metadata_task)
+
+    await session.stop()
+
+    assert metadata_task.cancelled()
+    session.lifecycle_controller.on_stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_checkpoint_loop_cancel_breaks_cleanly(monkeypatch):
     """Test _checkpoint_loop handles CancelledError and breaks."""
     from ccbt.session.session import AsyncTorrentSession
@@ -142,7 +436,7 @@ async def test_announce_loop_handles_exception_gracefully(monkeypatch):
             pass
         async def stop(self):
             pass
-        # CRITICAL FIX: Mock announce() method - loop will use this if announce_to_multiple doesn't exist
+        # Note: Mock announce() method - loop will use this if announce_to_multiple doesn't exist
         async def announce(self, td, port=None, event=""):
             call_count.append(1)
             raise RuntimeError("announce failed")  # Always fail
@@ -151,21 +445,21 @@ async def test_announce_loop_handles_exception_gracefully(monkeypatch):
     td = {
         "name": "test",
         "info_hash": b"1" * 20,
-        "announce": "http://tracker.example.com/announce",  # CRITICAL FIX: Need announce URL for loop to run
+        "announce": "http://tracker.example.com/announce",  # Note: Need announce URL for loop to run
         "pieces_info": {"num_pieces": 0, "piece_length": 0, "piece_hashes": [], "total_length": 0},
         "file_info": {"total_length": 0},
     }
 
     session = AsyncTorrentSession(td, ".")
     session.tracker = _Tracker()
-    # CRITICAL FIX: _stop_event must NOT be set initially (is_stopped() checks this)
+    # Note: _stop_event must NOT be set initially (is_stopped() checks this)
     # Create new event that is NOT set
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
-    
-    # CRITICAL FIX: Ensure session.info exists and has proper structure
+
+    # Note: Ensure session.info exists and has proper structure
     # The announce loop needs valid session state
-    if not hasattr(session, 'info') or session.info is None:
+    if not hasattr(session, "info") or session.info is None:
         from ccbt.session.session import TorrentSessionInfo
         session.info = TorrentSessionInfo(
             info_hash=b"1" * 20,
@@ -214,20 +508,20 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
     session.download_manager = _DM()
     session.on_status_update = _cb
     session._stop_event = asyncio.Event()
-    
-    # CRITICAL FIX: StatusLoop uses get_status() method on session (async method)
+
+    # Note: StatusLoop uses get_status() method on session (async method)
     # Mock get_status to return status dict
     async def mock_get_status():
         return {"progress": 0.5, "peers": 0, "connected_peers": 0, "download_rate": 0.0, "upload_rate": 0.0}
     session.get_status = mock_get_status
-    
-    # CRITICAL FIX: Ensure peer_manager doesn't cause AttributeError
+
+    # Note: Ensure peer_manager doesn't cause AttributeError
     # StatusLoop checks: getattr(self.s.download_manager, "peer_manager", None) or self.s.peer_manager
     # Set it to None to avoid AttributeError
     session.peer_manager = None
     # Also ensure download_manager doesn't have peer_manager
-    if hasattr(session.download_manager, 'peer_manager'):
-        delattr(session.download_manager, 'peer_manager')
+    if hasattr(session.download_manager, "peer_manager"):
+        delattr(session.download_manager, "peer_manager")
 
     task = asyncio.create_task(session._status_loop())
     await asyncio.sleep(0.15)  # Allow more time for loop to run
@@ -240,6 +534,184 @@ async def test_status_loop_calls_on_status_update(monkeypatch):
         pass
 
     assert len(callback_called) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_status_loop_cached_status_prefers_swarm_transport(monkeypatch):
+    """connected_peers in cache should follow transport-aligned swarm active_peers."""
+    from ccbt.session.metrics_status import StatusLoop
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "transport-status",
+        "info_hash": b"7" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.info.status = "downloading"
+    session.logger = MagicMock()
+
+    async def mock_summary() -> dict[str, int]:
+        return {
+            "active_connections": 9,
+            "total_connections": 9,
+            "requestable_connections": 0,
+            "remote_choked_connections": 0,
+            "pipeline_saturated_connections": 0,
+            "productive_connections": 0,
+            "handshake_complete_connections": 0,
+            "extension_capable_connections": 0,
+            "metadata_capable_connections": 0,
+            "terminal_disconnected_connections": 1,
+            "error_state_connections": 0,
+            "no_stream_connections": 2,
+        }
+
+    peer_manager = SimpleNamespace(
+        connections={},
+        get_connection_summary=AsyncMock(side_effect=mock_summary),
+        get_active_peers=lambda: [object()],
+        _schedule_pending_resume=MagicMock(),
+        _pending_peer_queue=[],
+        _reconnection_suppressed_cycles_total=0,
+        _reconnection_forced_overlap_cycles_total=0,
+        _inbound_probation_wait_queue_depth=0,
+    )
+    session.download_manager = SimpleNamespace(
+        peer_manager=peer_manager,
+        _download_started=True,
+    )
+    session._peer_discovery_metrics = {
+        "queued_reentrant_non_progress_cycles": 2,
+        "outbound_pending_peer_queue_depth": 50,
+    }
+
+    async def mock_get_status():
+        return {
+            "progress": 0.1,
+            "connected_peers": 9,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+        }
+
+    async def fast_sleep(_seconds: float):
+        session._stop_event.set()
+
+    session.get_status = mock_get_status
+    monkeypatch.setattr("ccbt.session.metrics_status.asyncio.sleep", fast_sleep)
+
+    await StatusLoop(session).run()
+
+    assert session._cached_status["connected_peers"] == 1
+    assert session._cached_status["summary_active_connections"] == 9
+    assert session._cached_status["transport_live_peers"] == 1
+    assert session._cached_status["terminal_disconnected_connections"] == 1
+    assert session._cached_status["no_stream_connections"] == 2
+    assert session._cached_status["peer_discovery_queued_reentrant_cycles"] == 2
+    assert session._cached_status["peer_discovery_outbound_pending_depth"] == 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout_fast
+async def test_announce_loop_prioritizes_tracker_replacement_peers(monkeypatch):
+    """Higher-utility tracker peers from higher-seed-ratio responses should stay ahead of others."""
+    from ccbt.session.announce import AnnounceController, AnnounceLoop
+    from ccbt.session.session import AsyncTorrentSession, TorrentSessionInfo
+
+    td = {
+        "name": "test",
+        "info_hash": b"1" * 20,
+        "announce": "http://tracker.example.com/announce",
+        "pieces_info": {"num_pieces": 0, "piece_length": 0, "piece_hashes": [], "total_length": 0},
+        "file_info": {"total_length": 0},
+    }
+    session = AsyncTorrentSession(td, ".")
+    session._stop_event = asyncio.Event()
+    session.config.network.announce_interval = 0.01
+    if not hasattr(session, "info") or session.info is None:
+        session.info = TorrentSessionInfo(
+            info_hash=b"1" * 20,
+            name="test",
+            status="downloading",
+        )
+
+    low_ratio_peer = SimpleNamespace(ip="9.0.0.1", port=6882, ssl_capable=False)
+    high_ratio_peer = SimpleNamespace(ip="1.0.0.1", port=6881, ssl_capable=False)
+    high_ratio_response = SimpleNamespace(
+        peers=[high_ratio_peer], complete=100, incomplete=0, interval=30
+    )
+    low_ratio_response = SimpleNamespace(
+        peers=[low_ratio_peer], complete=0, incomplete=100, interval=30
+    )
+
+    async def announce_to_multiple(self, _td, _urls, port=None, event=""):
+        return [high_ratio_response, low_ratio_response]
+
+    session.tracker = type("T", (), {"announce_to_multiple": announce_to_multiple})()
+    # Ensure collect_trackers returns a URL so loop reaches announce_to_multiple
+    def collect_trackers(self, _td):
+        return ["http://tracker.example.com/announce"]
+
+    monkeypatch.setattr(
+        AnnounceController,
+        "collect_trackers",
+        collect_trackers,
+    )
+    session.get_swarm_recovery_state = AsyncMock(
+        return_value={
+            "active_peers": 0,
+            "productive_peers": 0,
+            "requestable_peers": 0,
+            "peers_with_piece_info": 0,
+        }
+    )
+
+    connected_peer_lists = []
+
+    async def capture_ingress(peers, **_kwargs):
+        connected_peer_lists.append(peers)
+        return len(peers)
+
+    session._ingest_tracker_discovery_peers = capture_ingress  # type: ignore[method-assign]
+
+    session.download_manager = SimpleNamespace(
+        peer_manager=SimpleNamespace(),
+        _download_started=True,
+    )
+
+    # Keep this test fast and deterministic in the presence of sleeps.
+    original_sleep = asyncio.sleep
+
+    async def fast_sleep(secs):
+        await original_sleep(min(secs, 0.01))
+
+    monkeypatch.setattr("ccbt.session.announce.asyncio.sleep", fast_sleep)
+
+    loop = AnnounceLoop(session)
+    task = asyncio.create_task(loop.run())
+    await asyncio.sleep(0.08)
+    session._stop_event.set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    assert len(connected_peer_lists) == 1
+    first_batch = connected_peer_lists[0]
+    assert first_batch[0]["ip"] == high_ratio_peer.ip
+    assert first_batch[1]["ip"] == low_ratio_peer.ip
+    assert first_batch[0]["_replacement_priority"] > first_batch[1]["_replacement_priority"]
 
 
 @pytest.mark.asyncio
@@ -274,13 +746,13 @@ async def test_announce_loop_stays_alive_when_peers_queued_no_peer_manager(monke
     response_with_peers = type("R", (), {"peers": [peer_obj]})()
     call_count = []
 
-    async def announce_to_multiple(_td, _urls, port=None, event=""):
+    async def announce_to_multiple(self, _td, _urls, port=None, event=""):
         call_count.append(1)
         return [response_with_peers]
 
     session.tracker = type("T", (), {"announce_to_multiple": announce_to_multiple})()
     # Ensure collect_trackers returns a URL so the loop reaches announce_to_multiple
-    def collect_trackers(_td):
+    def collect_trackers(self, _td):
         return ["http://tracker.example.com/announce"]
 
     monkeypatch.setattr(

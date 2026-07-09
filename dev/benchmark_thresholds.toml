@@ -1,0 +1,37 @@
+[defaults]
+max_regression_percent = 5.0
+
+[benchmark.hash_verify]
+max_regression_percent = 10.0
+
+[benchmark.piece_assembly]
+max_regression_percent = 7.5
+
+[benchmark.disk_io]
+max_regression_percent = 10.0
+
+[benchmark.loopback_throughput]
+max_regression_percent = 7.5
+
+[benchmark.encryption]
+max_regression_percent = 10.0
+
+[metric.elapsed]
+higher_better = false
+max_regression_percent = 5.0
+
+[metric.throughput]
+higher_better = true
+max_regression_percent = 5.0
+
+[metric.duration]
+higher_better = false
+max_regression_percent = 5.0
+
+[metric.latency]
+higher_better = false
+max_regression_percent = 5.0
+
+[metric.overhead]
+higher_better = false
+max_regression_percent = 5.0

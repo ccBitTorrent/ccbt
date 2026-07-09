@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import bz2
 import gzip
-import hashlib
 import ipaddress
 import logging
 import lzma
@@ -27,6 +26,8 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import aiofiles
 import aiohttp
+
+from ccbt.utils.compat import md5_compat
 
 if TYPE_CHECKING:  # pragma: no cover
     from ipaddress import IPv4Network, IPv6Network
@@ -546,7 +547,7 @@ class IPFilter:
             cache_path.mkdir(parents=True, exist_ok=True)
 
             # Generate cache filename from URL hash (non-security use)
-            url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()
+            url_hash = md5_compat(url.encode(), usedforsecurity=False).hexdigest()
             cache_file = cache_path / f"{url_hash}.filter"
 
             # Check if cache is fresh

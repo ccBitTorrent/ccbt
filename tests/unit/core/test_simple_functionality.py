@@ -37,7 +37,7 @@ class TestSimpleFunctionality:
         # Test some basic config values
         assert config.network.max_global_peers == 200
         assert config.disk.write_batch_kib == 64
-        # CRITICAL FIX: piece_selection may be deserialized as string (from config files) or enum (from code)
+        # Note: piece_selection may be deserialized as string (from config files) or enum (from code)
         # Handle both cases - check string value directly or enum value
         piece_selection_value = (
             config.strategy.piece_selection.value
@@ -177,7 +177,7 @@ class TestSimpleFunctionality:
 
     def test_tracker_response_creation(self):
         """Test tracker response creation."""
-        from ccbt.discovery.tracker_udp_client import TrackerResponse, TrackerAction
+        from ccbt.discovery.tracker_udp_client import TrackerAction, TrackerResponse
 
         response = TrackerResponse(
             action=TrackerAction.ANNOUNCE,
@@ -278,12 +278,12 @@ class TestSimpleFunctionality:
 
         from ccbt.config.config import Config
         from ccbt.discovery.dht import AsyncDHTClient
+        from ccbt.discovery.pex import AsyncPexManager, PexPeer
+        from ccbt.discovery.tracker import TrackerResponse
+        from ccbt.peer.peer import PeerInfo, SocketOptimizer
         from ccbt.storage.disk_io import WriteRequest
         from ccbt.storage.file_assembler import FileSegment
         from ccbt.utils.metrics import MetricsCollector, PeerMetrics, TorrentMetrics
-        from ccbt.peer.peer import PeerInfo, SocketOptimizer
-        from ccbt.discovery.pex import AsyncPexManager, PexPeer
-        from ccbt.discovery.tracker import TrackerResponse
 
         # Create instances
         config = Config()

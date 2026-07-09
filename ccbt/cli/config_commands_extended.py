@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +55,8 @@ import toml
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.cli.config_commands import _find_project_root
+from ccbt.cli.config_commands import _should_skip_project_local_write
+from ccbt.cli.config_group import config
 from ccbt.cli.config_utils import requires_daemon_restart, restart_daemon_if_needed
 from ccbt.config.config import ConfigManager
 from ccbt.config.config_backup import ConfigBackup
@@ -71,54 +71,10 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 
-def _should_skip_project_local_write(target_path: Path) -> bool:
-    """Check if we should skip writing to project-local ccbt.toml during tests.
-
-    Args:
-        target_path: The target file path to write to
-
-    Returns:
-        True if we should skip writing (in test mode and targeting project-local file)
-
-    """
-    try:  # pragma: no cover - Defensive exception handling for safeguard detection errors
-        # Try to find project root from current directory or from target_path's directory
-        project_root = _find_project_root()
-        if target_path:
-            # Also try from target_path's directory in case we're in a subdirectory
-            alt_root = _find_project_root(
-                target_path.parent
-                if target_path.is_absolute()
-                else Path.cwd() / target_path.parent
-            )
-            if alt_root is not None:
-                project_root = alt_root
-
-        if project_root is None:
-            # Can't determine project root, allow write (fallback to old behavior)
-            return False
-
-        project_local = project_root / "ccbt.toml"
-        is_test_env = bool(
-            os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("CCBT_TEST_MODE")
-        )
-        # If target is the project-local file under test, skip destructive write
-        if target_path.resolve() == project_local.resolve() and is_test_env:
-            return True  # pragma: no cover - Test mode protection path
-    except Exception:  # pragma: no cover - Defensive exception handling for safeguard detection errors (path resolution, environment access, etc.)
-        # If any error in safeguard detection, proceed normally
-        pass  # pragma: no cover - Error handling path for safeguard detection failures
-    return False
-
-
-@click.group(name="config-extended")
-def config_extended():
-    """Provide extended configuration management commands."""
-
-
-@config_extended.command("schema")
+@config.command("schema")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["json", "yaml"]),
     default="json",
@@ -126,6 +82,7 @@ def config_extended():
 )
 @click.option(
     "--model",
+    "-m",
     type=str,
     default=None,
     help="Specific model to generate schema for (e.g., Config, NetworkConfig)",
@@ -179,10 +136,11 @@ def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("template")
+@config.command("template")
 @click.argument("template_name")
 @click.option(
     "--apply",
+    "-a",
     is_flag=True,
     help="Apply template to current configuration",
 )
@@ -192,9 +150,12 @@ def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
     type=click.Path(),
     help="Output file path for template config",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -202,6 +163,7 @@ def schema_cmd(format_: str, model: Optional[str], output: Optional[str]):
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -259,7 +221,7 @@ def template_cmd(
             target_path = Path(output) if output else Path.cwd() / "ccbt.toml"
 
             # Safety: avoid overwriting project-local config during tests
-            if _should_skip_project_local_write(target_path):
+            if _should_skip_project_local_write(target_path, None):
                 click.echo(_("OK"))  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
 
@@ -303,10 +265,11 @@ def template_cmd(
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("profile")
+@config.command("profile")
 @click.argument("profile_name")
 @click.option(
     "--apply",
+    "-a",
     is_flag=True,
     help="Apply profile to current configuration",
 )
@@ -316,9 +279,12 @@ def template_cmd(
     type=click.Path(),
     help="Output file path for profile config",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -326,6 +292,7 @@ def template_cmd(
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -388,7 +355,7 @@ def profile_cmd(
             target_path = Path(output) if output else Path.cwd() / "ccbt.toml"
 
             # Safety: avoid overwriting project-local config during tests
-            if _should_skip_project_local_write(target_path):
+            if _should_skip_project_local_write(target_path, None):
                 click.echo(_("OK"))  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
 
@@ -434,7 +401,7 @@ def profile_cmd(
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("backup")
+@config.command("backup")
 @click.option(
     "--description",
     "-d",
@@ -444,11 +411,14 @@ def profile_cmd(
 )
 @click.option(
     "--compress",
+    "-z",
     is_flag=True,
     default=True,
     help="Compress backup",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 def backup_cmd(description: str, compress: bool, config_file: Optional[str]):
     """Create configuration backup."""
     try:
@@ -481,14 +451,15 @@ def backup_cmd(description: str, compress: bool, config_file: Optional[str]):
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("restore")
+@config.command("restore")
 @click.argument("backup_file", type=click.Path(exists=True))
 @click.option(
     "--confirm",
+    "-y",
     is_flag=True,
     help="Skip confirmation prompt",
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 def restore_cmd(backup_file: str, confirm: bool, config_file: Optional[str]):
     """Restore configuration from backup."""
     try:
@@ -518,9 +489,10 @@ def restore_cmd(backup_file: str, confirm: bool, config_file: Optional[str]):
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("list-backups")
+@config.command("list-backups")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json"]),
     default="table",
@@ -563,11 +535,12 @@ def list_backups_cmd(format_: str):
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("diff")
+@config.command("diff")
 @click.argument("config1", type=click.Path(exists=True))
 @click.argument("config2", type=click.Path(exists=True))
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["unified", "json"]),
     default="unified",
@@ -645,7 +618,7 @@ def _print_capabilities_summary() -> None:
     console.print(table)  # pragma: no cover - Rich table rendering difficult to test
 
 
-@config_extended.group("capabilities", invoke_without_command=True)
+@config.group("capabilities", invoke_without_command=True)
 @click.pass_context
 def capabilities_group(ctx):
     """Manage system capabilities."""
@@ -668,9 +641,10 @@ def capabilities_summary_cmd():
     _print_capabilities_summary()
 
 
-@config_extended.command("auto-tune")
+@config.command("auto-tune")
 @click.option(
     "--apply",
+    "-a",
     is_flag=True,
     help="Apply auto-tuning to current configuration",
 )
@@ -680,9 +654,12 @@ def capabilities_summary_cmd():
     type=click.Path(),
     help="Output file path for tuned config",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -690,6 +667,7 @@ def capabilities_summary_cmd():
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -725,7 +703,8 @@ def auto_tune_cmd(
 
             # Safety: avoid overwriting project-local config during tests (only check if writing to ccbt.toml)
             if target_path.name == "ccbt.toml" and _should_skip_project_local_write(
-                target_path
+                target_path,
+                None,
             ):
                 click.echo(_("OK"))  # pragma: no cover - Test mode protection path
                 return  # pragma: no cover - Test mode protection path
@@ -777,9 +756,10 @@ def auto_tune_cmd(
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("export")
+@config.command("export")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml"]),
     default="toml",
@@ -792,7 +772,9 @@ def auto_tune_cmd(
     required=True,
     help="Output file path",
 )
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
+@click.option(
+    "--config", "-c", "config_file", type=click.Path(exists=True), default=None
+)
 def export_cmd(format_: str, output: str, config_file: Optional[str]):
     """Export configuration to file."""
     try:
@@ -826,10 +808,11 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("import")
+@config.command("import")
 @click.argument("import_file", type=click.Path(exists=True))
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["toml", "json", "yaml"]),
     default=None,
@@ -841,9 +824,10 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
     type=click.Path(),
     help="Output file path (default: overwrite current config)",
 )
-@click.option("--config", "config_file", type=click.Path(), default=None)
+@click.option("--config", "-c", "config_file", type=click.Path(), default=None)
 @click.option(
     "--restart-daemon",
+    "-R",
     "restart_daemon_flag",
     is_flag=True,
     default=None,
@@ -851,10 +835,21 @@ def export_cmd(format_: str, output: str, config_file: Optional[str]):
 )
 @click.option(
     "--no-restart-daemon",
+    "-N",
     "no_restart_daemon_flag",
     is_flag=True,
     default=None,
     help="Skip daemon restart even if needed",
+)
+@click.option(
+    "--mode",
+    "-M",
+    type=click.Choice(["replace", "merge"]),
+    default="replace",
+    help=_(
+        "replace: file must be a full valid document; "
+        "merge: deep-merge into existing target TOML then validate"
+    ),
 )
 def import_cmd(
     import_file: str,
@@ -863,6 +858,7 @@ def import_cmd(
     config_file: Optional[str],
     restart_daemon_flag: Optional[bool],
     no_restart_daemon_flag: Optional[bool],
+    mode: str,
 ):
     """Import configuration from file."""
     try:
@@ -900,15 +896,9 @@ def import_cmd(
         else:
             config_data = toml.loads(file_content)
 
-        # Validate configuration
-        try:
-            # Validate by creating a Config object
-            from ccbt.models import Config
-
-            Config.model_validate(config_data)
-        except Exception as e:  # pragma: no cover - Invalid config validation error
-            click.echo(_("Invalid configuration: {e}").format(e=e))  # pragma: no cover
-            return  # pragma: no cover
+        if not isinstance(config_data, dict):
+            click.echo(_("Invalid configuration: top-level must be an object"))
+            return
 
         # Save to target
         if output:
@@ -919,12 +909,41 @@ def import_cmd(
             target_path = Path.cwd() / "ccbt.toml"
 
         # Safety: avoid overwriting project-local config during tests
-        if _should_skip_project_local_write(target_path):
+        if _should_skip_project_local_write(target_path, None):
             click.echo(_("OK"))  # pragma: no cover - Test mode protection path
             return  # pragma: no cover - Test mode protection path
 
+        to_write: dict
+        if mode == "replace":
+            try:
+                from ccbt.models import Config
+
+                Config.model_validate(config_data)
+            except Exception as e:  # pragma: no cover
+                click.echo(
+                    _("Invalid configuration: {e}").format(e=e)
+                )  # pragma: no cover
+                return  # pragma: no cover
+            to_write = config_data
+        else:
+            base: dict = {}
+            if target_path.exists():
+                try:
+                    base = toml.load(str(target_path))
+                except Exception:
+                    base = {}
+            to_write = ConfigTemplates._deep_merge(base, config_data)  # noqa: SLF001
+            validate_cm = ConfigManager(
+                str(target_path) if target_path.exists() else config_file
+            )
+            try:
+                validate_cm.simulate_load_from_file_dict(to_write)
+            except Exception as e:
+                click.echo(_("Invalid configuration after merge: {e}").format(e=e))
+                return
+
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(toml.dumps(config_data), encoding="utf-8")
+        target_path.write_text(toml.dumps(to_write), encoding="utf-8")
         click.echo(_("Configuration imported to {path}").format(path=target_path))
 
         # Check if restart is needed
@@ -961,44 +980,10 @@ def import_cmd(
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("validate")
-@click.option("--config", "config_file", type=click.Path(exists=True), default=None)
-@click.option(
-    "--detailed",
-    is_flag=True,
-    help="Show detailed validation results",
-)
-def validate_cmd(config_file: Optional[str], detailed: bool):
-    """Validate configuration file."""
-    try:
-        cm = ConfigManager(config_file)
-        config = cm.config
-
-        # Basic validation (this happens during ConfigManager creation)
-        click.echo(_("✓ Configuration is valid"))
-
-        if detailed:
-            # Additional validation using conditional config
-            conditional_config = ConditionalConfig()
-            _is_valid, warnings = conditional_config.validate_against_system(config)
-
-            if warnings:
-                click.echo(_("Warnings:"))
-                for warning in warnings:
-                    click.echo(_("  ⚠ {warning}").format(warning=warning))
-            else:
-                click.echo(_("✓ No system compatibility warnings"))
-
-    except Exception as e:  # pragma: no cover - Error handling for validation failures
-        click.echo(
-            _("✗ Configuration validation failed: {e}").format(e=e)
-        )  # pragma: no cover
-        raise click.ClickException(str(e)) from e  # pragma: no cover
-
-
-@config_extended.command("list-templates")
+@config.command("list-templates")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json"]),
     default="table",
@@ -1029,9 +1014,10 @@ def list_templates_cmd(format_: str):
         raise click.ClickException(str(e)) from e  # pragma: no cover
 
 
-@config_extended.command("list-profiles")
+@config.command("list-profiles")
 @click.option(
     "--format",
+    "-f",
     "format_",
     type=click.Choice(["table", "json"]),
     default="table",

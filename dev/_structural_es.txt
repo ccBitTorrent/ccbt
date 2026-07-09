@@ -1,0 +1,70 @@
+ID
+IP
+No
+no
+1-2
+2-4
+4-8
+CPU
+DHT
+ETA
+MTU
+URL
+Xet
+uTP
+IPFS
+Nord
+Error
+Global
+Normal
+Scrape
+Visual
+  {msg}
+Dracula
+General
+Gruvbox
+Monokai
+Seeders
+Torrent
+Leechers
+One Dark
+Torrents
+🔍 Rehash
+Catppuccin
+WebTorrent
+  {warning}
+GitHub Dark
+Tokyo Night
+Textual Dark
+VS Code Dark
+  ⚠ {warning}
+PEX: {status}
+Error: {error}
+Solarized Dark
+{key}: {value}
+Solarized Light
+{key} = {value}
+  Total: {count}
+  UPnP: {status}
+Rehash: {status}
+Scrape: {status}
+[red]{msg}[/red]
+Torrents: {count}
+[red]{error}[/red]
+enable_dht={value}
+enable_pex={value}
+  NAT-PMP: {status}
+  Host: {host}:{port}
+[red]Error: {e}[/red]
+  - {hash}... ({format})
+[red]Error: {error}[/red]
+- [yellow]{issue}[/yellow]
+[yellow]{warning}[/yellow]
+[dim]Web seeds: {count}[/dim]
+[cyan]Torrents:[/cyan] {num_torrents}
+[green]{message}: {config_file}[/green]
+http://tracker.example.com:8080/announce
+[dim]Info hash v1 (SHA-1): {hash}...[/dim]
+[dim]Info hash v2 (SHA-256): {hash}...[/dim]
+[dim]  uv run btbt daemon start --foreground[/dim]
+help, status, peers, files, pause, resume, stop, config, limits, strategy, discovery, checkpoint, metrics, alerts, export, import, backup, restore, capabilities, auto_tune, template, profile, config_backup, config_diff, config_export, config_import, config_schema

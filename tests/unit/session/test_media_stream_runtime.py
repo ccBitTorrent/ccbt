@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import aiohttp
 import pytest
@@ -165,3 +165,143 @@ async def test_media_stream_validate_token_single_message(
         assert (await resp2.text()) == TOKEN_ERROR_MESSAGE
 
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_media_stream_runtime_emits_runtime_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Runtime should emit streaming metrics for successful and failed requests."""
+    media_file = tmp_path / "clip.mp4"
+    media_file.write_bytes(b"abcdefghij")
+
+    strategy = SimpleNamespace(
+        streaming_mode=False,
+        piece_selection=PieceSelectionStrategy.RAREST_FIRST,
+    )
+    piece_manager = SimpleNamespace(
+        piece_length=4,
+        config=SimpleNamespace(strategy=strategy),
+        pieces=[
+            SimpleNamespace(state=PieceState.VERIFIED),
+            SimpleNamespace(state=PieceState.VERIFIED),
+            SimpleNamespace(state=PieceState.VERIFIED),
+        ],
+        handle_streaming_seek=AsyncMock(),
+    )
+    mapper = SimpleNamespace(
+        piece_to_files={
+            0: [(0, 0, 4)],
+            1: [(0, 4, 4)],
+            2: [(0, 8, 2)],
+        }
+    )
+    file_selection_manager = SimpleNamespace(
+        mapper=mapper,
+        get_pieces_for_file=lambda _file_index: [0, 1, 2],
+    )
+
+    collector = SimpleNamespace(
+        increment_gauge=Mock(),
+        increment_counter=Mock(),
+        set_gauge=Mock(),
+        record_histogram=Mock(),
+    )
+
+    monkeypatch.setattr(
+        "ccbt.session.media_stream_runtime.emit_event",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "ccbt.monitoring.get_metrics_collector",
+        lambda: collector,
+    )
+
+    runtime = MediaStreamRuntime(
+        stream_id="stream-1",
+        info_hash_hex="a" * 40,
+        file_index=0,
+        file_name="clip.mp4",
+        file_path=media_file,
+        file_size=10,
+        file_offset=0,
+        bind_host="127.0.0.1",
+        requested_port=0,
+        token_ttl_seconds=60.0,
+        startup_buffer_seconds=1.0,
+        request_wait_timeout_seconds=0.5,
+        assumed_bitrate_bytes_per_second=4,
+        chunk_size=4,
+        torrent_session=SimpleNamespace(),
+        session_manager=SimpleNamespace(),
+        piece_manager=piece_manager,
+        file_selection_manager=file_selection_manager,
+    )
+
+    await runtime.start()
+
+    base_url = runtime.stream_url.split("?")[0]
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            runtime.stream_url,
+            headers={"Range": "bytes=2-5"},
+        ) as response:
+            assert response.status == HTTP_PARTIAL_CONTENT
+            assert await response.read() == b"cdef"
+
+        async with session.get(
+            f"{base_url}?token=invalid",
+        ) as response:
+            assert response.status == HTTP_UNAUTHORIZED
+
+    await runtime.stop()
+
+    assert any(
+        call.args[0] == "ccbt_media_stream_active_streams" and call.args[1] == 1
+        for call in collector.increment_gauge.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_active_streams" and call.args[1] == -1
+        for call in collector.increment_gauge.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_requests_total"
+        and call.args[1] == 1
+        and call.args[2] == {"result": "success"}
+        for call in collector.increment_counter.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_requests_total"
+        and call.args[1] == 1
+        and call.args[2] == {"result": "auth_failed"}
+        for call in collector.increment_counter.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_errors_total"
+        and call.args[1] == 1
+        and call.args[2] == {"reason": "auth_failed"}
+        for call in collector.increment_counter.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_bytes_served_total" and call.args[1] == 4
+        for call in collector.increment_counter.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_request_duration_seconds"
+        for call in collector.record_histogram.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_wait_seconds"
+        for call in collector.record_histogram.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_active_clients"
+        and call.args[1] == 1.0
+        for call in collector.set_gauge.call_args_list
+    )
+    assert any(
+        call.args[0] == "ccbt_media_stream_available_bytes" and call.args[1] >= 0
+        for call in collector.set_gauge.call_args_list
+    )

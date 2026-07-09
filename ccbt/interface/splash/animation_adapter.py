@@ -6,23 +6,17 @@ and message overlays for both Rich Console and Textual widgets.
 
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING, Any, Optional
-
-if TYPE_CHECKING:
-    from rich.console import Console
-    from textual.widgets import Static
+from typing import Any, Optional
 
 from ccbt.interface.splash.animation_config import BackgroundConfig
 from ccbt.interface.splash.animation_helpers import AnimationController
-from ccbt.interface.splash.backgrounds import BackgroundFactory, BackgroundAnimator
-from ccbt.interface.splash.templates import Template, get_template
-from ccbt.interface.splash.transitions import ColorTransition, Transition
+from ccbt.interface.splash.templates import get_template
+from ccbt.interface.splash.transitions import Transition
 
 
 class MessageOverlay:
     """Message overlay for displaying messages during splash screen."""
-    
+
     def __init__(
         self,
         console: Optional[Any] = None,
@@ -43,7 +37,7 @@ class MessageOverlay:
         self.position = position
         self.max_lines = max_lines
         self.messages: list[str] = []
-    
+
     def add_message(self, message: str) -> None:
         """Add a message to the overlay.
         
@@ -54,18 +48,17 @@ class MessageOverlay:
         if len(self.messages) > self.max_lines:
             self.messages.pop(0)
         self._update_display()
-    
+
     def clear_messages(self) -> None:
         """Clear all messages."""
         self.messages = []
         self._update_display()
-    
+
     def _update_display(self) -> None:
         """Update the display with current messages."""
         # Message overlay rendering is handled by the adapter
         # This is just for message management
-        pass
-    
+
     def get_messages(self) -> list[str]:
         """Get current messages.
         
@@ -81,7 +74,7 @@ class AnimationAdapter:
     Supports both Rich Console (CLI) and Textual widgets (interface).
     Integrates templates, transitions, backgrounds, and message overlays.
     """
-    
+
     def __init__(
         self,
         console: Optional[Any] = None,
@@ -98,8 +91,8 @@ class AnimationAdapter:
         self.controller = AnimationController()
         if console:
             self.controller.renderer.console = console
-        
-    
+
+
     async def render_with_template(
         self,
         template_name: str,
@@ -122,24 +115,24 @@ class AnimationAdapter:
             from ccbt.interface.splash.templates import load_default_templates
             load_default_templates()
             template = get_template(template_name)
-        
+
         if template is None:
             raise ValueError(f"Template '{template_name}' not found")
-        
+
         # Get template content
         template_content = template.content
-        
+
         # Create background if configured
         if bg_config is None:
             bg_config = BackgroundConfig()
-        
+
         # Execute transition
         await transition.execute(
             controller=self.controller,
             text=template_content,
             update_callback=update_callback,
         )
-    
+
     async def render_with_text(
         self,
         text: str,
@@ -158,31 +151,14 @@ class AnimationAdapter:
         # Create background if configured
         if bg_config is None:
             bg_config = BackgroundConfig()
-        
+
         # Execute transition
         await transition.execute(
             controller=self.controller,
             text=text,
             update_callback=update_callback,
         )
-    
-    def update_message(self, message: str) -> None:
-        """Update message overlay.
-        
-        Note: Messages are now automatically captured from logging system.
-        This method is kept for backward compatibility.
-        
-        Args:
-            message: Message to display (ignored - use logging instead)
-        """
-        # Messages are now captured from logging system automatically
-        # This method is kept for backward compatibility but does nothing
-        pass
-    
-    def clear_messages(self) -> None:
-        """Clear message overlay (deprecated - no-op)."""
-        pass
-    
+
     def render_frame_with_overlay(
         self,
         frame_content: Any,
@@ -198,7 +174,7 @@ class AnimationAdapter:
             Frame renderable without overlay
         """
         return frame_content
-    
+
     async def run_sequence(
         self,
         transitions: list[Transition],

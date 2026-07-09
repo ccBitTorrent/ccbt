@@ -294,21 +294,30 @@ class SocketOptimizer:
                 # Set TCP keepalive options if available
                 try:
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                    sock.setsockopt(
-                        socket.IPPROTO_TCP,
-                        socket.TCP_KEEPIDLE,
-                        config.tcp_keepalive_idle,
+                    # TCP_KEEPIDLE is Linux; macOS exposes TCP_KEEPALIVE for idle seconds.
+                    tcp_keepidle = getattr(
+                        socket, "TCP_KEEPIDLE", getattr(socket, "TCP_KEEPALIVE", None)
                     )
-                    sock.setsockopt(
-                        socket.IPPROTO_TCP,
-                        socket.TCP_KEEPINTVL,
-                        config.tcp_keepalive_interval,
-                    )
-                    sock.setsockopt(
-                        socket.IPPROTO_TCP,
-                        socket.TCP_KEEPCNT,
-                        config.tcp_keepalive_probes,
-                    )
+                    if tcp_keepidle is not None:
+                        sock.setsockopt(
+                            socket.IPPROTO_TCP,
+                            tcp_keepidle,
+                            config.tcp_keepalive_idle,
+                        )
+                    tcp_keepintvl = getattr(socket, "TCP_KEEPINTVL", None)
+                    if tcp_keepintvl is not None:
+                        sock.setsockopt(
+                            socket.IPPROTO_TCP,
+                            tcp_keepintvl,
+                            config.tcp_keepalive_interval,
+                        )
+                    tcp_keepcnt = getattr(socket, "TCP_KEEPCNT", None)
+                    if tcp_keepcnt is not None:
+                        sock.setsockopt(
+                            socket.IPPROTO_TCP,
+                            tcp_keepcnt,
+                            config.tcp_keepalive_probes,
+                        )
                 except (AttributeError, OSError):
                     # Keepalive options not available on this platform
                     pass
@@ -328,9 +337,18 @@ class SocketOptimizer:
                     if tcp_window_scale is not None:
                         sock.setsockopt(socket.IPPROTO_TCP, tcp_window_scale, 1)
 
-            # Set timeouts
+            # Set timeouts (asyncio transport-backed sockets on Windows often reject this)
             if config.so_rcvtimeo > 0:
-                sock.settimeout(config.so_rcvtimeo)
+                try:
+                    sock.settimeout(config.so_rcvtimeo)
+                except (OSError, TypeError, ValueError) as te:
+                    err = str(te).lower()
+                    if "only 0 timeout" in err or "transport" in err:
+                        self.logger.debug(
+                            "Skipping SO_RCVTIMEO on transport-backed socket: %s", te
+                        )
+                    else:
+                        raise
 
             self.logger.debug("Optimized socket for %s", socket_type)
 
@@ -533,7 +551,7 @@ class ConnectionPool:
             # Full coverage requires running thread for 60+ seconds which is impractical in unit tests
             # Logic is tested via direct method calls in test suite
             try:
-                # CRITICAL FIX: Check shutdown event before waiting to allow immediate exit
+                # Note: Check shutdown event before waiting to allow immediate exit
                 if self._shutdown_event.is_set():
                     break
                 # Wait up to 5 seconds (reduced from 60s to prevent thread accumulation)
@@ -566,12 +584,12 @@ class ConnectionPool:
 
     def stop(self) -> None:
         """Stop the cleanup thread."""
-        # CRITICAL FIX: Always set shutdown event, even if thread is not alive
+        # Note: Always set shutdown event, even if thread is not alive
         # This ensures the event is set for any waiting threads
         self._shutdown_event.set()
         # Remove from active instances tracking
         ConnectionPool._active_instances.discard(self)
-        # CRITICAL FIX: Add defensive check for None _cleanup_task
+        # Note: Add defensive check for None _cleanup_task
         if self._cleanup_task is None:
             return
         if self._cleanup_task.is_alive():

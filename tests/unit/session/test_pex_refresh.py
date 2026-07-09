@@ -10,8 +10,6 @@ from ccbt.session.session import AsyncSessionManager
 @pytest.mark.asyncio
 async def test_refresh_pex_success(monkeypatch):
     """Test refresh_pex returns True when refresh succeeds."""
-    from ccbt.session.session import AsyncSessionManager
-
     refresh_called = []
 
     class _PEX:
@@ -36,8 +34,6 @@ async def test_refresh_pex_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_pex_no_pex_manager_returns_false(monkeypatch):
     """Test refresh_pex returns False when PEX manager doesn't exist."""
-    from ccbt.session.session import AsyncSessionManager
-
     mgr = AsyncSessionManager(".")
     ih_bytes = b"1" * 20
 
@@ -55,8 +51,6 @@ async def test_refresh_pex_no_pex_manager_returns_false(monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_pex_invalid_info_hash(monkeypatch):
     """Test refresh_pex returns False with invalid info hash."""
-    from ccbt.session.session import AsyncSessionManager
-
     mgr = AsyncSessionManager(".")
 
     result = await mgr.refresh_pex("invalid")
@@ -66,8 +60,6 @@ async def test_refresh_pex_invalid_info_hash(monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_pex_torrent_not_found(monkeypatch):
     """Test refresh_pex returns False when torrent doesn't exist."""
-    from ccbt.session.session import AsyncSessionManager
-
     mgr = AsyncSessionManager(".")
     ih_bytes = b"1" * 20
 
@@ -78,7 +70,6 @@ async def test_refresh_pex_torrent_not_found(monkeypatch):
 @pytest.mark.asyncio
 async def test_refresh_pex_exception_returns_false(monkeypatch):
     """Test refresh_pex returns False when refresh raises exception."""
-    from ccbt.session.session import AsyncSessionManager
 
     class _PEX:
         async def refresh(self):

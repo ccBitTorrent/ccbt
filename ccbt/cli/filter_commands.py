@@ -24,9 +24,19 @@ def filter_group() -> None:
 @filter_group.command("add")
 @click.argument("ip_range")
 @click.option(
-    "--mode", type=click.Choice(["block", "allow"]), default="block", help="Filter mode"
+    "--mode",
+    "-m",
+    type=click.Choice(["block", "allow"]),
+    default="block",
+    help="Filter mode",
 )
-@click.option("--priority", type=int, default=0, help="Rule priority (higher wins)")
+@click.option(
+    "--priority",
+    "-p",
+    type=int,
+    default=0,
+    help="Rule priority (higher wins)",
+)
 @click.pass_context
 def filter_add(ctx, ip_range: str, mode: str, priority: int) -> None:
     """Add IP range to filter.
@@ -130,6 +140,7 @@ def filter_remove(ctx, ip_range: str) -> None:
 @filter_group.command("list")
 @click.option(
     "--format",
+    "-f",
     type=click.Choice(["table", "json"]),
     default="table",
     help="Output format",
@@ -201,6 +212,7 @@ def filter_list(ctx, fmt: str) -> None:
 @click.argument("file_path", type=click.Path(exists=True))
 @click.option(
     "--mode",
+    "-m",
     type=click.Choice(["block", "allow"]),
     default=None,
     help="Filter mode (uses default if not specified)",

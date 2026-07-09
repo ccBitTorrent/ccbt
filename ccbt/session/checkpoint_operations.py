@@ -87,9 +87,9 @@ class CheckpointOperations:
 
             # Validate info hash matches if using explicit torrent file
             if source_type == "file" and torrent_source:
-                from ccbt.core.torrent import TorrentParser
+                from ccbt.session import session as session_module
 
-                parser = TorrentParser()
+                parser = session_module.TorrentParser()
                 torrent_data_model = parser.parse(torrent_source)
                 if isinstance(torrent_data_model, dict):
                     torrent_info_hash = torrent_data_model.get("info_hash")
@@ -225,7 +225,7 @@ class CheckpointOperations:
 
     async def cleanup_completed(self) -> int:
         """Remove checkpoints for completed downloads."""
-        # CRITICAL FIX: Use checkpoint manager from session manager instead of creating new instance
+        # Note: Use checkpoint manager from session manager instead of creating new instance
         # This allows tests to properly mock the checkpoint manager
         checkpoint_manager = getattr(self.manager, "checkpoint_manager", None)
         if not checkpoint_manager:
@@ -327,11 +327,22 @@ class CheckpointOperations:
                                 for peer_data in checkpoint.connected_peers
                             ]
                             if peer_list:
-                                await peer_manager.connect_to_peers(peer_list)
-                                self.logger.info(
-                                    "Refreshed %d peers from checkpoint",
-                                    len(peer_list),
-                                )
+                                submit = await peer_manager.connect_to_peers(peer_list)
+                                if (
+                                    getattr(submit, "status", None)
+                                    == "queued_reentrant"
+                                ):
+                                    self.logger.info(
+                                        "Checkpoint refresh queued %d peers "
+                                        "(queue_depth=%s)",
+                                        len(peer_list),
+                                        getattr(submit, "queue_depth_after", None),
+                                    )
+                                else:
+                                    self.logger.info(
+                                        "Refreshed %d peers from checkpoint",
+                                        len(peer_list),
+                                    )
 
                 # Optionally refresh trackers
                 if reload_trackers and checkpoint.tracker_health:
@@ -412,7 +423,16 @@ class CheckpointOperations:
                                 for peer_data in checkpoint.connected_peers
                             ]
                             if peer_list:
-                                await peer_manager.connect_to_peers(peer_list)
+                                submit = await peer_manager.connect_to_peers(peer_list)
+                                if (
+                                    getattr(submit, "status", None)
+                                    == "queued_reentrant"
+                                ):
+                                    self.logger.debug(
+                                        "Quick reload queued %d peers (queue_depth=%s)",
+                                        len(peer_list),
+                                        getattr(submit, "queue_depth_after", None),
+                                    )
 
                 # Restore tracker state
                 restore_method = getattr(

@@ -5,12 +5,10 @@ Provides a single interface to execute animations with full configuration suppor
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Optional
+from typing import Optional
 
-from ccbt.interface.splash.animation_config import AnimationConfig, BackgroundConfig
+from ccbt.interface.splash.animation_config import AnimationConfig
 from ccbt.interface.splash.animation_helpers import AnimationController
-from typing import Any, Optional
 
 
 class AnimationExecutor:
@@ -82,10 +80,10 @@ class AnimationExecutor:
             "radiant_center_out": "radiant_center_out",
             "radiant_center_in": "radiant_center_in",
         }
-        
+
         internal_direction = direction_map.get(config.direction, config.direction)
         color_palette = config.color_palette or config.color_start or None
-        
+
         await self.controller.animate_color_per_direction(
             config.logo_text,
             direction=internal_direction,
@@ -339,7 +337,7 @@ class AnimationExecutor:
         bg_color = config.background.bg_color_start or config.background.bg_color_palette or "dim white"
         # Use separate background animation speed for color cycling
         bg_animation_speed = config.background.bg_animation_speed if config.background.bg_animate else 1.0
-        
+
         await self.controller.whitespace_background_animation(
             config.logo_text,
             pattern=config.whitespace_pattern,
@@ -431,7 +429,7 @@ class AnimationExecutor:
             logo_palette = [logo_palette]
         elif not isinstance(logo_palette, list):
             logo_palette = ["white"]
-        
+
         bg_palette = config.background.bg_color_palette
         await self.controller.animate_background_with_rainbow(
             config.logo_text,

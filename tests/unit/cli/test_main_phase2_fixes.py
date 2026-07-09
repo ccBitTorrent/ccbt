@@ -33,12 +33,13 @@ class TestMainARG001Fixes:
     def test_ensure_local_session_safe_with_unused_force_local(self):
         """Test _ensure_local_session_safe works with unused _force_local parameter."""
         # Import the function directly
-        from ccbt.cli.main import _ensure_local_session_safe
         import inspect
+
+        from ccbt.cli.main import _ensure_local_session_safe
 
         # Verify function exists and has correct signature
         assert callable(_ensure_local_session_safe)
-        
+
         # Verify signature has _force_local parameter (prefixed with _ for ARG001 fix)
         sig = inspect.signature(_ensure_local_session_safe)
         params = list(sig.parameters.keys())
@@ -72,18 +73,18 @@ class TestMainSIM105Fix:
         # Verify that contextlib.suppress is used in the checkpoint list command (SIM105 fix)
         # Read the source file directly to verify the fix
         from pathlib import Path
-        
+
         # Get the workspace root (go up from tests/unit/cli to project root)
         test_file = Path(__file__).resolve()
         project_root = test_file.parent.parent.parent.parent
         main_file = project_root / "ccbt" / "cli" / "main.py"
-        
+
         source = main_file.read_text(encoding="utf-8")
-        
+
         # Check for contextlib.suppress usage (SIM105 fix)
         assert "contextlib.suppress" in source, \
             "contextlib.suppress should be used instead of try-except-pass (SIM105 fix)"
-        
+
         # Find the checkpoint list command (around line 2374)
         lines = source.split("\n")
         # Search for the checkpoint list function
@@ -92,14 +93,14 @@ class TestMainSIM105Fix:
             if "def list_checkpoints" in line:
                 list_checkpoint_start = i
                 break
-        
+
         if list_checkpoint_start is not None:
             # Check a range around the function for contextlib.suppress usage
             # The suppress should be used for exception handling in the checkpoint list command
             relevant_range = lines[list_checkpoint_start:list_checkpoint_start + 60]
             relevant_lines = "\n".join(relevant_range)
             assert "contextlib.suppress" in relevant_lines or "suppress" in relevant_lines, \
-                f"checkpoint list command should use contextlib.suppress for exception handling"
+                "checkpoint list command should use contextlib.suppress for exception handling"
 
 
 class TestMainF841Fixes:
@@ -137,10 +138,10 @@ class TestMainF841Fixes:
         main_module._get_executor = lambda: mock_get_executor
         import asyncio as asyncio_module
         monkeypatch.setattr(asyncio_module, "run", _run_coro_locally)
-        
+
         try:
             from ccbt.cli.main import cli
-            
+
             # Test checkpoint_reload command (uses _is_daemon_mode at line 2582)
             result = runner.invoke(
                 cli,
@@ -169,6 +170,7 @@ class TestMainFunctionSignatures:
     def test_ensure_local_session_safe_signature(self):
         """Test _ensure_local_session_safe has correct signature with _force_local."""
         import inspect
+
         from ccbt.cli.main import _ensure_local_session_safe
 
         sig = inspect.signature(_ensure_local_session_safe)

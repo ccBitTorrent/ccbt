@@ -6,7 +6,7 @@ import asyncio
 import time
 from typing import Any
 
-# Canonical internal field names. Translate to num_peers/num_seeds at IPC boundary only.
+# Canonical internal field names; IPC translation occurs where canonical status is serialized.
 CANONICAL_TORRENT_STATUS_KEYS = (
     "info_hash",
     "name",
@@ -90,11 +90,15 @@ class StatusAggregator:
             out.setdefault("left", out.get("left", 0))
         out.setdefault("uploaded", out.get("uploaded", 0))
         # Canonical peer counters stay internal as connected_peers/active_peers.
-        # Accept legacy transport/source aliases only while normalizing snapshots.
+        # Preserve compatibility for older local status providers that still emit `peers`.
         out.setdefault("connected_peers", out.get("peers", 0))
-        out.setdefault("active_peers", out.get("num_seeds", 0))
+        out.setdefault("active_peers", 0)
         out.setdefault("output_dir", str(getattr(self.session, "output_dir", "")))
         out.setdefault("is_private", getattr(self.session, "is_private", False))
+        out.setdefault(
+            "torrent_file_path", getattr(self.session, "torrent_file_path", None)
+        )
+        out.setdefault("magnet_uri", getattr(self.session, "magnet_uri", None))
         return out
 
     async def get_torrent_status(self) -> dict[str, Any]:

@@ -3,13 +3,12 @@
 import asyncio
 import threading
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.resilience]
 
-from ccbt.utils.resilience import with_timeout, with_retry, CircuitBreaker, RateLimiter
+from ccbt.utils.resilience import with_timeout
 
 
 class TestResilienceTimeout:
@@ -184,7 +183,7 @@ class TestResilienceTimeout:
             @with_timeout(0.5)
             def inner_function():
                 return "inner_success"
-            
+
             return inner_function()
 
         result = outer_function()

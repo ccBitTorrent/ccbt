@@ -12,8 +12,9 @@ from ccbt.i18n import _
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
     from textual.screen import ComposeResult
+
+    from ccbt.session.session import AsyncSessionManager
 else:
     try:
         from textual.screen import ComposeResult
@@ -21,10 +22,18 @@ else:
         ComposeResult = None  # type: ignore[assignment, misc]
 
 try:
+    from textual import log
     from textual.containers import Container, Horizontal, Vertical
     from textual.screen import ModalScreen
-    from textual.widgets import Button, DataTable, Input, Select, Static, Switch, Checkbox
-    from textual import log
+    from textual.widgets import (
+        Button,
+        Checkbox,
+        DataTable,
+        Input,
+        Select,
+        Static,
+        Switch,
+    )
 except ImportError:
     # Fallback for when Textual is not available
     class ModalScreen:  # type: ignore[no-redef]
@@ -153,11 +162,11 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
         try:
             input_widget = self.query_one("#torrent-input", Input)  # type: ignore[attr-defined]
             path = input_widget.value.strip()  # type: ignore[attr-defined]
-            
+
             if not path:
                 return
-            
-            # CRITICAL FIX: Use command executor for daemon compatibility
+
+            # Note: Use command executor for daemon compatibility
             # Check if dashboard has command executor (daemon mode) or use session directly (local mode)
             if hasattr(self.dashboard, "_command_executor") and self.dashboard._command_executor:
                 # Daemon mode: use command executor
@@ -172,7 +181,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                         info_hash_hex = result.data.get("info_hash", "") if result.data else ""
                         if info_hash_hex:
                             logger.debug("QuickAddTorrentScreen: Torrent added successfully, info_hash: %s", info_hash_hex)
-                            # CRITICAL FIX: Dismiss with info_hash and trigger immediate UI refresh
+                            # Note: Dismiss with info_hash and trigger immediate UI refresh
                             try:
                                 self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
                                 # Trigger immediate UI refresh after dismiss
@@ -213,7 +222,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                 except Exception as e:
                     # Show error
                     from rich.text import Text
-                    error_msg = f"Error: {str(e)}"
+                    error_msg = f"Error: {e!s}"
                     try:
                         label = self.query_one("#label", Static)  # type: ignore[attr-defined]
                         label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
@@ -228,7 +237,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                 except Exception as e:
                     # Show error
                     from rich.text import Text
-                    error_msg = f"Error: {str(e)}"
+                    error_msg = f"Error: {e!s}"
                     try:
                         label = self.query_one("#label", Static)  # type: ignore[attr-defined]
                         label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
@@ -238,7 +247,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
             logger.debug("Error in quick add: %s", e)
             # Show error
             from rich.text import Text
-            error_msg = f"Error: {str(e)}"
+            error_msg = f"Error: {e!s}"
             try:
                 label = self.query_one("#label", Static)  # type: ignore[attr-defined]
                 label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
@@ -248,7 +257,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
     def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
         """Handle button presses.
         
-        CRITICAL FIX: Use call_later to avoid blocking UI thread.
+        Note: Use call_later to avoid blocking UI thread.
         Button press handlers should return immediately to prevent screen freezes.
         """
         if event.button.id == "cancel":
@@ -260,7 +269,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                     logger.error("Error in async cancel: %s", e, exc_info=True)
             asyncio.create_task(cancel_async())
         elif event.button.id == "submit":
-            # CRITICAL FIX: Schedule async work without blocking
+            # Note: Schedule async work without blocking
             # Create task immediately to prevent UI freeze
             async def submit_async() -> None:
                 try:
@@ -1045,11 +1054,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     async def _submit(self) -> None:  # pragma: no cover
         """Submit the form and add torrent."""
         try:
-            # CRITICAL FIX: Validate torrent path before proceeding
+            # Note: Validate torrent path before proceeding
             if not self.torrent_path or not self.torrent_path.strip():
                 self._show_error(_("Please enter a torrent path or magnet link"))
                 return
-            
+
             # Build options dict
             options: dict[str, Any] = {
                 "resume": self.resume,
@@ -1107,7 +1116,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             # Close screen and call dashboard's _process_add_torrent
             self.dismiss(True)  # type: ignore[attr-defined]
             # Access private method for internal dashboard functionality
-            # CRITICAL FIX: Use asyncio.create_task to avoid blocking UI
+            # Note: Use asyncio.create_task to avoid blocking UI
             import asyncio
             asyncio.create_task(self.dashboard._process_add_torrent(self.torrent_path, options))
         except Exception as e:
@@ -1148,13 +1157,12 @@ class LoadingFileListScreen(ModalScreen):  # type: ignore[misc]
         self.info_hash = info_hash
 
     def compose(self) -> ComposeResult:  # pragma: no cover
-        with Container(id="dialog"):
-            with Vertical():
-                yield Static(_("Loading file list…"), id="message")
-                yield Static(
-                    _("Fetching file list for selection. This may take a moment."),
-                    id="detail",
-                )
+        with Container(id="dialog"), Vertical():
+            yield Static(_("Loading file list…"), id="message")
+            yield Static(
+                _("Fetching file list for selection. This may take a moment."),
+                id="detail",
+            )
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         asyncio.create_task(self._fetch_files())
@@ -1300,21 +1308,21 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
         try:
             self._status_widget = self.query_one("#status", Static)  # type: ignore[attr-defined]
             self._progress_widget = self.query_one("#progress", Static)  # type: ignore[attr-defined]
-            
-            # CRITICAL FIX: Register event callback for METADATA_READY
+
+            # Note: Register event callback for METADATA_READY
             # Handle both AsyncSessionManager and DaemonInterfaceAdapter
             if hasattr(self.session, "register_event_callback"):
                 from ccbt.daemon.ipc_protocol import EventType
-                
+
                 def on_metadata_ready(data: dict[str, Any]) -> None:
                     """Handle metadata ready event."""
                     event_info_hash = data.get("info_hash", "")
                     if event_info_hash == self.info_hash_hex:
-                        # CRITICAL FIX: Event callbacks may run in app thread or different thread
+                        # Note: Event callbacks may run in app thread or different thread
                         # Use create_task which works in both cases (Textual handles thread safety)
                         import asyncio
                         asyncio.create_task(self._handle_metadata_ready())
-                
+
                 self.session.register_event_callback(  # type: ignore[attr-defined]
                     EventType.METADATA_READY,
                     on_metadata_ready,
@@ -1322,28 +1330,28 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
             elif hasattr(self.session, "_event_callbacks"):
                 # DaemonInterfaceAdapter - register via adapter
                 from ccbt.daemon.ipc_protocol import EventType
-                
+
                 def on_metadata_ready(data: dict[str, Any]) -> None:
                     """Handle metadata ready event."""
                     event_info_hash = data.get("info_hash", "")
                     if event_info_hash == self.info_hash_hex:
-                        # CRITICAL FIX: Event callbacks may run in app thread or different thread
+                        # Note: Event callbacks may run in app thread or different thread
                         # Use create_task which works in both cases (Textual handles thread safety)
                         import asyncio
                         asyncio.create_task(self._handle_metadata_ready())
-                
+
                 if EventType.METADATA_READY not in self.session._event_callbacks:  # type: ignore[attr-defined]
                     self.session._event_callbacks[EventType.METADATA_READY] = []  # type: ignore[attr-defined]
                 self.session._event_callbacks[EventType.METADATA_READY].append(on_metadata_ready)  # type: ignore[attr-defined]
-            
+
             # Fallback: Use polling with reduced frequency (every 2 seconds instead of 1)
             def schedule_check() -> None:
                 """Schedule async check."""
                 import asyncio
                 asyncio.create_task(self._check_metadata_status())
-            
+
             self._check_task = self.set_interval(2.0, schedule_check)  # type: ignore[attr-defined]
-            
+
             # Also check immediately
             schedule_check()
         except Exception as e:
@@ -1367,11 +1375,11 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
             if self._check_task:
                 self._check_task.stop()  # type: ignore[attr-defined]
                 self._check_task = None
-            
+
             # Update status
             if self._status_widget:
                 self._status_widget.update("Metadata loaded! Opening file selection...")
-            
+
             # Dismiss and show file selection
             self.dismiss(True)  # type: ignore[attr-defined]
             await self.dashboard.push_screen(  # type: ignore[attr-defined]
@@ -1441,7 +1449,7 @@ class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
                 return
 
             if status and self._status_widget:
-                peers = status.get("connected_peers", status.get("num_peers", 0))
+                peers = status.get("connected_peers", 0)
                 self._status_widget.update(  # type: ignore[attr-defined]
                     _("Connected to {peers} peer(s), fetching metadata...").format(
                         peers=peers
@@ -1555,7 +1563,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
             if self._file_table:
                 self._file_table.add_columns(_("Select"), _("Name"), _("Size"), _("Priority"))
                 self._file_table.zebra_stripes = True
-            
+
             self.call_later(self._load_files)  # type: ignore[attr-defined]
         except Exception as e:
             import logging
@@ -1569,13 +1577,13 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
 
         try:
             files = await self.dashboard._data_provider.get_torrent_files(self.info_hash_hex)
-            
+
             if not files:
                 return
 
             # Clear existing rows
             self._file_table.clear()
-            
+
             # Add files to table
             for file_info in files:
                 file_index = file_info.get("index", -1)
@@ -1583,7 +1591,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
                 file_size = file_info.get("size", 0)
                 file_selected = file_info.get("selected", True)
                 file_priority = file_info.get("priority", "normal")
-                
+
                 # Format size
                 if file_size > 1024 * 1024 * 1024:
                     size_str = f"{file_size / (1024 * 1024 * 1024):.2f} GB"
@@ -1593,10 +1601,10 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
                     size_str = f"{file_size / 1024:.2f} KB"
                 else:
                     size_str = f"{file_size} B"
-                
+
                 # Add checkbox for selection
                 checkbox = "☑" if file_selected else "☐"
-                
+
                 self._file_table.add_row(
                     checkbox,
                     file_name,
@@ -1604,7 +1612,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
                     file_priority,
                     key=str(file_index),
                 )
-                
+
                 if file_selected:
                     self._selected_files.add(file_index)
         except Exception as e:
@@ -1620,7 +1628,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
         try:
             row_key = str(event.row_key)
             file_index = int(row_key)
-            
+
             # Toggle selection
             if file_index in self._selected_files:
                 self._selected_files.discard(file_index)
@@ -1628,7 +1636,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
             else:
                 self._selected_files.add(file_index)
                 checkbox = "☑"
-            
+
             # Update row
             row = self._file_table.get_row(row_key)  # type: ignore[attr-defined]
             if row:
@@ -1654,7 +1662,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
         """Select all files."""
         if not self._file_table:
             return
-        
+
         try:
             # Get all file indices from table
             for row_key in self._file_table.rows:  # type: ignore[attr-defined]
@@ -1670,11 +1678,11 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
         """Deselect all files."""
         if not self._file_table:
             return
-        
+
         try:
             # Clear selection
             self._selected_files.clear()
-            
+
             # Update all rows
             for row_key in self._file_table.rows:  # type: ignore[attr-defined]
                 self._file_table.update_cell(row_key, "Select", "☐")  # type: ignore[attr-defined]
@@ -1694,7 +1702,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
                     files = await self.dashboard._data_provider.get_torrent_files(self.info_hash_hex)
                     all_indices = [f.get("index", -1) for f in files if f.get("index", -1) >= 0]
                     unselected_indices = [idx for idx in all_indices if idx not in self._selected_files]
-                    
+
                     if unselected_indices:
                         await self.dashboard._command_executor.execute_command(
                             "file.deselect",
@@ -1705,7 +1713,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.debug("Error deselecting files: %s", e)
-                
+
                 # Then, select chosen files
                 file_indices = list(self._selected_files)
                 if file_indices:
@@ -1718,7 +1726,7 @@ class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
                         import logging
                         logger = logging.getLogger(__name__)
                         logger.warning("Failed to set file selection: %s", result.error if result else "Unknown error")
-            
+
             self.dismiss(True)  # type: ignore[attr-defined]
         except Exception as e:
             import logging

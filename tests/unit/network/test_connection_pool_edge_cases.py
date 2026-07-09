@@ -5,7 +5,6 @@ Tests edge cases and defensive code paths.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from unittest.mock import MagicMock
 
@@ -14,8 +13,8 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 
-from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 from ccbt.models import PeerInfo
+from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 
 
 @pytest_asyncio.fixture
@@ -32,7 +31,7 @@ async def test_release_connection_recycling(connection_pool):
     """Test release recycles connection when usage count exceeds max."""
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     peer_id = f"{peer_info.ip}:{peer_info.port}"
-    
+
     # Add connection with high usage count
     connection = {
         "peer_info": peer_info,
@@ -42,10 +41,10 @@ async def test_release_connection_recycling(connection_pool):
     connection_pool.pool[peer_id] = connection
     metrics = ConnectionMetrics(usage_count=1001)  # Exceeds max_usage_count
     connection_pool.metrics[peer_id] = metrics
-    
+
     # Release should recycle connection
     await connection_pool.release(peer_id, connection)
-    
+
     # Connection should be removed
     assert peer_id not in connection_pool.pool
 
@@ -55,7 +54,7 @@ async def test_release_connection_no_metrics(connection_pool):
     """Test release when metrics don't exist."""
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     peer_id = f"{peer_info.ip}:{peer_info.port}"
-    
+
     # Add connection without metrics
     connection = {
         "peer_info": peer_info,
@@ -63,10 +62,10 @@ async def test_release_connection_no_metrics(connection_pool):
         "created_at": 0
     }
     connection_pool.pool[peer_id] = connection
-    
+
     # Release should handle missing metrics gracefully
     await connection_pool.release(peer_id, connection)
-    
+
     # Connection should still be in pool
     assert peer_id in connection_pool.pool
 
@@ -80,7 +79,7 @@ async def test_is_connection_valid_non_dict_connection(connection_pool):
     mock_reader.is_closing.return_value = False
     mock_reader.closed = False
     mock_conn.reader = mock_reader
-    
+
     mock_writer = MagicMock()
     mock_writer.is_closing.return_value = False
     mock_writer.closed = False
@@ -90,9 +89,9 @@ async def test_is_connection_valid_non_dict_connection(connection_pool):
     mock_writer._transport = mock_transport
     mock_transport._sock = mock_sock
     mock_conn.writer = mock_writer
-    
+
     is_valid = connection_pool._is_connection_valid(mock_conn)
-    
+
     # Should validate non-dict connection (since created_at check is only for dict)
     assert is_valid
 
@@ -102,11 +101,11 @@ async def test_is_connection_valid_reader_none(connection_pool):
     """Test _is_connection_valid with None reader."""
     mock_conn = MagicMock()
     mock_conn.reader = None
-    
+
     mock_writer = MagicMock()
     mock_writer.is_closing.return_value = False
     mock_writer.closed = False
-    
+
     # Add transport and socket for socket error check
     mock_transport = MagicMock()
     mock_sock = MagicMock()
@@ -114,11 +113,11 @@ async def test_is_connection_valid_reader_none(connection_pool):
     mock_writer._transport = mock_transport
     mock_transport._sock = mock_sock
     mock_conn.writer = mock_writer
-    
+
     connection = {"connection": mock_conn, "created_at": time.time()}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle None reader (None reader is acceptable if writer is valid)
     assert is_valid
 
@@ -132,11 +131,11 @@ async def test_is_connection_valid_writer_none(connection_pool):
     mock_reader.closed = False
     mock_conn.reader = mock_reader
     mock_conn.writer = None  # None writer means no socket check
-    
+
     connection = {"connection": mock_conn, "created_at": time.time()}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle None writer (None writer is acceptable if reader is valid)
     assert is_valid
 
@@ -147,11 +146,11 @@ async def test_is_connection_valid_no_reader_attr(connection_pool):
     mock_conn = MagicMock()
     del mock_conn.reader  # Remove reader attribute
     mock_conn.writer = MagicMock()
-    
+
     connection = {"connection": mock_conn, "created_at": 0}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle missing reader attribute
     assert is_valid or not is_valid  # Just verify it doesn't crash
 
@@ -164,11 +163,11 @@ async def test_is_connection_valid_no_writer_attr(connection_pool):
     mock_reader.is_closing.return_value = False
     mock_conn.reader = mock_reader
     del mock_conn.writer  # Remove writer attribute
-    
+
     connection = {"connection": mock_conn, "created_at": 0}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle missing writer attribute
     assert is_valid or not is_valid  # Just verify it doesn't crash
 
@@ -182,11 +181,11 @@ async def test_is_connection_valid_no_is_closing_attr(connection_pool):
     mock_reader.closed = False
     mock_conn.reader = mock_reader
     mock_conn.writer = MagicMock()
-    
+
     connection = {"connection": mock_conn, "created_at": 0}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle missing is_closing attribute
     assert is_valid or not is_valid  # Just verify it doesn't crash
 
@@ -200,11 +199,11 @@ async def test_is_connection_valid_no_closed_attr(connection_pool):
     del mock_reader.closed  # Remove closed attribute
     mock_conn.reader = mock_reader
     mock_conn.writer = MagicMock()
-    
+
     connection = {"connection": mock_conn, "created_at": 0}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle missing closed attribute
     assert is_valid or not is_valid  # Just verify it doesn't crash
 
@@ -217,15 +216,15 @@ async def test_is_connection_valid_no_transport(connection_pool):
     mock_reader.is_closing.return_value = False
     mock_reader.closed = False
     mock_conn.reader = mock_reader
-    
+
     mock_writer = MagicMock()
     del mock_writer._transport  # Remove transport
     mock_conn.writer = mock_writer
-    
+
     connection = {"connection": mock_conn, "created_at": 0}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle missing transport
     assert is_valid or not is_valid  # Just verify it doesn't crash
 
@@ -238,17 +237,17 @@ async def test_is_connection_valid_no_sock(connection_pool):
     mock_reader.is_closing.return_value = False
     mock_reader.closed = False
     mock_conn.reader = mock_reader
-    
+
     mock_writer = MagicMock()
     mock_transport = MagicMock()
     del mock_transport._sock  # Remove _sock
     mock_writer._transport = mock_transport
     mock_conn.writer = mock_writer
-    
+
     connection = {"connection": mock_conn, "created_at": 0}
-    
+
     is_valid = connection_pool._is_connection_valid(connection)
-    
+
     # Should handle missing _sock
     assert is_valid or not is_valid  # Just verify it doesn't crash
 
@@ -258,10 +257,10 @@ async def test_start_already_running(connection_pool):
     """Test start when already running."""
     # Already started via fixture
     assert connection_pool._running is True
-    
+
     # Starting again should return early
     await connection_pool.start()
-    
+
     # Should still be running
     assert connection_pool._running is True
 
@@ -270,10 +269,10 @@ async def test_start_already_running(connection_pool):
 async def test_stop_already_stopped():
     """Test stop when already stopped."""
     pool = PeerConnectionPool()
-    
+
     # Stop when not running should return early
     await pool.stop()
-    
+
     # Should still be stopped
     assert pool._running is False
 

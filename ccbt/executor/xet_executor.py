@@ -523,26 +523,6 @@ class XetExecutor(CommandExecutor):
                 error=f"Failed to set sync mode: {e}",
             )
 
-    async def _set_sync_mode_by_key(
-        self,
-        folder_key: str,
-        sync_mode: str,
-        source_peers: Optional[list[str]] = None,
-    ) -> CommandResult:
-        """Set synchronization mode using a canonical folder key."""
-        try:
-            result = await self.adapter.set_xet_folder_sync_mode(
-                folder_key,
-                sync_mode,
-                source_peers=source_peers,
-            )
-            return CommandResult(success=True, data=result)
-        except Exception as e:
-            return CommandResult(
-                success=False,
-                error=f"Failed to set sync mode: {e}",
-            )
-
     async def _get_sync_mode(self, folder_path: str) -> CommandResult:
         """Get current synchronization mode for folder."""
         try:

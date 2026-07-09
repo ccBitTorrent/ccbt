@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -40,7 +40,7 @@ class TestGenerateBasicAuthHeader:
         """Test generating Basic auth header with simple credentials."""
         header = generate_basic_auth_header("user", "pass")
         assert header.startswith("Basic ")
-        
+
         # Decode and verify
         encoded = header[6:]  # Remove "Basic "
         decoded = base64.b64decode(encoded).decode("utf-8")
@@ -50,7 +50,7 @@ class TestGenerateBasicAuthHeader:
         """Test generating Basic auth header with special characters."""
         header = generate_basic_auth_header("user@domain", "p@ss:w0rd!")
         assert header.startswith("Basic ")
-        
+
         encoded = header[6:]
         decoded = base64.b64decode(encoded).decode("utf-8")
         assert decoded == "user@domain:p@ss:w0rd!"
@@ -59,7 +59,7 @@ class TestGenerateBasicAuthHeader:
         """Test generating Basic auth header with Unicode characters."""
         header = generate_basic_auth_header("用户名", "密码")
         assert header.startswith("Basic ")
-        
+
         encoded = header[6:]
         decoded = base64.b64decode(encoded).decode("utf-8")
         assert decoded == "用户名:密码"
@@ -68,7 +68,7 @@ class TestGenerateBasicAuthHeader:
         """Test generating Basic auth header with empty strings."""
         header = generate_basic_auth_header("", "")
         assert header.startswith("Basic ")
-        
+
         encoded = header[6:]
         decoded = base64.b64decode(encoded).decode("utf-8")
         assert decoded == ":"
@@ -99,7 +99,7 @@ class TestParseProxyAuthenticate:
 
     def test_parse_proxy_authenticate_digest(self):
         """Test parsing Digest Proxy-Authenticate header."""
-        header = "Digest realm=\"test\""
+        header = 'Digest realm="test"'
         result = parse_proxy_authenticate(header)
         assert result["scheme"] == "Digest"
         assert result["realm"] == "test"
@@ -166,10 +166,10 @@ class TestCredentialStore:
         """Test key regeneration when read fails."""
         # Create initial store
         store1 = CredentialStore(config_dir=temp_config_dir)
-        
+
         # Corrupt the key file
         store1.key_file.write_bytes(b"corrupt")
-        
+
         # Create new store (should regenerate key)
         store2 = CredentialStore(config_dir=temp_config_dir)
         assert store2.key != b"corrupt"
@@ -179,7 +179,7 @@ class TestCredentialStore:
         """Test credential encryption."""
         store = CredentialStore(config_dir=temp_config_dir)
         encrypted = store.encrypt_credentials("user", "pass")
-        
+
         assert isinstance(encrypted, str)
         assert len(encrypted) > 0
         # Should be base64-encoded
@@ -192,7 +192,7 @@ class TestCredentialStore:
         """Test credential decryption."""
         store = CredentialStore(config_dir=temp_config_dir)
         encrypted = store.encrypt_credentials("user", "pass")
-        
+
         username, password = store.decrypt_credentials(encrypted)
         assert username == "user"
         assert password == "pass"
@@ -201,7 +201,7 @@ class TestCredentialStore:
         """Test encrypt/decrypt roundtrip with special characters."""
         store = CredentialStore(config_dir=temp_config_dir)
         encrypted = store.encrypt_credentials("user@domain", "p@ss:w0rd!")
-        
+
         username, password = store.decrypt_credentials(encrypted)
         assert username == "user@domain"
         assert password == "p@ss:w0rd!"
@@ -209,7 +209,7 @@ class TestCredentialStore:
     def test_decrypt_credentials_invalid(self, temp_config_dir):
         """Test decrypting invalid encrypted data."""
         store = CredentialStore(config_dir=temp_config_dir)
-        
+
         with pytest.raises(Exception):  # Should raise ProxyAuthError
             store.decrypt_credentials("invalid_base64_data")
 
@@ -217,7 +217,7 @@ class TestCredentialStore:
         """Test decrypting with wrong key."""
         store1 = CredentialStore(config_dir=temp_config_dir)
         encrypted = store1.encrypt_credentials("user", "pass")
-        
+
         # Create new store with different key
         with tempfile.TemporaryDirectory() as tmpdir2:
             store2 = CredentialStore(config_dir=Path(tmpdir2))
@@ -242,11 +242,11 @@ class TestProxyAuth:
     async def test_handle_challenge_basic_with_credentials(self, temp_config_dir):
         """Test handling Basic challenge with provided credentials."""
         auth = ProxyAuth()
-        header = await auth.handle_challenge("Basic realm=\"Proxy\"", "user", "pass")
-        
+        header = await auth.handle_challenge('Basic realm="Proxy"', "user", "pass")
+
         assert header is not None
         assert header.startswith("Basic ")
-        
+
         # Verify it's valid Basic auth
         encoded = header[6:]
         decoded = base64.b64decode(encoded).decode("utf-8")
@@ -256,8 +256,8 @@ class TestProxyAuth:
     async def test_handle_challenge_basic_no_credentials(self, temp_config_dir):
         """Test handling Basic challenge without credentials."""
         auth = ProxyAuth()
-        header = await auth.handle_challenge("Basic realm=\"Proxy\"")
-        
+        header = await auth.handle_challenge('Basic realm="Proxy"')
+
         # Should return None if no credentials provided
         assert header is None
 
@@ -266,7 +266,7 @@ class TestProxyAuth:
         """Test handling unsupported authentication scheme."""
         auth = ProxyAuth()
         with patch("ccbt.proxy.auth.logger") as mock_logger:
-            header = await auth.handle_challenge("Digest realm=\"Proxy\"", "user", "pass")
+            header = await auth.handle_challenge('Digest realm="Proxy"', "user", "pass")
             assert header is None
             mock_logger.warning.assert_called_once()
 
@@ -325,7 +325,7 @@ class TestCredentialStoreEdgeCases:
         store = CredentialStore(config_dir=temp_config_dir)
         with pytest.raises(ProxyAuthError):
             store.decrypt_credentials("not-base64!!!")
-    
+
     def test_decrypt_credentials_wrong_format(self, temp_config_dir):
         """Test decrypting data that doesn't contain colon separator."""
         store = CredentialStore(config_dir=temp_config_dir)
@@ -339,15 +339,15 @@ class TestCredentialStoreEdgeCases:
     def test_key_file_permissions_error(self, temp_config_dir):
         """Test handling permission errors when creating key file."""
         import sys
-        
+
         store = CredentialStore(config_dir=temp_config_dir)
         # Delete key file
         store.key_file.unlink()
-        
+
         # Windows handles permissions differently, so skip on Windows
         if sys.platform == "win32":
             pytest.skip("Windows file permissions work differently")
-        
+
         # Make directory read-only (on Unix-like systems)
         try:
             temp_config_dir.chmod(0o444)  # Read-only

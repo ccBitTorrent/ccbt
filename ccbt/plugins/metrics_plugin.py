@@ -15,6 +15,13 @@ from ccbt.plugins.base import Plugin
 from ccbt.utils.events import Event, EventHandler, EventType
 from ccbt.utils.logging_config import get_logger
 
+MEDIA_STREAM_EVENT_COUNT_METRIC = "media_stream_events_total"
+MEDIA_STREAM_CLIENT_COUNT_METRIC = "media_stream_client_count"
+MEDIA_STREAM_BYTES_SERVED_METRIC = "media_stream_bytes_served"
+MEDIA_STREAM_BUFFER_PROGRESS_METRIC = "media_stream_buffer_progress"
+MEDIA_STREAM_AVAILABLE_BYTES_METRIC = "media_stream_available_bytes"
+MEDIA_STREAM_ERROR_COUNT_METRIC = "media_stream_errors_total"
+
 
 @dataclass
 class Metric:
@@ -60,6 +67,8 @@ class MetricsCollector(EventHandler):
             await self._handle_piece_downloaded(event)
         elif event.event_type == EventType.TORRENT_COMPLETED.value:
             await self._handle_torrent_completed(event)
+        elif event.event_type.startswith("media_stream_"):
+            await self._handle_media_stream(event)
 
     async def _handle_performance_metric(self, event: Event) -> None:
         """Handle performance metric event."""
@@ -114,6 +123,74 @@ class MetricsCollector(EventHandler):
 
             self.metrics.append(metric)
             self._update_aggregate(metric)
+
+    async def _handle_media_stream(self, event: Event) -> None:
+        """Handle media stream event."""
+        data = event.data
+        state = event.event_type.removeprefix("media_stream_")
+        stream_id = str(data.get("stream_id", "unknown"))
+        metric_tags = {"stream_id": stream_id, "state": state}
+
+        event_metric = Metric(
+            name=MEDIA_STREAM_EVENT_COUNT_METRIC,
+            value=1,
+            unit="count",
+            timestamp=event.timestamp,
+            tags=metric_tags,
+        )
+        self.metrics.append(event_metric)
+        self._update_aggregate(event_metric)
+
+        media_metrics = [
+            (
+                MEDIA_STREAM_CLIENT_COUNT_METRIC,
+                "client_count",
+                "clients",
+            ),
+            (
+                MEDIA_STREAM_BYTES_SERVED_METRIC,
+                "bytes_served",
+                "bytes",
+            ),
+            (
+                MEDIA_STREAM_BUFFER_PROGRESS_METRIC,
+                "buffer_progress",
+                "ratio",
+            ),
+            (
+                MEDIA_STREAM_AVAILABLE_BYTES_METRIC,
+                "available_bytes",
+                "bytes",
+            ),
+        ]
+        for metric_name, field_name, unit in media_metrics:
+            value = data.get(field_name)
+            if value is None:
+                continue
+            metric = Metric(
+                name=metric_name,
+                value=float(value),
+                unit=unit,
+                timestamp=event.timestamp,
+                tags={"stream_id": stream_id},
+            )
+            self.metrics.append(metric)
+            self._update_aggregate(metric)
+
+        if state == "error":
+            self.metrics.append(
+                Metric(
+                    name=MEDIA_STREAM_ERROR_COUNT_METRIC,
+                    value=1,
+                    unit="count",
+                    timestamp=event.timestamp,
+                    tags={
+                        **metric_tags,
+                        "reason": str(data.get("last_error", "unknown")),
+                    },
+                )
+            )
+            self._update_aggregate(self.metrics[-1])
 
     def _update_aggregate(self, metric: Metric) -> None:
         """Update metric aggregate."""
@@ -200,6 +277,13 @@ class MetricsPlugin(Plugin):
         event_bus.register_handler(EventType.PERFORMANCE_METRIC.value, self.collector)
         event_bus.register_handler(EventType.PIECE_DOWNLOADED.value, self.collector)
         event_bus.register_handler(EventType.TORRENT_COMPLETED.value, self.collector)
+        event_bus.register_handler(EventType.MEDIA_STREAM_STARTED.value, self.collector)
+        event_bus.register_handler(
+            EventType.MEDIA_STREAM_BUFFERING.value, self.collector
+        )
+        event_bus.register_handler(EventType.MEDIA_STREAM_READY.value, self.collector)
+        event_bus.register_handler(EventType.MEDIA_STREAM_STOPPED.value, self.collector)
+        event_bus.register_handler(EventType.MEDIA_STREAM_ERROR.value, self.collector)
 
     async def stop(self) -> None:
         """Stop the metrics plugin."""
@@ -221,6 +305,26 @@ class MetricsPlugin(Plugin):
             )
             event_bus.unregister_handler(
                 EventType.TORRENT_COMPLETED.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.MEDIA_STREAM_STARTED.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.MEDIA_STREAM_BUFFERING.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.MEDIA_STREAM_READY.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.MEDIA_STREAM_STOPPED.value,
+                self.collector,
+            )
+            event_bus.unregister_handler(
+                EventType.MEDIA_STREAM_ERROR.value,
                 self.collector,
             )
 

@@ -15,12 +15,11 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 
-from ccbt.config.config import ConfigManager, init_config
 from ccbt.models import Config
 from ccbt.security.ssl_context import (
     CertificatePinner,
-    SSLContextBuilder,
     SSLCertificateValidator,
+    SSLContextBuilder,
 )
 
 
@@ -205,7 +204,7 @@ class TestSSLContextBuilderTrackerContext:
             with patch("ccbt.security.ssl_context.get_config", return_value=config):
                 builder = SSLContextBuilder()
                 builder.config = config
-                
+
                 # Mock Path to return a mock object with the desired behavior
                 mock_path = MagicMock(spec=Path)
                 mock_path.is_file.return_value = False
@@ -213,7 +212,7 @@ class TestSSLContextBuilderTrackerContext:
                 mock_path.exists.return_value = True
                 mock_path.__str__ = Mock(return_value=str(invalid_path))
                 mock_path.expanduser.return_value = mock_path
-                
+
                 with patch("ccbt.security.ssl_context.Path", return_value=mock_path):
                     # Also mock the SSLContext to avoid actual loading
                     with patch("ssl.create_default_context") as mock_create:
@@ -259,12 +258,12 @@ class TestSSLContextBuilderTrackerContext:
         with patch("ccbt.security.ssl_context.get_config", return_value=config):
             builder = SSLContextBuilder()
             builder.config = config
-            
+
             # Mock set_ciphers to raise SSLError
             with patch.object(ssl.SSLContext, "set_ciphers", side_effect=ssl.SSLError("Invalid cipher")):
                 with patch.object(builder.logger, "warning") as mock_warning:
                     context = builder.create_tracker_context()
-                    
+
                     # Should continue despite cipher error
                     assert isinstance(context, ssl.SSLContext)
                     mock_warning.assert_called()
@@ -273,7 +272,7 @@ class TestSSLContextBuilderTrackerContext:
         """Test tracker context creation with missing client certificate."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".key") as f:
             key_path = Path(f.name)
-        
+
         try:
             config_data = {
                 "security": {
@@ -289,7 +288,7 @@ class TestSSLContextBuilderTrackerContext:
             with patch("ccbt.security.ssl_context.get_config", return_value=config):
                 builder = SSLContextBuilder()
                 builder.config = config
-                
+
                 with pytest.raises(ValueError, match="does not exist"):
                     builder.create_tracker_context()
         finally:
@@ -299,7 +298,7 @@ class TestSSLContextBuilderTrackerContext:
         """Test tracker context creation with missing client key."""
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pem") as f:
             cert_path = Path(f.name)
-        
+
         try:
             config_data = {
                 "security": {
@@ -315,7 +314,7 @@ class TestSSLContextBuilderTrackerContext:
             with patch("ccbt.security.ssl_context.get_config", return_value=config):
                 builder = SSLContextBuilder()
                 builder.config = config
-                
+
                 with pytest.raises(ValueError, match="does not exist"):
                     builder.create_tracker_context()
         finally:
@@ -417,7 +416,7 @@ class TestSSLContextBuilderPeerContext:
             with patch("ccbt.security.ssl_context.get_config", return_value=config):
                 builder = SSLContextBuilder()
                 builder.config = config
-                
+
                 with patch.object(ssl.SSLContext, "load_verify_locations") as mock_load:
                     context = builder.create_peer_context()
 
@@ -430,7 +429,7 @@ class TestSSLContextBuilderPeerContext:
         """Test creating peer context with custom CA certificate directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
             ca_dir = Path(tmpdir)
-            
+
             config_data = {
                 "security": {
                     "ssl": {
@@ -444,7 +443,7 @@ class TestSSLContextBuilderPeerContext:
             with patch("ccbt.security.ssl_context.get_config", return_value=config):
                 builder = SSLContextBuilder()
                 builder.config = config
-                
+
                 with patch.object(ssl.SSLContext, "load_verify_locations") as mock_load:
                     context = builder.create_peer_context()
 
@@ -466,12 +465,12 @@ class TestSSLContextBuilderPeerContext:
         with patch("ccbt.security.ssl_context.get_config", return_value=config):
             builder = SSLContextBuilder()
             builder.config = config
-            
+
             # Mock set_ciphers to raise SSLError
             with patch.object(ssl.SSLContext, "set_ciphers", side_effect=ssl.SSLError("Invalid cipher")):
                 with patch.object(builder.logger, "warning") as mock_warning:
                     context = builder.create_peer_context()
-                    
+
                     # Should continue despite cipher error
                     assert isinstance(context, ssl.SSLContext)
                     mock_warning.assert_called()
@@ -497,6 +496,18 @@ class TestSSLContextBuilderPeerContext:
             # Should allow insecure peers
             assert context.verify_mode == ssl.CERT_NONE
             assert context.check_hostname is False
+
+    def test_create_peer_context_explicit_modes_conflict(self):
+        """Explicit peer_opportunistic and peer_strict are mutually exclusive."""
+        builder = SSLContextBuilder()
+
+        with pytest.raises(
+            ValueError, match="peer_opportunistic and peer_strict are mutually exclusive"
+        ):
+            builder.create_peer_context(
+                peer_opportunistic=True,
+                peer_strict=True,
+            )
 
 
 class TestSSLContextBuilderHelpers:
@@ -561,7 +572,7 @@ class TestSSLContextBuilderHelpers:
     def test_load_ca_certificates_invalid_path(self):
         """Test loading CA certificates from invalid path (not file or directory)."""
         builder = SSLContextBuilder()
-        
+
         # Mock Path to return a mock object with the desired behavior
         mock_path = MagicMock(spec=Path)
         mock_path.is_file.return_value = False
@@ -569,7 +580,7 @@ class TestSSLContextBuilderHelpers:
         mock_path.exists.return_value = True
         mock_path.__str__ = Mock(return_value="/invalid/path")
         mock_path.expanduser.return_value = mock_path
-        
+
         with patch("ccbt.security.ssl_context.Path", return_value=mock_path):
             with pytest.raises(ValueError, match="not a file or directory"):
                 builder._load_ca_certificates("/invalid/path")

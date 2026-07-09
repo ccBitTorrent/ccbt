@@ -10,21 +10,20 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.piece]
 
+from ccbt.peer.peer import PeerInfo
 from ccbt.piece.async_piece_manager import (
     AsyncPieceManager,
     PeerAvailability,
     PieceBlock,
-    PieceData,
     PieceState,
 )
-from ccbt.peer.peer import PeerInfo
 
 
 @pytest.fixture
@@ -84,11 +83,11 @@ class TestInitializationEdgeCases:
         }
         manager = AsyncPieceManager(torrent_data)
         await manager.start()
-        
+
         # Last piece should be shorter
         assert manager.pieces[-1].length == 1000
         assert manager.pieces[0].length == 16384
-        
+
         await manager.stop()
 
     @pytest.mark.asyncio
@@ -104,9 +103,9 @@ class TestInitializationEdgeCases:
             mock_cfg.disk.hash_batch_size = 5
             mock_cfg.network.block_size_kib = 16
             mock_config.return_value = mock_cfg
-            
+
             manager = AsyncPieceManager(mock_torrent_data)
-            
+
             # First piece should have highest priority
             assert manager.pieces[0].priority == 1000
             # Last piece should have some priority
@@ -141,10 +140,10 @@ class TestBackgroundTaskManagement:
         """Test start() handles existing task (lines 252-253)."""
         manager = AsyncPieceManager(mock_torrent_data)
         await manager.start()
-        
+
         # Start again should handle gracefully
         await manager.start()
-        
+
         assert manager._piece_selector_task is not None
         await manager.stop()
 
@@ -154,11 +153,11 @@ class TestBackgroundTaskManagement:
         # Create additional background task
         task = asyncio.create_task(asyncio.sleep(100))
         piece_manager._background_tasks.add(task)
-        
+
         # Cancel the task first, then stop
         task.cancel()
         await piece_manager.stop()
-        
+
         # Wait a bit for cleanup
         await asyncio.sleep(0.01)
         # Tasks should be done
@@ -189,24 +188,24 @@ class TestPieceSelectionAlgorithms:
         peer1 = mock_peer_connection
         peer1.peer_info = PeerInfo(ip="127.0.0.1", port=6881)
         peer1.bitfield = bytes([0b11111111, 0b00000000])  # First 8 pieces
-        
+
         peer2 = AsyncMock()
         peer2.peer_info = PeerInfo(ip="127.0.0.2", port=6882)
         peer2.bitfield = bytes([0b00000000, 0b11111111])  # Last 2 pieces
-        
+
         await piece_manager._add_peer(peer1)
         await piece_manager._add_peer(peer2)
-        
+
         await piece_manager.update_peer_availability(
             f"{peer1.peer_info.ip}:{peer1.peer_info.port}", peer1.bitfield
         )
         await piece_manager.update_peer_availability(
             f"{peer2.peer_info.ip}:{peer2.peer_info.port}", peer2.bitfield
         )
-        
+
         piece_manager.is_downloading = True
         await piece_manager._select_rarest_first()
-        
+
         # Piece 8 or 9 should be selected (rarest)
         assert True  # Selection logic executed
 
@@ -218,7 +217,7 @@ class TestPieceSelectionAlgorithms:
             mock_cfg = MagicMock()
             mock_cfg.strategy.selection_strategy = "sequential"
             mock_config.return_value = mock_cfg
-            
+
             await piece_manager._select_sequential()
             # Should select first missing piece
             assert True
@@ -231,7 +230,7 @@ class TestPieceSelectionAlgorithms:
             mock_cfg = MagicMock()
             mock_cfg.strategy.selection_strategy = "round_robin"
             mock_config.return_value = mock_cfg
-            
+
             await piece_manager._select_round_robin()
             # Should select pieces in round-robin fashion
             assert True
@@ -264,30 +263,29 @@ class TestNetworkOperationErrorHandling:
         """Test request_piece_from_peers with peer error (lines 402-442)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        # Note: Add required attributes for _request_blocks_normal
         peer.get_available_pipeline_slots = MagicMock(return_value=10)
         peer.outstanding_requests = []
         peer.max_pipeline_depth = 16
-        
-        # CRITICAL FIX: Add stats with download_rate for peer scoring in _get_peers_for_piece
+
+        # Note: Add stats with download_rate for peer scoring in _get_peers_for_piece
         peer.stats = MagicMock()
         peer.stats.download_rate = 1024 * 1024  # 1 MB/s (numeric value, not MagicMock)
-        
+
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             peer.bitfield,
         )
-        
-        # CRITICAL FIX: Mock peer_manager with _balance_requests_across_peers to use balanced path
+
+        # Note: Mock peer_manager with _balance_requests_across_peers to use balanced path
         # Also mock get_active_peers to return the peer list for throttling logic
         peer_manager = MagicMock()
         peer_manager.get_active_peers = MagicMock(return_value=[peer])
         peer_manager.request_piece = AsyncMock(side_effect=Exception("Network error"))
-        
+
         # Mock _balance_requests_across_peers to return balanced requests
         from ccbt.peer.async_peer_connection import RequestInfo
-        import time
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
         balanced_requests = {}
@@ -298,15 +296,15 @@ class TestNetworkOperationErrorHandling:
                 balanced_requests[peer_key] = []
             balanced_requests[peer_key].append(request_info)
         peer_manager._balance_requests_across_peers = MagicMock(return_value=balanced_requests)
-        
-        # CRITICAL FIX: The exception is caught and logged in _request_blocks_normal,
+
+        # Note: The exception is caught and logged in _request_blocks_normal,
         # so it doesn't propagate. The test should verify that the error is handled gracefully
         # (no exception raised, but the request fails silently)
         # The implementation catches exceptions to prevent one peer error from stopping all requests
         await piece_manager.request_piece_from_peers(
             0, peer_manager
         )
-        
+
         # Verify that request_piece was called (even though it raised an exception)
         assert peer_manager.request_piece.called, "request_piece should have been called despite error"
 
@@ -328,17 +326,17 @@ class TestPieceAssemblyEdgeCases:
         """Test handling duplicate block (lines 527-560)."""
         piece_index = 0
         block = piece_manager.pieces[piece_index].blocks[0]
-        
+
         # Add block once
         await piece_manager.handle_piece_block(
             piece_index, block.begin, b"x" * block.length
         )
-        
+
         # Try to add same block again
         await piece_manager.handle_piece_block(
             piece_index, block.begin, b"y" * block.length
         )
-        
+
         # Should handle duplicate gracefully (block already received)
         assert True
 
@@ -347,12 +345,12 @@ class TestPieceAssemblyEdgeCases:
         """Test handling block with wrong length (line 547-549)."""
         piece_index = 0
         block = piece_manager.pieces[piece_index].blocks[0]
-        
+
         # Try to add block with wrong length
         await piece_manager.handle_piece_block(
             piece_index, block.begin, b"x" * (block.length + 1)
         )
-        
+
         # Should handle gracefully
         assert True
 
@@ -361,12 +359,12 @@ class TestPieceAssemblyEdgeCases:
         """Test handling block out of range (lines 527-560)."""
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
-        
+
         # Try to add block with begin beyond piece length
         await piece_manager.handle_piece_block(
             piece_index, piece.length + 100, b"x" * 16384
         )
-        
+
         # Should handle gracefully
         assert True
 
@@ -379,29 +377,28 @@ class TestRequestManagement:
         """Test normal block requesting (lines 463-500)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        # Note: Add required attributes for _request_blocks_normal
         peer.get_available_pipeline_slots = MagicMock(return_value=10)  # Available slots
         peer.outstanding_requests = []  # Empty list for outstanding requests
         peer.max_pipeline_depth = 16  # Pipeline depth
-        
+
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             peer.bitfield,
         )
-        
+
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
-        
-        # CRITICAL FIX: Mock peer_manager with _balance_requests_across_peers to use balanced path
+
+        # Note: Mock peer_manager with _balance_requests_across_peers to use balanced path
         # Also mock get_active_peers to return the peer list for throttling logic
         peer_manager = MagicMock()
         peer_manager.request_piece = AsyncMock()
         peer_manager.get_active_peers = MagicMock(return_value=[peer])
-        
+
         # Mock _balance_requests_across_peers to return balanced requests
         from ccbt.peer.async_peer_connection import RequestInfo
-        import time
         balanced_requests = {}
         peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
         for block in missing_blocks:
@@ -410,12 +407,12 @@ class TestRequestManagement:
                 balanced_requests[peer_key] = []
             balanced_requests[peer_key].append(request_info)
         peer_manager._balance_requests_across_peers = MagicMock(return_value=balanced_requests)
-        
+
         piece_manager.is_downloading = True
         await piece_manager._request_blocks_normal(
             0, missing_blocks, [peer], peer_manager
         )
-        
+
         # Should make requests - verify request_piece was called
         assert peer_manager.request_piece.called, "request_piece should have been called"
 
@@ -424,25 +421,25 @@ class TestRequestManagement:
         """Test endgame block requesting (lines 501-526)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        
+
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             peer.bitfield,
         )
-        
+
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
-        
+
         peer_manager = MagicMock()
         peer_manager.request_piece = AsyncMock()
-        
+
         piece_manager.is_downloading = True
         piece_manager.endgame_mode = True
         await piece_manager._request_blocks_endgame(
             0, missing_blocks, [peer], peer_manager
         )
-        
+
         # Should make duplicate requests in endgame
         assert True
 
@@ -451,7 +448,7 @@ class TestRequestManagement:
         """Test marking piece as requested (lines 769-775)."""
         piece_index = 0
         await piece_manager._mark_piece_requested(piece_index)
-        
+
         # Piece state should change
         assert piece_manager.pieces[piece_index].state in [
             PieceState.REQUESTED,
@@ -467,11 +464,11 @@ class TestErrorRecovery:
         """Test verify_piece_hash with exception (lines 577-619)."""
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
-        
+
         # Mock get_data to raise exception
         with patch.object(piece, "get_data", side_effect=Exception("Test error")):
             await piece_manager._verify_piece_hash(piece_index, piece)
-        
+
         # Should handle exception gracefully
         assert piece_index not in piece_manager.verified_pieces
 
@@ -480,17 +477,17 @@ class TestErrorRecovery:
         """Test batch verification with exceptions (lines 643-671)."""
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
-        
+
         # Add some data
         for block in piece.blocks:
             piece.add_block(block.begin, b"x" * block.length)
-        
+
         # Mock verification to raise exception
         with patch.object(
             piece_manager, "_verify_piece_hash", side_effect=Exception("Test error")
         ):
             await piece_manager._batch_verify_pieces([(piece_index, piece)])
-        
+
         # Should handle exceptions in batch
         assert True  # No crash
 
@@ -510,19 +507,19 @@ class TestBackgroundLoopEdgeCases:
     async def test_piece_selector_cancellation(self, piece_manager):
         """Test piece selector cancellation handling (lines 693-703)."""
         piece_manager.is_downloading = True
-        
+
         # Start selector
         task = asyncio.create_task(piece_manager._piece_selector())
         await asyncio.sleep(0.05)
-        
+
         # Cancel it
         task.cancel()
-        
+
         try:
             await task
         except asyncio.CancelledError:
             pass  # Expected
-        
+
         # Task should be done (either cancelled or finished)
         assert task.done()
 
@@ -530,7 +527,7 @@ class TestBackgroundLoopEdgeCases:
     async def test_piece_selector_exception(self, piece_manager):
         """Test piece selector exception handling (lines 693-703)."""
         piece_manager.is_downloading = True
-        
+
         # Mock _select_pieces to raise exception
         with patch.object(
             piece_manager, "_select_pieces", side_effect=Exception("Test error")
@@ -538,7 +535,7 @@ class TestBackgroundLoopEdgeCases:
             task = asyncio.create_task(piece_manager._piece_selector())
             await asyncio.sleep(0.1)
             task.cancel()
-            
+
             try:
                 await task
             except (asyncio.CancelledError, Exception):
@@ -566,6 +563,50 @@ class TestCleanupOperations:
     """Test cleanup operations (lines 767, 859, 881-892, 896-907)."""
 
     @pytest.mark.asyncio
+    async def test_peer_availability_not_wiped_when_active_peers_snapshot_empty(
+        self, mock_torrent_data
+    ):
+        """Regression: empty get_active_peers() must not delete all peer_availability.
+
+        _select_pieces calls get_active_peers() multiple times; if a later call returns
+        [] transiently, treating that as 'all peers disconnected' cleared every cached
+        bitfield and zeroed piece_frequency (download chain collapse).
+        """
+        manager = AsyncPieceManager(mock_torrent_data)
+        await manager.start()
+        manager.is_downloading = True
+        manager.download_complete = False
+        manager._metadata_incomplete = False
+
+        peer_key = "192.0.2.99:6000"
+        manager.peer_availability[peer_key] = PeerAvailability(peer_key)
+        manager.peer_availability[peer_key].pieces = {0, 1}
+        manager.piece_frequency[0] = 1
+        manager.piece_frequency[1] = 1
+
+        mock_conn = MagicMock()
+        mock_conn.peer_info = PeerInfo(ip="192.0.2.99", port=6000)
+        mock_conn.peer_state = MagicMock()
+        mock_conn.peer_state.pieces_we_have = set()
+        mock_conn.can_request = MagicMock(return_value=True)
+
+        peer_manager = MagicMock()
+        peer_manager.connections = {"k": mock_conn}
+        # Many non-empty snapshots, then one empty (simulates race before stale refresh)
+        peer_manager.get_active_peers = MagicMock(
+            side_effect=[ [mock_conn] ] * 24 + [ [] ]
+        )
+        manager._peer_manager = peer_manager
+
+        with patch.object(manager, "_select_rarest_first", AsyncMock()):
+            await manager._select_pieces()
+
+        assert peer_key in manager.peer_availability
+        assert manager.piece_frequency.get(0) == 1
+        assert manager.piece_frequency.get(1) == 1
+        await manager.stop()
+
+    @pytest.mark.asyncio
     async def test_remove_peer_updates_frequency(self, piece_manager, mock_peer_connection):
         """Test removing peer updates piece frequency (lines 315-334)."""
         peer = mock_peer_connection
@@ -574,10 +615,10 @@ class TestCleanupOperations:
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             peer.bitfield,
         )
-        
+
         # Remove peer
         await piece_manager._remove_peer(peer)
-        
+
         # Frequency should be updated
         assert True
 
@@ -586,11 +627,11 @@ class TestCleanupOperations:
         """Test updating peer have message (lines 377-390)."""
         peer = mock_peer_connection
         await piece_manager._add_peer(peer)
-        
+
         await piece_manager.update_peer_have(
             f"{peer.peer_info.ip}:{peer.peer_info.port}", 0
         )
-        
+
         # Peer availability should be updated
         peer_key = f"{peer.peer_info.ip}:{peer.peer_info.port}"
         assert peer_key in piece_manager.peer_availability
@@ -599,10 +640,45 @@ class TestCleanupOperations:
     async def test_calculate_swarm_health(self, piece_manager):
         """Test calculating swarm health (lines 791-827)."""
         result = await piece_manager._calculate_swarm_health()
-        
+
         assert "total_pieces" in result
         assert "active_peers" in result
+        assert "live_peer_count" in result
+        assert "availability_peer_count" in result
         assert "rarest_piece_availability" in result
+        assert result["availability_peer_count"] == len(piece_manager.peer_availability)
+        assert piece_manager._peer_manager is None
+        assert result["active_peers"] == result["availability_peer_count"]
+
+    @pytest.mark.asyncio
+    async def test_calculate_swarm_health_live_vs_availability(self, mock_torrent_data):
+        """When peer manager is wired, active_peers reflects live transport count."""
+        manager = AsyncPieceManager(mock_torrent_data)
+        await manager.start()
+        peer_mgr = MagicMock()
+        peer_mgr.get_active_peers = MagicMock(return_value=[MagicMock(), MagicMock()])
+        manager._peer_manager = peer_mgr
+        await manager.update_peer_availability("10.0.0.1:1", b"\xff\x03")
+        await manager.update_peer_availability("10.0.0.2:2", b"\xff\x03")
+        await manager.update_peer_availability("10.0.0.3:3", b"\xff\x03")
+        result = await manager._calculate_swarm_health()
+        assert result["live_peer_count"] == 2
+        assert result["availability_peer_count"] == 3
+        assert result["active_peers"] == 2
+        await manager.stop()
+
+    @pytest.mark.asyncio
+    async def test_apply_fast_extension_have_all_and_none(self, piece_manager):
+        """BEP 6 Have All / Have None update availability and piece_frequency."""
+        peer_key = "127.0.0.1:6881"
+        await piece_manager.update_peer_availability(peer_key, b"\x00\x00")
+        assert len(piece_manager.peer_availability[peer_key].pieces) == 0
+
+        await piece_manager.apply_fast_extension_have_all(peer_key)
+        assert len(piece_manager.peer_availability[peer_key].pieces) == piece_manager.num_pieces
+
+        await piece_manager.apply_fast_extension_have_none(peer_key)
+        assert len(piece_manager.peer_availability[peer_key].pieces) == 0
 
     @pytest.mark.asyncio
     async def test_generate_endgame_requests(self, piece_manager, mock_peer_connection):
@@ -613,10 +689,10 @@ class TestCleanupOperations:
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             peer.bitfield,
         )
-        
+
         piece_manager.endgame_mode = True
         requests = await piece_manager._generate_endgame_requests(0)
-        
+
         # Should generate duplicate requests
         assert isinstance(requests, list)
 
@@ -629,7 +705,7 @@ class TestFinalizationPaths:
         """Test starting download (lines 909-913)."""
         peer_manager = AsyncMock()
         await piece_manager.start_download(peer_manager)
-        
+
         assert piece_manager.is_downloading is True
 
     @pytest.mark.asyncio
@@ -637,7 +713,7 @@ class TestFinalizationPaths:
         """Test stopping download (lines 914-918)."""
         piece_manager.is_downloading = True
         await piece_manager.stop_download()
-        
+
         assert piece_manager.is_downloading is False
 
     @pytest.mark.asyncio
@@ -645,18 +721,18 @@ class TestFinalizationPaths:
         """Test getting piece data from verified piece (lines 919-929)."""
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
-        
+
         # Complete and verify piece
         piece_data = b"test" * 4096
         piece_data = piece_data[:piece.length]
-        
+
         for block in piece.blocks:
             piece.add_block(block.begin, piece_data[block.begin : block.begin + block.length])
-        
+
         expected_hash = hashlib.sha1(piece_data).digest()  # nosec B324
         piece_manager.piece_hashes[piece_index] = expected_hash
         await piece_manager._verify_piece_hash(piece_index, piece)
-        
+
         # Get piece data
         result = piece_manager.get_piece_data(piece_index)
         assert result == piece_data
@@ -673,7 +749,7 @@ class TestFinalizationPaths:
     async def test_get_stats(self, piece_manager):
         """Test getting stats (lines 948-961)."""
         stats = piece_manager.get_stats()
-        
+
         assert "total_pieces" in stats
         assert "completed_pieces" in stats
         assert "verified_pieces" in stats
@@ -685,7 +761,7 @@ class TestFinalizationPaths:
         state = await piece_manager.get_checkpoint_state(
             "test_torrent", b"\x00" * 20, "/tmp"
         )
-        
+
         assert hasattr(state, "piece_states")
         assert hasattr(state, "verified_pieces")
         assert hasattr(state, "download_stats")
@@ -703,22 +779,22 @@ class TestFinalizationPaths:
             callback_index = piece_index
 
         piece_manager.on_piece_completed = mock_callback
-        
+
         piece_index = 0
         piece = piece_manager.pieces[piece_index]
-        
+
         # Add all blocks except the last one
         for block in piece.blocks[:-1]:
             await piece_manager.handle_piece_block(
                 piece_index, block.begin, b"x" * block.length
             )
-        
+
         # Add the last block which should trigger completion and callback
         last_block = piece.blocks[-1]
         await piece_manager.handle_piece_block(
             piece_index, last_block.begin, b"x" * last_block.length
         )
-        
+
         assert callback_called
         assert callback_index == piece_index
 
@@ -727,9 +803,9 @@ class TestFinalizationPaths:
         """Test setting piece priority (lines 776-782)."""
         piece_index = 0
         priority = 100
-        
+
         await piece_manager._set_piece_priority(piece_index, priority)
-        
+
         assert piece_manager.pieces[piece_index].priority == priority
 
 
@@ -739,20 +815,20 @@ class TestAdditionalCoverageGaps:
     def test_piece_block_edge_cases(self):
         """Test PieceBlock edge cases (lines 60, 64-73)."""
         block = PieceBlock(0, 0, 16384)
-        
+
         # Test is_complete when not received
         assert not block.is_complete()
-        
+
         # Test add_block with wrong begin
         assert not block.add_block(100, b"x" * 16384)
-        
+
         # Test add_block with wrong length
         assert not block.add_block(0, b"x" * 100)
-        
+
         # Test add_block when already received
         block.received = True
         assert not block.add_block(0, b"x" * 16384)
-        
+
         # Reset and test successful add
         block.received = False
         assert block.add_block(0, b"x" * 16384)
@@ -763,7 +839,7 @@ class TestAdditionalCoverageGaps:
         """Test get_completed_pieces and get_verified_pieces (lines 283, 287)."""
         completed = piece_manager.get_completed_pieces()
         verified = piece_manager.get_verified_pieces()
-        
+
         assert isinstance(completed, list)
         assert isinstance(verified, list)
 
@@ -776,9 +852,9 @@ class TestAdditionalCoverageGaps:
         piece_manager.pieces[2].state = PieceState.DOWNLOADING
         piece_manager.pieces[3].state = PieceState.COMPLETE
         piece_manager.pieces[4].state = PieceState.VERIFIED
-        
+
         status = piece_manager.get_piece_status()
-        
+
         assert "missing" in status
         assert "requested" in status
         assert "downloading" in status
@@ -789,17 +865,17 @@ class TestAdditionalCoverageGaps:
     async def test_update_peer_availability_edge_cases(self, piece_manager, mock_peer_connection):
         """Test peer availability update edge cases (lines 341-343, 365, 373, 381)."""
         peer = mock_peer_connection
-        
+
         # Test _update_peer_availability with peer that has no bitfield
         peer_no_bitfield = AsyncMock()
         peer_no_bitfield.peer_info = PeerInfo(ip="127.0.0.2", port=6882)
         await piece_manager._update_peer_availability(peer_no_bitfield)
-        
+
         # Test update_peer_availability with empty bitfield
         await piece_manager.update_peer_availability(
             f"{peer.peer_info.ip}:{peer.peer_info.port}", b""
         )
-        
+
         # Test update_peer_have with new peer key
         await piece_manager.update_peer_have("new_peer:6883", 0)
 
@@ -831,23 +907,23 @@ class TestAdditionalCoverageGaps:
         """Test request_piece_from_peers early returns (lines 404, 408, 423, 427)."""
         peer_manager = MagicMock()
         peer_manager.get_active_peers = MagicMock(return_value=[])
-        
+
         # Test with invalid piece index
         result = await piece_manager.request_piece_from_peers(999, peer_manager)
         assert result is None
-        
+
         # Test with piece not in MISSING state
         piece_manager.pieces[0].state = PieceState.DOWNLOADING
         result = await piece_manager.request_piece_from_peers(0, peer_manager)
         assert result is None
-        
+
         # Reset and test with no missing blocks
         piece_manager.pieces[0].state = PieceState.MISSING
         piece = piece_manager.pieces[0]
         # Complete all blocks
         for block in piece.blocks:
             piece.add_block(block.begin, b"x" * block.length)
-        
+
         peer = AsyncMock()
         peer.peer_info = PeerInfo(ip="127.0.0.1", port=6881)
         peer.can_request = MagicMock(return_value=True)
@@ -856,7 +932,7 @@ class TestAdditionalCoverageGaps:
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             b"\xff" * 2,
         )
-        
+
         result = await piece_manager.request_piece_from_peers(0, peer_manager)
         # Should return early due to no missing blocks
         assert result is None
@@ -867,7 +943,7 @@ class TestAdditionalCoverageGaps:
         # Mark all pieces as requested/downloading
         for piece in piece_manager.pieces:
             piece.state = PieceState.DOWNLOADING
-        
+
         result = await piece_manager._select_rarest_piece()
         assert result is None
 
@@ -875,19 +951,19 @@ class TestAdditionalCoverageGaps:
     async def test_select_pieces_endgame_activation(self, piece_manager):
         """Test endgame mode activation (lines 710-717)."""
         piece_manager.is_downloading = True
-        
+
         # Mark enough pieces as verified so remaining <= threshold
         threshold = piece_manager.endgame_threshold
         # Need remaining_pieces <= total_pieces * (1.0 - threshold)
         # So verified_count >= total_pieces * threshold
         verified_count = int(piece_manager.num_pieces * threshold) + 1
-        
+
         for i in range(verified_count):
             piece_manager.pieces[i].state = PieceState.VERIFIED
             piece_manager.verified_pieces.add(i)
-        
+
         await piece_manager._select_pieces()
-        
+
         # Endgame should be activated when remaining <= threshold
         remaining = len(piece_manager.get_missing_pieces())
         total = piece_manager.num_pieces
@@ -899,20 +975,20 @@ class TestAdditionalCoverageGaps:
         """Test _request_blocks_normal edge cases (lines 488)."""
         peer = mock_peer_connection
         peer.can_request = MagicMock(return_value=True)
-        # CRITICAL FIX: Add required attributes for _request_blocks_normal
+        # Note: Add required attributes for _request_blocks_normal
         peer.get_available_pipeline_slots = MagicMock(return_value=10)
         peer.outstanding_requests = []
         peer.max_pipeline_depth = 16
-        
+
         await piece_manager._add_peer(peer)
         await piece_manager.update_peer_availability(
             f"{peer.peer_info.ip}:{peer.peer_info.port}",
             peer.bitfield,
         )
-        
+
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
-        
+
         # Test with no blocks
         peer_manager = AsyncMock()
         peer_manager.request_piece = AsyncMock()
@@ -921,8 +997,8 @@ class TestAdditionalCoverageGaps:
         )
         # Should handle gracefully - no requests should be made
         assert not peer_manager.request_piece.called, "No requests should be made for empty blocks"
-        
-        # Test with start_block >= len(missing_blocks) 
+
+        # Test with start_block >= len(missing_blocks)
         # (would happen with more peers than blocks)
         many_peers = []
         for i in range(100):
@@ -933,7 +1009,7 @@ class TestAdditionalCoverageGaps:
             p.outstanding_requests = []
             p.max_pipeline_depth = 16
             many_peers.append(p)
-        
+
         # Configure mock to return a dict mapping peer keys to request lists
         # The _balance_requests_across_peers method should return a dict
         async def mock_balance_requests(requests, peers, min_allocation_per_peer=None):
@@ -943,16 +1019,16 @@ class TestAdditionalCoverageGaps:
             if peers and requests:
                 peer_key = str(peers[0].peer_info)
                 return {peer_key: requests[:1]}
-            elif peers:
+            if peers:
                 # If no requests but we have peers, return empty list for first peer
                 peer_key = str(peers[0].peer_info)
                 return {peer_key: []}
             return {}
-        
+
         peer_manager._balance_requests_across_peers = AsyncMock(side_effect=mock_balance_requests)
         # Configure get_active_peers to return the peers so throttling logic works
         peer_manager.get_active_peers = AsyncMock(return_value=many_peers[:10])  # Return first 10 peers
-        
+
         await piece_manager._request_blocks_normal(
             0, missing_blocks[:1], many_peers, peer_manager
         )

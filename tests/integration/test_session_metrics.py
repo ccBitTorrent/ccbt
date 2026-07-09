@@ -6,6 +6,7 @@ Tests metrics initialization, shutdown, and collection during session lifecycle.
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from ccbt.session.session import AsyncSessionManager
@@ -71,7 +72,7 @@ class TestAsyncSessionManagerMetrics:
         assert session.metrics is None
 
         await session.stop()
-        
+
         # Verify metrics still None after stop
         assert session.metrics is None
 
@@ -81,7 +82,7 @@ class TestAsyncSessionManagerMetrics:
         # Reset singleton via fixture pattern
         import ccbt.monitoring as monitoring_module
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
-        
+
         # Patch get_config to raise an error, which will cause init_metrics to fail
         from ccbt import config as config_module
 
@@ -100,7 +101,7 @@ class TestAsyncSessionManagerMetrics:
         assert session.metrics is None
 
         await session.stop()
-        
+
         # Verify metrics still None after stop
         assert session.metrics is None
 
@@ -187,7 +188,7 @@ class TestAsyncSessionManagerMetrics:
             if hasattr(metrics, "get_all_metrics"):
                 all_metrics = metrics.get_all_metrics()
                 assert isinstance(all_metrics, dict)
-            
+
             if hasattr(metrics, "get_metrics_statistics"):
                 stats = metrics.get_metrics_statistics()
                 assert isinstance(stats, dict)
@@ -199,6 +200,7 @@ class TestAsyncSessionManagerMetrics:
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
     from ccbt import config as config_module
 
@@ -228,6 +230,7 @@ def mock_config_enabled(monkeypatch):
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
     from ccbt import config as config_module
 

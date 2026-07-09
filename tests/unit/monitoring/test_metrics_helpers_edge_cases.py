@@ -5,12 +5,9 @@ Tests edge cases and error paths not covered in main test file.
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from ccbt.monitoring import (
-    MetricsCollector,
     get_metrics_collector,
     init_metrics,
     shutdown_metrics,
@@ -203,6 +200,7 @@ class TestHelperFunctionsEdgeCases:
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test

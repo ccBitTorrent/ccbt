@@ -61,17 +61,15 @@ class TestProxySetEdgeCases:
 
         # Patch init_config in the config module (it's imported inside the function)
         import sys
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", lambda: mock_config_manager)
         # Patch _get_config_from_context in the main module
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: mock_config_manager)
 
         result = runner.invoke(
@@ -91,17 +89,15 @@ class TestProxySetEdgeCases:
 
         # Patch init_config in the config module (it's imported inside the function)
         import sys
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
         # Patch _get_config_from_context in the main module
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
 
         result = runner.invoke(
@@ -257,17 +253,15 @@ class TestProxyDisableComprehensive:
 
         # Patch init_config in the config module (it's imported inside the function)
         import sys
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", lambda: mock_config_manager)
         # Patch _get_config_from_context in the main module
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: mock_config_manager)
 
         result = runner.invoke(cli_proxy_commands.proxy, ["disable"])
@@ -284,17 +278,15 @@ class TestProxyDisableComprehensive:
 
         # Patch init_config in the config module (it's imported inside the function)
         import sys
-        config_module = sys.modules.get('ccbt.config.config')
+        config_module = sys.modules.get("ccbt.config.config")
         if config_module is None:
-            import ccbt.config.config
-            config_module = sys.modules['ccbt.config.config']
+            config_module = sys.modules["ccbt.config.config"]
         monkeypatch.setattr(config_module, "init_config", _raise_error)
         # Patch _get_config_from_context in the main module
         import sys
-        main_module = sys.modules.get('ccbt.cli.main')
+        main_module = sys.modules.get("ccbt.cli.main")
         if main_module is None:
-            import ccbt.cli.main
-            main_module = sys.modules['ccbt.cli.main']
+            main_module = sys.modules["ccbt.cli.main"]
         monkeypatch.setattr(main_module, "_get_config_from_context", lambda ctx: _raise_error())
 
         result = runner.invoke(cli_proxy_commands.proxy, ["disable"])

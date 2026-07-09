@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -76,6 +76,13 @@ def _cfg():
         observability=SimpleNamespace(
             log_level=SimpleNamespace(value="INFO"),
             enable_metrics=False,
+        ),
+        security=SimpleNamespace(
+            enable_encryption=False,
+            ssl=SimpleNamespace(
+                enable_ssl_trackers=False,
+                enable_ssl_peers=False,
+            ),
         ),
     )
 
@@ -182,7 +189,7 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
     class _Mgr:
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
-        
+
         async def start(self):
             pass
 
@@ -214,6 +221,14 @@ def test_magnet_with_override_flags_matrix(monkeypatch):
         "5",
         "--unchoke-interval",
         "10",
+        "--peer-choked-hard-timeout-seconds",
+        "25",
+        "--peer-choked-anchor-timeout-seconds",
+        "60",
+        "--peer-choked-solo-grace-seconds",
+        "120",
+        "--peer-choked-solo-grace-zero-bytes-cap-seconds",
+        "0",
         "--metrics-interval",
         "30",
     ]
@@ -230,8 +245,12 @@ def test_status_error_branch(monkeypatch):
         # Missing expected attributes used by show_status, will cause AttributeError
         pass
 
+    async def _no_daemon():
+        return (None, False)
+
+    monkeypatch.setattr(cli_main, "_get_executor", _no_daemon)
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _BadSession())
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code != 0
     assert "Error:" in result.output
 

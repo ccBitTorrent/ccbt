@@ -121,6 +121,12 @@ def main() -> int:
 		default="auto",
 		help="Recording mode: auto (detect), pre-commit, commit, both, or none",
 	)
+	parser.add_argument(
+		"--json-out",
+		type=Path,
+		default=None,
+		help="Write benchmark JSON artifact to this path (or directory) for CI",
+	)
 
 	args = parser.parse_args()
 
@@ -150,20 +156,25 @@ def main() -> int:
 	output_dir = Path(args.output_dir)
 	output_dir.mkdir(parents=True, exist_ok=True)
 	cfg = derive_config_name(args.config_file)
-	
+
 	# Record benchmark results using new system
-	per_run_path, timeseries_path = record_benchmark_results("loopback_throughput", cfg, results, args.record_mode)
-	
+	per_run_path, timeseries_path = record_benchmark_results(
+		"loopback_throughput",
+		cfg,
+		results,
+		args.record_mode,
+		json_out=args.json_out,
+	)
 	# Backward compatibility
 	out = write_json(output_dir, "loopback_throughput", cfg, results)
 	print(f"\nWrote (legacy): {out}")
-	
+
 	# Print recording results
 	if per_run_path:
 		print(f"Recorded per-run: {per_run_path}")
 	if timeseries_path:
 		print(f"Updated timeseries: {timeseries_path}")
-	
+
 	return 0
 
 

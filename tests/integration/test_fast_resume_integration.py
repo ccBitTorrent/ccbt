@@ -10,17 +10,16 @@ Tests cover:
 
 from __future__ import annotations
 
-import asyncio
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.session]
 
-from ccbt.models import DiskConfig, DownloadStats, FileCheckpoint, TorrentCheckpoint
+from ccbt.models import DiskConfig, FileCheckpoint, TorrentCheckpoint
 from ccbt.session.fast_resume import FastResumeLoader
 from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.storage.resume_data import FastResumeData

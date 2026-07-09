@@ -1,0 +1,2220 @@
+{
+  "generated_at": "2026-07-09T06:02:26.394530+00:00",
+  "comparisons": [
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=1048576",
+      "metric": "read_elapsed_s",
+      "base_value": 0.0031343000009655952,
+      "head_value": 0.0031343000009655952,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=1048576",
+      "metric": "read_throughput_bytes_per_s",
+      "base_value": 1672743514.7831435,
+      "head_value": 1672743514.7831435,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=1048576",
+      "metric": "write_elapsed_s",
+      "base_value": 0.015657500000088476,
+      "head_value": 0.015657500000088476,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=1048576",
+      "metric": "write_throughput_bytes_per_s",
+      "base_value": 334847836.4981877,
+      "head_value": 334847836.4981877,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=262144",
+      "metric": "read_elapsed_s",
+      "base_value": 0.0023318000021390617,
+      "head_value": 0.0023318000021390617,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=262144",
+      "metric": "read_throughput_bytes_per_s",
+      "base_value": 562106526.6307657,
+      "head_value": 562106526.6307657,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=262144",
+      "metric": "write_elapsed_s",
+      "base_value": 0.5664007000013953,
+      "head_value": 0.5664007000013953,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "disk_io",
+      "scenario": "iterations=5,size_bytes=262144",
+      "metric": "write_throughput_bytes_per_s",
+      "base_value": 2314121.4338131486,
+      "head_value": 2314121.4338131486,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"read\",stream_type=\"encrypted\"",
+      "metric": "elapsed_s",
+      "base_value": 0.006168399995658547,
+      "head_value": 0.006168399995658547,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"read\",stream_type=\"encrypted\"",
+      "metric": "overhead_ms",
+      "base_value": 0.5798900005174801,
+      "head_value": 0.5798900005174801,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"read\",stream_type=\"encrypted\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 1660073.926335376,
+      "head_value": 1660073.926335376,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"read\",stream_type=\"plain\"",
+      "metric": "elapsed_s",
+      "base_value": 0.0003051000094274059,
+      "head_value": 0.0003051000094274059,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"read\",stream_type=\"plain\"",
+      "metric": "overhead_ms",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"read\",stream_type=\"plain\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 33562765.26905994,
+      "head_value": 33562765.26905994,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"write\",stream_type=\"encrypted\"",
+      "metric": "elapsed_s",
+      "base_value": 0.017117100025643595,
+      "head_value": 0.017117100025643595,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"write\",stream_type=\"encrypted\"",
+      "metric": "overhead_ms",
+      "base_value": 0.8241400049882941,
+      "head_value": 0.8241400049882941,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"write\",stream_type=\"encrypted\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 598232.1762833176,
+      "head_value": 598232.1762833176,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"write\",stream_type=\"plain\"",
+      "metric": "elapsed_s",
+      "base_value": 0.010932300036074594,
+      "head_value": 0.010932300036074594,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"write\",stream_type=\"plain\"",
+      "metric": "overhead_ms",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "buffer_size=1024,data_size_bytes=1024,iterations=10,operation=\"write\",stream_type=\"plain\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 936673.8898685428,
+      "head_value": 936673.8898685428,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-128\",data_size_bytes=1024,iterations=10,operation=\"decrypt\"",
+      "metric": "elapsed_s",
+      "base_value": 4.299999272916466e-05,
+      "head_value": 4.299999272916466e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-128\",data_size_bytes=1024,iterations=10,operation=\"decrypt\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 238139575.15054974,
+      "head_value": 238139575.15054974,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-128\",data_size_bytes=1024,iterations=10,operation=\"encrypt\"",
+      "metric": "elapsed_s",
+      "base_value": 3.2099997042678297e-05,
+      "head_value": 3.2099997042678297e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-128\",data_size_bytes=1024,iterations=10,operation=\"encrypt\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 319003144.6540474,
+      "head_value": 319003144.6540474,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-256\",data_size_bytes=1024,iterations=10,operation=\"decrypt\"",
+      "metric": "elapsed_s",
+      "base_value": 4.669999179895967e-05,
+      "head_value": 4.669999179895967e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-256\",data_size_bytes=1024,iterations=10,operation=\"decrypt\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 219271987.1147411,
+      "head_value": 219271987.1147411,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-256\",data_size_bytes=1024,iterations=10,operation=\"encrypt\"",
+      "metric": "elapsed_s",
+      "base_value": 2.4299995857290924e-05,
+      "head_value": 2.4299995857290924e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"AES-256\",data_size_bytes=1024,iterations=10,operation=\"encrypt\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 421399248.7956581,
+      "head_value": 421399248.7956581,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"RC4\",data_size_bytes=1024,iterations=10,operation=\"decrypt\"",
+      "metric": "elapsed_s",
+      "base_value": 0.011670799998682924,
+      "head_value": 0.011670799998682924,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"RC4\",data_size_bytes=1024,iterations=10,operation=\"decrypt\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 877403.4343108962,
+      "head_value": 877403.4343108962,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"RC4\",data_size_bytes=1024,iterations=10,operation=\"encrypt\"",
+      "metric": "elapsed_s",
+      "base_value": 0.004757699993206188,
+      "head_value": 0.004757699993206188,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher=\"RC4\",data_size_bytes=1024,iterations=10,operation=\"encrypt\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 2152300.484398412,
+      "head_value": 2152300.484398412,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"AES-128\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "avg_bytes_per_instance",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"AES-128\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "instances",
+      "base_value": 100.0,
+      "head_value": 100.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"AES-128\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "memory_bytes",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"AES-256\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "avg_bytes_per_instance",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"AES-256\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "instances",
+      "base_value": 100.0,
+      "head_value": 100.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"AES-256\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "memory_bytes",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "avg_bytes_per_instance",
+      "base_value": 1310.0,
+      "head_value": 1310.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "instances",
+      "base_value": 100.0,
+      "head_value": 100.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=0,operation=\"cipher\"",
+      "metric": "memory_bytes",
+      "base_value": 131072.0,
+      "head_value": 131072.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=1024,operation=\"handshake\"",
+      "metric": "avg_bytes_per_instance",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=1024,operation=\"handshake\"",
+      "metric": "instances",
+      "base_value": 10.0,
+      "head_value": 10.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=1024,operation=\"handshake\"",
+      "metric": "memory_bytes",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=768,operation=\"handshake\"",
+      "metric": "avg_bytes_per_instance",
+      "base_value": 819.0,
+      "head_value": 819.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=768,operation=\"handshake\"",
+      "metric": "instances",
+      "base_value": 10.0,
+      "head_value": 10.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "cipher_type=\"RC4\",dh_key_size=768,operation=\"handshake\"",
+      "metric": "memory_bytes",
+      "base_value": 8192.0,
+      "head_value": 8192.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=1024,iterations=5",
+      "metric": "avg_latency_ms",
+      "base_value": 107.63931999972556,
+      "head_value": 107.63931999972556,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=1024,iterations=5",
+      "metric": "elapsed_s",
+      "base_value": 0.5381965999986278,
+      "head_value": 0.5381965999986278,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=1024,iterations=5",
+      "metric": "overhead_ms",
+      "base_value": 106.45369999692775,
+      "head_value": 106.45369999692775,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=1024,iterations=5",
+      "metric": "overhead_percent",
+      "base_value": 8978.736841966247,
+      "head_value": 8978.736841966247,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=768,iterations=5",
+      "metric": "avg_latency_ms",
+      "base_value": 58.101799999712966,
+      "head_value": 58.101799999712966,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=768,iterations=5",
+      "metric": "elapsed_s",
+      "base_value": 0.29050899999856483,
+      "head_value": 0.29050899999856483,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=768,iterations=5",
+      "metric": "overhead_ms",
+      "base_value": 56.91617999691516,
+      "head_value": 56.91617999691516,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"encrypted\",dh_key_size=768,iterations=5",
+      "metric": "overhead_percent",
+      "base_value": 4800.541477252862,
+      "head_value": 4800.541477252862,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"plain\",dh_key_size=0,iterations=5",
+      "metric": "avg_latency_ms",
+      "base_value": 1.1856200027978048,
+      "head_value": 1.1856200027978048,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"plain\",dh_key_size=0,iterations=5",
+      "metric": "elapsed_s",
+      "base_value": 0.005928100013989024,
+      "head_value": 0.005928100013989024,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"plain\",dh_key_size=0,iterations=5",
+      "metric": "overhead_ms",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "connection_type=\"plain\",dh_key_size=0,iterations=5",
+      "metric": "overhead_percent",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "dh_key_size=1024,iterations=5,role=\"initiator\"",
+      "metric": "avg_latency_ms",
+      "base_value": 85.32176000007894,
+      "head_value": 85.32176000007894,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "dh_key_size=1024,iterations=5,role=\"initiator\"",
+      "metric": "elapsed_s",
+      "base_value": 0.4266088000003947,
+      "head_value": 0.4266088000003947,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "dh_key_size=1024,iterations=5,role=\"initiator\"",
+      "metric": "success_rate",
+      "base_value": 100.0,
+      "head_value": 100.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "dh_key_size=768,iterations=5,role=\"initiator\"",
+      "metric": "avg_latency_ms",
+      "base_value": 56.61223999923095,
+      "head_value": 56.61223999923095,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "dh_key_size=768,iterations=5,role=\"initiator\"",
+      "metric": "elapsed_s",
+      "base_value": 0.28306119999615476,
+      "head_value": 0.28306119999615476,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "dh_key_size=768,iterations=5,role=\"initiator\"",
+      "metric": "success_rate",
+      "base_value": 100.0,
+      "head_value": 100.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"key_derivation\"",
+      "metric": "avg_latency_ms",
+      "base_value": 0.0036900004488416016,
+      "head_value": 0.0036900004488416016,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"key_derivation\"",
+      "metric": "elapsed_s",
+      "base_value": 4.3400010326877236e-05,
+      "head_value": 4.3400010326877236e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"key_derivation\"",
+      "metric": "key_size",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"keypair_generation\"",
+      "metric": "avg_latency_ms",
+      "base_value": 0.27441500205895863,
+      "head_value": 0.27441500205895863,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"keypair_generation\"",
+      "metric": "elapsed_s",
+      "base_value": 0.0027708000052371062,
+      "head_value": 0.0027708000052371062,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"keypair_generation\"",
+      "metric": "key_size",
+      "base_value": 896.0,
+      "head_value": 896.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"shared_secret\"",
+      "metric": "avg_latency_ms",
+      "base_value": 0.3450800017162692,
+      "head_value": 0.3450800017162692,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"shared_secret\"",
+      "metric": "elapsed_s",
+      "base_value": 0.0034611499941092916,
+      "head_value": 0.0034611499941092916,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=10,operation=\"shared_secret\"",
+      "metric": "key_size",
+      "base_value": 896.0,
+      "head_value": 896.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=5,piece_size_bytes=262144,transfer_type=\"encrypted\"",
+      "metric": "elapsed_s",
+      "base_value": 3.035462699990603,
+      "head_value": 3.035462699990603,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=5,piece_size_bytes=262144,transfer_type=\"encrypted\"",
+      "metric": "overhead_percent",
+      "base_value": 99.74485932643724,
+      "head_value": 99.74485932643724,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=5,piece_size_bytes=262144,transfer_type=\"encrypted\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 431802.37398537545,
+      "head_value": 431802.37398537545,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=5,piece_size_bytes=262144,transfer_type=\"plain\"",
+      "metric": "elapsed_s",
+      "base_value": 0.007744699978502467,
+      "head_value": 0.007744699978502467,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=5,piece_size_bytes=262144,transfer_type=\"plain\"",
+      "metric": "overhead_percent",
+      "base_value": 0.0,
+      "head_value": 0.0,
+      "delta_percent": null,
+      "status": "no_baseline",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "encryption",
+      "scenario": "iterations=5,piece_size_bytes=262144,transfer_type=\"plain\"",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 169240900.6983178,
+      "head_value": 169240900.6983178,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=1048576",
+      "metric": "bytes_processed",
+      "base_value": 8388608.0,
+      "head_value": 8388608.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=1048576",
+      "metric": "elapsed_s",
+      "base_value": 5.129999772179872e-05,
+      "head_value": 5.129999772179872e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=1048576",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 163520631043.52655,
+      "head_value": 163520631043.52655,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=16777216",
+      "metric": "bytes_processed",
+      "base_value": 134217728.0,
+      "head_value": 134217728.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=16777216",
+      "metric": "elapsed_s",
+      "base_value": 3.359999391250312e-05,
+      "head_value": 3.359999391250312e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=16777216",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 3994575961814.5444,
+      "head_value": 3994575961814.5444,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=4194304",
+      "metric": "bytes_processed",
+      "base_value": 33554432.0,
+      "head_value": 33554432.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=4194304",
+      "metric": "elapsed_s",
+      "base_value": 3.060000017285347e-05,
+      "head_value": 3.060000017285347e-05,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "hash_verify",
+      "scenario": "iterations=8,size_bytes=4194304",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 1096550059165.2783,
+      "head_value": 1096550059165.2783,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "loopback_throughput",
+      "scenario": "payload_bytes=16384,pipeline_depth=8",
+      "metric": "bytes_transferred",
+      "base_value": 6553075712.0,
+      "head_value": 6553075712.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "loopback_throughput",
+      "scenario": "payload_bytes=16384,pipeline_depth=8",
+      "metric": "duration_s",
+      "base_value": 1.0000278999941656,
+      "head_value": 1.0000278999941656,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "loopback_throughput",
+      "scenario": "payload_bytes=16384,pipeline_depth=8",
+      "metric": "stall_percent",
+      "base_value": 11.111086417832498,
+      "head_value": 11.111086417832498,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "loopback_throughput",
+      "scenario": "payload_bytes=16384,pipeline_depth=8",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 6552892886.326703,
+      "head_value": 6552892886.326703,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "piece_assembly",
+      "scenario": "block_size_bytes=16384,piece_size_bytes=1048576",
+      "metric": "blocks",
+      "base_value": 64.0,
+      "head_value": 64.0,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "piece_assembly",
+      "scenario": "block_size_bytes=16384,piece_size_bytes=1048576",
+      "metric": "elapsed_s",
+      "base_value": 0.330777199997101,
+      "head_value": 0.330777199997101,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    },
+    {
+      "benchmark": "piece_assembly",
+      "scenario": "block_size_bytes=16384,piece_size_bytes=1048576",
+      "metric": "throughput_bytes_per_s",
+      "base_value": 3170037.1126220007,
+      "head_value": 3170037.1126220007,
+      "delta_percent": 0.0,
+      "status": "passed",
+      "base_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      },
+      "head_git": {
+        "commit_hash": "846c6d3d45f3726166eaafae134e1b9f08e71108",
+        "commit_hash_short": "846c6d3",
+        "branch": "addsreact",
+        "author": "Joseph Pollack",
+        "is_dirty": true
+      }
+    }
+  ],
+  "summary": {
+    "total": 96,
+    "regressions": 0,
+    "improvements": 0,
+    "passed": 84,
+    "unknown": 12
+  }
+}

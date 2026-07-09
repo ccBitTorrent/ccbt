@@ -6,13 +6,12 @@ Tests the complete flow of status command with scrape cache integration.
 from __future__ import annotations
 
 import asyncio
+import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from click.testing import CliRunner
-
-import importlib
 
 cli_main = importlib.import_module("ccbt.cli.main")
 from ccbt.cli.status import show_status
@@ -56,7 +55,7 @@ class TestStatusScrapeIntegration:
         from ccbt.models import CheckpointFormat
         config.disk.checkpoint_format = CheckpointFormat.BINARY
         config.disk.checkpoint_enabled = True
-        # CRITICAL FIX: Add limits config with real integer values to support comparisons
+        # Note: Add limits config with real integer values to support comparisons
         config.limits = MagicMock()
         config.limits.global_down_kib = 0
         config.limits.global_up_kib = 0
@@ -77,7 +76,7 @@ class TestStatusScrapeIntegration:
         with patch("ccbt.session.session.get_config") as mock_get_config:
             mock_get_config.return_value = mock_config
 
-            # CRITICAL FIX: Comprehensive network mocking to prevent port conflicts
+            # Note: Comprehensive network mocking to prevent port conflicts
             mock_tracker = AsyncMock()
             mock_tracker.start = AsyncMock()
             mock_tracker.stop = AsyncMock()
@@ -94,22 +93,21 @@ class TestStatusScrapeIntegration:
             session.config.network.listen_port_tcp = 0
             session.config.network.listen_port_udp = 0
             session.config.discovery.dht_port = 0
-            
+
             # Mock network initialization methods
             session._make_dht_client = lambda: None  # type: ignore[method-assign]
             session._make_nat_manager = lambda: None  # type: ignore[method-assign]
             session._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
             with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-                # CRITICAL FIX: Mock TorrentAdditionHandler to prevent waiting for session startup
+                # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
                 from ccbt.session.torrent_addition import TorrentAdditionHandler
                 async def mock_wait_for_starting_session(self, session):
                     """Mock to immediately mark session as ready."""
-                    if hasattr(session, 'info'):
+                    if hasattr(session, "info"):
                         session.info.status = "downloading"
-                    return
 
-                with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                     await session.start()
                     try:
                         yield session
@@ -134,8 +132,6 @@ class TestStatusScrapeIntegration:
         self, session_manager, mock_config, sample_torrent_data
     ):
         """Test status display with real scrape cache populated from scrape operations."""
-        from ccbt.models import ScrapeResult
-
         info_hash = b"x" * 20
         info_hash_hex = info_hash.hex()
 
@@ -169,8 +165,9 @@ class TestStatusScrapeIntegration:
             assert cached.completed == 1500
 
             # Now test status display
-            from rich.console import Console
             from io import StringIO
+
+            from rich.console import Console
 
             console = Console(file=StringIO(), width=120)
             from ccbt.executor.session_adapter import LocalSessionAdapter
@@ -196,10 +193,9 @@ class TestStatusScrapeIntegration:
         runner = CliRunner()
 
         from ccbt.session.session import AsyncSessionManager
-        from ccbt.models import ScrapeResult
         from tests.conftest import create_test_torrent_dict
 
-        # CRITICAL FIX: Comprehensive network mocking to prevent timeout
+        # Note: Comprehensive network mocking to prevent timeout
         # Mock AsyncTrackerClient to prevent real network operations
         mock_tracker = AsyncMock()
         mock_tracker.start = AsyncMock()
@@ -211,22 +207,21 @@ class TestStatusScrapeIntegration:
         session_manager.config.nat.auto_map_ports = False
         session_manager.config.discovery.enable_dht = False
         session_manager.config.network.enable_tcp = False
-        
+
         # Mock network initialization methods
         session_manager._make_dht_client = lambda: None  # type: ignore[method-assign]
         session_manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
         session_manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
         with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-            # CRITICAL FIX: Mock TorrentAdditionHandler to prevent waiting for session startup
+            # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
             from ccbt.session.torrent_addition import TorrentAdditionHandler
             async def mock_wait_for_starting_session(self, session):
                 """Mock to immediately mark session as ready."""
-                if hasattr(session, 'info'):
+                if hasattr(session, "info"):
                     session.info.status = "downloading"
-                return
 
-            with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                 await session_manager.start()
 
                 try:
@@ -289,12 +284,14 @@ class TestStatusScrapeIntegration:
     @pytest.mark.asyncio
     async def test_status_with_multiple_scrape_cache_entries(self, tmp_path):
         """Test status display with multiple scrape cache entries."""
-        from ccbt.session.session import AsyncSessionManager
-        from ccbt.models import ScrapeResult
-        from rich.console import Console
         from io import StringIO
 
-        # CRITICAL FIX: Comprehensive network mocking to prevent port conflicts
+        from rich.console import Console
+
+        from ccbt.models import ScrapeResult
+        from ccbt.session.session import AsyncSessionManager
+
+        # Note: Comprehensive network mocking to prevent port conflicts
         mock_tracker = AsyncMock()
         mock_tracker.start = AsyncMock()
         mock_tracker.stop = AsyncMock()
@@ -311,22 +308,21 @@ class TestStatusScrapeIntegration:
         session_manager.config.network.listen_port_tcp = 0
         session_manager.config.network.listen_port_udp = 0
         session_manager.config.discovery.dht_port = 0
-        
+
         # Mock network initialization methods
         session_manager._make_dht_client = lambda: None  # type: ignore[method-assign]
         session_manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
         session_manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
         with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
-            # CRITICAL FIX: Mock TorrentAdditionHandler to prevent waiting for session startup
+            # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
             from ccbt.session.torrent_addition import TorrentAdditionHandler
             async def mock_wait_for_starting_session(self, session):
                 """Mock to immediately mark session as ready."""
-                if hasattr(session, 'info'):
+                if hasattr(session, "info"):
                     session.info.status = "downloading"
-                return
 
-            with patch.object(TorrentAdditionHandler, '_wait_for_starting_session', mock_wait_for_starting_session):
+            with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
                 await session_manager.start()
 
                 try:

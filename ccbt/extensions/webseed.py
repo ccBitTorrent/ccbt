@@ -103,7 +103,7 @@ class WebSeedExtension:
             try:
                 if not self.session.closed:
                     await self.session.close()
-                    # CRITICAL FIX: Wait for session to fully close (especially on Windows)
+                    # Note: Wait for session to fully close (especially on Windows)
                     # This prevents "Unclosed client session" warnings
                     import sys
 
@@ -112,7 +112,7 @@ class WebSeedExtension:
                     else:
                         await asyncio.sleep(0.1)
 
-                    # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                    # Note: Close connector explicitly to ensure complete cleanup
                     # This is especially important on Windows where connector cleanup can be delayed
                     if hasattr(self.session, "connector") and self.session.connector:
                         connector = self.session.connector
@@ -127,7 +127,7 @@ class WebSeedExtension:
                                 self.logger.debug("Error closing connector: %s", e)
             except Exception as e:
                 self.logger.debug("Error closing WebSeed session: %s", e)
-                # CRITICAL FIX: Even if close() fails, try to clean up connector
+                # Note: Even if close() fails, try to clean up connector
                 try:
                     if hasattr(self.session, "connector") and self.session.connector:
                         connector = self.session.connector

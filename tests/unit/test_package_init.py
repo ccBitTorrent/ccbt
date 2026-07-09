@@ -4,8 +4,6 @@ Target: 95%+ coverage for ccbt/__init__.py.
 """
 
 import asyncio
-import importlib
-from unittest.mock import patch
 
 import pytest
 
@@ -53,14 +51,6 @@ class TestPackageInit:
         assert hasattr(ccbt, "get_config")
         assert hasattr(ccbt, "init_config")
 
-    def test_getattr_async_main(self):
-        """Test __getattr__ for async_main."""
-        import ccbt
-
-        # Should return the async_main module
-        async_main = ccbt.__getattr__("async_main")
-        assert async_main is not None
-
     def test_getattr_invalid_attribute(self):
         """Test __getattr__ raises AttributeError for invalid attribute."""
         import ccbt
@@ -70,30 +60,24 @@ class TestPackageInit:
 
     def test_event_loop_policy_setup(self):
         """Test that event loop policy is set up."""
-        import ccbt
-
         # Import should have set up event loop policy
         policy = asyncio.get_event_loop_policy()
         assert policy is not None
 
     def test_event_loop_policy_get_event_loop(self):
         """Test _SafeEventLoopPolicy.get_event_loop."""
-        import ccbt
-
         # Force a new event loop request
         policy = asyncio.get_event_loop_policy()
-        
+
         # Should be able to get a loop even if none is running
         loop = policy.get_event_loop()
         assert loop is not None
 
     def test_event_loop_policy_get_child_watcher_no_base(self):
         """Test _SafeEventLoopPolicy.get_child_watcher when base doesn't have it."""
-        import ccbt
-
         # This tests the fallback path when base policy doesn't have get_child_watcher
         policy = asyncio.get_event_loop_policy()
-        
+
         # Should raise NotImplementedError when base doesn't support it
         if not hasattr(policy._base if hasattr(policy, "_base") else policy, "get_child_watcher"):
             with pytest.raises(NotImplementedError):
@@ -101,10 +85,8 @@ class TestPackageInit:
 
     def test_event_loop_policy_set_child_watcher_no_base(self):
         """Test _SafeEventLoopPolicy.set_child_watcher when base doesn't have it."""
-        import ccbt
-
         policy = asyncio.get_event_loop_policy()
-        
+
         # Should raise NotImplementedError when base doesn't support it
         if not hasattr(policy._base if hasattr(policy, "_base") else policy, "set_child_watcher"):
             with pytest.raises(NotImplementedError):
@@ -114,7 +96,7 @@ class TestPackageInit:
         """Test that SafeEventLoopPolicy setup handles exceptions."""
         # Reload module to test exception path
         import ccbt
-        
+
         # The exception handling in __init__ should allow import to continue
         # Version should be accessible even if policy setup fails
         assert ccbt.__version__ == "0.0.1"
@@ -129,10 +111,8 @@ class TestPackageInit:
 
     def test_event_loop_policy_get_running_loop(self):
         """Test _SafeEventLoopPolicy.get_running_loop delegates to base."""
-        import ccbt
-
         policy = asyncio.get_event_loop_policy()
-        
+
         # get_running_loop may not exist on all base policies (e.g., Windows ProactorEventLoopPolicy in older Python)
         # If it exists, it should be called; if not, an AttributeError will be raised
         try:
@@ -146,13 +126,11 @@ class TestPackageInit:
 
     def test_event_loop_policy_get_child_watcher_with_base(self):
         """Test _SafeEventLoopPolicy.get_child_watcher when base has it."""
-        import ccbt
-
         policy = asyncio.get_event_loop_policy()
-        
+
         # Access the base policy to check if it has get_child_watcher
         base_policy = policy._base if hasattr(policy, "_base") else policy
-        
+
         # Try to call get_child_watcher - it will either return a watcher or raise
         # The important part is that the nested function is defined
         try:
@@ -167,10 +145,8 @@ class TestPackageInit:
 
     def test_event_loop_policy_set_child_watcher_with_base(self):
         """Test _SafeEventLoopPolicy.set_child_watcher when base has it."""
-        import ccbt
-
         policy = asyncio.get_event_loop_policy()
-        
+
         # Try to call set_child_watcher with None
         # The important part is that the nested function is defined
         try:

@@ -203,9 +203,9 @@ class TestManagerBackgroundTasks:
 
         mock_manager.torrents = {b"t1": torrent1, b"t2": torrent2}
         mock_manager._rate_history = []
-        # CRITICAL FIX: Mock get_rate_history() to return the list, not a Mock object
+        # Note: Mock get_rate_history() to return the list, not a Mock object
         mock_manager.get_rate_history.return_value = mock_manager._rate_history
-        # CRITICAL FIX: Mock attributes accessed without underscore prefix
+        # Note: Mock attributes accessed without underscore prefix
         mock_manager.metrics_heartbeat_counter = 0
         mock_manager.metrics_heartbeat_interval = 5
         mock_manager.last_metrics_emit = 0.0
@@ -234,8 +234,6 @@ class TestManagerBackgroundTasks:
     @pytest.mark.asyncio
     async def test_metrics_loop_handles_exceptions(self, background_tasks, mock_manager):
         """Test metrics loop handles exceptions gracefully."""
-        import time
-
         mock_manager.torrents = {}
         mock_manager._rate_history = []
         mock_manager._metrics_heartbeat_counter = 0

@@ -26,12 +26,12 @@ def _create_mock_config_manager(mock_config=None, config_file=None):
         Mock ConfigManager instance with config and config_file attributes.
     """
     from unittest.mock import Mock
-    
+
     if mock_config is None:
         mock_config = Mock()
         mock_config.model_dump.return_value = {"network": {"port": 6881}}
         mock_config.disk.backup_dir = "/tmp/backups"
-    
+
     mock_cm = Mock()
     mock_cm.config = mock_config
     mock_cm.config_file = config_file
@@ -75,8 +75,6 @@ def interactive_cli(mock_session, mock_config_manager):
     Uses mock_config_manager fixture to ensure ConfigManager is patched
     at module level for all commands that create ConfigManager(None) instances.
     """
-    from ccbt.cli.interactive import InteractiveCLI
-    
     from tests.conftest import create_interactive_cli
     console = Mock(spec=Console)
     console.print = Mock()
@@ -94,21 +92,21 @@ class TestInteractiveComprehensive:
         """Test download_torrent with file selection (lines 146-181)."""
         # Setup layout first
         interactive_cli.setup_layout()
-        
+
         # Create mock torrent session with file manager
         mock_torrent_session = MagicMock()
         mock_file_manager = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={})
         mock_torrent_session.file_selection_manager = mock_file_manager
-        
+
         info_hash_bytes = bytes.fromhex("abcd1234" * 4)
         mock_session.torrents = {info_hash_bytes: mock_torrent_session}
-        
+
         torrent_data = {"name": "test.torrent", "total_size": 1024}
         interactive_cli.running = True
         interactive_cli._interactive_file_selection = AsyncMock()
         interactive_cli.show_download_interface = Mock()
-        
+
         # Mock get_torrent_status to return seeding after a while
         call_count = [0]
         def status_side_effect(*args):
@@ -116,13 +114,13 @@ class TestInteractiveComprehensive:
             if call_count[0] > 1:
                 return {"status": "seeding"}
             return {"status": "downloading"}
-        
+
         mock_session.get_torrent_status = AsyncMock(side_effect=status_side_effect)
         interactive_cli.update_download_stats = AsyncMock()
-        
+
         # Run download
         await interactive_cli.download_torrent(torrent_data, resume=False)
-        
+
         # Verify file selection was called
         interactive_cli._interactive_file_selection.assert_called_once()
 
@@ -134,19 +132,19 @@ class TestInteractiveComprehensive:
         interactive_cli._interactive_file_selection = AsyncMock()
         interactive_cli.show_download_interface = Mock()
         interactive_cli.update_download_stats = AsyncMock()
-        
+
         # Mock status to return seeding immediately
         mock_session.get_torrent_status = AsyncMock(return_value={"status": "seeding"})
-        
+
         await interactive_cli.download_torrent(torrent_data, resume=False)
-        
+
         # Should complete
         assert interactive_cli.current_torrent == torrent_data
 
     def test_setup_layout(self, interactive_cli):
         """Test setup_layout (lines 190-201)."""
         interactive_cli.setup_layout()
-        
+
         # Verify layout structure
         assert interactive_cli.layout is not None
 
@@ -154,7 +152,7 @@ class TestInteractiveComprehensive:
         """Test show_welcome (lines 203-206)."""
         interactive_cli.setup_layout()
         interactive_cli.show_welcome()
-        
+
         # Should not raise
         assert True
 
@@ -162,9 +160,9 @@ class TestInteractiveComprehensive:
         """Test show_download_interface with no torrent (lines 208-211)."""
         interactive_cli.current_torrent = None
         interactive_cli.setup_layout()
-        
+
         interactive_cli.show_download_interface()
-        
+
         # Should return early
         assert True
 
@@ -175,18 +173,18 @@ class TestInteractiveComprehensive:
         interactive_cli.create_download_panel = Mock(return_value=Mock())
         interactive_cli.create_peers_panel = Mock(return_value=Mock())
         interactive_cli.create_status_panel = Mock(return_value=Mock())
-        
+
         interactive_cli.show_download_interface()
-        
+
         # Should create panels
         interactive_cli.create_download_panel.assert_called_once()
 
     def test_create_download_panel_no_torrent(self, interactive_cli):
         """Test create_download_panel with no torrent (lines 225-228)."""
         interactive_cli.current_torrent = None
-        
+
         result = interactive_cli.create_download_panel()
-        
+
         # Should return panel with "No torrent active"
         assert result is not None
 
@@ -206,9 +204,9 @@ class TestInteractiveComprehensive:
             "pieces_total": 100,
         }
         interactive_cli.progress_manager.create_download_progress = Mock(return_value=Mock())
-        
+
         result = interactive_cli.create_download_panel()
-        
+
         assert result is not None
 
     def test_create_download_panel_with_eta(self, interactive_cli):
@@ -226,26 +224,26 @@ class TestInteractiveComprehensive:
             "pieces_total": 0,
         }
         interactive_cli.progress_manager.create_download_progress = Mock(return_value=Mock())
-        
+
         result = interactive_cli.create_download_panel()
-        
+
         assert result is not None
 
     def test_create_peers_panel_no_torrent(self, interactive_cli):
         """Test create_peers_panel with no torrent (lines 308-311)."""
         interactive_cli.current_torrent = None
-        
+
         result = interactive_cli.create_peers_panel()
-        
+
         assert result is not None
 
     def test_create_peers_panel_no_peers(self, interactive_cli):
         """Test create_peers_panel with no peers (lines 308-315)."""
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli._last_peers = []
-        
+
         result = interactive_cli.create_peers_panel()
-        
+
         assert result is not None
 
     def test_create_peers_panel_with_peers(self, interactive_cli):
@@ -254,9 +252,9 @@ class TestInteractiveComprehensive:
         interactive_cli._last_peers = [
             {"ip": "1.2.3.4", "port": 6881, "download_rate": 100.0, "upload_rate": 50.0},
         ]
-        
+
         result = interactive_cli.create_peers_panel()
-        
+
         assert result is not None
 
     def test_create_status_panel(self, interactive_cli):
@@ -269,9 +267,9 @@ class TestInteractiveComprehensive:
             "pieces_completed": 10,
             "pieces_total": 100,
         }
-        
+
         result = interactive_cli.create_status_panel()
-        
+
         assert result is not None
 
     @pytest.mark.asyncio
@@ -280,25 +278,25 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test.torrent"}
         interactive_cli.update_download_stats = AsyncMock()
         interactive_cli.show_download_interface = Mock()
-        
+
         await interactive_cli.update_display()
-        
+
         interactive_cli.update_download_stats.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cmd_help(self, interactive_cli):
         """Test cmd_help (lines 452-467)."""
         await interactive_cli.cmd_help([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_status_no_torrent(self, interactive_cli):
         """Test cmd_status with no torrent (lines 469-473)."""
         interactive_cli.current_torrent = None
-        
+
         await interactive_cli.cmd_status([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -314,25 +312,25 @@ class TestInteractiveComprehensive:
             "pieces_completed": 10,
             "pieces_total": 100,
         }
-        
+
         # Mock torrent session
         mock_torrent_session = MagicMock()
         mock_torrent_session.is_private = False
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_status([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_peers_no_torrent(self, interactive_cli):
         """Test cmd_peers with no torrent (lines 550-554)."""
         interactive_cli.current_torrent = None
-        
+
         await interactive_cli.cmd_peers([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -342,9 +340,9 @@ class TestInteractiveComprehensive:
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
         mock_session.get_peers_for_torrent = AsyncMock(return_value=[])
-        
+
         await interactive_cli.cmd_peers([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -356,9 +354,9 @@ class TestInteractiveComprehensive:
         mock_session.get_peers_for_torrent = AsyncMock(return_value=[
             {"ip": "1.2.3.4", "port": 6881, "download_rate": 100.0, "upload_rate": 50.0},
         ])
-        
+
         await interactive_cli.cmd_peers([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -367,7 +365,7 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         peer_obj = SimpleNamespace(
             ip="1.2.3.4",
             port=6881,
@@ -376,9 +374,9 @@ class TestInteractiveComprehensive:
             progress_percentage=lambda: 50.0,
         )
         mock_session.get_peers_for_torrent = AsyncMock(return_value=[peer_obj])
-        
+
         await interactive_cli.cmd_peers([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -388,9 +386,9 @@ class TestInteractiveComprehensive:
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
         mock_session.get_peers_for_torrent = AsyncMock(side_effect=Exception("Error"))
-        
+
         await interactive_cli.cmd_peers([])
-        
+
         # Should handle gracefully
         assert interactive_cli.console.print.called
 
@@ -398,9 +396,9 @@ class TestInteractiveComprehensive:
     async def test_cmd_files_no_torrent(self, interactive_cli):
         """Test cmd_files with no torrent (lines 613-624)."""
         interactive_cli.current_torrent = None
-        
+
         await interactive_cli.cmd_files([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -409,15 +407,15 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         mock_torrent_session = MagicMock()
         mock_torrent_session.file_selection_manager = None
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_files([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -426,7 +424,7 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         mock_torrent_session = MagicMock()
         # Import FileSelectionManager to use as spec
         from ccbt.piece.file_selection import FileSelectionManager
@@ -437,9 +435,9 @@ class TestInteractiveComprehensive:
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_files(["select", "0"])
-        
+
         mock_file_manager.select_file.assert_called_once_with(0)
 
     @pytest.mark.asyncio
@@ -448,7 +446,7 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         mock_torrent_session = MagicMock()
         # Import FileSelectionManager to use as spec
         from ccbt.piece.file_selection import FileSelectionManager
@@ -459,9 +457,9 @@ class TestInteractiveComprehensive:
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_files(["deselect", "0"])
-        
+
         mock_file_manager.deselect_file.assert_called_once_with(0)
 
     @pytest.mark.asyncio
@@ -470,7 +468,7 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         mock_torrent_session = MagicMock()
         # Import FileSelectionManager to use as spec
         from ccbt.piece.file_selection import FileSelectionManager
@@ -481,9 +479,9 @@ class TestInteractiveComprehensive:
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_files(["priority", "0", "high"])
-        
+
         mock_file_manager.set_file_priority.assert_called_once()
 
     @pytest.mark.asyncio
@@ -492,7 +490,7 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         mock_torrent_session = MagicMock()
         mock_file_manager = AsyncMock()
         mock_file_manager.get_all_file_states = AsyncMock(return_value={0: MagicMock()})
@@ -500,9 +498,9 @@ class TestInteractiveComprehensive:
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_files(["priority", "0", "invalid_priority"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -511,7 +509,7 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         mock_torrent_session = MagicMock()
         mock_file_manager = MagicMock()
         mock_file_state = MagicMock()
@@ -533,18 +531,18 @@ class TestInteractiveComprehensive:
         mock_session.torrents = {
             bytes.fromhex(interactive_cli.current_info_hash_hex): mock_torrent_session
         }
-        
+
         await interactive_cli.cmd_files([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_pause_no_torrent(self, interactive_cli):
         """Test cmd_pause with no torrent (lines 915-919)."""
         interactive_cli.current_torrent = None
-        
+
         await interactive_cli.cmd_pause([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -553,18 +551,18 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         await interactive_cli.cmd_pause([])
-        
+
         mock_session.pause_torrent.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cmd_resume_no_torrent(self, interactive_cli):
         """Test cmd_resume with no torrent (lines 925-929)."""
         interactive_cli.current_torrent = None
-        
+
         await interactive_cli.cmd_resume([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -573,18 +571,18 @@ class TestInteractiveComprehensive:
         interactive_cli.current_torrent = {"name": "test"}
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         interactive_cli.session = mock_session
-        
+
         await interactive_cli.cmd_resume([])
-        
+
         mock_session.resume_torrent.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cmd_stop_no_torrent(self, interactive_cli):
         """Test cmd_stop with no torrent (lines 935-939)."""
         interactive_cli.current_torrent = None
-        
+
         await interactive_cli.cmd_stop([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -594,16 +592,14 @@ class TestInteractiveComprehensive:
         interactive_cli.current_info_hash_hex = "abcd1234" * 4
         if hasattr(interactive_cli.session, "remove"):
             delattr(interactive_cli.session, "remove")
-        
+
         await interactive_cli.cmd_stop([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_checkpoint_list(self, interactive_cli, tmp_path):
         """Test cmd_checkpoint list (lines 1052-1071)."""
-        from ccbt.storage.checkpoint import CheckpointManager
-        
         # Mock checkpoint manager
         mock_cm = AsyncMock()
         mock_checkpoint = MagicMock()
@@ -611,17 +607,17 @@ class TestInteractiveComprehensive:
         mock_checkpoint.checkpoint_format.value = "v1"
         mock_checkpoint.size = 1024
         mock_cm.list_checkpoints = AsyncMock(return_value=[mock_checkpoint])
-        
+
         with patch("ccbt.storage.checkpoint.CheckpointManager", return_value=mock_cm):
             await interactive_cli.cmd_checkpoint(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_checkpoint_invalid(self, interactive_cli):
         """Test cmd_checkpoint with invalid args (lines 1052-1060)."""
         await interactive_cli.cmd_checkpoint(["invalid"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -632,10 +628,10 @@ class TestInteractiveComprehensive:
         mock_mc.get_performance_metrics = Mock(return_value={"download_rate": 1000.0})
         mock_mc.collect_system_metrics = AsyncMock()
         mock_mc.collect_performance_metrics = AsyncMock()
-        
+
         with patch("ccbt.monitoring.MetricsCollector", return_value=mock_mc):
             await interactive_cli.cmd_metrics(["show", "all"])
-        
+
         assert interactive_cli.console.print_json.called
 
     @pytest.mark.asyncio
@@ -644,10 +640,10 @@ class TestInteractiveComprehensive:
         mock_mc = MagicMock()
         mock_mc.get_system_metrics = Mock(return_value={"cpu": 50.0})
         mock_mc.collect_system_metrics = AsyncMock()
-        
+
         with patch("ccbt.monitoring.MetricsCollector", return_value=mock_mc):
             await interactive_cli.cmd_metrics(["show", "system"])
-        
+
         assert interactive_cli.console.print_json.called
 
     @pytest.mark.asyncio
@@ -658,12 +654,12 @@ class TestInteractiveComprehensive:
         mock_mc.collect_system_metrics = AsyncMock()
         mock_mc.collect_performance_metrics = AsyncMock()
         mock_mc.collect_custom_metrics = AsyncMock()
-        
+
         output_file = tmp_path / "metrics.json"
-        
+
         with patch("ccbt.monitoring.MetricsCollector", return_value=mock_mc):
             await interactive_cli.cmd_metrics(["export", "json", str(output_file)])
-        
+
         assert output_file.exists()
 
     @pytest.mark.asyncio
@@ -674,10 +670,10 @@ class TestInteractiveComprehensive:
         mock_mc.collect_system_metrics = AsyncMock()
         mock_mc.collect_performance_metrics = AsyncMock()
         mock_mc.collect_custom_metrics = AsyncMock()
-        
+
         with patch("ccbt.monitoring.MetricsCollector", return_value=mock_mc):
             await interactive_cli.cmd_metrics(["export", "prometheus"])
-        
+
         # Should not raise - line 1122 is covered (pass statement)
 
     @pytest.mark.asyncio
@@ -688,10 +684,10 @@ class TestInteractiveComprehensive:
         mock_mc.collect_system_metrics = AsyncMock()
         mock_mc.collect_performance_metrics = AsyncMock()
         mock_mc.collect_custom_metrics = AsyncMock()
-        
+
         with patch("ccbt.monitoring.MetricsCollector", return_value=mock_mc):
             await interactive_cli.cmd_metrics(["export", "json"])
-        
+
         # Should print content (line 1124)
         assert interactive_cli.console.print.called
 
@@ -700,26 +696,26 @@ class TestInteractiveComprehensive:
         """Test cmd_alerts show (lines 1130-1240)."""
         mock_am = MagicMock()
         mock_am.alert_rules = {}
-        
+
         with patch("ccbt.monitoring.get_alert_manager", return_value=mock_am):
             await interactive_cli.cmd_alerts(["show"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_export(self, interactive_cli, tmp_path):
         """Test cmd_export (lines 1241-1253)."""
         output_file = tmp_path / "export.json"
-        
+
         await interactive_cli.cmd_export([str(output_file)])
-        
+
         interactive_cli.session.export_session_state.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cmd_export_no_args(self, interactive_cli):
         """Test cmd_export with no args (lines 1241-1249)."""
         await interactive_cli.cmd_export([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -727,36 +723,36 @@ class TestInteractiveComprehensive:
         """Test cmd_import (lines 1255-1267)."""
         import_file = tmp_path / "import.json"
         import_file.write_text('{"torrents": {}}')
-        
+
         await interactive_cli.cmd_import([str(import_file)])
-        
+
         interactive_cli.session.import_session_state.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_cmd_import_no_args(self, interactive_cli):
         """Test cmd_import with no args (lines 1255-1263)."""
         await interactive_cli.cmd_import([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_backup(self, interactive_cli, tmp_path):
         """Test cmd_backup (lines 1269-1285)."""
         backup_dest = tmp_path / "backup"
-        
+
         with patch("ccbt.storage.checkpoint.CheckpointManager") as mock_cm_class:
             mock_cm = AsyncMock()
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_backup(["abcd1234" * 4, str(backup_dest)])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_backup_no_args(self, interactive_cli):
         """Test cmd_backup with no args (lines 1269-1277)."""
         await interactive_cli.cmd_backup([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -764,25 +760,25 @@ class TestInteractiveComprehensive:
         """Test cmd_restore (lines 1287-1305)."""
         backup_file = tmp_path / "backup.tar.gz"
         backup_file.write_text("test")
-        
+
         mock_checkpoint = MagicMock()
         mock_checkpoint.torrent_name = "test.torrent"
         mock_checkpoint.info_hash.hex = Mock(return_value="abcd1234" * 4)
-        
+
         with patch("ccbt.storage.checkpoint.CheckpointManager") as mock_cm_class:
             mock_cm = AsyncMock()
             mock_cm.restore_checkpoint = AsyncMock(return_value=mock_checkpoint)
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_restore([str(backup_file)])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_restore_no_args(self, interactive_cli):
         """Test cmd_restore with no args (lines 1287-1295)."""
         await interactive_cli.cmd_restore([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -795,10 +791,10 @@ class TestInteractiveComprehensive:
             "test_list": ["item1", "item2"],
             "test_str": "value",
         })
-        
+
         with patch("ccbt.config.config_capabilities.SystemCapabilities", return_value=mock_sc):
             await interactive_cli.cmd_capabilities(["show"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -806,10 +802,10 @@ class TestInteractiveComprehensive:
         """Test cmd_capabilities summary (lines 1307-1327)."""
         mock_sc = MagicMock()
         mock_sc.get_capability_summary = Mock(return_value={"test": True})
-        
+
         with patch("ccbt.config.config_capabilities.SystemCapabilities", return_value=mock_sc):
             await interactive_cli.cmd_capabilities(["summary"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -819,15 +815,15 @@ class TestInteractiveComprehensive:
         mock_tuned_config = MagicMock()
         mock_tuned_config.model_dump = Mock(return_value={"test": "value"})
         mock_cc.adjust_for_system = Mock(return_value=(mock_tuned_config, []))
-        
+
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_auto_tune(["preview"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -837,16 +833,16 @@ class TestInteractiveComprehensive:
         mock_tuned_config = MagicMock()
         mock_tuned_config.model_dump = Mock(return_value={"test": "value"})
         mock_cc.adjust_for_system = Mock(return_value=(mock_tuned_config, []))
-        
+
         with patch("ccbt.config.config_conditional.ConditionalConfig", return_value=mock_cc):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 with patch("ccbt.config.config.set_config") as mock_set_config:
                     mock_config = MagicMock()
                     mock_cm = _create_mock_config_manager(mock_config)
                     mock_cm_class.return_value = mock_cm
-                    
+
                     await interactive_cli.cmd_auto_tune(["apply"])
-            
+
             assert interactive_cli.console.print.called
             mock_set_config.assert_called_once()
 
@@ -854,91 +850,91 @@ class TestInteractiveComprehensive:
     async def test_cmd_template_list(self, interactive_cli):
         """Test cmd_template list (lines 1375-1397)."""
         from ccbt.config.config_templates import ConfigTemplates
-        
+
         mock_templates = [
             {"key": "test", "name": "Test Template", "description": "Test"},
         ]
-        
+
         with patch.object(ConfigTemplates, "list_templates", return_value=mock_templates):
             await interactive_cli.cmd_template(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_template_list_empty(self, interactive_cli):
         """Test cmd_template list empty (lines 1375-1389)."""
         from ccbt.config.config_templates import ConfigTemplates
-        
+
         with patch.object(ConfigTemplates, "list_templates", return_value=[]):
             await interactive_cli.cmd_template(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_template_apply(self, interactive_cli):
         """Test cmd_template apply (lines 1398-1412)."""
         from ccbt.config.config_templates import ConfigTemplates
-        
+
         mock_new_dict = {"test": "value"}
-        
+
         with patch.object(ConfigTemplates, "apply_template", return_value=mock_new_dict):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_config.model_dump = Mock(return_value={})
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_template(["apply", "test"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_template_invalid(self, interactive_cli):
         """Test cmd_template with invalid args (lines 1375-1413)."""
         await interactive_cli.cmd_template(["invalid"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_profile_list(self, interactive_cli):
         """Test cmd_profile list (lines 1415-1437)."""
         from ccbt.config.config_templates import ConfigProfiles
-        
+
         mock_profiles = [
             {"key": "test", "name": "Test Profile", "templates": ["template1"]},
         ]
-        
+
         with patch.object(ConfigProfiles, "list_profiles", return_value=mock_profiles):
             await interactive_cli.cmd_profile(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_profile_list_empty(self, interactive_cli):
         """Test cmd_profile list empty (lines 1415-1429)."""
         from ccbt.config.config_templates import ConfigProfiles
-        
+
         with patch.object(ConfigProfiles, "list_profiles", return_value=[]):
             await interactive_cli.cmd_profile(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_profile_apply(self, interactive_cli):
         """Test cmd_profile apply (lines 1438-1452)."""
         from ccbt.config.config_templates import ConfigProfiles
-        
+
         mock_new_dict = {"test": "value"}
-        
+
         with patch.object(ConfigProfiles, "apply_profile", return_value=mock_new_dict):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_config.model_dump = Mock(return_value={})
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_profile(["apply", "test"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -952,21 +948,21 @@ class TestInteractiveComprehensive:
                 "file": Path("backup1.toml"),
             }
         ]
-        
+
         with patch("ccbt.config.config_backup.ConfigBackup") as mock_cb_class:
             mock_cb = MagicMock()
             mock_cb.list_backups = Mock(return_value=mock_backups)
             mock_cb_class.return_value = mock_cb
-            
+
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_config.disk = MagicMock()
                 mock_config.disk.backup_dir = "/tmp"
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_backup(["list"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -976,7 +972,7 @@ class TestInteractiveComprehensive:
             mock_cb = MagicMock()
             mock_cb.create_backup = Mock(return_value=(True, Path("backup.toml"), []))
             mock_cb_class.return_value = mock_cb
-            
+
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_cm = MagicMock()
                 mock_cm.config = MagicMock()
@@ -984,9 +980,9 @@ class TestInteractiveComprehensive:
                 mock_cm.config.disk.backup_dir = "/tmp"
                 mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_backup(["create", "test"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -996,7 +992,7 @@ class TestInteractiveComprehensive:
             mock_cb = MagicMock()
             mock_cb.create_backup = Mock(return_value=(False, None, ["Error message"]))
             mock_cb_class.return_value = mock_cb
-            
+
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_cm = MagicMock()
                 mock_cm.config = MagicMock()
@@ -1004,21 +1000,21 @@ class TestInteractiveComprehensive:
                 mock_cm.config.disk.backup_dir = "/tmp"
                 mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_backup(["create", "test"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_backup_restore(self, interactive_cli, tmp_path):
         """Test cmd_config_backup restore (lines 1483-1491)."""
         backup_file = tmp_path / "backup.toml"
-        
+
         with patch("ccbt.config.config_backup.ConfigBackup") as mock_cb_class:
             mock_cb = MagicMock()
             mock_cb.restore_backup = Mock(return_value=(True, []))
             mock_cb_class.return_value = mock_cb
-            
+
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_cm = MagicMock()
                 mock_cm.config = MagicMock()
@@ -1026,21 +1022,21 @@ class TestInteractiveComprehensive:
                 mock_cm.config.disk.backup_dir = "/tmp"
                 mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_backup(["restore", str(backup_file)])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_backup_restore_failure(self, interactive_cli, tmp_path):
         """Test cmd_config_backup restore failure (lines 1506-1507)."""
         backup_file = tmp_path / "backup.toml"
-        
+
         with patch("ccbt.config.config_backup.ConfigBackup") as mock_cb_class:
             mock_cb = MagicMock()
             mock_cb.restore_backup = Mock(return_value=(False, ["Error message"]))
             mock_cb_class.return_value = mock_cb
-            
+
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_cm = MagicMock()
                 mock_cm.config = MagicMock()
@@ -1048,16 +1044,16 @@ class TestInteractiveComprehensive:
                 mock_cm.config.disk.backup_dir = "/tmp"
                 mock_cm.config_file = str(tmp_path / "config.toml")
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_backup(["restore", str(backup_file)])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_backup_invalid(self, interactive_cli):
         """Test cmd_config_backup with invalid args (lines 1454-1492)."""
         await interactive_cli.cmd_config_backup(["invalid"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1065,31 +1061,31 @@ class TestInteractiveComprehensive:
         """Test cmd_config_diff (lines 1513-1529)."""
         mock_diff = MagicMock()
         mock_diff.compare = Mock(return_value={"changed": ["test.key"]})
-        
+
         with patch("ccbt.config.config_diff.ConfigDiff", return_value=mock_diff):
             with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
                 mock_config = MagicMock()
                 mock_config.model_dump = Mock(return_value={})
                 mock_cm = _create_mock_config_manager(mock_config)
                 mock_cm_class.return_value = mock_cm
-                
+
                 await interactive_cli.cmd_config_diff([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_export(self, interactive_cli, tmp_path):
         """Test cmd_config_export (lines 1531-1561)."""
         output_file = tmp_path / "config.json"
-        
+
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
             mock_config = MagicMock()
             mock_config.model_dump = Mock(return_value={"test": "value"})  # Must be JSON-serializable
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config_export(["json", str(output_file)])
-        
+
         assert output_file.exists()
         assert interactive_cli.console.print.called
 
@@ -1101,9 +1097,9 @@ class TestInteractiveComprehensive:
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm.export = Mock(return_value='{"test": "value"}')
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config_export(["json"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1111,34 +1107,34 @@ class TestInteractiveComprehensive:
         """Test cmd_config_import (lines 1563-1608)."""
         import_file = tmp_path / "config.json"
         import_file.write_text('{"network": {"listen_port": 6881}}')
-        
+
         with patch("ccbt.cli.interactive.ConfigManager") as mock_cm_class:
             mock_config = MagicMock()
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm.import_config = Mock()
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config_import([str(import_file)])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_import_no_args(self, interactive_cli):
         """Test cmd_config_import with no args (lines 1563-1567)."""
         await interactive_cli.cmd_config_import([])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_schema(self, interactive_cli):
         """Test cmd_config_schema (lines 1610-1624)."""
         from ccbt.config.config_schema import ConfigSchema
-        
+
         mock_schema = {"test": "schema"}
-        
+
         with patch.object(ConfigSchema, "generate_full_schema", return_value=mock_schema):
             await interactive_cli.cmd_config_schema([])
-        
+
         assert interactive_cli.console.print_json.called
 
     @pytest.mark.asyncio
@@ -1149,9 +1145,9 @@ class TestInteractiveComprehensive:
             mock_cm.config = MagicMock()
             mock_cm.config.model_dump = Mock(return_value={"test": "value"})
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config(["show"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1162,9 +1158,9 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config(["show", "network"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1175,9 +1171,9 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config(["show", "nonexistent.key"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1188,9 +1184,9 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config(["get", "network.listen_port"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1201,16 +1197,16 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {"listen_port": 6881}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             await interactive_cli.cmd_config(["get", "nonexistent.key"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_get_no_args(self, interactive_cli):
         """Test cmd_config get with no args (lines 1656-1659)."""
         await interactive_cli.cmd_config(["get"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1221,13 +1217,13 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config") as mock_model_class:
                 mock_model = MagicMock()
                 mock_model_class.return_value = mock_model
-                
+
                 await interactive_cli.cmd_config(["set", "network.test", "true"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1238,13 +1234,13 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config") as mock_model_class:
                 mock_model = MagicMock()
                 mock_model_class.return_value = mock_model
-                
+
                 await interactive_cli.cmd_config(["set", "network.port", "6881"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1255,13 +1251,13 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config") as mock_model_class:
                 mock_model = MagicMock()
                 mock_model_class.return_value = mock_model
-                
+
                 await interactive_cli.cmd_config(["set", "network.ratio", "1.5"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1272,13 +1268,13 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config") as mock_model_class:
                 mock_model = MagicMock()
                 mock_model_class.return_value = mock_model
-                
+
                 await interactive_cli.cmd_config(["set", "network.host", "localhost"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1289,17 +1285,17 @@ class TestInteractiveComprehensive:
             mock_config.model_dump = Mock(return_value={"network": {}})
             mock_cm = _create_mock_config_manager(mock_config)
             mock_cm_class.return_value = mock_cm
-            
+
             with patch("ccbt.models.Config", side_effect=Exception("Validation error")):
                 await interactive_cli.cmd_config(["set", "network.invalid", "value"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_set_no_args(self, interactive_cli):
         """Test cmd_config set with no args (lines 1668-1671)."""
         await interactive_cli.cmd_config(["set"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
@@ -1307,7 +1303,7 @@ class TestInteractiveComprehensive:
         """Test cmd_config reload (lines 1708-1713)."""
         with patch("ccbt.cli.interactive.reload_config") as mock_reload:
             await interactive_cli.cmd_config(["reload"])
-        
+
         mock_reload.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1315,20 +1311,20 @@ class TestInteractiveComprehensive:
         """Test cmd_config reload with error (lines 1708-1713)."""
         with patch("ccbt.cli.interactive.reload_config", side_effect=Exception("Reload error")):
             await interactive_cli.cmd_config(["reload"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_invalid_subcommand(self, interactive_cli):
         """Test cmd_config with invalid subcommand (lines 1714-1715)."""
         await interactive_cli.cmd_config(["invalid"])
-        
+
         assert interactive_cli.console.print.called
 
     @pytest.mark.asyncio
     async def test_cmd_config_no_args(self, interactive_cli):
         """Test cmd_config with no args (lines 1635-1637)."""
         await interactive_cli.cmd_config([])
-        
+
         assert interactive_cli.console.print.called
 

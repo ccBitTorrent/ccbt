@@ -13,7 +13,7 @@ import logging
 import os
 import ssl
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import aiohttp
 from aiohttp import web
@@ -80,6 +80,7 @@ from ccbt.daemon.ipc_protocol import (
     TrackerAddRequest,
     TrackerInfo,
     TrackerListResponse,
+    UISnapshotResponse,
     WebSocketEvent,
     WebSocketMessage,
     WebSocketSubscribeRequest,
@@ -109,6 +110,8 @@ class IPCServer:
         websocket_enabled: bool = True,
         websocket_heartbeat_interval: float = 30.0,
         tls_enabled: bool = False,
+        shutdown_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        shutdown_event: Optional[asyncio.Event] = None,
     ):
         """Initialize IPC server.
 
@@ -121,10 +124,12 @@ class IPCServer:
             websocket_enabled: Enable WebSocket support
             websocket_heartbeat_interval: WebSocket heartbeat interval in seconds
             tls_enabled: Enable TLS/HTTPS (requires key_manager)
+            shutdown_callback: Optional callback invoked when /shutdown is requested
+            shutdown_event: Optional daemon shutdown event (used for idempotent status)
 
         """
         self.session_manager = session_manager
-        # CRITICAL FIX: Use ExecutorManager to get executor
+        # Note: Use ExecutorManager to get executor
         # This ensures we use the same executor instance initialized at daemon startup
         # which has access to all initialized components (UDP tracker, DHT, etc.)
         # ExecutorManager ensures single executor instance per session manager
@@ -147,7 +152,7 @@ class IPCServer:
             error_msg = f"Failed to get executor: {e}"
             raise RuntimeError(error_msg) from e
 
-        # CRITICAL FIX: Verify executor is ready
+        # Note: Verify executor is ready
         # The executor should have access to session_manager and all required components
         if not hasattr(self.executor, "adapter") or self.executor.adapter is None:
             error_msg = "Executor adapter not initialized"
@@ -168,6 +173,8 @@ class IPCServer:
         self.port = port
         self.websocket_enabled = websocket_enabled
         self.websocket_heartbeat_interval = websocket_heartbeat_interval
+        self._shutdown_callback = shutdown_callback
+        self._shutdown_event = shutdown_event
 
         self.app = web.Application()  # type: ignore[attr-defined]
         self.runner: Optional[web.AppRunner] = None  # type: ignore[attr-defined]
@@ -699,6 +706,11 @@ class IPCServer:
         self.app.router.add_get(
             f"{API_BASE_PATH}/session/stats", self._handle_get_global_stats
         )
+        # UI snapshot (first-paint hydration: global stats + torrents + services + rate samples)
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/ui/snapshot",
+            self._handle_ui_snapshot,
+        )
         self.app.router.add_post(
             f"{API_BASE_PATH}/global/pause-all",
             self._handle_global_pause_all,
@@ -813,6 +825,24 @@ class IPCServer:
         # Get global stats
         global_stats = await self.session_manager.get_global_stats()
 
+        inbound_top: dict[str, int] = {}
+        try:
+            raw_unknown = (
+                await self.session_manager.get_inbound_unknown_info_hash_metrics()
+            )
+            if isinstance(raw_unknown, dict) and raw_unknown:
+                top_n = 32
+                sorted_items = sorted(
+                    raw_unknown.items(),
+                    key=lambda kv: (-int(kv[1]), str(kv[0])),
+                )[:top_n]
+                inbound_top = {str(k): int(v) for k, v in sorted_items}
+        except Exception:
+            logger.debug(
+                "status: inbound unknown info-hash metrics unavailable",
+                exc_info=True,
+            )
+
         status = StatusResponse(
             status="running",
             pid=pid,
@@ -820,6 +850,7 @@ class IPCServer:
             version=self._get_package_version(),
             num_torrents=global_stats.get("num_torrents", 0),
             ipc_url=f"http://{self.host}:{self.port}",
+            inbound_unknown_info_hash_metrics_top=inbound_top,
         )
 
         return web.json_response(status.model_dump())  # type: ignore[attr-defined]
@@ -865,7 +896,7 @@ class IPCServer:
                 seconds = 120
 
         try:
-            # CRITICAL FIX: session_manager.get_rate_samples() returns list[dict[str, float]]
+            # Note: session_manager.get_rate_samples() returns list[dict[str, float]]
             # but RateSamplesResponse expects list[RateSample]
             samples_dict = await self.session_manager.get_rate_samples(seconds)
             logger.debug(
@@ -1097,10 +1128,8 @@ class IPCServer:
                     progress=status.get("progress", 0.0),
                     pieces_completed=status.get("pieces_completed", 0),
                     pieces_total=status.get("pieces_total", 0),
-                    connected_peers=status.get(
-                        "connected_peers", status.get("num_peers", 0)
-                    ),
-                    active_peers=status.get("active_peers", status.get("num_seeds", 0)),
+                    connected_peers=int(status.get("connected_peers", 0)),
+                    active_peers=int(status.get("active_peers", 0)),
                     top_peers=top_peers,
                     bytes_downloaded=status.get("downloaded", 0),
                     bytes_uploaded=status.get("uploaded", 0),
@@ -1436,12 +1465,8 @@ class IPCServer:
                     "pieces_completed": status.get("pieces_completed", 0),
                     "pieces_total": status.get("pieces_total", 0),
                     "progress": status.get("progress", 0.0),
-                    "connected_peers": status.get(
-                        "connected_peers", status.get("num_peers", 0)
-                    ),
-                    "active_peers": status.get(
-                        "active_peers", status.get("num_seeds", 0)
-                    ),
+                    "connected_peers": int(status.get("connected_peers", 0)),
+                    "active_peers": int(status.get("active_peers", 0)),
                 }
 
                 # Add enhanced metrics if available
@@ -1616,6 +1641,23 @@ class IPCServer:
                     "last_query_depth": 0,
                     "last_query_nodes_queried": 0,
                     "routing_table_size": 0,
+                    "bootstrap_success_count": 0,
+                    "bootstrap_failure_count": 0,
+                    "bootstrap_recovery_attempts": 0,
+                    "bootstrap_health_state": "unknown",
+                    "bootstrap_zero_state_count": 0,
+                    "bootstrap_zero_nodes_last_reason": "",
+                    "rebootstrap_attempt_count": 0,
+                    "rebootstrap_success_count": 0,
+                    "rebootstrap_failure_count": 0,
+                    "rebootstrap_last_outcome": "not_attempted",
+                    "rebootstrap_last_reason": "",
+                    "rebootstrap_last_source": "",
+                    "rebootstrap_health_state": "unknown",
+                    "rebootstrap_consecutive_failures": 0,
+                    "last_bootstrap_reason": "",
+                    "last_bootstrap_failure_reason": "",
+                    "last_zero_node_lookup_at": 0.0,
                 }
 
                 # Use actual metrics if available
@@ -1656,6 +1698,60 @@ class IPCServer:
                     metrics["last_query_nodes_queried"] = int(
                         last_query.get("nodes_queried", 0) or 0
                     )  # type: ignore[arg-type]
+                    metrics["bootstrap_success_count"] = int(
+                        dht_metrics.get("bootstrap_success_count", 0) or 0
+                    )
+                    metrics["bootstrap_failure_count"] = int(
+                        dht_metrics.get("bootstrap_failure_count", 0) or 0
+                    )
+                    metrics["bootstrap_recovery_attempts"] = int(
+                        dht_metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    )
+                    metrics["bootstrap_health_state"] = str(
+                        dht_metrics.get("bootstrap_health_state", "unknown")
+                        or "unknown"
+                    )
+                    metrics["bootstrap_zero_state_count"] = int(
+                        dht_metrics.get("bootstrap_zero_state_count", 0) or 0
+                    )
+                    metrics["bootstrap_zero_nodes_last_reason"] = str(
+                        dht_metrics.get("bootstrap_zero_nodes_last_reason", "") or ""
+                    )
+                    metrics["rebootstrap_attempt_count"] = int(
+                        dht_metrics.get("rebootstrap_attempt_count", 0) or 0
+                    )
+                    metrics["rebootstrap_success_count"] = int(
+                        dht_metrics.get("rebootstrap_success_count", 0) or 0
+                    )
+                    metrics["rebootstrap_failure_count"] = int(
+                        dht_metrics.get("rebootstrap_failure_count", 0) or 0
+                    )
+                    metrics["rebootstrap_last_outcome"] = str(
+                        dht_metrics.get("rebootstrap_last_outcome", "not_attempted")
+                        or "not_attempted"
+                    )
+                    metrics["rebootstrap_last_reason"] = str(
+                        dht_metrics.get("rebootstrap_last_reason", "") or ""
+                    )
+                    metrics["rebootstrap_last_source"] = str(
+                        dht_metrics.get("rebootstrap_last_source", "") or ""
+                    )
+                    metrics["rebootstrap_health_state"] = str(
+                        dht_metrics.get("rebootstrap_health_state", "unknown")
+                        or "unknown"
+                    )
+                    metrics["rebootstrap_consecutive_failures"] = int(
+                        dht_metrics.get("rebootstrap_consecutive_failures", 0) or 0
+                    )
+                    metrics["last_bootstrap_reason"] = str(
+                        dht_metrics.get("last_bootstrap_reason", "") or ""
+                    )
+                    metrics["last_bootstrap_failure_reason"] = str(
+                        dht_metrics.get("last_bootstrap_failure_reason", "") or ""
+                    )
+                    metrics["last_zero_node_lookup_at"] = float(
+                        dht_metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
+                    )
 
                 # Get routing table size from DHT client
                 if dht_client and hasattr(dht_client, "routing_table"):
@@ -1703,6 +1799,58 @@ class IPCServer:
                     ),
                     "routing_table_size": int(
                         metrics.get("routing_table_size", 0) or 0
+                    ),
+                    "bootstrap_success_count": int(
+                        metrics.get("bootstrap_success_count", 0) or 0
+                    ),
+                    "bootstrap_failure_count": int(
+                        metrics.get("bootstrap_failure_count", 0) or 0
+                    ),
+                    "bootstrap_recovery_attempts": int(
+                        metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    ),
+                    "bootstrap_health_state": str(
+                        metrics.get("bootstrap_health_state", "unknown") or "unknown"
+                    ),
+                    "bootstrap_zero_state_count": int(
+                        metrics.get("bootstrap_zero_state_count", 0) or 0
+                    ),
+                    "bootstrap_zero_nodes_last_reason": str(
+                        metrics.get("bootstrap_zero_nodes_last_reason", "") or ""
+                    ),
+                    "rebootstrap_attempt_count": int(
+                        metrics.get("rebootstrap_attempt_count", 0) or 0
+                    ),
+                    "rebootstrap_success_count": int(
+                        metrics.get("rebootstrap_success_count", 0) or 0
+                    ),
+                    "rebootstrap_failure_count": int(
+                        metrics.get("rebootstrap_failure_count", 0) or 0
+                    ),
+                    "rebootstrap_last_outcome": str(
+                        metrics.get("rebootstrap_last_outcome", "not_attempted")
+                        or "not_attempted"
+                    ),
+                    "rebootstrap_last_reason": str(
+                        metrics.get("rebootstrap_last_reason", "") or ""
+                    ),
+                    "rebootstrap_last_source": str(
+                        metrics.get("rebootstrap_last_source", "") or ""
+                    ),
+                    "rebootstrap_health_state": str(
+                        metrics.get("rebootstrap_health_state", "unknown") or "unknown"
+                    ),
+                    "rebootstrap_consecutive_failures": int(
+                        metrics.get("rebootstrap_consecutive_failures", 0) or 0
+                    ),
+                    "last_bootstrap_reason": str(
+                        metrics.get("last_bootstrap_reason", "") or ""
+                    ),
+                    "last_bootstrap_failure_reason": str(
+                        metrics.get("last_bootstrap_failure_reason", "") or ""
+                    ),
+                    "last_zero_node_lookup_at": float(
+                        metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
                     ),
                 }
                 response = DHTQueryMetricsResponse(**typed_metrics)  # type: ignore[arg-type]
@@ -1991,27 +2139,22 @@ class IPCServer:
                                         else 0.0
                                     )
 
-                        # Get active peers count
+                        # Align with session peer manager: connected post-handshake peers,
+                        # not only those with non-zero rate (choked/idle peers still matter).
                         active_peers = 0
                         if hasattr(torrent_session, "download_manager"):
                             download_manager = torrent_session.download_manager
                             if hasattr(download_manager, "peer_manager"):
                                 peer_manager = download_manager.peer_manager
                                 if peer_manager and hasattr(
+                                    peer_manager, "get_active_peers"
+                                ):
+                                    ap = peer_manager.get_active_peers()
+                                    active_peers = len(ap) if ap else 0
+                                elif peer_manager and hasattr(
                                     peer_manager, "connections"
                                 ):
-                                    # Count active peers (those with download/upload activity)
-                                    active_peers = sum(
-                                        1
-                                        for conn in peer_manager.connections.values()
-                                        if hasattr(conn, "stats")
-                                        and (
-                                            getattr(conn.stats, "download_rate", 0.0)
-                                            > 0
-                                            or getattr(conn.stats, "upload_rate", 0.0)
-                                            > 0
-                                        )
-                                    )
+                                    active_peers = len(peer_manager.connections)
 
                         sample = SwarmHealthSample(
                             info_hash=info_hash_hex,
@@ -2021,9 +2164,7 @@ class IPCServer:
                             download_rate=float(status.get("download_rate", 0.0)),
                             upload_rate=float(status.get("upload_rate", 0.0)),
                             connected_peers=int(
-                                status.get(
-                                    "connected_peers", status.get("num_peers", 0)
-                                ),
+                                status.get("connected_peers", 0),
                             ),
                             active_peers=active_peers,
                             progress=float(status.get("progress", 0.0)),
@@ -2185,6 +2326,7 @@ class IPCServer:
     async def _handle_add_torrent(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/add."""
         info_hash_hex: Optional[str] = None
+        visibility_ready = True
         path_or_magnet: str = "unknown"
         try:
             # Parse JSON request body with error handling
@@ -2234,17 +2376,17 @@ class IPCServer:
                     status=400,
                 )
 
-            # CRITICAL FIX: Use executor pattern for consistency with all other handlers
+            # Note: Use executor pattern for consistency with all other handlers
             # Add timeout protection for add operations
             # This prevents the request from hanging indefinitely if something goes wrong
             # The timeout is generous (120s for magnets) to allow for metadata exchange
             try:
                 # Use executor to add torrent/magnet (consistent with all other handlers)
-                # CRITICAL FIX: Increase timeout for magnets to allow metadata exchange
+                # Note: Increase timeout for magnets to allow metadata exchange
                 # Magnet links need time to fetch metadata from peers, which can take 30-120s
                 timeout = 120.0 if req.path_or_magnet.startswith("magnet:") else 60.0
 
-                # CRITICAL FIX: Wrap executor.execute in additional try-except to catch any
+                # Note: Wrap executor.execute in additional try-except to catch any
                 # unexpected exceptions that might not be caught by the executor itself
                 try:
                     result = await asyncio.wait_for(
@@ -2324,6 +2466,14 @@ class IPCServer:
                         ).model_dump(),
                         status=400,
                     )
+                # Visibility can lag behind successful add completion.
+                # Preserve this as a signal in the success payload instead of hard-failing.
+                visibility_ready = await self._wait_for_add_visibility(info_hash_hex)
+                if not visibility_ready:
+                    logger.warning(
+                        "Add returned info_hash=%s but session registration is not visible yet",
+                        info_hash_hex,
+                    )
             except Exception as add_error:
                 # Catch any other unexpected errors (shouldn't happen due to inner try-except)
                 # But this is a safety net to ensure the daemon never crashes
@@ -2339,7 +2489,7 @@ class IPCServer:
                     status=500,
                 )
 
-            # CRITICAL FIX: Emit WebSocket event with error isolation
+            # Note: Emit WebSocket event with error isolation
             # WebSocket errors should not prevent the torrent from being added
             # If the torrent was successfully added, return success even if WebSocket fails
             try:
@@ -2358,12 +2508,20 @@ class IPCServer:
                 )
 
             # Return success if torrent was added (even if WebSocket event failed)
-            # CRITICAL FIX: This check should never be reached if the inner try-except
+            # Note: This check should never be reached if the inner try-except
             # handled the case correctly, but we include it as a safety net
             if info_hash_hex:
-                return web.json_response(
-                    {"info_hash": info_hash_hex, "status": "added"}
-                )  # type: ignore[attr-defined]
+                response_payload: dict[str, Any] = {
+                    "info_hash": info_hash_hex,
+                    "status": "added",
+                    "visibility_ready": visibility_ready,
+                }
+                if not visibility_ready:
+                    response_payload["warning_code"] = "ADD_VISIBILITY_NOT_READY"
+                    response_payload["warning"] = (
+                        "Torrent add completed but registration is not visible yet"
+                    )
+                return web.json_response(response_payload)  # type: ignore[attr-defined]
             # This should never happen due to the check at lines 672-684, but handle it gracefully
             logger.error(
                 "Torrent was not added (info_hash is None) - this should not happen",
@@ -2386,6 +2544,30 @@ class IPCServer:
                 ErrorResponse(error=str(e), code="ADD_TORRENT_ERROR").model_dump(),
                 status=400,
             )
+
+    async def _wait_for_add_visibility(
+        self,
+        info_hash_hex: str,
+        *,
+        timeout_s: float = 1.0,
+        poll_interval_s: float = 0.02,
+    ) -> bool:
+        """Wait until add registration is visible to inbound session lookup."""
+        try:
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+        except (TypeError, ValueError):
+            return False
+
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        while True:
+            session = await self.session_manager.get_session_for_info_hash(
+                info_hash_bytes
+            )
+            if session is not None:
+                return True
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(poll_interval_s)
 
     async def _handle_remove_torrent(self, request: Request) -> Response:
         """Handle DELETE /api/v1/torrents/{info_hash}."""
@@ -3705,17 +3887,71 @@ class IPCServer:
     async def _handle_shutdown(self, _request: Request) -> Response:
         """Handle POST /api/v1/shutdown."""
         logger.info("Shutdown requested via IPC")
-        # Schedule shutdown (don't block the response) - fire-and-forget
-        asyncio.create_task(self._shutdown_async())  # noqa: RUF006
-        # Don't await - let it run after response is sent
-        return web.json_response({"status": "shutting_down"})  # type: ignore[attr-defined]
+
+        if self._shutdown_event is not None and self._shutdown_event.is_set():
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": True,
+                    "status": "already_shutting_down",
+                    "message": "Shutdown already in progress",
+                }
+            )
+
+        if self._shutdown_callback is None and self._shutdown_event is None:
+            logger.error(
+                "Shutdown request rejected: daemon shutdown bridge unavailable"
+            )
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": False,
+                    "status": "rejected",
+                    "error": "Shutdown handler unavailable",
+                    "fallback_hint": "Use signal-based shutdown path",
+                },
+                status=503,
+            )
+
+        try:
+            # Schedule shutdown (don't block the response) - fire-and-forget
+            asyncio.create_task(self._shutdown_async())  # noqa: RUF006
+        except Exception:
+            logger.exception("Failed to enqueue shutdown task")
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": False,
+                    "status": "enqueue_failed",
+                    "error": "Failed to enqueue shutdown task",
+                    "fallback_hint": "Use signal-based shutdown path",
+                },
+                status=500,
+            )
+
+        return web.json_response(  # type: ignore[attr-defined]
+            {
+                "accepted": True,
+                "status": "shutting_down",
+                "message": "Shutdown enqueued",
+            }
+        )
 
     async def _shutdown_async(self) -> None:
         """Async shutdown handler."""
         await asyncio.sleep(0.1)  # Give response time to send
-        # Signal shutdown to daemon main (this will be handled by DaemonMain)
-        # For now, we'll just log it
-        logger.info("Shutdown signal sent")
+        if self._shutdown_event is not None and self._shutdown_event.is_set():
+            logger.debug("Shutdown event already set; skipping duplicate IPC signal")
+            return
+
+        if self._shutdown_callback is not None:
+            try:
+                await self._shutdown_callback()
+                logger.info("Shutdown signal sent")
+                return
+            except Exception:
+                logger.exception("Shutdown callback failed")
+
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+            logger.info("Shutdown event set from IPC")
 
     async def _handle_restart_service(self, request: Request) -> Response:
         """Handle POST /api/v1/services/{service_name}/restart."""
@@ -4873,6 +5109,125 @@ class IPCServer:
         )
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
 
+    async def _handle_ui_snapshot(self, _request: Request) -> Response:
+        """Handle GET /api/v1/ui/snapshot - single response for dashboard first-paint."""
+        try:
+            # Global stats
+            stats_result = await self.executor.execute("session.get_global_stats")
+            if not stats_result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=stats_result.error or "Failed to get global stats",
+                        code="SESSION_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            stats = stats_result.data.get("stats", {})
+            global_stats = dict(stats)
+            global_stats.setdefault(
+                "total_download_rate",
+                stats.get("download_rate", stats.get("total_download_rate", 0.0)),
+            )
+            global_stats.setdefault(
+                "total_upload_rate",
+                stats.get("upload_rate", stats.get("total_upload_rate", 0.0)),
+            )
+
+            # Torrent list
+            list_result = await self.executor.execute("torrent.list")
+            torrents_raw = (
+                list_result.data.get("torrents", []) if list_result.success else []
+            )
+            torrents = [
+                t.model_dump() if hasattr(t, "model_dump") else t for t in torrents_raw
+            ]
+
+            # Services status (same shape as GET /services/status)
+            services_status = {"services": {}}
+            if self.session_manager:
+                s = services_status["services"]
+                s["dht"] = {
+                    "enabled": self.session_manager.dht_client is not None,
+                    "status": "running"
+                    if self.session_manager.dht_client
+                    else "stopped",
+                }
+                s["nat"] = {
+                    "enabled": self.session_manager.nat_manager is not None,
+                    "status": "running"
+                    if self.session_manager.nat_manager
+                    else "stopped",
+                }
+                s["tcp_server"] = {
+                    "enabled": self.session_manager.tcp_server is not None,
+                    "status": "running"
+                    if self.session_manager.tcp_server
+                    else "stopped",
+                }
+                s["peer_service"] = {
+                    "enabled": self.session_manager.peer_service is not None,
+                    "status": "running"
+                    if self.session_manager.peer_service
+                    else "stopped",
+                }
+            services_status["services"]["ipc_server"] = {
+                "enabled": True,
+                "status": "running",
+            }
+
+            # Rate samples (truncated for first-paint graph)
+            rate_samples = []
+            try:
+                samples_raw = await self.session_manager.get_rate_samples(60)
+                rate_samples = (samples_raw or [])[-30:]
+            except Exception as e:
+                logger.debug("UI snapshot: rate samples unavailable: %s", e)
+
+            # Aggregated peers across torrents (R9): cap at 200 rows so the
+            # dashboard's peer panel populates on first paint instead of
+            # waiting for the 3s _peers_update_loop / per-torrent HTTP fetch.
+            peers: list[dict[str, Any]] = []
+            try:
+                peer_cap = 200
+                for t in torrents:
+                    if len(peers) >= peer_cap:
+                        break
+                    ih = t.get("info_hash") if isinstance(t, dict) else None
+                    if not ih:
+                        continue
+                    peer_result = await self.executor.execute(
+                        "torrent.get_peers", info_hash=ih
+                    )
+                    if not peer_result.success:
+                        continue
+                    for p in peer_result.data.get("peers", []):
+                        if len(peers) >= peer_cap:
+                            break
+                        if isinstance(p, dict):
+                            row = dict(p)
+                            row.setdefault("info_hash", ih)
+                            peers.append(row)
+            except Exception as e:
+                logger.debug("UI snapshot: peers aggregation unavailable: %s", e)
+
+            response = UISnapshotResponse(
+                global_stats=global_stats,
+                torrents=torrents,
+                services_status=services_status,
+                rate_samples=rate_samples,
+                peers=peers,
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error building UI snapshot")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="UI_SNAPSHOT_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
     async def _handle_global_pause_all(self, _request: Request) -> Response:
         """Handle POST /api/v1/global/pause-all."""
         try:
@@ -5468,11 +5823,16 @@ class IPCServer:
                 "peer_added": EventType.PEER_CONNECTED,  # Map to PEER_CONNECTED
                 "peer_removed": EventType.PEER_DISCONNECTED,  # Map to PEER_DISCONNECTED
                 "peer_connection_failed": EventType.PEER_DISCONNECTED,  # Map to PEER_DISCONNECTED
+                "peer_quality_ranked": EventType.PEER_QUALITY_RANKED,
+                "peer_choking_optimized": EventType.GLOBAL_STATS_UPDATED,
                 # Piece events
                 "piece_requested": EventType.PIECE_REQUESTED,
                 "piece_downloaded": EventType.PIECE_DOWNLOADED,
                 "piece_verified": EventType.PIECE_VERIFIED,
                 "piece_completed": EventType.PIECE_COMPLETED,
+                # Progress events (R7): bridge progress_updated so the UI refreshes
+                # progress bars on every verified piece instead of polling.
+                "progress_updated": EventType.PROGRESS_UPDATED,
                 # Torrent events
                 "torrent_added": EventType.TORRENT_ADDED,
                 "torrent_removed": EventType.TORRENT_REMOVED,
@@ -5552,17 +5912,36 @@ class IPCServer:
                         event_data = self._normalize_xet_event_data(
                             ipc_event_type, event_data
                         )
+                        if hasattr(event, "priority"):
+                            event_priority = event.priority
+                        else:
+                            event_priority = None
+                        if isinstance(event_priority, int):
+                            event_priority_text = {
+                                1: "low",
+                                2: "normal",
+                                3: "high",
+                                4: "critical",
+                            }.get(event_priority)
+                        elif isinstance(event_priority, str):
+                            event_priority_text = event_priority.lower()
+                        elif event_priority is not None and hasattr(
+                            event_priority, "name"
+                        ):
+                            event_priority_text = str(event_priority.name).lower()
+                        else:
+                            event_priority_text = (
+                                str(event_priority).lower()
+                                if event_priority is not None
+                                else None
+                            )
                         await self.emit_websocket_event(
                             ipc_event_type,
                             event_data,
                             raw_type=event.event_type,
                             event_id=getattr(event, "event_id", None),
                             source=getattr(event, "source", None),
-                            priority=(
-                                event.priority.value
-                                if getattr(event, "priority", None) is not None
-                                else None
-                            ),
+                            priority=event_priority_text,
                             correlation_id=getattr(event, "correlation_id", None),
                         )
                 except Exception as e:
@@ -5634,13 +6013,29 @@ class IPCServer:
         if not self.websocket_enabled:
             return
 
+        normalized_priority = None
+        if priority is not None:
+            if isinstance(priority, int):
+                normalized_priority = {
+                    1: "low",
+                    2: "normal",
+                    3: "high",
+                    4: "critical",
+                }.get(priority)
+            elif isinstance(priority, str):
+                normalized_priority = priority.lower()
+            elif hasattr(priority, "name"):
+                normalized_priority = str(priority.name).lower()
+            elif priority is not None:
+                normalized_priority = str(priority)
+
         event = WebSocketEvent(
             type=event_type,
             timestamp=time.time(),
             raw_type=raw_type or event_type.value,
             event_id=event_id,
             source=source,
-            priority=priority,
+            priority=normalized_priority,
             correlation_id=correlation_id,
             data=data,
         )

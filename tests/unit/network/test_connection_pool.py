@@ -8,8 +8,8 @@ import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 
-from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 from ccbt.models import PeerInfo
+from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
 
 
 @pytest.fixture
@@ -229,12 +229,58 @@ async def test_cleanup_removes_stale_connections(connection_pool, peer_info):
     connection_pool.pool[str(peer_info)] = mock_connection
 
     # Set metrics to indicate stale state
-    metrics = ConnectionMetrics(last_used=time.time() - 200)  # Very old
+    metrics = ConnectionMetrics(last_used=time.time() - 400)  # Very old (beyond stale threshold)
     connection_pool.metrics[str(peer_info)] = metrics
 
     # Run cleanup
     await connection_pool._cleanup_stale_connections()
 
-    # Stale connection should be removed
-    assert str(peer_info) not in connection_pool.pool
+    # First pass should mark peer as stale pending confirmation
+    assert str(peer_info) in connection_pool.pool
+
+    # Force stale confirmation window to expire and run cleanup again
+    peer_id = str(peer_info)
+    connection_pool._stale_connection_marks[peer_id] = time.time() - 31.0
+    await connection_pool._cleanup_stale_connections()
+
+    # Stale connection should then be removed
+    assert peer_id not in connection_pool.pool
     assert str(peer_info) not in connection_pool.metrics
+
+
+@pytest.mark.asyncio
+async def test_perform_health_checks_low_peer_soft_fail_delay():
+    """Test low-peer soft-fail mode defers protocol-error removals for confirmation."""
+    pool = PeerConnectionPool(max_connections=10, max_idle_time=60.0)
+    await pool.start()
+
+    try:
+        from types import SimpleNamespace
+
+        pool.config = SimpleNamespace(
+            low_peer_threshold=1,
+            low_peer_cleanup_suppression_factor=1.0,
+            stale_cleanup_two_phase_window_s=0.0,
+            connection_pool_grace_period=0.0,
+            connection_pool_quality_threshold=0.0,
+            connection_pool_min_download_bandwidth=0.0,
+            connection_pool_min_upload_bandwidth=0.0,
+        )
+
+        peer_info = PeerInfo(ip="127.0.0.1", port=6881)
+        peer_id = str(peer_info)
+        pool.pool[peer_id] = {"peer_info": peer_info, "created_at": time.time()}
+        pool.metrics[peer_id] = ConnectionMetrics(
+            errors=20,
+            is_healthy=False,
+        )
+
+        await pool._perform_health_checks()
+        assert peer_id in pool.pool
+        assert peer_id in pool.metrics
+
+        await pool._perform_health_checks()
+        assert peer_id not in pool.pool
+        assert peer_id not in pool.metrics
+    finally:
+        await pool.stop()

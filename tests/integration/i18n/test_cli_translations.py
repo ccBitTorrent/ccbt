@@ -13,7 +13,7 @@ def test_cli_language_list() -> None:
     """Run btbt language --list; assert no crash and output contains locale info."""
     result = subprocess.run(
         [sys.executable, "-m", "ccbt.cli.main", "language", "--list"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=15,
     )
@@ -27,13 +27,13 @@ def test_cli_language_set_then_list() -> None:
     """Run btbt language --set en then --list; assert no crash."""
     subprocess.run(
         [sys.executable, "-m", "ccbt.cli.main", "language", "--set", "en"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=15,
     )
     result = subprocess.run(
         [sys.executable, "-m", "ccbt.cli.main", "language", "--list"],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         timeout=15,
     )

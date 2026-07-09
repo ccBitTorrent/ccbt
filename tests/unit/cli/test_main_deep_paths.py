@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
-from types import SimpleNamespace, ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -34,7 +34,7 @@ class _Sess:
         self.dht = SimpleNamespace(node_count=0)
         # Add lock for async context manager
         self.lock = asyncio.Lock()
-        
+
     async def add_torrent(self, torrent_data, resume=False):
         """Mock add_torrent that populates torrents dict."""
         from unittest.mock import AsyncMock
@@ -49,10 +49,10 @@ class _Sess:
         mock_session.file_selection_manager = None
         self.torrents[info_hash] = mock_session
         return info_hash_hex
-        
+
     async def start(self):
         pass
-        
+
     async def stop(self):
         pass
 
@@ -84,7 +84,7 @@ def test_magnet_checkpoint_confirm_yes(monkeypatch):
             return _CP()
 
     fake_mod = type(sys)("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Mock DaemonManager to prevent PID file check from failing
@@ -143,7 +143,7 @@ def test_magnet_checkpoint_confirm_no(monkeypatch):
             return _CP()
 
     fake_mod = type(sys)("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Mock DaemonManager to prevent PID file check from failing
@@ -196,7 +196,7 @@ def test_download_monitor_path(monkeypatch):
     # Mock load_torrent from torrent_utils
     def _mock_load_torrent(_path):
         return {"info_hash": b"\x00" * 20, "name": "t"}
-    
+
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
     monkeypatch.setattr("ccbt.session.torrent_utils.load_torrent", _mock_load_torrent)
     monkeypatch.setattr(cli_main, "start_monitoring", _dummy_monitor)
@@ -230,7 +230,7 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
     class _Mgr(_Sess):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -239,7 +239,7 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
         return {"info_hash": b"\x00" * 20, "name": "t", "pieces_info": {"piece_hashes": [], "piece_length": 16384, "num_pieces": 0, "total_length": 0}, "file_info": {"total_length": 0}, "announce": ""}
 
     fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
-    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    fake_torrent_utils_mod.load_torrent = _mock_load_torrent
     monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     class _CP:
@@ -255,7 +255,7 @@ def test_download_checkpoint_confirm_yes_and_no(monkeypatch):
             return _CP()
 
     fake_mod = type(sys)("ccbt.storage.checkpoint")
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     async def _dummy_download(*_a, **_k):
@@ -288,7 +288,7 @@ def test_web_coroutine_path_runs(monkeypatch):
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
     monkeypatch.setattr(cli_main.asyncio, "run", _wrapped_run)
 
-    res = runner.invoke(cli_main.cli, ["web"]) 
+    res = runner.invoke(cli_main.cli, ["web"])
     assert res.exit_code == 0
     assert calls["run"] == 1
 
@@ -354,7 +354,7 @@ def test_resume_download_error_branches(monkeypatch, capsys):
 def test_resume_cli_help(monkeypatch):
     # Basic help path for resume command (avoids Click signature nuances)
     runner = CliRunner()
-    res = runner.invoke(cli_main.cli, ["resume", "--help"]) 
+    res = runner.invoke(cli_main.cli, ["resume", "--help"])
     assert res.exit_code == 0
 
 
@@ -396,7 +396,7 @@ def test_web_error_path(monkeypatch):
         raise RuntimeError("bad")
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
-    result = runner.invoke(cli_main.cli, ["web"]) 
+    result = runner.invoke(cli_main.cli, ["web"])
     assert result.exit_code != 0
     assert "Error: bad" in result.output
 

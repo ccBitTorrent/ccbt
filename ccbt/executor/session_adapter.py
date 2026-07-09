@@ -958,9 +958,9 @@ class LocalSessionAdapter(SessionAdapter):
         status_dict = await self.session_manager.get_status()
         torrents = []
         for info_hash_hex, status in status_dict.items():
-            # Canonical internal uses connected_peers/active_peers; IPC uses num_peers/num_seeds
-            num_peers = status.get("connected_peers", status.get("num_peers", 0))
-            num_seeds = status.get("active_peers", status.get("num_seeds", 0))
+            # Canonical internal keys were normalized to connected_peers/active_peers.
+            num_peers = int(status.get("connected_peers", 0) or 0)
+            num_seeds = int(status.get("active_peers", 0) or 0)
             torrents.append(
                 TorrentStatusResponse(
                     info_hash=info_hash_hex,
@@ -982,6 +982,17 @@ class LocalSessionAdapter(SessionAdapter):
                     ),  # Output directory where files are saved
                     pieces_completed=status.get("pieces_completed", 0),
                     pieces_total=status.get("pieces_total", 0),
+                    tracker_status=status.get("tracker_status"),
+                    last_tracker_error=status.get("last_tracker_error"),
+                    last_error=status.get("last_error"),
+                    productive_peers=status.get("productive_peers", 0),
+                    requestable_peers=status.get("requestable_peers", 0),
+                    handshake_complete_peers=status.get("handshake_complete_peers", 0),
+                    extension_capable_peers=status.get("extension_capable_peers", 0),
+                    metadata_capable_peers=status.get("metadata_capable_peers", 0),
+                    hash_verification_failures=status.get(
+                        "hash_verification_failures", 0
+                    ),
                 ),
             )
         return torrents
@@ -996,9 +1007,9 @@ class LocalSessionAdapter(SessionAdapter):
         if not status:
             return None
 
-        # Canonical internal uses connected_peers/active_peers; IPC uses num_peers/num_seeds
-        num_peers = status.get("connected_peers", status.get("num_peers", 0))
-        num_seeds = status.get("active_peers", status.get("num_seeds", 0))
+        # Canonical internal keys were normalized to connected_peers/active_peers.
+        num_peers = int(status.get("connected_peers", 0) or 0)
+        num_seeds = int(status.get("active_peers", 0) or 0)
         return TorrentStatusResponse(
             info_hash=info_hash,
             name=status.get("name", "Unknown"),
@@ -1017,6 +1028,15 @@ class LocalSessionAdapter(SessionAdapter):
             ),  # Output directory where files are saved
             pieces_completed=status.get("pieces_completed", 0),
             pieces_total=status.get("pieces_total", 0),
+            tracker_status=status.get("tracker_status"),
+            last_tracker_error=status.get("last_tracker_error"),
+            last_error=status.get("last_error"),
+            productive_peers=status.get("productive_peers", 0),
+            requestable_peers=status.get("requestable_peers", 0),
+            handshake_complete_peers=status.get("handshake_complete_peers", 0),
+            extension_capable_peers=status.get("extension_capable_peers", 0),
+            metadata_capable_peers=status.get("metadata_capable_peers", 0),
+            hash_verification_failures=status.get("hash_verification_failures", 0),
         )
 
     async def pause_torrent(self, info_hash: str) -> bool:

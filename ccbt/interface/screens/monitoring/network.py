@@ -12,6 +12,7 @@ else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -24,6 +25,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
@@ -33,6 +52,10 @@ from ccbt.interface.screens.base import MonitoringScreen
 
 class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display network quality metrics for peers and connections."""
+
+    _reactive_sources = ("global_stats", "torrents_data")
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    torrents_data: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -57,16 +80,38 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
             yield Static(id="peer_quality")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh network quality metrics display."""
         try:
             global_stats_widget = self.query_one("#global_stats", Static)
             content = self.query_one("#content", Static)
             peer_quality = self.query_one("#peer_quality", Static)
 
-            # Get global stats
-            stats = await self.session.get_global_stats()
-            all_status = await self.session.get_status()
+            stats_override = overrides.get("global_stats_override")
+            torrents_override = overrides.get("torrents_data_override")
+            if stats_override is None and isinstance(self.global_stats, dict) and self.global_stats:
+                stats_override = self.global_stats
+            if torrents_override is None and isinstance(self.torrents_data, list) and self.torrents_data:
+                torrents_override = self.torrents_data
+
+            if isinstance(stats_override, dict) and stats_override:
+                stats = stats_override
+                torrents_list = torrents_override if isinstance(torrents_override, list) else []
+                all_status = {
+                    t.get("info_hash") or t.get("info_hash_hex", ""): t
+                    for t in torrents_list
+                    if t.get("info_hash") or t.get("info_hash_hex")
+                }
+            else:
+                # Prefer DataProvider for reads (daemon parity)
+                provider = getattr(self, "_data_provider", None)
+                if provider:
+                    stats = await provider.get_global_stats()
+                    torrents_list = await provider.list_torrents()
+                    all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+                else:
+                    stats = await self.session.get_global_stats()
+                    all_status = await self.session.get_status()
 
             # Global network stats
             global_table = Table(
@@ -95,8 +140,11 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
                 "Global Upload Rate", format_speed(stats.get("upload_rate", 0.0))
             )
 
-            # Calculate bandwidth utilization
-            config = self.session.config
+            # Calculate bandwidth utilization (config: session or get_config for daemon)
+            config = getattr(self.session, "config", None)
+            if not config and provider:
+                from ccbt.config.config import get_config
+                config = get_config()
             if config and hasattr(config, "network"):
                 max_download = getattr(config.network, "max_download_speed", 0)
                 max_upload = getattr(config.network, "max_upload_speed", 0)
@@ -114,10 +162,12 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Add network connection statistics (RTT, bandwidth, BDP)
             try:
-                from ccbt.monitoring import get_metrics_collector
-
-                mc = get_metrics_collector()
-                perf_data = mc.get_performance_metrics()
+                if provider:
+                    perf_data = await provider.get_network_timing_metrics()
+                else:
+                    from ccbt.monitoring import get_metrics_collector
+                    mc = get_metrics_collector()
+                    perf_data = mc.get_performance_metrics()
 
                 # RTT statistics
                 rtt_ms = perf_data.get("network_rtt_ms", 0.0)
@@ -207,7 +257,10 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
             # Peer connection quality (for first torrent if available)
             if all_status:
                 first_ih = next(iter(all_status.keys()))
-                peers = await self.session.get_peers_for_torrent(first_ih)
+                if provider:
+                    peers = await provider.get_torrent_peers(first_ih)
+                else:
+                    peers = await self.session.get_peers_for_torrent(first_ih)
                 if peers:
                     # Calculate aggregate peer metrics
                     total_peers = len(peers)

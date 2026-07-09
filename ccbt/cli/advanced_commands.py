@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
+from ccbt.cli.ssl_posture import is_strict_ssl_posture
 from ccbt.config.config import get_config
 from ccbt.config.config_capabilities import SystemCapabilities
 from ccbt.i18n import _
@@ -216,10 +217,11 @@ async def _quick_disk_benchmark() -> dict:
 
 
 @click.command("performance")
-@click.option("--analyze", is_flag=True, help="Analyze current performance")
-@click.option("--optimize", is_flag=True, help="Apply performance optimizations")
+@click.option("--analyze", "-a", is_flag=True, help="Analyze current performance")
+@click.option("--optimize", "-o", is_flag=True, help="Apply performance optimizations")
 @click.option(
     "--preset",
+    "-p",
     type=click.Choice(
         [
             OptimizationPreset.PERFORMANCE,
@@ -232,17 +234,19 @@ async def _quick_disk_benchmark() -> dict:
 )
 @click.option(
     "--save",
+    "-s",
     is_flag=True,
     help="Save optimizations to config file (requires --optimize)",
 )
 @click.option(
     "--config-file",
+    "-c",
     type=click.Path(),
     default=None,
     help="Config file path (defaults to ccbt.toml)",
 )
-@click.option("--benchmark", is_flag=True, help="Run performance benchmarks")
-@click.option("--profile", is_flag=True, help="Enable performance profiling")
+@click.option("--benchmark", "-b", is_flag=True, help="Run performance benchmarks")
+@click.option("--profile", "-P", is_flag=True, help="Enable performance profiling")
 def performance(
     analyze: bool,
     optimize: bool,
@@ -383,14 +387,21 @@ def performance(
 
 
 @click.command("security")
-@click.option("--scan", is_flag=True, help="Scan for security issues")
-@click.option("--validate", is_flag=True, help="Validate peer connections")
-@click.option("--encrypt", is_flag=True, help="Enable encryption")
-@click.option("--rate-limit", is_flag=True, help="Enable rate limiting")
-def security(scan: bool, validate: bool, encrypt: bool, rate_limit: bool) -> None:
+@click.option("--scan", "-s", is_flag=True, help="Scan for security issues")
+@click.option("--validate", "-v", is_flag=True, help="Validate peer connections")
+@click.option("--encrypt", "-e", is_flag=True, help="Enable encryption")
+@click.option("--rate-limit", "-r", is_flag=True, help="Enable rate limiting")
+@click.option(
+    "--swarm-auth", "-w", is_flag=True, help="Show authenticated swarms settings"
+)
+def security(
+    scan: bool, validate: bool, encrypt: bool, rate_limit: bool, swarm_auth: bool
+) -> None:
     """Security management and validation."""
     console = Console()
     cfg = get_config()
+    ssl_cfg = cfg.security.ssl
+    strict_ssl_posture = is_strict_ssl_posture(ssl_cfg)
     if scan:
         console.print(_("[green]Performing basic configuration scan...[/green]"))
         issues = []
@@ -421,16 +432,42 @@ def security(scan: bool, validate: bool, encrypt: bool, rate_limit: bool) -> Non
                 "[yellow]Set --download-limit/--upload-limit for global limits; per-peer via config[/yellow]"
             ),
         )
-    if not any([scan, validate, encrypt, rate_limit]):
+    if strict_ssl_posture:
+        console.print(
+            "[yellow]Warning: SSL certificate verification is disabled while SSL is used"
+            " in strict mode[/yellow]",
+        )
+    if swarm_auth:
+        auth_cfg = getattr(cfg.security, "authenticated_swarms", None)
+        if auth_cfg is None:
+            console.print(_("[yellow]Authenticated swarms not configured[/yellow]"))
+        else:
+            table = Table(title="Authenticated Swarms", show_header=True)
+            table.add_column("Setting", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Mode", str(getattr(auth_cfg, "mode", "off")))
+            table.add_row(
+                "Discovery mode",
+                str(getattr(auth_cfg, "discovery_mode", "trackers_only")),
+            )
+            table.add_row(
+                "Discovery strict for strict mode",
+                str(bool(getattr(auth_cfg, "discovery_strict_for_strict_mode", False))),
+            )
+            trusted_ids = getattr(auth_cfg, "trusted_swarm_ids", [])
+            trusted_display = ", ".join(trusted_ids) if trusted_ids else "none"
+            table.add_row("Trusted swarm IDs", trusted_display)
+            console.print(table)
+    if not any([scan, validate, encrypt, rate_limit, swarm_auth]):
         console.print(_("[yellow]No security action specified[/yellow]"))
 
 
 @click.command("recover")
 @click.argument("info_hash")
-@click.option("--repair", is_flag=True, help="Attempt to repair corrupted data")
-@click.option("--verify", is_flag=True, help="Verify data integrity")
-@click.option("--rehash", is_flag=True, help="Rehash all pieces")
-@click.option("--force", is_flag=True, help="Force recovery even if risky")
+@click.option("--repair", "-r", is_flag=True, help="Attempt to repair corrupted data")
+@click.option("--verify", "-v", is_flag=True, help="Verify data integrity")
+@click.option("--rehash", "-H", is_flag=True, help="Rehash all pieces")
+@click.option("--force", "-f", is_flag=True, help="Force recovery even if risky")
 def recover(
     info_hash: str,
     repair: bool,
@@ -491,63 +528,65 @@ async def disk_detect(ctx):  # noqa: ARG001
     write_cache = capabilities.detect_write_cache(download_path)
 
     # Display results
-    table = Table(title="Storage Device Detection")
-    table.add_column("Property", style="cyan")
-    table.add_column("Value", style="green")
+    table = Table(title=_("Storage Device Detection"))
+    table.add_column(_("Property"), style="cyan")
+    table.add_column(_("Value"), style="green")
 
-    table.add_row("Storage Type", storage_type.upper())
-    table.add_row("Speed Category", storage_speed.get("speed_category", "unknown"))
+    table.add_row(_("Storage Type"), storage_type.upper())
     table.add_row(
-        "Estimated Read Speed",
+        _("Speed Category"), storage_speed.get("speed_category", _("Unknown"))
+    )
+    table.add_row(
+        _("Estimated Read Speed"),
         f"{storage_speed.get('estimated_read_mbps', 0):.0f} MB/s",
     )
     table.add_row(
-        "Estimated Write Speed",
+        _("Estimated Write Speed"),
         f"{storage_speed.get('estimated_write_mbps', 0):.0f} MB/s",
     )
-    table.add_row("Write-Back Cache", "Enabled" if write_cache else "Disabled")
+    table.add_row(_("Write-Back Cache"), _("Enabled") if write_cache else _("Disabled"))
 
     # Show recommendations
     console.print("\n")
-    rec_table = Table(title="Recommended Settings")
-    rec_table.add_column("Setting", style="cyan")
-    rec_table.add_column("Recommended Value", style="green")
-    rec_table.add_column("Current Value", style="yellow")
+    rec_table = Table(title=_("Recommended Settings"))
+    rec_table.add_column(_("Setting"), style="cyan")
+    rec_table.add_column(_("Recommended Value"), style="green")
+    rec_table.add_column(_("Current Value"), style="yellow")
 
     if storage_type == "nvme":
         rec_table.add_row(
-            "Write Batch Timeout",
-            "0.1 ms (adaptive)",
+            _("Write Batch Timeout"),
+            _("0.1 ms (adaptive)"),
             f"{config.disk.write_batch_timeout_ms} ms",
         )
-        rec_table.add_row("Disk Workers", "4-8", str(config.disk.disk_workers))
+        rec_table.add_row(_("Disk Workers"), _("4-8"), str(config.disk.disk_workers))
         rec_table.add_row(
-            "Hash Chunk Size",
-            "1 MB (adaptive)",
+            _("Hash Chunk Size"),
+            _("1 MB (adaptive)"),
             f"{config.disk.hash_chunk_size // 1024} KB",
         )
     elif storage_type == "ssd":
         rec_table.add_row(
-            "Write Batch Timeout",
-            "5 ms (adaptive)",
+            _("Write Batch Timeout"),
+            _("5 ms (adaptive)"),
             f"{config.disk.write_batch_timeout_ms} ms",
         )
-        rec_table.add_row("Disk Workers", "2-4", str(config.disk.disk_workers))
+        rec_table.add_row(_("Disk Workers"), _("2-4"), str(config.disk.disk_workers))
         rec_table.add_row(
-            "Hash Chunk Size",
-            "512 KB (adaptive)",
+            _("Hash Chunk Size"),
+            _("512 KB (adaptive)"),
             f"{config.disk.hash_chunk_size // 1024} KB",
         )
     else:  # hdd
         rec_table.add_row(
-            "Write Batch Timeout",
-            "50 ms (adaptive)",
+            _("Write Batch Timeout"),
+            _("50 ms (adaptive)"),
             f"{config.disk.write_batch_timeout_ms} ms",
         )
-        rec_table.add_row("Disk Workers", "1-2", str(config.disk.disk_workers))
+        rec_table.add_row(_("Disk Workers"), _("1-2"), str(config.disk.disk_workers))
         rec_table.add_row(
-            "Hash Chunk Size",
-            "64 KB (adaptive)",
+            _("Hash Chunk Size"),
+            _("64 KB (adaptive)"),
             f"{config.disk.hash_chunk_size // 1024} KB",
         )
 
@@ -647,16 +686,23 @@ async def disk_stats(ctx):  # noqa: ARG001
 
 
 @click.command("test")
-@click.option("--unit", is_flag=True, help="Run unit tests")
-@click.option("--integration", is_flag=True, help="Run integration tests")
+@click.option("--unit", "-u", is_flag=True, help="Run unit tests")
+@click.option("--integration", "-i", is_flag=True, help="Run integration tests")
 @click.option(
     "--performance",
+    "-p",
     "performance_test",
     is_flag=True,
     help="Run performance tests",
 )
-@click.option("--security", "security_test", is_flag=True, help="Run security tests")
-@click.option("--coverage", is_flag=True, help="Generate coverage report")
+@click.option(
+    "--security",
+    "-s",
+    "security_test",
+    is_flag=True,
+    help="Run security tests",
+)
+@click.option("--coverage", "-c", is_flag=True, help="Generate coverage report")
 def test(
     unit: bool,
     integration: bool,

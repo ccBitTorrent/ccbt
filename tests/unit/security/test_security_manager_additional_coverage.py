@@ -36,10 +36,10 @@ class TestSecurityManagerAdditionalCoverage:
     async def test_add_to_blacklist_no_event_loop(self):
         """Test add_to_blacklist with no event loop (line 304)."""
         manager = SecurityManager()
-        
+
         # Should not raise even without event loop
         manager.add_to_blacklist("192.168.1.100", "Test reason")
-        
+
         # Verify IP was added
         assert "192.168.1.100" in manager.get_blacklisted_ips()
 
@@ -48,10 +48,10 @@ class TestSecurityManagerAdditionalCoverage:
         """Test remove_from_blacklist with no event loop (line 329)."""
         manager = SecurityManager()
         manager.add_to_blacklist("192.168.1.100", "Test")
-        
+
         # Should not raise even without event loop
         manager.remove_from_blacklist("192.168.1.100")
-        
+
         # Verify IP was removed
         assert "192.168.1.100" not in manager.get_blacklisted_ips()
 
@@ -59,10 +59,10 @@ class TestSecurityManagerAdditionalCoverage:
     async def test_add_to_whitelist_no_event_loop(self):
         """Test add_to_whitelist with no event loop (line 354)."""
         manager = SecurityManager()
-        
+
         # Should not raise even without event loop
         manager.add_to_whitelist("192.168.1.100", "Test reason")
-        
+
         # Verify IP was added
         assert "192.168.1.100" in manager.ip_whitelist
 
@@ -71,10 +71,10 @@ class TestSecurityManagerAdditionalCoverage:
         """Test remove_from_whitelist with no event loop (line 378)."""
         manager = SecurityManager()
         manager.add_to_whitelist("192.168.1.100", "Test")
-        
+
         # Should not raise even without event loop
         manager.remove_from_whitelist("192.168.1.100")
-        
+
         # Verify IP was removed
         assert "192.168.1.100" not in manager.ip_whitelist
 

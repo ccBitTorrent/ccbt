@@ -2,11 +2,17 @@
 
 This module coordinates peer discovery across multiple sources including
 trackers, DHT, PEX, and other discovery mechanisms.
+
+Requestable-peer-driven orchestration (Project 7-E) lives in
+`ccbt.session.dht_setup.DHTDiscoverySetup.tick_requestable_driven`, invoked from
+the per-torrent DHT discovery loop so scheduling stays next to bootstrap and
+get_peers rate limits.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from ccbt.session.tasks import TaskSupervisor
@@ -27,6 +33,8 @@ class DiscoveryController:
         self._tasks = tasks or TaskSupervisor()
         self._recent_peers: set[tuple[str, int]] = set()
         self._recent_lock = asyncio.Lock()
+        self._quality_filter_debug_log_cooldown_ms = 3000
+        self._quality_filter_last_debug_log: float = 0.0
 
     def register_dht_callback(
         self,
@@ -42,10 +50,10 @@ class DiscoveryController:
                 return
 
             # Filter peers by quality before deduplication
-            # CRITICAL FIX: When peer count is very low, skip quality filtering to maximize connections
+            # Note: When peer count is very low, skip quality filtering to maximize connections
             filtered_peers = await self._filter_peers_by_quality(peers)
 
-            # CRITICAL FIX: If quality filtering removed too many peers and we have very few connections,
+            # Note: If quality filtering removed too many peers and we have very few connections,
             # relax filtering or skip it entirely
             if len(filtered_peers) < len(peers) * 0.5:  # More than 50% filtered
                 # Check current peer count - if very low, use all peers
@@ -116,17 +124,17 @@ class DiscoveryController:
 
         def callback_wrapper(peers: list[tuple[str, int]]) -> None:
             """Create async task for peer processing from synchronous callback."""
-            # CRITICAL FIX: Add error handling for task creation and execution
+            # Note: Add error handling for task creation and execution
             try:
                 task = self._tasks.create_task(
                     process_with_dedup(peers), name="dht_peers_dedup"
                 )
 
-                # CRITICAL FIX: Add done callback to log errors if task fails
+                # Note: Add done callback to log errors if task fails
                 def task_done_callback(task: asyncio.Task) -> None:
                     """Handle task completion and log errors."""
                     try:
-                        # CRITICAL FIX: Check if task was cancelled before checking exception
+                        # Note: Check if task was cancelled before checking exception
                         # task.exception() raises CancelledError if task was cancelled
                         if task.cancelled():
                             # Task was cancelled (likely during shutdown) - don't log as error
@@ -182,7 +190,7 @@ class DiscoveryController:
                 else:
                     pass
 
-        # CRITICAL FIX: Pass info_hash to add_peer_callback to register callback per info_hash
+        # Note: Pass info_hash to add_peer_callback to register callback per info_hash
         # This ensures callbacks are only invoked for the correct torrent
         # The callback wrapper already filters by info_hash via the discovery controller,
         # but registering with info_hash ensures better performance and correctness
@@ -201,6 +209,7 @@ class DiscoveryController:
             Filtered list of peers with acceptable quality
 
         """
+        logger = getattr(self._ctx, "logger", None)
         # Get SecurityManager from session context
         security_manager = None
         if self._ctx.session_manager:
@@ -253,7 +262,7 @@ class DiscoveryController:
             pass
 
         # RELAXED: Use very relaxed threshold to allow slower peers
-        # CRITICAL FIX: Ultra-relaxed threshold for ultra-low peer counts
+        # Note: Ultra-relaxed threshold for ultra-low peer counts
         if connected_peers < 3:
             quality_threshold = (
                 0.0  # No filtering for ultra-low peer count - accept all peers
@@ -270,6 +279,10 @@ class DiscoveryController:
             quality_threshold = base_quality_threshold
 
         filtered_peers = []
+        blacklisted_peers = 0
+        low_score_peers = 0
+        allowed_unknown = 0
+        low_score_samples: list[tuple[str, int, float]] = []
         for ip, port in peers:
             # Generate peer_id from IP:port for reputation lookup
             # SecurityManager uses peer_id as key, but we can also check by IP
@@ -281,10 +294,20 @@ class DiscoveryController:
             if reputation:
                 # Check if peer is blacklisted
                 if reputation.is_blacklisted:
+                    blacklisted_peers += 1
                     continue
 
                 # Check reputation score
                 if reputation.reputation_score < quality_threshold:
+                    low_score_peers += 1
+                    if len(low_score_samples) < 5:
+                        low_score_samples.append(
+                            (
+                                ip,
+                                port,
+                                reputation.reputation_score,
+                            )
+                        )
                     continue
 
                 # Peer passed quality filter
@@ -293,6 +316,47 @@ class DiscoveryController:
                 # No reputation data - allow peer (new peer, give benefit of doubt)
                 # But check if IP is in any blacklist
                 # For now, allow unknown peers (they'll be evaluated after connection)
+                allowed_unknown += 1
                 filtered_peers.append((ip, port))
+
+        filtered_count = len(filtered_peers)
+        dropped_count = len(peers) - filtered_count
+        if logger and dropped_count > 0:
+            now_ms = time.time() * 1000
+            info_hash = getattr(self._ctx, "info_hash", None)
+            if isinstance(info_hash, (bytes, bytearray)):
+                formatted_info_hash = bytes(info_hash).hex()[:16]
+            else:
+                formatted_info_hash = "unknown"
+            if (
+                now_ms - self._quality_filter_last_debug_log
+                > self._quality_filter_debug_log_cooldown_ms
+            ):
+                self._quality_filter_last_debug_log = now_ms
+                logger.debug(
+                    "Quality filter removed %d/%d peers for info_hash=%s: blacklisted=%d, low_reputation=%d, threshold=%.3f, connected_peers=%d, accepted=%d (unknown=%d)",
+                    dropped_count,
+                    len(peers),
+                    formatted_info_hash,
+                    blacklisted_peers,
+                    low_score_peers,
+                    quality_threshold,
+                    connected_peers,
+                    filtered_count,
+                    allowed_unknown,
+                )
+                if low_score_samples:
+                    logger.debug(
+                        "Quality filter low-reputation samples: %s",
+                        ", ".join(
+                            f"{ip}:{port}={score:.3f}"
+                            for ip, port, score in low_score_samples
+                        ),
+                    )
+                if blacklisted_peers > 0 and filtered_count == 0:
+                    logger.warning(
+                        "Quality filter dropped all discovered peers due to blacklist/score filtering. "
+                        "Discovery fallback may be required."
+                    )
 
         return filtered_peers

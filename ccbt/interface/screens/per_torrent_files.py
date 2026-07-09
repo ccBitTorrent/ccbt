@@ -21,12 +21,15 @@ else:
 
 try:
     from textual.containers import Container, Horizontal, Vertical
+    from textual.reactive import reactive
     from textual.screen import ModalScreen
-    from textual.widgets import DataTable, Static, Button, Select
+    from textual.widgets import Button, DataTable, Select, Static
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
+            pass
 
     class Horizontal:  # type: ignore[no-redef]
         pass
@@ -49,8 +52,29 @@ except ImportError:
     class Select:  # type: ignore[no-redef]
         pass
 
-from ccbt.interface.widgets.reusable_table import ReusableDataTable
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
+
+
 from ccbt.i18n import _
+from ccbt.interface.widgets.reusable_table import ReusableDataTable
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +108,9 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
         ("u", "deselect_all_files", _("Deselect All")),
         ("p", "set_file_priority", _("Set Priority")),
     ]
+
+    # F2.4.3: reactive bound to TerminalDashboard.selected_torrent_files.
+    selected_torrent_files: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -119,7 +146,7 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
         """Mount the files screen."""
         try:
             self._files_table = self.query_one("#files-table", DataTable)  # type: ignore[attr-defined]
-            
+
             if self._files_table:
                 self._files_table.add_columns(
                     _("Path"),
@@ -130,31 +157,64 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
                 )
                 self._files_table.zebra_stripes = True
                 self._files_table.cursor_type = "row"
-            
-            # Schedule periodic refresh
-            self.set_interval(2.0, self.refresh_files)  # type: ignore[attr-defined]
-            # Initial refresh
+
+            # F2.4.3: bind to the App selected_torrent_files reactive (replaces
+            # the set_interval(2.0, self.refresh_files) self-poll).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(
+                    selected_torrent_files=TerminalDashboard.selected_torrent_files
+                )
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug("TorrentFilesScreen data_bind skipped: %s", exc)
+            # Initial refresh (fallback for contexts where the reactive has not
+            # been populated yet; the reactive drives subsequent updates).
             self.call_later(self.refresh_files)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting files screen: %s", e)
 
-    async def refresh_files(self) -> None:  # pragma: no cover
-        """Refresh files table with latest data."""
+    def watch_selected_torrent_files(
+        self, value: list[dict[str, Any]]
+    ) -> None:  # pragma: no cover
+        """Reactive watcher: render the files table from the bound list (F2.4.3)."""
+        if isinstance(value, list):
+            import asyncio as _asyncio
+
+            _asyncio.create_task(self.refresh_files(files_override=value))
+
+    async def refresh_files(
+        self, files_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:  # pragma: no cover
+        """Refresh files table with latest data.
+
+        Args:
+            files_override: When provided (from the selected_torrent_files
+                reactive watcher), skip the ``get_torrent_files()`` fetch and
+                render from this list directly.
+        """
         if not self._files_table or not self._data_provider or not self._info_hash:
             return
-        
+
         try:
-            files = await self._data_provider.get_torrent_files(self._info_hash)
-            
+            files = (
+                files_override
+                if files_override is not None
+                else await self._data_provider.get_torrent_files(self._info_hash)
+            )
+
             # Clear and repopulate table
             self._files_table.clear()
-            for file_info in files:
+            for idx, file_info in enumerate(files):
                 path = file_info.get("path", "Unknown")
+                file_index = file_info.get("index", idx)
                 size = file_info.get("size", 0)
                 progress = file_info.get("progress", 0.0)
                 priority = file_info.get("priority", "normal")
                 selected = file_info.get("selected", True)
-                
+
                 # Format size
                 if size >= 1024 * 1024 * 1024:
                     size_str = f"{size / (1024**3):.2f} GB"
@@ -164,24 +224,25 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
                     size_str = f"{size / 1024:.2f} KB"
                 else:
                     size_str = f"{size} B"
-                
+
                 # Format progress
                 progress_str = f"{progress * 100:.1f}%"
-                
+
                 # Format priority
                 priority_str = str(priority).title()
-                
+
                 # Format selected
                 selected_str = "✓" if selected else "✗"
-                
-                # Use path as key for row identification
+
+                # Use stable key including explicit index to avoid collisions
+                row_key = f"{file_index}|{path}"
                 self._files_table.add_row(
                     path,
                     size_str,
                     progress_str,
                     priority_str,
                     selected_str,
-                    key=path,
+                    key=row_key,
                 )
         except Exception as e:
             logger.debug("Error refreshing files: %s", e)
@@ -190,97 +251,131 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
         """Select all files."""
         if not self._files_table or not self._command_executor or not self._info_hash:
             return
-        
+
         try:
             # Get all file indices from the files list
             files = await self._data_provider.get_torrent_files(self._info_hash)
-            file_indices = [file_info.get("index", idx) for idx, file_info in enumerate(files)]
-            
+            file_indices = [
+                file_info.get("index", idx) for idx, file_info in enumerate(files)
+            ]
+
             if not file_indices:
                 self.app.notify(_("No files to select"), severity="warning")  # type: ignore[attr-defined]
                 return
-            
+
             # Use executor to select all files
             result = await self._command_executor.execute_command(
                 "file.select",
                 info_hash=self._info_hash,
                 file_indices=file_indices,
             )
-            
+
             if result and hasattr(result, "success") and result.success:
-                self.app.notify(_("Selected {count} file(s)").format(count=len(file_indices)), severity="success")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Selected {count} file(s)").format(count=len(file_indices)),
+                    severity="success",
+                )  # type: ignore[attr-defined]
                 # Refresh to show updated selection
                 await self.refresh_files()
             else:
-                error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
-                self.app.notify(_("Failed to select files: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                error_msg = (
+                    result.error
+                    if result and hasattr(result, "error")
+                    else _("Unknown error")
+                )
+                self.app.notify(
+                    _("Failed to select files: {error}").format(error=error_msg),
+                    severity="error",
+                )  # type: ignore[attr-defined]
         except Exception as e:
-            self.app.notify(_("Error selecting files: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+            self.app.notify(
+                _("Error selecting files: {error}").format(error=str(e)),
+                severity="error",
+            )  # type: ignore[attr-defined]
 
     async def action_deselect_all_files(self) -> None:  # pragma: no cover
         """Deselect all files."""
         if not self._files_table or not self._command_executor or not self._info_hash:
             return
-        
+
         try:
             # Get all file indices from the files list
             files = await self._data_provider.get_torrent_files(self._info_hash)
-            file_indices = [file_info.get("index", idx) for idx, file_info in enumerate(files)]
-            
+            file_indices = [
+                file_info.get("index", idx) for idx, file_info in enumerate(files)
+            ]
+
             if not file_indices:
                 self.app.notify(_("No files to deselect"), severity="warning")  # type: ignore[attr-defined]
                 return
-            
+
             # Use executor to deselect all files
             result = await self._command_executor.execute_command(
                 "file.deselect",
                 info_hash=self._info_hash,
                 file_indices=file_indices,
             )
-            
+
             if result and hasattr(result, "success") and result.success:
-                self.app.notify(_("Deselected {count} file(s)").format(count=len(file_indices)), severity="success")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Deselected {count} file(s)").format(count=len(file_indices)),
+                    severity="success",
+                )  # type: ignore[attr-defined]
                 # Refresh to show updated selection
                 await self.refresh_files()
             else:
-                error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
-                self.app.notify(_("Failed to deselect files: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                error_msg = (
+                    result.error
+                    if result and hasattr(result, "error")
+                    else _("Unknown error")
+                )
+                self.app.notify(
+                    _("Failed to deselect files: {error}").format(error=error_msg),
+                    severity="error",
+                )  # type: ignore[attr-defined]
         except Exception as e:
-            self.app.notify(_("Error deselecting files: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+            self.app.notify(
+                _("Error deselecting files: {error}").format(error=str(e)),
+                severity="error",
+            )  # type: ignore[attr-defined]
 
     async def action_set_file_priority(self) -> None:  # pragma: no cover
         """Set priority for selected files."""
         if not self._files_table or not self._command_executor or not self._info_hash:
             return
-        
+
         try:
             # Get selected file key (path)
             selected_key = self._files_table.get_selected_key()
             if not selected_key:
                 self.app.notify(_("No file selected"), severity="warning")  # type: ignore[attr-defined]
                 return
-            
+
+            _, _, file_path = selected_key.partition("|")
+            if not file_path:
+                file_path = selected_key
+
             # Get file index from the files list
             files = await self._data_provider.get_torrent_files(self._info_hash)
             file_index = None
             current_priority = "normal"
             for idx, file_info in enumerate(files):
-                if file_info.get("path") == selected_key:
+                if file_info.get("path") == file_path:
                     file_index = file_info.get("index", idx)
                     current_priority = file_info.get("priority", "normal")
                     break
-            
+
             if file_index is None:
                 self.app.notify(_("Could not find file index"), severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             # Show priority selection dialog
             dialog = PrioritySelectDialog(current_priority)
             priority = await self.app.push_screen_wait(dialog)  # type: ignore[attr-defined]
-            
+
             if priority is None:
                 return  # User cancelled
-            
+
             # Use executor to set file priority
             result = await self._command_executor.execute_command(
                 "file.priority",
@@ -288,18 +383,33 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
                 file_index=file_index,
                 priority=priority,
             )
-            
+
             if result and hasattr(result, "success") and result.success:
-                self.app.notify(_("Set priority to {priority} for file").format(priority=priority), severity="success")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Set priority to {priority} for file").format(priority=priority),
+                    severity="success",
+                )  # type: ignore[attr-defined]
                 # Refresh to show updated priority
                 await self.refresh_files()
             else:
-                error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
-                self.app.notify(_("Failed to set priority: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                error_msg = (
+                    result.error
+                    if result and hasattr(result, "error")
+                    else _("Unknown error")
+                )
+                self.app.notify(
+                    _("Failed to set priority: {error}").format(error=error_msg),
+                    severity="error",
+                )  # type: ignore[attr-defined]
         except Exception as e:
-            self.app.notify(_("Error setting file priority: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+            self.app.notify(
+                _("Error setting file priority: {error}").format(error=str(e)),
+                severity="error",
+            )  # type: ignore[attr-defined]
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+    async def on_button_pressed(
+        self, event: Button.Pressed
+    ) -> None:  # pragma: no cover
         """Handle button presses."""
         if event.button.id == "select-all-button":
             await self.action_select_all_files()
@@ -310,10 +420,10 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
         elif event.button.id == "open-folder-button":
             # Open folder using OS-specific command
             try:
-                import subprocess
-                import platform
                 import os
-                
+                import platform
+                import subprocess
+
                 # Get output directory from torrent status
                 status = await self._data_provider.get_torrent_status(self._info_hash)
                 if status:
@@ -321,14 +431,22 @@ class TorrentFilesScreen(Container):  # type: ignore[misc]
                     if platform.system() == "Windows":
                         os.startfile(output_dir)  # type: ignore[attr-defined]
                     elif platform.system() == "Darwin":  # macOS
-                        subprocess.run(["open", output_dir])
+                        subprocess.run(["open", output_dir], check=False)
                     else:  # Linux
-                        subprocess.run(["xdg-open", output_dir])
-                    self.app.notify(_("Opened folder: {path}").format(path=output_dir), severity="success")  # type: ignore[attr-defined]
+                        subprocess.run(["xdg-open", output_dir], check=False)
+                    self.app.notify(
+                        _("Opened folder: {path}").format(path=output_dir),
+                        severity="success",
+                    )  # type: ignore[attr-defined]
                 else:
-                    self.app.notify(_("Could not get torrent output directory"), severity="warning")  # type: ignore[attr-defined]
+                    self.app.notify(
+                        _("Could not get torrent output directory"), severity="warning"
+                    )  # type: ignore[attr-defined]
             except Exception as e:
-                self.app.notify(_("Error opening folder: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Error opening folder: {error}").format(error=str(e)),
+                    severity="error",
+                )  # type: ignore[attr-defined]
 
 
 class PrioritySelectDialog(ModalScreen):  # type: ignore[misc]
@@ -411,7 +529,9 @@ class PrioritySelectDialog(ModalScreen):  # type: ignore[misc]
         if hasattr(event, "value") and event.value:
             self._selected_priority = event.value
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+    async def on_button_pressed(
+        self, event: Button.Pressed
+    ) -> None:  # pragma: no cover
         """Handle button presses."""
         if event.button.id == "confirm":
             try:

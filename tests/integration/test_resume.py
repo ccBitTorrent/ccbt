@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.models import (
     CheckpointFormat,
     DiskConfig,
@@ -21,6 +20,7 @@ from ccbt.models import (
     TorrentCheckpoint,
 )
 from ccbt.session import AsyncSessionManager, AsyncTorrentSession
+from ccbt.storage.checkpoint import CheckpointManager
 
 
 class TestResumeIntegration:
@@ -150,7 +150,7 @@ class TestResumeIntegration:
 
         # Mock piece manager
         from ccbt.models import TorrentCheckpoint
-        
+
         piece_manager = Mock()
         mock_checkpoint = TorrentCheckpoint(
             info_hash=b"x" * 20,
@@ -191,7 +191,7 @@ class TestResumeIntegration:
 
         # Mock piece manager - return a valid checkpoint state
         from ccbt.models import TorrentCheckpoint
-        
+
         mock_checkpoint_state = TorrentCheckpoint(
             info_hash=sample_torrent_data["info_hash"],
             torrent_name=sample_torrent_data["file_info"]["name"],
@@ -201,7 +201,7 @@ class TestResumeIntegration:
             file_checkpoints=[],
             download_stats=None,
         )
-        
+
         piece_manager = Mock()
         piece_manager.get_checkpoint_state = AsyncMock(return_value=mock_checkpoint_state)
         session.download_manager.piece_manager = piece_manager

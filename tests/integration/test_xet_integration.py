@@ -118,8 +118,6 @@ class TestXetIntegration:
     async def test_xet_merkle_hash_computation(self):
         """Test Xet Merkle hash computation in piece manager."""
         from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceData
-        from ccbt.storage.xet_chunking import GearhashChunker
-        from ccbt.storage.xet_hashing import XetHasher
 
         # Create mock torrent data
         torrent_data = {
@@ -186,7 +184,7 @@ class TestXetIntegration:
         mock_peer.ip = "192.168.1.1"
         mock_peer.port = 6881
         mock_cas.find_chunk_peers = AsyncMock(return_value=[mock_peer])
-        # CRITICAL FIX: Mock find_chunks_peers_batch to return peers for chunks
+        # Note: Mock find_chunks_peers_batch to return peers for chunks
         # The code checks for this method first, so we need to return peers in batch format
         from ccbt.models import PeerInfo
         mock_batch_peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -196,8 +194,8 @@ class TestXetIntegration:
             b"B" * 32: [mock_batch_peer],
             b"C" * 32: [mock_batch_peer],
         })
-        
-        # CRITICAL FIX: Mock catalog to return a dict, not a coroutine
+
+        # Note: Mock catalog to return a dict, not a coroutine
         # The code tries to iterate over catalog_results.items(), so it must be a dict
         mock_catalog = AsyncMock()
         mock_catalog.get_peers_by_chunks = AsyncMock(return_value={})  # Empty dict, will fall back to find_chunk_peers
@@ -240,7 +238,7 @@ class TestXetIntegration:
         # The actual storage path is auto-generated, so we check the result
         result1 = await dedup.check_chunk_exists(chunk_hash)
         result2 = await dedup.check_chunk_exists(chunk_hash)
-        
+
         # Both should return the same path (deduplication)
         assert result1 == result2
 
@@ -289,7 +287,6 @@ class TestXetIntegration:
         """Test downloading chunk with existing connection from connection manager."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.extensions.manager import ExtensionManager
-        from ccbt.extensions.xet import XetExtension
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
         from ccbt.storage.xet_hashing import XetHasher
@@ -311,7 +308,7 @@ class TestXetIntegration:
         # Verify chunk hash matches
         hasher = XetHasher()
         computed_hash = hasher.compute_chunk_hash(chunk_data)
-        
+
         # Create mock connection with reader/writer
         mock_connection = AsyncPeerConnection(
             peer_info=peer,
@@ -340,7 +337,6 @@ class TestXetIntegration:
             )
 
         # Mock _send_extension_message and _receive_extension_message
-        from ccbt.protocols.bittorrent_v2 import _send_extension_message, _receive_extension_message
 
         async def mock_send_ext_msg(conn, ext_id, payload):
             return True
@@ -361,7 +357,7 @@ class TestXetIntegration:
                     computed_hash, peer, {"info_hash": b"X" * 20}, mock_connection_manager
                 )
                 assert downloaded == chunk_data
-            except (ValueError, NotImplementedError, AttributeError) as e:
+            except (ValueError, NotImplementedError, AttributeError):
                 # May fail due to missing extension protocol setup
                 # This is acceptable for integration test
                 pass
@@ -396,7 +392,6 @@ class TestXetIntegration:
         """Test downloading chunk when peer doesn't support Xet extension."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.extensions.manager import ExtensionManager
-        from ccbt.extensions.xet import XetExtension
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
@@ -441,7 +436,7 @@ class TestXetIntegration:
         """Test establishing peer connection with successful handshake."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.models import PeerInfo
-        from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
+        from ccbt.peer.async_peer_connection import ConnectionState
         from ccbt.peer.peer import Handshake
 
         cas_client = P2PCASClient(dht_client=None, tracker_client=None)
@@ -473,7 +468,7 @@ class TestXetIntegration:
                 assert connection is not None
                 assert connection.peer_info == peer
                 assert connection.state in [ConnectionState.HANDSHAKE_RECEIVED, ConnectionState.CONNECTED]
-            except (ValueError, OSError, asyncio.TimeoutError) as e:
+            except (ValueError, OSError, asyncio.TimeoutError):
                 # May fail due to network or handshake issues
                 # This is acceptable for integration test
                 pass
@@ -538,7 +533,7 @@ class TestXetIntegration:
         """Test downloading chunk when peer responds with CHUNK_NOT_FOUND."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.extensions.manager import ExtensionManager
-        from ccbt.extensions.xet import XetExtension, XetMessageType
+        from ccbt.extensions.xet import XetMessageType
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
@@ -601,7 +596,7 @@ class TestXetIntegration:
         """Test downloading chunk when peer responds with CHUNK_ERROR."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.extensions.manager import ExtensionManager
-        from ccbt.extensions.xet import XetExtension, XetMessageType
+        from ccbt.extensions.xet import XetMessageType
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
@@ -662,7 +657,6 @@ class TestXetIntegration:
         """Test downloading chunk when hash doesn't match."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.extensions.manager import ExtensionManager
-        from ccbt.extensions.xet import XetExtension
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
@@ -801,7 +795,6 @@ class TestXetIntegration:
         """Test reading file by reconstructing from chunks via DiskIOManager."""
         from ccbt.config.config import Config
         from ccbt.storage.disk_io import DiskIOManager
-        from ccbt.storage.xet_deduplication import XetDeduplication
         from ccbt.storage.xet_hashing import XetHasher
 
         # Create config with XET enabled
@@ -810,7 +803,7 @@ class TestXetIntegration:
         config.disk.download_dir = str(temp_dir)
 
         # Create DiskIOManager (it gets config internally via get_config())
-        # CRITICAL FIX: DiskIOManager.__init__() doesn't accept config parameter
+        # Note: DiskIOManager.__init__() doesn't accept config parameter
         with patch("ccbt.storage.disk_io.get_config", return_value=config):
             disk_io = DiskIOManager()
 
@@ -844,11 +837,11 @@ class TestXetIntegration:
         assert read_data is not None
         assert read_data == file_data
 
-        # CRITICAL FIX: Close database before teardown to prevent Windows file locking issues
+        # Note: Close database before teardown to prevent Windows file locking issues
         # The dedup instance is obtained from disk_io, so we need to close it explicitly
         if dedup:
             dedup.close()
-        
+
         # Also stop disk_io manager if it was started (cleanup)
         if hasattr(disk_io, "stop"):
             try:

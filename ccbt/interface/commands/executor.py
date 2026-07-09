@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -30,17 +30,17 @@ class CommandExecutor:
             session: Async session manager instance (can be DaemonInterfaceAdapter)
         """
         self.session = session  # pragma: no cover - CommandExecutor initialization, tested via integration
-        
+
         # Detect if using DaemonInterfaceAdapter
         from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
         self._is_daemon_session = isinstance(session, DaemonInterfaceAdapter)
-        
+
         # If using DaemonInterfaceAdapter, get IPC client for direct command routing
         if self._is_daemon_session:
             self._ipc_client = session._client  # type: ignore[attr-defined]
         else:
             self._ipc_client = None
-        
+
         # Create a minimal InteractiveCLI instance for command execution
         # We only need the command methods, not the full UI
         from rich.console import (
@@ -55,23 +55,23 @@ class CommandExecutor:
         self._dummy_console = Console(
             file=self._output_buffer, width=120
         )  # pragma: no cover - CommandExecutor initialization
-        
+
         # Use ExecutorManager to get or create executor
         # This ensures we reuse executor instances and maintain session coherence
         from ccbt.executor.manager import ExecutorManager
-        
+
         executor_manager = ExecutorManager.get_instance()
-        
+
         if self._is_daemon_session:
             # For DaemonInterfaceAdapter, get executor via IPC client
             self._executor = executor_manager.get_executor(ipc_client=self._ipc_client)
         else:
             # For local session, get executor via session manager
             self._executor = executor_manager.get_executor(session_manager=session)
-        
+
         # Get adapter from executor
         adapter = self._executor.adapter
-        
+
         # Pass executor, adapter, console, and optionally session
         self._cli = InteractiveCLI(
             executor=self._executor,
@@ -109,7 +109,7 @@ class CommandExecutor:
                         success=False,
                         error=f"Error executing {command}: {e!s}",
                     )
-            
+
             # Map CLI command names to executor commands for commands that need info_hash
             # All commands now route through executor.execute() for consistency
             command_mapping: dict[str, str] = {
@@ -118,10 +118,10 @@ class CommandExecutor:
                 "stop": "torrent.remove",
                 "remove": "torrent.remove",
             }
-            
+
             # Handle legacy tuple return format for CLI commands
             current_info_hash = kwargs.get("current_info_hash")
-            
+
             # If command has a mapping and we have current_info_hash, route through executor
             if command in command_mapping and current_info_hash:
                 executor_command = command_mapping[command]
@@ -131,11 +131,10 @@ class CommandExecutor:
                     if result.success:
                         action = command.replace("_", " ")
                         return (True, f"Torrent {action} successful", result.data)
-                    else:
-                        return (False, result.error or f"Failed to {command}", None)
+                    return (False, result.error or f"Failed to {command}", None)
                 except Exception as e:
                     return (False, f"Error executing {command}: {e!s}", None)
-            
+
             # Set current info hash if provided (for commands that need it)
             if current_info_hash and hasattr(
                 self._cli, "current_info_hash_hex"

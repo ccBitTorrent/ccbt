@@ -17,7 +17,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, TypedDict, Union
+from typing import Any, Callable, Mapping, Optional, TypedDict, Union
 
 import psutil
 
@@ -301,9 +301,10 @@ class MetricsCollector:
         self,
         name: str,
         value: Union[float, str],
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None] = None,
     ) -> None:
         """Record a metric value."""
+        normalized_labels = self._normalize_metric_labels(labels)
         if name not in self.metrics:
             # Auto-register metric if it doesn't exist
             self.register_metric(
@@ -316,7 +317,7 @@ class MetricsCollector:
         metric_value = MetricValue(
             value=value,
             timestamp=time.time(),
-            labels=labels or [],
+            labels=normalized_labels,
         )
 
         metric.values.append(metric_value)
@@ -362,7 +363,7 @@ class MetricsCollector:
         self,
         name: str,
         value: int = 1,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None] = None,
     ) -> None:
         """Increment a counter metric."""
         if name not in self.metrics:  # pragma: no cover
@@ -379,11 +380,23 @@ class MetricsCollector:
 
         self.record_metric(name, new_value, labels)  # pragma: no cover
 
+    def increment_gauge(
+        self,
+        name: str,
+        value: float = 1.0,
+        labels: Union[list[MetricLabel], Mapping[str, str], None] = None,
+    ) -> None:
+        """Increment/decrement a gauge metric by a delta."""
+        current_value = self.get_metric_value(name) or 0.0
+        if not isinstance(current_value, (int, float)):
+            current_value = 0.0
+        self.set_gauge(name, float(current_value) + value, labels)
+
     def set_gauge(
         self,
         name: str,
         value: float,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None] = None,
     ) -> None:
         """Set a gauge metric value."""
         if name not in self.metrics:
@@ -395,13 +408,31 @@ class MetricsCollector:
         self,
         name: str,
         value: float,
-        labels: Optional[list[MetricLabel]] = None,
+        labels: Union[list[MetricLabel], Mapping[str, str], None] = None,
     ) -> None:
         """Record a histogram value."""
         if name not in self.metrics:
             self.register_metric(name, MetricType.HISTOGRAM, f"Histogram: {name}")
 
         self.record_metric(name, value, labels)
+
+    def _normalize_metric_labels(
+        self,
+        labels: Union[list[MetricLabel], Mapping[str, str], None],
+    ) -> list[MetricLabel]:
+        """Normalize metric labels from list/dict inputs."""
+        if labels is None:
+            return []
+        if isinstance(labels, Mapping):
+            normalized: list[MetricLabel] = []
+            for label_name, label_value in labels.items():
+                normalized.append(
+                    MetricLabel(name=str(label_name), value=str(label_value))
+                )
+            return normalized
+        if isinstance(labels, list):
+            return labels
+        return []
 
     def add_alert_rule(
         self,
@@ -1057,9 +1088,15 @@ class MetricsCollector:
 
         # Collect disk I/O metrics if available
         try:
-            from ccbt.storage.disk_io_init import get_disk_io_manager
+            disk_io = (
+                self._session.disk_io_manager
+                if self._session and getattr(self._session, "disk_io_manager", None)
+                else None
+            )
+            if disk_io is None:
+                from ccbt.storage.disk_io_init import get_disk_io_manager
 
-            disk_io = get_disk_io_manager()
+                disk_io = get_disk_io_manager()
             # Access private members for disk I/O state checking
             if disk_io and hasattr(disk_io, "_running") and disk_io._running:  # noqa: SLF001
                 stats = disk_io.stats
@@ -1197,7 +1234,7 @@ class MetricsCollector:
             except Exception:  # pragma: no cover - keep defaults on failure
                 pass
 
-        # CRITICAL FIX: Collect connection health metrics from all active sessions
+        # Note: Collect connection health metrics from all active sessions
         sessions = (
             getattr(
                 self._session, "torrents", getattr(self._session, "_sessions", None)
@@ -1287,7 +1324,7 @@ class MetricsCollector:
             except Exception:
                 pass
 
-        # CRITICAL FIX: Collect NAT mapping status metrics
+        # Note: Collect NAT mapping status metrics
         if (
             self._session
             and hasattr(self._session, "nat_manager")

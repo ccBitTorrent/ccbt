@@ -7,12 +7,29 @@ import json
 import logging
 import os
 import random
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
 
 import pytest
 import pytest_asyncio
+
+
+def make_torrent_data(
+    *,
+    num_pieces: int = 100,
+    info_hash: Optional[bytes] = None,
+) -> dict[str, Any]:
+    """Build a fresh torrent dict for tests (avoids accidental cross-test mutation)."""
+    ih = info_hash if info_hash is not None else os.urandom(20)
+    return {
+        "info_hash": ih,
+        "piece_length": 16384,
+        "num_pieces": num_pieces,
+        "pieces_info": {"num_pieces": num_pieces},
+    }
+
 
 # Import network mock fixtures to make them available to all tests
 # This ensures fixtures from tests/fixtures/network_mocks.py are discoverable
@@ -28,7 +45,12 @@ except ImportError:
 
 # #region agent log
 # Debug logging helper
-_DEBUG_LOG_PATH = Path(__file__).parent.parent / ".cursor" / "debug.log"
+_DEBUG_LOG_PATH = Path(
+    os.environ.get(
+        "CCBT_TEST_DEBUG_LOG",
+        str(Path(tempfile.gettempdir()) / "ccbt-test-debug.log"),
+    )
+)
 def _debug_log(hypothesis_id: str, location: str, message: str, data: Optional[dict] = None):
     """Write debug log entry in NDJSON format."""
     try:
@@ -51,7 +73,7 @@ def _debug_log(hypothesis_id: str, location: str, message: str, data: Optional[d
         # Log to stderr so we can see if logging fails
         import sys
         print(f"DEBUG LOG ERROR: {e}", file=sys.stderr, flush=True)
-        pass  # Best effort - don't break tests
+        # Best effort - don't break tests
 
 # Test log at module import time
 try:
@@ -99,6 +121,17 @@ def pytest_configure(config):
         ("queue", "marks tests as queue management tests"),
         ("compatibility", "marks tests as compatibility/live tests (run in CI only)"),
         ("consensus", "marks tests as consensus mechanism tests"),
+        ("transport", "marks tests as transport layer tests"),
+        ("discovery", "marks tests as discovery tests"),
+        ("config", "marks tests as configuration tests"),
+        ("plugins", "marks tests as plugins tests"),
+        ("interface", "marks tests as interface tests"),
+        ("daemon", "marks tests as daemon tests"),
+        ("executor", "marks tests as executor tests"),
+        ("models", "marks tests as model tests"),
+        ("services", "marks tests as services tests"),
+        ("nat", "marks tests as NAT tests"),
+        ("proxy", "marks tests as proxy tests"),
     ]
     for name, desc in markers:
         config.addinivalue_line("markers", f"{name}: {desc}")
@@ -255,7 +288,6 @@ def cleanup_async_resources():
             _debug_log("B", "conftest.py:_cleanup", "RuntimeError during cleanup", {"error": str(e)})
             # #endregion
             # Loop may have been closed during cleanup, ignore
-            pass
 
     try:
         # #region agent log
@@ -270,7 +302,6 @@ def cleanup_async_resources():
         _debug_log("B", "conftest.py:cleanup_async_resources", "RuntimeError in run_until_complete", {"error": str(e)})
         # #endregion
         # Loop closed before cleanup could complete, ignore
-        pass
 
     # #region agent log
     # Check event loop state after cleanup
@@ -291,8 +322,7 @@ def cleanup_async_resources():
         _debug_log("B", "conftest.py:cleanup_async_resources", "Exception resetting network optimizer", {"error": str(e)})
         # #endregion
         # Best effort cleanup - ignore errors
-        pass
-    
+
     # #region agent log
     _debug_log("B", "conftest.py:cleanup_async_resources", "Fixture exit", {})
     # #endregion
@@ -322,7 +352,7 @@ def cleanup_singleton_resources():
     # CRITICAL: Reset global config manager FIRST to ensure clean state
     # This prevents config modifications in one test from affecting others
     try:
-        from ccbt.config.config import reset_config, get_config
+        from ccbt.config.config import get_config, reset_config
         reset_config()
         # Explicitly reset scrape-related config to prevent state pollution
         config = get_config()
@@ -335,12 +365,13 @@ def cleanup_singleton_resources():
     # Cleanup after test - only reset if singletons exist and have active threads
     try:
         import time
-        from ccbt.monitoring import _GLOBAL_METRICS_COLLECTOR, reset_metrics_collector
+
+        from ccbt.monitoring import _GLOBAL_METRICS_COLLECTOR
         from ccbt.utils.network_optimizer import (
             _network_optimizer,
             reset_network_optimizer,
         )
-        
+
         # #region agent log
         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Checking NetworkOptimizer", {"exists": _network_optimizer is not None})
         # #endregion
@@ -348,7 +379,7 @@ def cleanup_singleton_resources():
         # Only reset NetworkOptimizer if it exists and has active cleanup thread
         if _network_optimizer is not None:
             pool = _network_optimizer.connection_pool
-            # CRITICAL FIX: Check for connection_pool existence before accessing
+            # Note: Check for connection_pool existence before accessing
             if pool is not None and pool._cleanup_task is not None:
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "NetworkOptimizer has cleanup task", {"thread_alive": pool._cleanup_task.is_alive()})
@@ -360,7 +391,7 @@ def cleanup_singleton_resources():
                     # #endregion
                     # Call stop to properly shutdown the thread with timeout protection
                     try:
-                        # CRITICAL FIX: Add timeout wrapper to prevent hanging
+                        # Note: Add timeout wrapper to prevent hanging
                         import threading
                         stop_completed = threading.Event()
                         def stop_with_timeout():
@@ -368,20 +399,20 @@ def cleanup_singleton_resources():
                                 pool.stop()
                             finally:
                                 stop_completed.set()
-                        
+
                         stop_thread = threading.Thread(target=stop_with_timeout, daemon=True)
                         stop_thread.start()
                         stop_thread.join(timeout=2.0)  # 2 second timeout
-                        
+
                         if not stop_completed.is_set():
                             # Timeout occurred, force cleanup
                             pool._shutdown_event.set()
                             pool._cleanup_task = None
-                        
+
                         # #region agent log
                         _debug_log("A", "conftest.py:cleanup_singleton_resources", "pool.stop() completed, sleeping 0.5s", {})
                         # #endregion
-                        # CRITICAL FIX: Increase sleep from 0.1s to 0.5s to ensure cleanup completes
+                        # Note: Increase sleep from 0.1s to 0.5s to ensure cleanup completes
                         time.sleep(0.5)
                         # #region agent log
                         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Sleep completed", {})
@@ -391,19 +422,18 @@ def cleanup_singleton_resources():
                         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Exception in pool.stop()", {"error": str(e)})
                         # #endregion
                         # If stop fails, try reset anyway
-                        pass
                 # Always reset to clear the singleton
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "Resetting NetworkOptimizer", {})
                 # #endregion
                 reset_network_optimizer()
-                # CRITICAL FIX: Explicitly clear pool reference
+                # Note: Explicitly clear pool reference
                 pool = None
                 # #region agent log
                 _debug_log("A", "conftest.py:cleanup_singleton_resources", "NetworkOptimizer reset completed", {})
                 # #endregion
-        
-        # CRITICAL FIX: Force cleanup all ConnectionPool instances (not just singleton)
+
+        # Note: Force cleanup all ConnectionPool instances (not just singleton)
         # This ensures any ConnectionPool instances created outside the singleton are also cleaned up
         try:
             from ccbt.utils.network_optimizer import force_cleanup_all_connection_pools
@@ -421,24 +451,22 @@ def cleanup_singleton_resources():
             # Try to stop if running (async, but best effort)
             if _GLOBAL_METRICS_COLLECTOR.running:
                 try:
-                    import asyncio
-                    # Try to get existing loop, create new one if needed
+                    # Use a short-lived loop only when no loop is currently running.
+                    # This avoids run_until_complete() against pytest-managed loops.
                     try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_closed():
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
+                        asyncio.get_running_loop()
+                        has_running_loop = True
                     except RuntimeError:
-                        # No event loop, create new one
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                    
-                    if not loop.is_running():
+                        has_running_loop = False
+
+                    if not has_running_loop:
                         try:
                             # #region agent log
                             _debug_log("C", "conftest.py:cleanup_singleton_resources", "Calling MetricsCollector.stop()", {})
                             # #endregion
-                            loop.run_until_complete(_GLOBAL_METRICS_COLLECTOR.stop())
+                            asyncio.run(
+                                asyncio.wait_for(_GLOBAL_METRICS_COLLECTOR.stop(), timeout=1.5)
+                            )
                             # #region agent log
                             _debug_log("C", "conftest.py:cleanup_singleton_resources", "MetricsCollector.stop() completed", {})
                             # #endregion
@@ -532,122 +560,40 @@ def cleanup_singleton_resources():
             # Always reset the singleton to None to prevent state pollution
             import ccbt.monitoring as monitoring_module
             monitoring_module._GLOBAL_METRICS_COLLECTOR = None
-        
+
         # Also reset AlertManager singleton to prevent state pollution
         try:
-            from ccbt.monitoring import _GLOBAL_ALERT_MANAGER
             import ccbt.monitoring as monitoring_module
+            from ccbt.monitoring import _GLOBAL_ALERT_MANAGER
             if _GLOBAL_ALERT_MANAGER is not None:
                 # AlertManager doesn't have async cleanup, just reset
                 monitoring_module._GLOBAL_ALERT_MANAGER = None
         except Exception:
             # Best-effort cleanup
             pass
-        
-        # Reset UTPSocketManager singleton to prevent state pollution in uTP tests
-        try:
-            from ccbt.transport.utp_socket import UTPSocketManager
-            # Stop and reset the singleton if it exists
-            if UTPSocketManager._instance is not None:
-                instance = UTPSocketManager._instance
-                # Try to stop if initialized
-                if instance._initialized and instance.transport is not None:
-                    try:
-                        import asyncio
-                        # Try to get existing loop, create new one if needed
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_closed():
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                        except RuntimeError:
-                            # No event loop, create new one
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        if not loop.is_running():
-                            try:
-                                # Stop the socket manager
-                                loop.run_until_complete(instance.stop())
-                            except (RuntimeError, Exception):
-                                # If stop fails, just mark as not initialized
-                                instance._initialized = False
-                                if instance.transport:
-                                    try:
-                                        instance.transport.close()
-                                    except Exception:
-                                        pass
-                                    instance.transport = None
-                    except (RuntimeError, Exception):
-                        # Can't stop cleanly, just mark as not initialized
-                        instance._initialized = False
-                        if instance.transport:
-                            try:
-                                instance.transport.close()
-                            except Exception:
-                                pass
-                            instance.transport = None
-                # Always reset the singleton
-                UTPSocketManager._instance = None
-        except Exception:
-            # Best-effort cleanup
-            pass
-        
+
+        # UTPSocketManager singleton compatibility path removed.
+        # Compatibility managers are now owned by sessions and must be cleaned up there.
+
         # Reset PluginManager singleton to prevent state pollution
         try:
-            from ccbt.plugins.base import _plugin_manager
             import ccbt.plugins.base as plugins_module
+            from ccbt.plugins.base import _plugin_manager
             if _plugin_manager is not None:
                 # PluginManager doesn't have async cleanup, just reset
                 plugins_module._plugin_manager = None
         except Exception:
             # Best-effort cleanup
             pass
-        
-        # Reset DiskIOManager singleton to prevent state pollution
-        try:
-            from ccbt.storage.disk_io_init import _GLOBAL_DISK_IO_MANAGER
-            import ccbt.storage.disk_io_init as disk_io_module
-            if _GLOBAL_DISK_IO_MANAGER is not None:
-                # Try to stop if running (async, but best effort)
-                if _GLOBAL_DISK_IO_MANAGER._running:  # noqa: SLF001
-                    try:
-                        import asyncio
-                        # Try to get existing loop, create new one if needed
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_closed():
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                        except RuntimeError:
-                            # No event loop, create new one
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        if not loop.is_running():
-                            try:
-                                loop.run_until_complete(_GLOBAL_DISK_IO_MANAGER.stop())
-                            except (RuntimeError, Exception):
-                                # If stop fails, mark as not running
-                                _GLOBAL_DISK_IO_MANAGER._running = False  # noqa: SLF001
-                        else:
-                            # Loop is running, can't use run_until_complete
-                            _GLOBAL_DISK_IO_MANAGER._running = False  # noqa: SLF001
-                    except (RuntimeError, Exception):
-                        # No event loop or other issue, just mark as not running
-                        _GLOBAL_DISK_IO_MANAGER._running = False  # noqa: SLF001
-                # Always reset the singleton to None to prevent state pollution
-                disk_io_module._GLOBAL_DISK_IO_MANAGER = None
-        except Exception:
-            # Best-effort cleanup
-            pass
+
+        # DiskIOManager is no longer stored as a global singleton.
+        # Compatibility instances created via get_disk_io_manager() are session-owned in tests.
     except Exception as e:
         # #region agent log
         _debug_log("A", "conftest.py:cleanup_singleton_resources", "Exception in cleanup_singleton_resources outer try", {"error": str(e), "error_type": type(e).__name__})
         # #endregion
         # Best-effort cleanup - don't fail tests if cleanup fails
-        pass
-    
+
     # #region agent log
     _debug_log("A", "conftest.py:cleanup_singleton_resources", "Fixture exit", {})
     # #endregion
@@ -667,12 +613,12 @@ def cleanup_network_ports():
     Also releases ports from port pool manager to prevent pool exhaustion.
     """
     yield
-    
+
     import time
     delay = float(os.environ.get("CCBT_TEST_PORT_RELEASE_DELAY", "0.2"))
     if delay > 0:
         time.sleep(delay)
-    
+
     # Release all ports from port pool after each test
     # This ensures the pool doesn't get exhausted over many tests
     try:
@@ -744,15 +690,15 @@ def verify_test_isolation():
     Warnings are logged but tests are not failed to avoid false positives.
     """
     yield
-    
+
     # Best-effort verification - don't fail tests on warnings
-    import threading
-    import sys
     import logging
-    
+    import sys
+    import threading
+
     logger = logging.getLogger(__name__)
     warnings = []
-    
+
     # Check for lingering background threads (excluding main thread)
     try:
         active_threads = [t for t in threading.enumerate() if t.is_alive() and t != threading.main_thread()]
@@ -769,14 +715,15 @@ def verify_test_isolation():
             warnings.append(f"Lingering threads detected: {thread_names}")
     except Exception:
         pass  # Thread enumeration may fail, ignore
-    
+
     # Check for open file handles (if psutil available).
     # Skip on Windows: psutil.Process.open_files() is very slow there (~2s per call)
     # and causes integration runs to appear to hang during teardown.
     if sys.platform != "win32":
         try:
-            import psutil
             import os as os_module
+
+            import psutil
             process = psutil.Process(os_module.getpid())
             open_files = process.open_files()
             # Filter out known system files and pytest files
@@ -794,7 +741,7 @@ def verify_test_isolation():
             pass
         except Exception:
             pass  # File handle check may fail, ignore
-    
+
     # Log warnings if any found
     if warnings:
         logger.warning(
@@ -826,7 +773,7 @@ def reset_config_manager_encryption_cache():
     the cached encryption key is cleared.
     """
     yield
-    
+
     # Clear encryption key cache after each test
     try:
         from ccbt.config import config as config_module
@@ -851,7 +798,7 @@ def mock_dht_client():
     to prevent AttributeError and timeout issues in tests.
     """
     from unittest.mock import AsyncMock, MagicMock
-    
+
     mock_dht = MagicMock()
     mock_dht.start = AsyncMock()
     mock_dht.stop = AsyncMock()
@@ -874,20 +821,22 @@ def create_interactive_cli(session, console=None):
         InteractiveCLI instance with proper executor and adapter
     """
     from unittest.mock import Mock
+
     from rich.console import Console as RichConsole
+
     from ccbt.cli.interactive import InteractiveCLI
     from ccbt.executor.executor import UnifiedCommandExecutor
     from ccbt.executor.session_adapter import LocalSessionAdapter
-    
+
     if console is None:
         console = Mock(spec=RichConsole)
         console.print = Mock()
         console.clear = Mock()
         console.print_json = Mock()
-        # CRITICAL FIX: Rich Progress requires console.get_time method
+        # Note: Rich Progress requires console.get_time method
         import time
         console.get_time = Mock(return_value=time.time)
-    
+
     adapter = LocalSessionAdapter(session)
     executor = UnifiedCommandExecutor(adapter)
     return InteractiveCLI(executor, adapter, console, session=session)
@@ -903,9 +852,10 @@ def mock_config_manager():
     
     Also ensures config state is reset after each test.
     """
-    from unittest.mock import Mock, MagicMock, patch
+    from unittest.mock import MagicMock, Mock, patch
+
     from ccbt.models import Config
-    
+
     # Create mock config with proper structure
     mock_config = MagicMock(spec=Config)
     mock_config.model_dump.return_value = {"network": {"port": 6881}}
@@ -914,14 +864,14 @@ def mock_config_manager():
     mock_disk.backup_dir = "/tmp/backups"
     mock_config.disk = mock_disk
     mock_config.config_file = None
-    
+
     mock_cm = MagicMock()
     mock_cm.config = mock_config
     mock_cm.config_file = None
-    
-    with patch('ccbt.cli.interactive.ConfigManager', return_value=mock_cm):
+
+    with patch("ccbt.cli.interactive.ConfigManager", return_value=mock_cm):
         yield mock_cm
-    
+
     # Cleanup: reset config state after each test
     from ccbt.config.config import reset_config
     reset_config()
@@ -997,8 +947,9 @@ def create_mock_config():
         MagicMock: Mock config object with all required attributes
     """
     from unittest.mock import MagicMock
+
     from ccbt.models import CheckpointFormat
-    
+
     config = MagicMock()
     config.discovery = MagicMock()
     config.discovery.tracker_auto_scrape = False
@@ -1052,9 +1003,10 @@ async def session_manager(tmp_path, request):
         ```
     """
     import asyncio
+    from unittest.mock import patch
+
     from ccbt.session.session import AsyncSessionManager
-    from unittest.mock import MagicMock, patch
-    
+
     # Check if test requested a custom config via fixture parameter
     mock_config = None
     if hasattr(request, "param") and request.param:
@@ -1069,10 +1021,10 @@ async def session_manager(tmp_path, request):
             except Exception:
                 # Use default config
                 mock_config = create_mock_config()
-    
+
     with patch("ccbt.session.session.get_config") as mock_get_config:
         mock_get_config.return_value = mock_config
-        
+
         session = AsyncSessionManager(output_dir=str(tmp_path))
         await session.start()
         try:
@@ -1086,14 +1038,14 @@ async def session_manager(tmp_path, request):
                     await asyncio.wait_for(session._cleanup_task, timeout=2.0)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass  # Expected when cancelling
-            
+
             if hasattr(session, "_metrics_task") and session._metrics_task and not session._metrics_task.done():
                 try:
                     session._metrics_task.cancel()
                     await asyncio.wait_for(session._metrics_task, timeout=2.0)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass  # Expected when cancelling
-            
+
             # Ensure scrape_task is cancelled before stopping
             if hasattr(session, "scrape_task") and session.scrape_task and not session.scrape_task.done():
                 try:
@@ -1101,17 +1053,17 @@ async def session_manager(tmp_path, request):
                     await asyncio.wait_for(session.scrape_task, timeout=2.0)
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass  # Expected when cancelling
-            
+
             # CRITICAL: Ensure all background tasks are stopped
             await session.stop()
-            
+
             # CRITICAL: Clean up all tracker clients to close aiohttp sessions
             async with session.lock:
                 for torrent_session in session.torrents.values():
                     if hasattr(torrent_session, "tracker") and torrent_session.tracker:
                         try:
                             tracker = torrent_session.tracker
-                            
+
                             # Close aiohttp session if it exists (HTTP tracker)
                             if hasattr(tracker, "session"):
                                 tracker_session = tracker.session
@@ -1120,7 +1072,7 @@ async def session_manager(tmp_path, request):
                                         await asyncio.wait_for(
                                             tracker_session.close(), timeout=1.0
                                         )
-                                        # CRITICAL FIX: Close connector explicitly to ensure complete cleanup
+                                        # Note: Close connector explicitly to ensure complete cleanup
                                         if hasattr(tracker_session, "connector") and tracker_session.connector:
                                             connector = tracker_session.connector
                                             if not connector.closed:
@@ -1144,12 +1096,12 @@ async def session_manager(tmp_path, request):
                                                 tracker_session._connector = None
                                             if hasattr(tracker_session, "_connector_owner"):
                                                 tracker_session._connector_owner = False
-                            
+
                             # Close UDP transport if it exists (UDP tracker)
                             if hasattr(tracker, "transport") and tracker.transport:
                                 if not tracker.transport.is_closing():
                                     tracker.transport.close()
-                            
+
                             # Stop tracker client
                             if hasattr(tracker, "stop"):
                                 try:
@@ -1158,7 +1110,7 @@ async def session_manager(tmp_path, request):
                                     pass  # Best effort cleanup
                         except Exception:
                             pass  # Ignore errors during cleanup
-            
+
             # CRITICAL: Clean up DHT client if it exists
             if hasattr(session, "dht") and session.dht:
                 try:
@@ -1168,7 +1120,7 @@ async def session_manager(tmp_path, request):
                             await asyncio.wait_for(session.dht.stop(), timeout=2.0)
                         except asyncio.TimeoutError:
                             pass  # Best effort cleanup
-                    
+
                     # Close UDP transport if it exists
                     if hasattr(session.dht, "transport") and session.dht.transport:
                         transport = session.dht.transport
@@ -1179,7 +1131,7 @@ async def session_manager(tmp_path, request):
                             await asyncio.sleep(0.1)
                         except Exception:
                             pass
-                    
+
                     # Close socket if it exists
                     if hasattr(session.dht, "socket") and session.dht.socket:
                         try:
@@ -1190,8 +1142,8 @@ async def session_manager(tmp_path, request):
                             pass
                 except Exception:
                     pass  # Ignore errors during cleanup
-            
-            # CRITICAL FIX: Stop TCP server explicitly before checking port release
+
+            # Note: Stop TCP server explicitly before checking port release
             if hasattr(session, "tcp_server") and session.tcp_server:
                 try:
                     # Stop TCP server if it has a stop method
@@ -1200,7 +1152,7 @@ async def session_manager(tmp_path, request):
                             await asyncio.wait_for(session.tcp_server.stop(), timeout=2.0)
                         except (asyncio.TimeoutError, Exception):
                             pass  # Best effort cleanup
-                    
+
                     # Close server socket if it exists
                     if hasattr(session.tcp_server, "server") and session.tcp_server.server:
                         try:
@@ -1211,7 +1163,7 @@ async def session_manager(tmp_path, request):
                                 await asyncio.wait_for(server.wait_closed(), timeout=1.0)
                         except (asyncio.TimeoutError, Exception):
                             pass  # Best effort cleanup
-                    
+
                     # Get the port that was used and verify it's released
                     if hasattr(session.tcp_server, "port") and session.tcp_server.port:
                         port = session.tcp_server.port
@@ -1224,8 +1176,8 @@ async def session_manager(tmp_path, request):
                             logger.warning(f"TCP server port {port} not released within timeout, may cause conflicts")
                 except Exception:
                     pass  # Best effort - port may already be released
-            
-            # CRITICAL FIX: Verify DHT port is released
+
+            # Note: Verify DHT port is released
             if hasattr(session, "dht_client") and session.dht_client:
                 try:
                     # Check if DHT client has a port attribute
@@ -1238,10 +1190,10 @@ async def session_manager(tmp_path, request):
                             logger.warning(f"DHT port {dht_port} not released within timeout")
                 except Exception:
                     pass  # Best effort
-            
+
             # Give async cleanup time to complete (increased from 1.0s to 2.0s for better port release)
             await asyncio.sleep(2.0)
-            
+
             # Verify all tasks are done
             if hasattr(session, "scrape_task") and session.scrape_task:
                 assert session.scrape_task.done(), "scrape_task should be done after cleanup"
@@ -1260,8 +1212,8 @@ def mock_session_manager():
     Returns:
         AsyncMock: Mock AsyncSessionManager with all common methods configured
     """
-    from unittest.mock import AsyncMock, MagicMock
-    
+    from unittest.mock import AsyncMock
+
     session = AsyncMock()
     session.add_torrent = AsyncMock(return_value="abcd1234" * 4)
     session.get_torrent_status = AsyncMock(return_value={
@@ -1314,11 +1266,11 @@ def udp_tracker_client():
             udp_tracker_client._socket_ready = True
     """
     from ccbt.discovery.tracker_udp_client import AsyncUDPTrackerClient
-    
+
     client = AsyncUDPTrackerClient(test_mode=True)
-    
+
     yield client
-    
+
     # Cleanup: ensure transport is closed if it exists
     if client.transport is not None and not client.transport.is_closing():
         try:
@@ -1340,10 +1292,11 @@ def mock_config_comprehensive():
         MagicMock: Mock Config with all common attributes configured
     """
     from unittest.mock import MagicMock
+
     from ccbt.models import CheckpointFormat
-    
+
     config = MagicMock()
-    
+
     # Network config (used by cmd_network and others)
     config.network = MagicMock()
     config.network.listen_port = 6881
@@ -1376,7 +1329,7 @@ def mock_config_comprehensive():
     config.network.socket_sndbuf_kib = 256
     config.network.socket_adaptive_buffers = True
     config.network.tcp_nodelay = True
-    
+
     # Discovery config
     config.discovery = MagicMock()
     config.discovery.tracker_auto_scrape = False
@@ -1386,7 +1339,7 @@ def mock_config_comprehensive():
     config.discovery.enable_udp_trackers = True
     config.discovery.enable_pex = True
     config.discovery.enable_webtorrent = False
-    
+
     # Disk config
     config.disk = MagicMock()
     config.disk.checkpoint_interval = 30.0
@@ -1396,29 +1349,29 @@ def mock_config_comprehensive():
     config.disk.checkpoint_batch_pieces = 0
     config.disk.checkpoint_format = CheckpointFormat.BINARY
     config.disk.checkpoint_enabled = True
-    
+
     # Limits config
     config.limits = MagicMock()
     config.limits.global_down_kib = 0
     config.limits.global_up_kib = 0
-    
+
     # NAT config
     config.nat = MagicMock()
     config.nat.auto_map_ports = False
-    
+
     # Security config
     config.security = MagicMock()
     config.security.ip_filter = MagicMock()
     config.security.ip_filter.filter_update_interval = 3600.0
-    
+
     # Queue config
     config.queue = MagicMock()
     config.queue.auto_manage_queue = False
-    
+
     # Optimization config
     config.optimization = MagicMock()
     config.optimization.profile = "balanced"
-    
+
     return config
 
 
@@ -1435,7 +1388,7 @@ def mock_daemon_not_running(monkeypatch):
     mock_daemon_manager = Mock()
     mock_daemon_manager.is_running = Mock(return_value=False)
     mock_daemon_manager.get_pid = Mock(return_value=None)
-    
+
     # Patch DaemonManager to return our mock
     monkeypatch.setattr("ccbt.daemon.daemon_manager.DaemonManager", lambda: mock_daemon_manager)
     return mock_daemon_manager
@@ -1455,16 +1408,17 @@ def cli_interactive_fixture(mock_session_manager, mock_config_comprehensive):
     Returns:
         InteractiveCLI: Configured InteractiveCLI instance
     """
-    from unittest.mock import Mock, patch
-    from rich.console import Console as RichConsole
     import time
-    
+    from unittest.mock import Mock, patch
+
+    from rich.console import Console as RichConsole
+
     console = Mock(spec=RichConsole)
     console.print = Mock()
     console.clear = Mock()
     console.print_json = Mock()
     console.get_time = Mock(return_value=time.time)
-    
+
     # Patch get_config to return our mock config
     with patch("ccbt.cli.interactive.get_config", return_value=mock_config_comprehensive):
         cli = create_interactive_cli(mock_session_manager, console)

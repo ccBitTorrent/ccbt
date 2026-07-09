@@ -16,7 +16,6 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
@@ -45,7 +44,7 @@ def mock_config():
     from ccbt.models import CheckpointFormat
     config.disk.checkpoint_format = CheckpointFormat.BINARY  # Real enum value
     config.disk.checkpoint_enabled = True
-    # CRITICAL FIX: Add limits attribute to prevent TypeError
+    # Note: Add limits attribute to prevent TypeError
     config.limits = MagicMock()
     config.limits.global_down_kib = 0
     config.limits.global_up_kib = 0
@@ -191,7 +190,6 @@ class TestScrapeCache:
         sample_info_hash_hex,
     ):
         """Test scrape_count increments on multiple scrapes."""
-        from ccbt.models import ScrapeResult
         from ccbt.session.session import AsyncTorrentSession
 
         # Add torrent session
@@ -368,7 +366,7 @@ class TestAutoScrapeOnAdd:
     ):
         """Test auto-scrape runs when enabled."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         mock_config.discovery.tracker_auto_scrape = True
 
         # Ensure clean state before test - restart session manager to apply new config
@@ -432,7 +430,7 @@ class TestPeriodicScrapeLoop:
     ):
         """Test periodic scrape loop starts when auto-scrape enabled."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         mock_config.discovery.tracker_auto_scrape = True
 
         # Ensure previous scrape_task is cancelled and cleaned up
@@ -468,7 +466,7 @@ class TestPeriodicScrapeLoop:
     ):
         """Test periodic scrape loop doesn't start when disabled."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         mock_config.discovery.tracker_auto_scrape = False
 
         await session_manager.stop()
@@ -522,7 +520,7 @@ class TestPeriodicScrapeLoop:
         # The periodic loop needs auto-scrape enabled and started
         # Stop and restart to apply new config with auto-scrape enabled
         await session_manager.stop()
-        
+
         # Mock force_scrape before restarting
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
@@ -629,7 +627,7 @@ class TestPeriodicScrapeLoop:
     ):
         """Test periodic scrape loop is cancelled on stop."""
         from tests.fixtures.network_mocks import apply_network_mocks_to_session
-        
+
         mock_config.discovery.tracker_auto_scrape = True
 
         apply_network_mocks_to_session(session_manager, mock_network_components)
@@ -663,7 +661,7 @@ class TestPeriodicScrapeLoop:
 
         # Stop and restart to apply new config and start periodic loop
         await session_manager.stop()
-        
+
         # Mock force_scrape to raise exception
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
@@ -1074,8 +1072,9 @@ class TestScrapeResultModel:
 
     def test_scrape_result_all_fields(self):
         """Test ScrapeResult with all fields."""
-        from ccbt.models import ScrapeResult
         import time
+
+        from ccbt.models import ScrapeResult
 
         result = ScrapeResult(
             info_hash=b"y" * 20,
@@ -1095,8 +1094,9 @@ class TestScrapeResultModel:
 
     def test_scrape_result_validation_negative_values(self):
         """Test ScrapeResult validation rejects negative values."""
-        from ccbt.models import ScrapeResult
         from pydantic import ValidationError
+
+        from ccbt.models import ScrapeResult
 
         # Should raise ValidationError for negative seeders
         with pytest.raises(ValidationError):

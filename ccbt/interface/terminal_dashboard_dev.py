@@ -51,8 +51,8 @@ logger = logging.getLogger(__name__)
 # Import the dashboard and session classes
 from ccbt.interface.terminal_dashboard import (
     TerminalDashboard,
-    _ensure_daemon_running,  # noqa: PLC2701
-    _show_startup_splash,  # noqa: PLC2701
+    _ensure_daemon_running,
+    _show_startup_splash,
 )
 
 # Cache for daemon readiness check to avoid redundant checks
@@ -81,40 +81,40 @@ def get_app() -> TerminalDashboard:
     # We use the executor pattern to connect through CLI commands when possible
     # The interface only becomes available when it's possible to connect
     # We must avoid asyncio.run() here as it creates a new event loop that conflicts with Textual's
-    
+
     import threading
-    
+
     from ccbt.config.config import get_config, init_config
     from ccbt.daemon.ipc_client import IPCClient
     from ccbt.daemon.utils import generate_api_key
-    from ccbt.models import DaemonConfig
     from ccbt.executor.manager import ExecutorManager
-    
+    from ccbt.models import DaemonConfig
+
     # Initialize config
     config_manager = init_config()
     cfg = get_config()
-    
+
     if not cfg.daemon or not cfg.daemon.api_key:
         api_key = generate_api_key()
         cfg.daemon = DaemonConfig(api_key=api_key)
         logger.warning("Daemon config not found, generated new API key")
     else:
         api_key = cfg.daemon.api_key
-    
+
     # CRITICAL: Cache daemon readiness check to avoid redundant checks
     # When get_app() is called multiple times (e.g., when app() is invoked), we don't want
     # to re-check daemon status every time. We cache the result and reuse it.
     global _daemon_readiness_cache
-    
+
     # Check for --no-splash or -n flags in sys.argv
     import sys
     no_splash = "--no-splash" in sys.argv or "-n" in sys.argv
-    
+
     # Start splash screen if enabled (for dev mode, always show splash to hide bootup logs)
     # Initialize before the if/else block so it's accessible throughout
     splash_manager = None
     splash_thread = None
-    
+
     # Check if we've already verified daemon readiness
     if _daemon_readiness_cache["checked"] and _daemon_readiness_cache["ready"]:
         # Use cached values - skip the thread-based check
@@ -127,7 +127,7 @@ def get_app() -> TerminalDashboard:
     else:
         # First time - check daemon readiness
         logger.info("Waiting for daemon to be ready before initializing interface...")
-        
+
         # Start splash screen to hide bootup sequences (unless --no-splash or -n is set)
         try:
             if not no_splash:
@@ -144,12 +144,12 @@ def get_app() -> TerminalDashboard:
         except Exception:
             # If splash fails, continue without it
             pass
-        
+
         # Use a thread pool executor to run the async function in isolation
         # This prevents event loop conflicts with Textual
         result_container: list[tuple[bool, Optional[Any]]] = []
         exception_container: list[Exception] = []
-        
+
         async def _ensure_and_close() -> tuple[bool, Optional[Any]]:
             """Ensure daemon is running and close the IPCClient before returning.
             
@@ -158,7 +158,7 @@ def get_app() -> TerminalDashboard:
             Uses ONLY IPC client health checks - no PID file or process checks.
             """
             success, ipc_client = await _ensure_daemon_running(splash_manager=splash_manager)
-            
+
             # CRITICAL: Close the IPCClient in the same event loop before returning
             # This prevents "Unclosed client session" warnings when the event loop closes
             # We create a new IPCClient in Textual's event loop, so we don't need this one
@@ -168,10 +168,10 @@ def get_app() -> TerminalDashboard:
                     logger.debug("Closed IPCClient from thread's event loop")
                 except Exception as e:
                     logger.debug("Error closing IPCClient from thread: %s", e)
-            
+
             # Return only success status - we don't need the client
             return (success, None)
-        
+
         def run_in_thread():
             """Run async function in thread with its own event loop."""
             try:
@@ -182,21 +182,21 @@ def get_app() -> TerminalDashboard:
                 result_container.append(result)
             except Exception as e:
                 exception_container.append(e)
-        
+
         # Start the thread
         thread = threading.Thread(target=run_in_thread, daemon=False)
         thread.start()
-        
+
         # Wait for thread to complete (with timeout)
         # CRITICAL: Use a polling approach instead of blocking join to allow KeyboardInterrupt
         # to be handled properly. This prevents the thread.join() from blocking Ctrl+C.
         # CRITICAL: Use 90 second timeout minimum to allow for slow daemon startup
         # (NAT discovery ~35s, DHT bootstrap ~8s, IPC server startup, etc.)
         timeout = 90.0  # Minimum 90 seconds for daemon startup
-        start_time = __import__('time').time()
-        
+        start_time = __import__("time").time()
+
         while thread.is_alive():
-            elapsed = __import__('time').time() - start_time
+            elapsed = __import__("time").time() - start_time
             if elapsed >= timeout:
                 # Thread is still running - timeout
                 raise RuntimeError(
@@ -214,18 +214,18 @@ def get_app() -> TerminalDashboard:
             except KeyboardInterrupt:
                 # User pressed Ctrl+C - cancel the thread and re-raise
                 logger.info("Daemon wait interrupted by user (KeyboardInterrupt)")
-                # CRITICAL FIX: Cannot set daemon status on active thread
+                # Note: Cannot set daemon status on active thread
                 # Instead, just let the thread finish naturally - it's a daemon thread by default
                 # The thread will exit when the main process exits
                 raise
-        
+
         # Check for exceptions
         if exception_container:
             e = exception_container[0]
             # Clear splash on error
             if splash_manager:
                 try:
-                    splash_manager.clear_progress_messages()
+                    splash_manager.stop_splash()
                 except Exception:
                     pass
             logger.exception("Error ensuring daemon is ready: %s", e)
@@ -233,27 +233,27 @@ def get_app() -> TerminalDashboard:
                 "Dashboard requires daemon to be running. "
                 "Please start the daemon with 'btbt daemon start'"
             ) from e
-        
+
         # Check result
         if not result_container:
             # Clear splash on error
             if splash_manager:
                 try:
-                    splash_manager.clear_progress_messages()
+                    splash_manager.stop_splash()
                 except Exception:
                     pass
             raise RuntimeError(
                 "Failed to get daemon connection result. "
                 "Please start the daemon with 'btbt daemon start'"
             )
-        
+
         success, _ = result_container[0]  # Don't reuse IPCClient from thread
-        
+
         if not success:
             # Clear splash on error
             if splash_manager:
                 try:
-                    splash_manager.clear_progress_messages()
+                    splash_manager.stop_splash()
                 except Exception:
                     pass
             raise RuntimeError(
@@ -264,7 +264,7 @@ def get_app() -> TerminalDashboard:
                 "  3. Permissions (ensure you have permission to start daemon)\n\n"
                 "To start daemon manually: 'btbt daemon start'"
             )
-        
+
         # Cache the result for future calls
         from ccbt.cli.main import _get_daemon_ipc_port
         ipc_port = _get_daemon_ipc_port(cfg)
@@ -273,7 +273,7 @@ def get_app() -> TerminalDashboard:
         _daemon_readiness_cache["ipc_port"] = ipc_port
         _daemon_readiness_cache["api_key"] = api_key  # Use api_key variable (already set from config above)
         logger.info("Cached daemon readiness check result (port=%s)", ipc_port)
-    
+
     # CRITICAL: Create a NEW IPCClient in the current (synchronous) context
     # This client will be used in Textual's event loop, not the thread's event loop
     # The IPCClient's _ensure_session() will create the aiohttp session in Textual's loop
@@ -282,26 +282,26 @@ def get_app() -> TerminalDashboard:
     # ipc_port is already set from the cached check above
     client_host = "127.0.0.1"  # Always use 127.0.0.1 for client connections
     base_url = f"http://{client_host}:{ipc_port}"
-    
+
     logger.info("Creating new IPCClient for Textual's event loop (base_url=%s)", base_url)
     # Create NEW IPCClient - will be bound to Textual's event loop when first used
     # DO NOT reuse the IPCClient from the thread - it's bound to a different (closed) event loop
     # Use api_key from cache or config (api_key is set above in both code paths)
     ipc_client = IPCClient(api_key=api_key, base_url=base_url)
-    
+
     # Daemon is ready - get executor using executor pattern
     # This ensures we use CLI commands when possible
     executor_manager = ExecutorManager.get_instance()
     executor = executor_manager.get_executor(ipc_client=ipc_client)
-    
+
     # Create session adapter that uses the executor pattern
     # The executor will handle connection through CLI commands when possible
     logger.info("Creating DaemonInterfaceAdapter...")
     session = DaemonInterfaceAdapter(ipc_client)
     logger.info("DaemonInterfaceAdapter created successfully (session=%s)", type(session).__name__)
-    
+
     logger.info("Daemon is ready - interface is now available")
-    
+
     # Create the TerminalDashboard app instance
     logger.info("Creating TerminalDashboard app instance...")
     try:
@@ -314,11 +314,11 @@ def get_app() -> TerminalDashboard:
         # Clear splash on error
         if splash_manager:
             try:
-                splash_manager.clear_progress_messages()
+                splash_manager.stop_splash()
                 # Restore log level if it was suppressed
                 import logging
                 root_logger = logging.getLogger()
-                if hasattr(splash_manager, '_original_log_level'):
+                if hasattr(splash_manager, "_original_log_level"):
                     root_logger.setLevel(splash_manager._original_log_level)
             except Exception:
                 pass
@@ -349,7 +349,7 @@ _daemon_ready: bool = False
 def _get_app_instance() -> TerminalDashboard:
     """Get or create the app instance (lazy initialization)."""
     global _app_instance, _daemon_ready
-    
+
     if _app_instance is None:
         logger.info("Creating app instance for Textual's run command")
         try:
@@ -384,7 +384,7 @@ if __name__ != "__main__":
     # Create app as a callable that returns the instance
     # This will block on first call until daemon is ready
     logger.info("Module being imported - setting up app callable for Textual's run command")
-    
+
     # CRITICAL: Textual's run command calls `app().run()` when `app` is callable
     # So we need to make `app` a callable that returns the instance
     # The instance will be created lazily on first call
@@ -397,12 +397,12 @@ if __name__ != "__main__":
         instance = _get_app_instance()
         logger.info("App instance retrieved (type=%s), Textual will call .run() on it", type(instance).__name__)
         # Verify the instance has a run method
-        if not hasattr(instance, 'run'):
+        if not hasattr(instance, "run"):
             logger.error("App instance does not have run() method!")
             raise AttributeError("App instance missing run() method")
         logger.info("App instance has run() method, ready for Textual")
         return instance
-    
+
     logger.info("App callable ready for Textual's run command")
 else:
     # Being executed directly - app will be created in main block
@@ -410,7 +410,7 @@ else:
 
 # CRITICAL: When using `textual run --dev`, Textual will import this module and call `get_app()`
 # directly. It will NOT execute the `if __name__ == "__main__":` block.
-# 
+#
 # If you want to run this file directly (not via textual run), use:
 #   python -m ccbt.interface.terminal_dashboard_dev
 # This will execute the main block below.

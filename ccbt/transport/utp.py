@@ -20,7 +20,10 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
+
+if TYPE_CHECKING:
+    from ccbt.transport.utp_socket import UTPSocketManager
 
 from ccbt.config.config import get_config
 
@@ -257,6 +260,7 @@ class UTPConnection:
         self,
         remote_addr: tuple[str, int],
         connection_id: Optional[int] = None,
+        socket_manager: Optional[UTPSocketManager] = None,
         _send_window_size: int = 65535,
         recv_window_size: int = 65535,
     ):
@@ -264,6 +268,7 @@ class UTPConnection:
 
         Args:
             remote_addr: Peer IP and port (host, port)
+            socket_manager: Socket manager used for connection lifecycle coordination
             connection_id: Connection identifier (random if None)
             send_window_size: Initial send window size
             recv_window_size: Initial receive window size
@@ -271,6 +276,7 @@ class UTPConnection:
         """
         self.config = get_config()
         self.logger = logging.getLogger(__name__)
+        self.socket_manager: Optional[UTPSocketManager] = socket_manager
 
         # Connection state
         self.state = UTPConnectionState.IDLE
@@ -400,17 +406,25 @@ class UTPConnection:
     async def initialize_transport(self) -> None:
         """Initialize transport via UTPSocketManager.
 
-        Gets the global socket manager instance and sets the transport.
+        Uses the injected socket manager, if provided, or raises if unavailable.
         Also registers this connection for packet routing.
         """
-        from ccbt.transport.utp_socket import UTPSocketManager
+        socket_manager = self.socket_manager
+        if socket_manager is None:
+            from ccbt.transport.utp_socket import UTPSocketManager
 
-        socket_manager = await UTPSocketManager.get_instance()
+            # Fallback: instantiate and start a dedicated socket manager
+            socket_manager = UTPSocketManager()
+            await socket_manager.start()
+            self.socket_manager = socket_manager
+        if socket_manager is None:
+            msg = "UTP socket manager is unavailable after initialization fallback."
+            raise RuntimeError(msg)
         self.transport = socket_manager.get_transport()
 
         # Generate connection ID if not already set (for collision detection)
         if not self._connection_id_generated:
-            self.connection_id = socket_manager._generate_connection_id()  # noqa: SLF001
+            self.connection_id = socket_manager.generate_connection_id()
             self._connection_id_generated = True
 
         # Register connection for packet routing
@@ -1351,10 +1365,12 @@ class UTPConnection:
         self.state = UTPConnectionState.CLOSED
 
         # Unregister from socket manager
-        from ccbt.transport.utp_socket import UTPSocketManager
-
+        socket_manager = self.socket_manager
+        if socket_manager is None:
+            return
+        # socket_manager remains available here and was set during initialization.
+        # Avoid redundant casts now that control-flow guarantees non-null.
         try:
-            socket_manager = await UTPSocketManager.get_instance()
             socket_manager.unregister_connection(
                 self.remote_addr,
                 self.connection_id,

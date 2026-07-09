@@ -12,11 +12,14 @@ This module tests the remaining uncovered lines:
 """
 
 import asyncio
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
+_DEBUG_LOG_PATH = Path(tempfile.gettempdir()) / "ccbt-test-debug.log"
 
 from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
 from ccbt.peer.peer import PeerInfo
@@ -54,7 +57,7 @@ class TestUTPCallbackAssignments:
         manager = AsyncPeerConnectionManager(
             mock_torrent_data, mock_piece_manager
         )
-        
+
         # Start manager to initialize connection pool
         try:
             await manager.start()
@@ -100,9 +103,9 @@ class TestUTPCallbackAssignments:
 
             # Mock _should_use_utp to return True
             manager._should_use_utp = lambda _: True
-            
+
             # Mock connection pool to prevent it from starting background tasks
-            if hasattr(manager, 'connection_pool') and manager.connection_pool:
+            if hasattr(manager, "connection_pool") and manager.connection_pool:
                 manager.connection_pool.start = AsyncMock()
                 manager.connection_pool.stop = AsyncMock()
                 manager.connection_pool.acquire = AsyncMock(return_value=None)
@@ -110,15 +113,15 @@ class TestUTPCallbackAssignments:
             # Create a real UTPPeerConnection instance to capture callback assignments
             # We'll patch the import to return our mock, but also track assignments
             callback_assignments = {}
-            
+
             original_utp_class = None
-            
+
             def track_assignments(peer_info, torrent_data):
                 nonlocal original_utp_class
                 if original_utp_class is None:
                     from ccbt.peer.utp_peer import UTPPeerConnection
                     original_utp_class = UTPPeerConnection
-                
+
                 # Create mock instance (don't use spec to avoid InvalidSpecError)
                 conn = MagicMock()
                 conn.peer_info = peer_info
@@ -134,7 +137,7 @@ class TestUTPCallbackAssignments:
                 conn.on_bitfield_received = None
                 conn.on_piece_received = None
                 return conn
-            
+
             with patch(
                 "ccbt.peer.utp_peer.UTPPeerConnection",
                 side_effect=track_assignments,
@@ -148,13 +151,13 @@ class TestUTPCallbackAssignments:
             # Verify callbacks were assigned by checking the manager's connection
             # The callbacks are assigned in lines 440, 442, 444, 446
             # We verify this path is covered by checking that the code path executed
-            
+
             # Clean up manager to prevent resource leaks
             try:
                 # Cancel any connection tasks that might have been created
                 async with manager.connection_lock:
                     for conn in list(manager.connections.values()):
-                        if hasattr(conn, 'connection_task') and conn.connection_task:
+                        if hasattr(conn, "connection_task") and conn.connection_task:
                             conn.connection_task.cancel()
                             try:
                                 await conn.connection_task
@@ -166,13 +169,13 @@ class TestUTPCallbackAssignments:
                 # If stop fails or times out, try manual cleanup
                 try:
                     # Cancel background tasks
-                    if hasattr(manager, '_choking_task') and manager._choking_task:
+                    if hasattr(manager, "_choking_task") and manager._choking_task:
                         manager._choking_task.cancel()
                         try:
                             await asyncio.wait_for(manager._choking_task, timeout=0.5)
                         except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                             pass
-                    if hasattr(manager, '_stats_task') and manager._stats_task:
+                    if hasattr(manager, "_stats_task") and manager._stats_task:
                         manager._stats_task.cancel()
                         try:
                             await asyncio.wait_for(manager._stats_task, timeout=0.5)
@@ -181,7 +184,7 @@ class TestUTPCallbackAssignments:
                     # Cancel connection tasks
                     async with manager.connection_lock:
                         for conn in list(manager.connections.values()):
-                            if hasattr(conn, 'connection_task') and conn.connection_task:
+                            if hasattr(conn, "connection_task") and conn.connection_task:
                                 conn.connection_task.cancel()
                                 try:
                                     await asyncio.wait_for(conn.connection_task, timeout=0.5)
@@ -192,7 +195,7 @@ class TestUTPCallbackAssignments:
                             except (asyncio.TimeoutError, Exception):
                                 pass
                     # Stop connection pool if it exists
-                    if hasattr(manager, 'connection_pool') and manager.connection_pool:
+                    if hasattr(manager, "connection_pool") and manager.connection_pool:
                         try:
                             await asyncio.wait_for(manager.connection_pool.stop(), timeout=0.5)
                         except (asyncio.TimeoutError, Exception):
@@ -208,7 +211,7 @@ class TestUTPCallbackAssignments:
         manager = AsyncPeerConnectionManager(
             mock_torrent_data, mock_piece_manager
         )
-        
+
         # Start manager to initialize connection pool
         try:
             await manager.start()
@@ -256,9 +259,9 @@ class TestUTPCallbackAssignments:
 
             # Mock _should_use_utp to return True
             manager._should_use_utp = lambda _: True
-            
+
             # Mock connection pool to prevent it from starting background tasks
-            if hasattr(manager, 'connection_pool') and manager.connection_pool:
+            if hasattr(manager, "connection_pool") and manager.connection_pool:
                 manager.connection_pool.start = AsyncMock()
                 manager.connection_pool.stop = AsyncMock()
                 manager.connection_pool.acquire = AsyncMock(return_value=None)
@@ -281,13 +284,13 @@ class TestUTPCallbackAssignments:
                 # But we verify the callback assignment path is covered
                 # The callback should be set on the connection
                 assert mock_utp_connection.on_peer_connected is not None
-                
+
                 # Clean up manager to prevent resource leaks
                 try:
                     # Cancel any connection tasks that might have been created
                     async with manager.connection_lock:
                         for conn in list(manager.connections.values()):
-                            if hasattr(conn, 'connection_task') and conn.connection_task:
+                            if hasattr(conn, "connection_task") and conn.connection_task:
                                 conn.connection_task.cancel()
                                 try:
                                     await conn.connection_task
@@ -299,13 +302,13 @@ class TestUTPCallbackAssignments:
                     # If stop fails or times out, try manual cleanup
                     try:
                         # Cancel background tasks
-                        if hasattr(manager, '_choking_task') and manager._choking_task:
+                        if hasattr(manager, "_choking_task") and manager._choking_task:
                             manager._choking_task.cancel()
                             try:
                                 await asyncio.wait_for(manager._choking_task, timeout=0.5)
                             except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                                 pass
-                        if hasattr(manager, '_stats_task') and manager._stats_task:
+                        if hasattr(manager, "_stats_task") and manager._stats_task:
                             manager._stats_task.cancel()
                             try:
                                 await asyncio.wait_for(manager._stats_task, timeout=0.5)
@@ -314,7 +317,7 @@ class TestUTPCallbackAssignments:
                         # Cancel connection tasks
                         async with manager.connection_lock:
                             for conn in list(manager.connections.values()):
-                                if hasattr(conn, 'connection_task') and conn.connection_task:
+                                if hasattr(conn, "connection_task") and conn.connection_task:
                                     conn.connection_task.cancel()
                                     try:
                                         await asyncio.wait_for(conn.connection_task, timeout=0.5)
@@ -325,7 +328,7 @@ class TestUTPCallbackAssignments:
                                 except (asyncio.TimeoutError, Exception):
                                     pass
                         # Stop connection pool if it exists
-                        if hasattr(manager, 'connection_pool') and manager.connection_pool:
+                        if hasattr(manager, "connection_pool") and manager.connection_pool:
                             try:
                                 await asyncio.wait_for(manager.connection_pool.stop(), timeout=0.5)
                             except (asyncio.TimeoutError, Exception):
@@ -346,6 +349,9 @@ class TestMSEEncryptionHandshake:
         mock_config = MagicMock()
         mock_config.security.enable_encryption = True
         mock_config.security.encryption_mode = "preferred"
+        mock_config.security.encryption_dh_key_size = 1024
+        mock_config.security.encryption_prefer_rc4 = False
+        mock_config.security.encryption_allowed_ciphers = ["aes", "chacha20", "rc4"]
         mock_config.network.enable_utp = False  # Disable UTP to force TCP path
         mock_config.network.pipeline_depth = 16
         mock_config.network.connection_timeout = 10.0
@@ -358,30 +364,30 @@ class TestMSEEncryptionHandshake:
         mock_config.network.connection_pool_health_check_interval = 60.0
         # Disable circuit breaker to avoid MagicMock issues
         mock_config.network.circuit_breaker_enabled = False
-        # CRITICAL FIX: Set adaptive limit config attributes to numeric values (not MagicMock)
+        # Note: Set adaptive limit config attributes to numeric values (not MagicMock)
         mock_config.network.connection_pool_adaptive_limit_enabled = False  # Disable adaptive limit to avoid MagicMock issues
         mock_config.network.connection_pool_adaptive_limit_min = 50
         mock_config.network.connection_pool_adaptive_limit_max = 1000
         mock_config.network.connection_pool_cpu_threshold = 0.8
         mock_config.network.connection_pool_memory_threshold = 0.8
-        # CRITICAL FIX: Set limits config attributes to numeric values (not MagicMock)
+        # Note: Set limits config attributes to numeric values (not MagicMock)
         mock_config.limits = MagicMock()
         mock_config.limits.per_peer_up_kib = 0  # Set to numeric value (attribute name is per_peer_up_kib, not per_peer_upload_limit_kib)
-        # CRITICAL FIX: Set network.max_global_peers to numeric value for max_concurrent semaphore
+        # Note: Set network.max_global_peers to numeric value for max_concurrent semaphore
         mock_config.network.max_global_peers = 200  # Set to numeric value
-        # CRITICAL FIX: Set max_concurrent_connection_attempts to numeric value
+        # Note: Set max_concurrent_connection_attempts to numeric value
         mock_config.network.max_concurrent_connection_attempts = 20  # Set to numeric value
-        # CRITICAL FIX: Set unchoke_interval to numeric value to prevent choking loop errors
+        # Note: Set unchoke_interval to numeric value to prevent choking loop errors
         mock_config.network.unchoke_interval = 10.0  # Set to numeric value (seconds)
-        # CRITICAL FIX: Set peer_evaluation_interval to numeric value to prevent peer evaluation loop errors
+        # Note: Set peer_evaluation_interval to numeric value to prevent peer evaluation loop errors
         mock_config.network.peer_evaluation_interval = 30.0  # Set to numeric value (seconds)
-        # CRITICAL FIX: Set handshake timeout values to prevent MagicMock comparison errors
+        # Note: Set handshake timeout values to prevent MagicMock comparison errors
         mock_config.network.handshake_timeout = 10.0
         mock_config.network.handshake_timeout_min = 5.0
         mock_config.network.handshake_timeout_max = 30.0
-        
+
         with patch("ccbt.peer.async_peer_connection.get_config", return_value=mock_config):
-            # CRITICAL FIX: Mock AdaptiveTimeoutCalculator to return a simple timeout value
+            # Note: Mock AdaptiveTimeoutCalculator to return a simple timeout value
             # This prevents MagicMock comparison errors in _calculate_adaptive_handshake_timeout
             with patch(
                 "ccbt.utils.timeout_adapter.AdaptiveTimeoutCalculator"
@@ -389,35 +395,35 @@ class TestMSEEncryptionHandshake:
                 mock_timeout_calculator = MagicMock()
                 mock_timeout_calculator.calculate_handshake_timeout = MagicMock(return_value=10.0)
                 mock_timeout_calc_class.return_value = mock_timeout_calculator
-                
+
                 manager = AsyncPeerConnectionManager(
                     mock_torrent_data, mock_piece_manager
                 )
-                
-                # CRITICAL FIX: Start the manager before connecting
+
+                # Note: Start the manager before connecting
                 # The manager needs to be running for _connect_to_peer to work
                 await manager.start()
-                
+
                 try:
                     # Force UTP check to return False to ensure TCP path is used
                     manager._should_use_utp = lambda _: False
-                    
+
                     # Mock connection pool to return None (no pooled connection)
                     # This ensures we go through the TCP connection path
                     manager.connection_pool.acquire = AsyncMock(return_value=None)
 
-                    # CRITICAL FIX: Define is_closing_false function before using it
+                    # Note: Define is_closing_false function before using it
                     def is_closing_false():
                         return False
-                    
+
                     # Mock handshake response - need to provide both the handshake we send and receive
                     from ccbt.peer.peer import Handshake
 
                     info_hash = mock_torrent_data["info_hash"]
                     peer_handshake = Handshake(info_hash, b"remote_peer_id_20_by")
                     handshake_data = peer_handshake.encode()
-                    
-                    # CRITICAL FIX: Define mock_readexactly function BEFORE using it
+
+                    # Note: Define mock_readexactly function BEFORE using it
                     # The code first reads 1 byte (protocol length), then reads the remaining 67 bytes
                     # Track how many times it's been called to handle handshake vs message loop
                     readexactly_call_count = [0]  # Use list to allow modification in nested function
@@ -426,24 +432,23 @@ class TestMSEEncryptionHandshake:
                         if size == 1:
                             # Return first byte (protocol length, should be 19 for BitTorrent)
                             return handshake_data[:1]
-                        elif size == 67:
+                        if size == 67:
                             # Return remaining 67 bytes
                             return handshake_data[1:]
-                        elif readexactly_call_count[0] <= 2:
+                        if readexactly_call_count[0] <= 2:
                             # First two calls are for handshake (1 byte + 67 bytes)
                             # For any other size during handshake, return the full handshake data (truncated to size)
                             return handshake_data[:size]
-                        else:
-                            # After handshake, raise ConnectionError to signal connection closed
-                            # This prevents the message loop from hanging
-                            raise ConnectionError("Connection closed for test")
-                    
+                        # After handshake, raise ConnectionError to signal connection closed
+                        # This prevents the message loop from hanging
+                        raise ConnectionError("Connection closed for test")
+
                     # Mock encrypted streams
                     mock_encrypted_reader = MagicMock()
-                    # CRITICAL FIX: Ensure encrypted reader has readexactly method that returns proper data
+                    # Note: Ensure encrypted reader has readexactly method that returns proper data
                     mock_encrypted_reader.readexactly = mock_readexactly
                     mock_encrypted_writer = MagicMock()
-                    # CRITICAL FIX: Ensure encrypted writer has AsyncMock for drain method
+                    # Note: Ensure encrypted writer has AsyncMock for drain method
                     mock_encrypted_writer.drain = AsyncMock()
                     mock_encrypted_writer.write = MagicMock()
                     mock_encrypted_writer.is_closing = is_closing_false
@@ -464,52 +469,52 @@ class TestMSEEncryptionHandshake:
                     mock_mse = MagicMock()
                     mock_mse.initiate_as_initiator = AsyncMock(return_value=mock_mse_result)
 
-                    # CRITICAL FIX: Create a mock reader that implements the required interface
+                    # Note: Create a mock reader that implements the required interface
                     # The encryption code checks isinstance(reader, asyncio.StreamReader) OR hasattr checks
                     # We'll create a mock that passes the hasattr checks and has our mock_readexactly
                     import asyncio
                     # Create a mock that looks like a StreamReader but uses our mock_readexactly
                     # Store mock_readexactly in a variable that can be accessed by MockEncryptedReader
                     _mock_readexactly_func = mock_readexactly
-                    
+
                     class MockStreamReader:
                         """Mock StreamReader that uses our mock_readexactly."""
                         def __init__(self, readexactly_func):
                             self._readexactly = readexactly_func
                             self._read = AsyncMock()
-                        
+
                         async def readexactly(self, n):
                             """Call our mock readexactly function."""
                             return await self._readexactly(n)
-                        
+
                         async def read(self, n=-1):
                             """Mock read method."""
                             return await self._read(n)
-                    
-                    # CRITICAL FIX: Create mock reader that passes isinstance check
+
+                    # Note: Create mock reader that passes isinstance check
                     # Use MockStreamReader class we defined above
                     mock_reader = MockStreamReader(mock_readexactly)
-                    
-                    # CRITICAL FIX: Create mock writer that passes isinstance check
-                    # CRITICAL FIX: writer.write() is synchronous and returns None, not a coroutine
+
+                    # Note: Create mock writer that passes isinstance check
+                    # Note: writer.write() is synchronous and returns None, not a coroutine
                     mock_writer = AsyncMock()
                     mock_writer.drain = AsyncMock()
                     mock_writer.write = MagicMock(return_value=None)  # Synchronous, returns None
                     mock_writer.close = MagicMock()
                     mock_writer.wait_closed = AsyncMock()
-                    # CRITICAL FIX: Add is_closing() method to prevent connection validation failure
+                    # Note: Add is_closing() method to prevent connection validation failure
                     def is_closing_false():
                         return False
                     mock_writer.is_closing = is_closing_false
-                    
-                    # CRITICAL FIX: Patch isinstance to return True for our mocks
+
+                    # Note: Patch isinstance to return True for our mocks
                     # This is necessary because the encryption code checks isinstance(reader, asyncio.StreamReader)
                     import builtins
                     # Store original isinstance before patching to avoid recursion
-                    _original_isinstance = builtins.isinstance.__wrapped__ if hasattr(builtins.isinstance, '__wrapped__') else builtins.isinstance
+                    _original_isinstance = builtins.isinstance.__wrapped__ if hasattr(builtins.isinstance, "__wrapped__") else builtins.isinstance
                     # Get the real isinstance from the builtins module directly
                     import types
-                    _real_isinstance = types.__builtins__.get('isinstance', builtins.isinstance)
+                    _real_isinstance = types.__builtins__.get("isinstance", builtins.isinstance)
                     def patched_isinstance(obj, class_or_tuple):
                         # Check for our mocks first to avoid recursion
                         # Use type() instead of isinstance to avoid recursion
@@ -528,10 +533,10 @@ class TestMSEEncryptionHandshake:
 
                     # Track if encrypted streams were created
                     encrypted_streams_created = []
-                    
+
                     def mock_reader_init(reader, cipher):
                         encrypted_streams_created.append(("reader", reader, cipher))
-                        # CRITICAL FIX: Create a real EncryptedStreamReader-like object
+                        # Note: Create a real EncryptedStreamReader-like object
                         # that wraps the original reader and uses mock_readexactly
                         # Since EncryptedStreamReader.readexactly calls self.reader.readexactly,
                         # we need to ensure the underlying reader has the correct readexactly
@@ -539,12 +544,12 @@ class TestMSEEncryptionHandshake:
                             def __init__(self, underlying_reader, cipher):
                                 self.reader = underlying_reader
                                 self.cipher = cipher
-                                # CRITICAL FIX: Store mock_readexactly in a closure variable
+                                # Note: Store mock_readexactly in a closure variable
                                 # This ensures we can access it from the async method
                                 self._mock_readexactly = mock_readexactly
-                            
+
                             async def readexactly(self, n):
-                                # CRITICAL FIX: Call mock_readexactly directly instead of delegating
+                                # Note: Call mock_readexactly directly instead of delegating
                                 # This avoids issues with asyncio.StreamReader's built-in readexactly
                                 # Use the stored mock_readexactly function
                                 encrypted = await self._mock_readexactly(n)
@@ -569,7 +574,7 @@ class TestMSEEncryptionHandshake:
                                         },
                                         "timestamp": int(time.time() * 1000),
                                     }
-                                    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a", encoding="utf-8") as f:
+                                    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                                         f.write(json.dumps(log_data) + "\n")
                                 except Exception as e:
                                     # Log the exception so we can see what's wrong
@@ -585,12 +590,12 @@ class TestMSEEncryptionHandshake:
                                             "data": {"error": str(e), "error_type": type(e).__name__},
                                             "timestamp": int(time.time() * 1000),
                                         }
-                                        with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a", encoding="utf-8") as f:
+                                        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                                             f.write(json.dumps(log_data) + "\n")
                                     except Exception:
                                         pass
                                 # #endregion
-                                # CRITICAL FIX: Ensure decrypt returns bytes, not MagicMock
+                                # Note: Ensure decrypt returns bytes, not MagicMock
                                 if hasattr(self.cipher, "decrypt") and callable(self.cipher.decrypt):
                                     decrypted = self.cipher.decrypt(encrypted)
                                 else:
@@ -613,32 +618,32 @@ class TestMSEEncryptionHandshake:
                                         },
                                         "timestamp": int(time.time() * 1000),
                                     }
-                                    with open(r"c:\Users\MeMyself\bittorrentclient\.cursor\debug.log", "a", encoding="utf-8") as f:
+                                    with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
                                         f.write(json.dumps(log_data) + "\n")
                                 except Exception:
                                     pass
                                 # #endregion
                                 return decrypted
-                            
+
                             def __getattr__(self, name):
-                                # CRITICAL FIX: Don't delegate readexactly - we have our own implementation
+                                # Note: Don't delegate readexactly - we have our own implementation
                                 # Python should find readexactly directly on the instance, not via __getattr__
                                 if name == "readexactly":
                                     # This should never be called since readexactly is defined on the class
                                     # But if it is, return our method
                                     return self.readexactly
                                 return getattr(self.reader, name)
-                        
+
                         return MockEncryptedReader(reader, cipher)
-                    
+
                     def mock_writer_init(writer, cipher):
                         encrypted_streams_created.append(("writer", writer, cipher))
-                        # CRITICAL FIX: Ensure encrypted writer has is_closing method that returns False
+                        # Note: Ensure encrypted writer has is_closing method that returns False
                         # Use the same function defined above (is_closing_false is in outer scope)
                         mock_encrypted_writer.is_closing = is_closing_false
                         return mock_encrypted_writer
 
-                    # CRITICAL FIX: Patch EncryptedStreamReader at the source module
+                    # Note: Patch EncryptedStreamReader at the source module
                     # It's imported inside the encryption code block, but we patch it at the source
                     with patch(
                         "ccbt.security.encrypted_stream.EncryptedStreamReader",
@@ -651,40 +656,41 @@ class TestMSEEncryptionHandshake:
                             with patch(
                                 "ccbt.security.mse_handshake.MSEHandshake",
                                 return_value=mock_mse,
-                            ):
-                                # CRITICAL FIX: Patch the encryption condition check directly
+                            ) as mock_mse_cls:
+                                # Note: Patch the encryption condition check directly
                                 # Instead of patching isinstance (which causes recursion), we'll patch the encryption
                                 # condition check itself by modifying the condition in the encryption code path.
                                 # We'll use a context manager to temporarily modify the encryption condition.
-                                
+
                                 # Mock asyncio.wait_for to return the mocked connection directly
                                 # This avoids timeout issues
                                 async def mock_wait_for(coro, timeout=None):
                                     # Handle both coroutines and non-coroutines (like MagicMock)
                                     if asyncio.iscoroutine(coro):
                                         return await coro
-                                    else:
-                                        return coro
-                                
-                                # CRITICAL FIX: Patch the encryption condition by patching the isinstance check
+                                    return coro
+
+                                # Note: Patch the encryption condition by patching the isinstance check
                                 # at the module level. We'll create a wrapper function that checks for our mocks.
                                 # Since isinstance is a builtin, we need to be careful. We'll patch it only in
                                 # the encryption code path by patching the condition check itself.
-                                
+
                                 # Actually, the simplest approach: Make the mock_writer pass isinstance by
                                 # using a real StreamWriter instance or by patching the condition check.
                                 # Let's patch the encryption condition check directly by modifying the condition.
-                                
+
                                 # We'll patch the encryption code to bypass the isinstance check for our mocks
                                 # by patching the condition check itself.
                                 original_encryption_condition = None
-                                
+
                                 def should_encrypt_patch(self, reader, writer, connection):
                                     """Patch to bypass isinstance checks in encryption condition."""
                                     from ccbt.security.encryption import EncryptionMode
                                     if not self.config.security.enable_encryption:
                                         return False
-                                    encryption_mode = EncryptionMode(self.config.security.encryption_mode)
+                                    encryption_mode = EncryptionMode(
+                                        self.config.security.encryption_mode
+                                    )
                                     if encryption_mode == EncryptionMode.DISABLED:
                                         return False
                                     if connection is None:
@@ -693,8 +699,10 @@ class TestMSEEncryptionHandshake:
                                     if reader is mock_reader and writer is mock_writer:
                                         return True
                                     # For real readers/writers, use original check
-                                    return isinstance(reader, asyncio.StreamReader) and isinstance(writer, asyncio.StreamWriter)
-                                
+                                    return isinstance(
+                                        reader, asyncio.StreamReader
+                                    ) and isinstance(writer, asyncio.StreamWriter)
+
                                 with patch(
                                     "asyncio.open_connection",
                                     return_value=(mock_reader, mock_writer),
@@ -707,67 +715,100 @@ class TestMSEEncryptionHandshake:
                                 ):
                                     # Use actual EncryptionMode enum
                                     from ccbt.security.encryption import EncryptionMode
-                                    
+
                                     # Verify EncryptionMode construction works
-                                    test_mode = EncryptionMode(mock_config.security.encryption_mode)
-                                    assert test_mode != EncryptionMode.DISABLED, "Encryption mode should not be DISABLED"
-                                    
+                                    test_mode = EncryptionMode(
+                                        mock_config.security.encryption_mode
+                                    )
+                                    assert test_mode != EncryptionMode.DISABLED, (
+                                        "Encryption mode should not be DISABLED"
+                                    )
+
                                     # Ensure manager has the correct config
                                     manager.config = mock_config
-                                    
+
                                     # Verify config is set correctly before connecting
-                                    assert manager.config.security.enable_encryption is True, "Config should have encryption enabled"
-                                    assert manager.config.security.encryption_mode == "preferred", "Config should have preferred encryption mode"
+                                    assert (
+                                        manager.config.security.enable_encryption is True
+                                    ), "Config should have encryption enabled"
+                                    assert (
+                                        manager.config.security.encryption_mode == "preferred"
+                                    ), "Config should have preferred encryption mode"
+                                    assert (
+                                        manager.config.security.encryption_dh_key_size == 1024
+                                    )
+                                    assert (
+                                        manager.config.security.encryption_prefer_rc4 is False
+                                    )
+                                    assert (
+                                        manager.config.security.encryption_allowed_ciphers
+                                        == [
+                                            "aes",
+                                            "chacha20",
+                                            "rc4",
+                                        ]
+                                    )
 
                                     # Try to connect - this should reach the encryption handshake code
-                                    # CRITICAL FIX: Don't catch all exceptions - let them propagate to see what's failing
+                                    # Note: Don't catch all exceptions - let them propagate to see what's failing
                                     # We'll catch specific expected exceptions after encryption is attempted
                                     await manager._connect_to_peer(peer_info)
-                                    
-                                    # CRITICAL FIX: Wait briefly for connection to be established and task to be created
+
+                                    # Note: Wait briefly for connection to be established and task to be created
                                     await asyncio.sleep(0.1)
 
-                                    # CRITICAL FIX: Disconnect the connection immediately after handshake verification
+                                    # Note: Disconnect the connection immediately after handshake verification
                                     # to prevent the message loop from hanging waiting for messages
                                     peer_key = (peer_info.ip, peer_info.port)
                                     async with manager.connection_lock:
                                         if peer_key in manager.connections:
                                             connection = manager.connections[peer_key]
                                             # Cancel the connection task first to stop the message loop
-                                            if hasattr(connection, 'connection_task') and connection.connection_task:
+                                            if (
+                                                hasattr(connection, "connection_task")
+                                                and connection.connection_task
+                                            ):
                                                 if not connection.connection_task.done():
                                                     connection.connection_task.cancel()
                                                     try:
-                                                        await asyncio.wait_for(connection.connection_task, timeout=0.5)
-                                                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                                                        await asyncio.wait_for(
+                                                            connection.connection_task, timeout=0.5
+                                                        )
+                                                    except (
+                                                        asyncio.CancelledError,
+                                                        asyncio.TimeoutError,
+                                                    ):
                                                         pass
                                             await manager._disconnect_peer(connection)
 
                                     # Verify that the encryption code path was attempted
                                     # The connection should reach the encryption handshake section
                                     # Check if MSE handshake was called (indicates encryption path was taken)
-                                    
+
                                     # Debug: Check what actually happened
                                     mse_called = mock_mse.initiate_as_initiator.called
-                                    
+
                                     # If encryption is enabled and mode is not DISABLED, encryption should be attempted
-                                    if mock_config.security.enable_encryption and test_mode != EncryptionMode.DISABLED:
+                                    if (
+                                        mock_config.security.enable_encryption
+                                        and test_mode != EncryptionMode.DISABLED
+                                    ):
                                         # Verify MSE handshake was called (this covers lines 541-544)
                                         assert mse_called, (
-                                            f"MSE handshake should be called when enable_encryption=True and "
+                                            "MSE handshake should be called when enable_encryption=True and "
                                             f"mode={test_mode}. Manager config: enable_encryption={manager.config.security.enable_encryption}"
                                         )
-                                        
-                                        # If MSE succeeded, encrypted streams should be created
-                                        if mse_called and mock_mse_result.success:
-                                            assert len(encrypted_streams_created) >= 2, (
-                                                f"Encrypted streams should be created when MSE handshake succeeds, "
-                                                f"but only {len(encrypted_streams_created)} were created."
-                                            )
-                                            assert mock_reader_class.called, "EncryptedStreamReader should be instantiated"
-                                            assert mock_writer_class.called, "EncryptedStreamWriter should be instantiated"
+                                        assert mock_mse_cls.call_count == 1
+                                        call_kwargs = mock_mse_cls.call_args.kwargs
+                                        assert call_kwargs["dh_key_size"] == 1024
+                                        assert call_kwargs["prefer_rc4"] is False
+                                        assert [
+                                            allowed.name
+                                            for allowed in call_kwargs["allowed_ciphers"]
+                                        ] == ["AES", "CHACHA20", "RC4"]
+
                 finally:
-                    # CRITICAL FIX: Stop the manager after the test
+                    # Note: Stop the manager after the test
                     await manager.stop()
 
 
@@ -1032,4 +1073,195 @@ class TestV2MessageSerialization:
         # Verify stats were updated (line 1040-1041)
         assert connection.stats.last_activity > 0
         assert connection.stats.bytes_uploaded > 0
+
+
+class TestBep6FastWirePayload:
+    """BEP 6 Have All / Have None / Suggest / Allow Fast wire handling."""
+
+    @pytest.mark.asyncio
+    async def test_handle_bep6_have_all_have_none_and_suggest(self, mock_torrent_data):
+        import logging
+
+        from ccbt.extensions.fast import FastExtension
+        from ccbt.peer import async_peer_connection as apc
+        from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
+
+        with patch.object(apc.AsyncPeerConnectionManager, "__init__", lambda self, *a, **k: None):
+            m = apc.AsyncPeerConnectionManager()
+        pm = MagicMock()
+        pm.num_pieces = 4
+        pm.apply_fast_extension_have_all = AsyncMock()
+        pm.apply_fast_extension_have_none = AsyncMock()
+        m.piece_manager = pm
+        m._running = True
+        m.logger = logging.getLogger("test.bep6")
+        m._schedule_piece_selection_if_ready = AsyncMock(return_value=True)
+
+        pi = PeerInfo(ip="1.2.3.4", port=6881)
+        conn = AsyncPeerConnection(peer_info=pi, torrent_data=mock_torrent_data)
+        conn.state = ConnectionState.ACTIVE
+        conn.reserved_bytes = bytearray(8)
+        conn.reserved_bytes[7] |= 0x04
+
+        assert await m._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_have_all()
+        )
+        pm.apply_fast_extension_have_all.assert_called_once_with("1.2.3.4:6881")
+        assert getattr(conn, "is_seeder", False) is True
+
+        assert await m._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_have_none()
+        )
+        pm.apply_fast_extension_have_none.assert_called_once_with("1.2.3.4:6881")
+
+        suggest_payload = FastExtension().encode_suggest(2)
+        assert await m._handle_bep6_fast_wire_payload(conn, suggest_payload)
+        assert 2 in conn.peer_state.bep6_suggested_pieces
+
+        allow_payload = FastExtension().encode_allow_fast(3)
+        assert await m._handle_bep6_fast_wire_payload(conn, allow_payload)
+        assert 3 in conn.peer_state.bep6_allowed_fast_pieces
+
+    @pytest.mark.asyncio
+    async def test_handle_bep6_have_all_deferred_when_no_metadata(self, mock_torrent_data):
+        import logging
+
+        from ccbt.extensions.fast import FastExtension
+        from ccbt.peer import async_peer_connection as apc
+        from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
+
+        with patch.object(apc.AsyncPeerConnectionManager, "__init__", lambda self, *a, **k: None):
+            m = apc.AsyncPeerConnectionManager()
+        pm = MagicMock()
+        pm.num_pieces = 0
+        pm.apply_fast_extension_have_all = AsyncMock()
+        m.piece_manager = pm
+        m._running = True
+        m.logger = logging.getLogger("test.bep6.defer")
+        m._schedule_piece_selection_if_ready = AsyncMock(return_value=True)
+
+        conn = AsyncPeerConnection(
+            peer_info=PeerInfo(ip="5.6.7.8", port=9999),
+            torrent_data=mock_torrent_data,
+        )
+        conn.state = ConnectionState.ACTIVE
+
+        assert await m._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_have_all()
+        )
+        pm.apply_fast_extension_have_all.assert_not_called()
+        assert getattr(conn, "_bep6_have_all_pending", False) is True
+
+
+class TestBep6RejectTimeoutCleanupResilience:
+    """Ensure outstanding requests are cleaned across reject+timeout paths."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_bep6_reject_and_timeout_cleanup_leaves_no_leak(
+        self, mock_torrent_data
+    ) -> None:
+        import logging
+        import time
+        from types import SimpleNamespace
+
+        from ccbt.extensions.fast import FastExtension
+        from ccbt.peer import async_peer_connection as apc
+        from ccbt.peer.async_peer_connection import (
+            AsyncPeerConnection,
+            ConnectionState,
+            RequestInfo,
+        )
+
+        with patch.object(apc.AsyncPeerConnectionManager, "__init__", lambda self, *a, **k: None):
+            manager = apc.AsyncPeerConnectionManager()
+
+        manager.logger = logging.getLogger("test.bep6.timeout.cleanup")
+        manager.piece_manager = MagicMock()
+        manager._schedule_piece_selection_if_ready = AsyncMock(return_value=True)
+        manager.config = SimpleNamespace(network=SimpleNamespace(request_timeout=0.05))
+        manager.connections = {}
+        manager.get_active_peers = MagicMock(return_value=[])
+        manager.request_pending_resume = MagicMock()
+        manager._disconnect_peer = AsyncMock()
+        manager._send_message = AsyncMock()
+
+        conn = AsyncPeerConnection(
+            peer_info=PeerInfo(ip="10.0.0.1", port=6881),
+            torrent_data=mock_torrent_data,
+        )
+        conn.state = ConnectionState.ACTIVE
+        conn.peer_choking = False
+        conn.max_pipeline_depth = 8
+        conn.reserved_bytes = bytearray(8)
+        conn.reserved_bytes[7] |= 0x04
+
+        old_ts = time.time() - 10.0
+        reject_key = (1, 0, 16_384)
+        timeout_key = (2, 0, 16_384)
+        conn.outstanding_requests[reject_key] = RequestInfo(1, 0, 16_384, old_ts)
+        conn.outstanding_requests[timeout_key] = RequestInfo(2, 0, 16_384, old_ts)
+
+        consumed = await manager._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_reject(*reject_key)
+        )
+        assert consumed is True
+        assert reject_key not in conn.outstanding_requests
+        assert timeout_key in conn.outstanding_requests
+
+        cleaned = await manager._cleanup_timed_out_requests(conn)
+        assert cleaned == 1
+        assert conn.outstanding_requests == {}
+
+    @pytest.mark.asyncio
+    async def test_bep6_reject_unknown_key_then_timeout_still_cleans_tracked_request(
+        self, mock_torrent_data
+    ) -> None:
+        import logging
+        import time
+        from types import SimpleNamespace
+
+        from ccbt.extensions.fast import FastExtension
+        from ccbt.peer import async_peer_connection as apc
+        from ccbt.peer.async_peer_connection import (
+            AsyncPeerConnection,
+            ConnectionState,
+            RequestInfo,
+        )
+
+        with patch.object(apc.AsyncPeerConnectionManager, "__init__", lambda self, *a, **k: None):
+            manager = apc.AsyncPeerConnectionManager()
+
+        manager.logger = logging.getLogger("test.bep6.timeout.cleanup.unknown")
+        manager.piece_manager = None
+        manager._schedule_piece_selection_if_ready = AsyncMock(return_value=True)
+        manager.config = SimpleNamespace(network=SimpleNamespace(request_timeout=0.05))
+        manager.connections = {}
+        manager.get_active_peers = MagicMock(return_value=[])
+        manager.request_pending_resume = MagicMock()
+        manager._disconnect_peer = AsyncMock()
+        manager._send_message = AsyncMock()
+
+        conn = AsyncPeerConnection(
+            peer_info=PeerInfo(ip="10.0.0.2", port=6882),
+            torrent_data=mock_torrent_data,
+        )
+        conn.state = ConnectionState.ACTIVE
+        conn.peer_choking = False
+        conn.max_pipeline_depth = 8
+        conn.reserved_bytes = bytearray(8)
+        conn.reserved_bytes[7] |= 0x04
+
+        old_ts = time.time() - 10.0
+        keep_key = (3, 0, 16_384)
+        conn.outstanding_requests[keep_key] = RequestInfo(3, 0, 16_384, old_ts)
+
+        consumed = await manager._handle_bep6_fast_wire_payload(
+            conn, FastExtension().encode_reject(99, 0, 16_384)
+        )
+        assert consumed is True
+        assert keep_key in conn.outstanding_requests
+
+        cleaned = await manager._cleanup_timed_out_requests(conn)
+        assert cleaned == 1
+        assert conn.outstanding_requests == {}
 

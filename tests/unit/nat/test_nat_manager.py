@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -314,12 +314,12 @@ async def test_map_port_handles_error(nat_manager, mock_config):
     mock_client = MagicMock()
     mock_client.add_port_mapping = AsyncMock(side_effect=NATPMPError("Port conflict"))
     nat_manager.natpmp_client = mock_client
-    
+
     # Patch asyncio.sleep to speed up retries for testing
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # Call map_port - it will retry 3 times with delays, but we'll speed up delays
         result = await nat_manager.map_port(6881, 6881, "tcp")
-        
+
         # Should return None after all retries fail
         assert result is None
         # Should have attempted mapping (3 retries)
@@ -334,12 +334,12 @@ async def test_map_port_handles_unexpected_error(nat_manager, mock_config):
     mock_client = MagicMock()
     mock_client.add_port_mapping = AsyncMock(side_effect=RuntimeError("Unexpected"))
     nat_manager.upnp_client = mock_client
-    
+
     # Patch asyncio.sleep to speed up retries for testing
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # Call map_port - it will retry 3 times with delays, but we'll speed up delays
         result = await nat_manager.map_port(6881, 6881, "tcp")
-        
+
         # Should return None after all retries fail
         assert result is None
         # Should have attempted mapping (3 retries)
@@ -589,12 +589,12 @@ async def test_map_port_natpmp_client_none(nat_manager, mock_config):
     """Test map_port when NAT-PMP client is None."""
     nat_manager.active_protocol = "natpmp"
     nat_manager.natpmp_client = None
-    
+
     # Patch asyncio.sleep to speed up retries for testing
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # Should return None after retries (3 attempts with client=None)
         result = await nat_manager.map_port(6881, 6881, "tcp")
-        
+
         assert result is None
 
 
@@ -603,12 +603,12 @@ async def test_map_port_upnp_client_none(nat_manager, mock_config):
     """Test map_port when UPnP client is None."""
     nat_manager.active_protocol = "upnp"
     nat_manager.upnp_client = None
-    
+
     # Patch asyncio.sleep to speed up retries for testing
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # Should return None after retries (3 attempts with client=None)
         result = await nat_manager.map_port(6881, 6881, "tcp")
-        
+
         assert result is None
 
 
@@ -616,12 +616,12 @@ async def test_map_port_upnp_client_none(nat_manager, mock_config):
 async def test_map_port_unknown_protocol(nat_manager, mock_config):
     """Test map_port with unknown protocol."""
     nat_manager.active_protocol = "unknown"
-    
+
     # Patch asyncio.sleep to speed up retries for testing
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # Should return None after retries (3 attempts with unknown protocol)
         result = await nat_manager.map_port(6881, 6881, "tcp")
-        
+
         assert result is None
 
 
@@ -632,7 +632,7 @@ async def test_unmap_port_unknown_protocol(nat_manager, mock_config):
     await nat_manager.port_mapping_manager.add_mapping(
         6881, 6881, "tcp", "unknown", 3600
     )
-    
+
     nat_manager.active_protocol = "unknown"
 
     result = await nat_manager.unmap_port(6881, "tcp")
@@ -670,8 +670,6 @@ async def test_stop_with_no_natpmp_client(nat_manager, mock_config):
 @pytest.mark.asyncio
 async def test_get_external_ip_natpmp_no_client(nat_manager, mock_config):
     """Test get_external_ip() when NAT-PMP client is None."""
-    import ipaddress
-
     nat_manager.active_protocol = "natpmp"
     nat_manager.natpmp_client = None
 
@@ -683,8 +681,6 @@ async def test_get_external_ip_natpmp_no_client(nat_manager, mock_config):
 @pytest.mark.asyncio
 async def test_get_external_ip_upnp_no_client(nat_manager, mock_config):
     """Test get_external_ip() when UPnP client is None."""
-    import ipaddress
-
     nat_manager.active_protocol = "upnp"
     nat_manager.upnp_client = None
 
@@ -696,8 +692,6 @@ async def test_get_external_ip_upnp_no_client(nat_manager, mock_config):
 @pytest.mark.asyncio
 async def test_get_external_ip_upnp_error(nat_manager, mock_config):
     """Test get_external_ip() handles UPnP errors."""
-    import ipaddress
-
     nat_manager.active_protocol = "upnp"
     nat_manager.upnp_client = MagicMock()
     nat_manager.upnp_client.get_external_ip = AsyncMock(side_effect=UPnPError("Failed"))

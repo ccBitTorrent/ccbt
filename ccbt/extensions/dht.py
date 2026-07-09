@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 from ccbt.core import bencode
 from ccbt.models import PeerInfo
+from ccbt.utils.compat import sha1_compat
 from ccbt.utils.events import Event, EventType, emit_event
 
 
@@ -529,7 +530,7 @@ class DHTExtension:
         """Generate token for peer announcement."""
         # Simple token generation - in production, use HMAC with secret key
         token_data = self.node_id + info_hash + str(time.time()).encode()
-        token = hashlib.sha1(token_data, usedforsecurity=False).hexdigest()[:8]
+        token = sha1_compat(token_data, usedforsecurity=False).hexdigest()[:8]
         self.peer_tokens[info_hash] = token
         return token
 

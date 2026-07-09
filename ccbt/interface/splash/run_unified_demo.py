@@ -4,7 +4,6 @@ Run this directly: python ccbt/interface/splash/run_unified_demo.py
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add the splash directory to path

@@ -10,14 +10,14 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
-from types import SimpleNamespace, ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 from click.testing import CliRunner
 
-import importlib
 cli_main = importlib.import_module("ccbt.cli.main")
 
 
@@ -67,7 +67,7 @@ class _FakeSession:
         # Scrape cache attributes (BEP 48)
         self.scrape_cache: dict[bytes, Any] = {}
         self.scrape_cache_lock = asyncio.Lock()
-        
+
     async def add_torrent(self, torrent_data, resume=False):
         """Mock add_torrent that populates torrents dict."""
         from unittest.mock import AsyncMock
@@ -98,7 +98,7 @@ def test_status_command_happy_path(monkeypatch):
 
     monkeypatch.setattr(cli_main.asyncio, "run", _run)
 
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code == 0
     # Basic smoke: table title present
     assert "ccBitTorrent Status" in result.output
@@ -113,7 +113,7 @@ def test_status_command_error_path(monkeypatch):
 
     monkeypatch.setattr(cli_main, "ConfigManager", _cm_raise)
 
-    result = runner.invoke(cli_main.cli, ["status"]) 
+    result = runner.invoke(cli_main.cli, ["status"])
     assert result.exit_code != 0
     assert "Error: boom" in result.output
 
@@ -126,7 +126,7 @@ def test_debug_command_happy_path(monkeypatch):
     # Ensure asyncio.run executes the async debug function
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["debug"]) 
+    result = runner.invoke(cli_main.cli, ["debug"])
     assert result.exit_code == 0
     assert "Debug mode" in result.output
 
@@ -159,7 +159,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
     class _FakeMgr(_FakeSession):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -170,7 +170,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
         return {"info_hash": b"\x00" * 20, "name": "t", "pieces_info": {"piece_hashes": [], "piece_length": 16384, "num_pieces": 0, "total_length": 0}, "file_info": {"total_length": 0}, "announce": ""}
 
     fake_torrent_utils_mod = ModuleType("ccbt.session.torrent_utils")
-    setattr(fake_torrent_utils_mod, "load_torrent", _mock_load_torrent)
+    fake_torrent_utils_mod.load_torrent = _mock_load_torrent
     monkeypatch.setitem(sys.modules, "ccbt.session.torrent_utils", fake_torrent_utils_mod)
 
     # Inject a fake CheckpointManager module with async load_checkpoint
@@ -189,7 +189,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
         async def load_checkpoint(self, *_a, **_k):
             return _CP()
 
-    setattr(fake_mod, "CheckpointManager", _CPM)
+    fake_mod.CheckpointManager = _CPM
     monkeypatch.setitem(sys.modules, "ccbt.storage.checkpoint", fake_mod)
 
     # Force non-interactive branch by making stdin not a TTY
@@ -205,7 +205,7 @@ def test_download_checkpoint_noninteractive(monkeypatch):
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     # Provide an existing file path by pointing to this test file; exists=True check passes
-    result = runner.invoke(cli_main.cli, ["download", __file__]) 
+    result = runner.invoke(cli_main.cli, ["download", __file__])
     # Should hit non-interactive checkpoint path regardless of later download errors
     assert result.exit_code in (0, 1)
     assert "Non-interactive mode, starting fresh download" in result.output
@@ -226,11 +226,10 @@ def test_web_command_does_not_await_when_not_coroutine(monkeypatch):
 
     def _fake_run(_coro):
         called["run"] += 1
-        return None
 
     monkeypatch.setattr(cli_main.asyncio, "run", _fake_run)
 
-    result = runner.invoke(cli_main.cli, ["web", "--host", "127.0.0.1", "--port", "9090"]) 
+    result = runner.invoke(cli_main.cli, ["web", "--host", "127.0.0.1", "--port", "9090"])
     assert result.exit_code == 0
     # Ensure asyncio.run was not invoked for non-coroutine
     assert called["run"] == 0
@@ -254,7 +253,7 @@ def test_interactive_command_runs_cli(monkeypatch):
     monkeypatch.setattr(cli_main, "InteractiveCLI", _FakeInteractive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["interactive"]) 
+    result = runner.invoke(cli_main.cli, ["interactive"])
     assert result.exit_code == 0
 
 
@@ -267,10 +266,10 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
     class _Mgr(_FakeSession):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
-            
+
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
@@ -281,7 +280,7 @@ def test_magnet_happy_path_noninteractive(monkeypatch):
     monkeypatch.setattr(cli_main, "start_basic_magnet_download", _dummy_magnet_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "--no-checkpoint"]) 
+    result = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "--no-checkpoint"])
     assert result.exit_code == 0
 
 
@@ -293,7 +292,7 @@ def test_download_happy_path_noninteractive(monkeypatch):
     class _Mgr(_FakeSession):
         async def start(self):
             pass
-            
+
         async def stop(self):
             pass
 
@@ -308,7 +307,7 @@ def test_download_happy_path_noninteractive(monkeypatch):
     monkeypatch.setattr(cli_main, "start_basic_download", _dummy_download)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
-    result = runner.invoke(cli_main.cli, ["download", __file__, "--no-checkpoint"]) 
+    result = runner.invoke(cli_main.cli, ["download", __file__, "--no-checkpoint"])
     assert result.exit_code == 0
 
 

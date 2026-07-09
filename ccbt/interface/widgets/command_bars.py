@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ccbt.i18n import _
-
 if TYPE_CHECKING:
     from textual.widgets import Static
 else:
@@ -78,11 +76,11 @@ class CommandBars(Container):  # type: ignore[misc]
         if not self._bindings:
             yield Static("No commands available", classes="command-item")
             return
-        
+
         # Calculate optimal commands per row to maximize row usage
         # Try to fit all commands in as few rows as possible
         total_commands = len(self._bindings)
-        
+
         # Try to fit in 1 row first, then 2, then 3, etc.
         for num_rows in range(1, 4):
             commands_per_row = (total_commands + num_rows - 1) // num_rows  # Ceiling division
@@ -92,21 +90,21 @@ class CommandBars(Container):  # type: ignore[misc]
             # Fallback: use 8 commands per row
             commands_per_row = 8
             num_rows = (total_commands + commands_per_row - 1) // commands_per_row
-        
+
         # Split bindings into rows
         rows = []
         current_row = []
-        
+
         for key, action, description in self._bindings:
             current_row.append((key, action, description))
             if len(current_row) >= commands_per_row:
                 rows.append(current_row)
                 current_row = []
-        
+
         # Add remaining row
         if current_row:
             rows.append(current_row)
-        
+
         # Create horizontal rows using context managers
         for row in rows:
             with Horizontal(classes="command-row"):

@@ -116,30 +116,36 @@ def tonic() -> None:
 )
 @click.option(
     "--sync-mode",
+    "-s",
     type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
     default="best_effort",
     help="Synchronization mode",
 )
 @click.option(
     "--source-peers",
+    "-p",
     help="Comma-separated list of designated source peer IDs",
 )
 @click.option(
     "--allowlist",
+    "-a",
     "allowlist_path",
     type=click.Path(),
     help="Path to allowlist file",
 )
 @click.option(
     "--git-ref",
+    "-g",
     help="Git commit hash/ref to track",
 )
 @click.option(
     "--announce",
+    "-n",
     help="Primary tracker announce URL",
 )
 @click.option(
     "--generate-link",
+    "-l",
     is_flag=True,
     help="Also generate tonic?: link",
 )
@@ -175,11 +181,13 @@ def tonic_create(
 )
 @click.option(
     "--tonic-file",
+    "-t",
     type=click.Path(exists=True),
     help="Path to .tonic file (if not provided, will generate)",
 )
 @click.option(
     "--sync-mode",
+    "-s",
     type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
     help="Synchronization mode (overrides .tonic file)",
 )
@@ -257,6 +265,7 @@ def tonic_link(
 )
 @click.option(
     "--check-interval",
+    "-c",
     type=float,
     default=5.0,
     help="Check interval in seconds",
@@ -384,18 +393,21 @@ def tonic_status(_ctx, folder_path: str) -> None:
 )
 @click.option(
     "--sync-mode",
+    "-s",
     type=click.Choice(["designated", "best_effort", "broadcast", "consensus"]),
     default="best_effort",
     help="Synchronization mode",
 )
 @click.option(
     "--check-interval",
+    "-i",
     type=float,
     default=None,
     help="Folder check interval in seconds",
 )
 @click.option(
     "--allowlist",
+    "-a",
     "_allowlist_path",
     type=click.Path(),
     help="Path to allowlist file",
@@ -474,10 +486,12 @@ def tonic_allowlist() -> None:
 @click.argument("peer_id", type=str)
 @click.option(
     "--public-key",
+    "-P",
     help="Ed25519 public key (hex format, 64 chars)",
 )
 @click.option(
     "--alias",
+    "-A",
     help="Human-readable alias for this peer",
 )
 @click.pass_context
@@ -626,6 +640,7 @@ def tonic_mode() -> None:
 )
 @click.option(
     "--source-peers",
+    "-p",
     help="Comma-separated list of source peer IDs (for designated mode)",
 )
 @click.pass_context

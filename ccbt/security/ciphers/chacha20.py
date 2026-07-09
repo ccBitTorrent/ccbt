@@ -1,7 +1,5 @@
 """ChaCha20 cipher implementation for BEP 3.
 
-from __future__ import annotations
-
 Uses ChaCha20 stream cipher as specified in BEP 3.
 Supports ChaCha20-256 (32-byte keys, 16-byte nonces).
 Note: The cryptography library requires 16-byte (128-bit) nonces.
@@ -26,8 +24,8 @@ class ChaCha20Cipher(CipherSuite):
 
         Args:
             key: Encryption key (32 bytes for ChaCha20-256)
-            nonce: Nonce (16 bytes / 128 bits). If None, generates random nonce.
-                Note: The cryptography library requires 16-byte nonces (128 bits).
+            nonce: Nonce (16 bytes / 128 bits). If None, uses the zero nonce in
+                non-test call paths.
 
         Raises:
             ValueError: If key size is invalid (must be 32 bytes)
@@ -39,7 +37,7 @@ class ChaCha20Cipher(CipherSuite):
             raise ValueError(msg)
 
         self.key = key
-        self.nonce = nonce or secrets.token_bytes(16)
+        self.nonce = nonce if nonce is not None else (b"\x00" * 16)
 
         if len(self.nonce) != 16:
             msg = f"ChaCha20 nonce must be 16 bytes, got {len(self.nonce)}"
@@ -99,3 +97,12 @@ class ChaCha20Cipher(CipherSuite):
 
         """
         return 32
+
+    @classmethod
+    def with_random_nonce_for_testing(cls, key: bytes) -> ChaCha20Cipher:
+        """Create a test-only ChaCha20 cipher instance with a random nonce.
+
+        This is intentionally test-only and should not be used for negotiated
+        MSE/PE traffic.
+        """
+        return cls(key=key, nonce=secrets.token_bytes(16))

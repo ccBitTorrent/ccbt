@@ -118,7 +118,7 @@ class ThemeSelectionScreen(ModalScreen):  # type: ignore[misc]
             (description, theme_name)
             for theme_name, description in AVAILABLE_THEMES
         ]
-        
+
         # Validate current_theme is in available options
         # If not, default to "default" to avoid InvalidSelectValueError
         available_theme_names = [theme_name for theme_name, _ in AVAILABLE_THEMES]
@@ -131,7 +131,7 @@ class ThemeSelectionScreen(ModalScreen):  # type: ignore[misc]
 
         with Container(id="dialog"):
             yield Static(_("Select Theme"), id="title")
-            
+
             with Container(id="theme-selector-container"):
                 yield Select(
                     theme_options,
@@ -139,7 +139,7 @@ class ThemeSelectionScreen(ModalScreen):  # type: ignore[misc]
                     prompt=_("Choose a theme"),
                     id="theme-select"
                 )
-            
+
             with Horizontal(id="buttons"):
                 yield Button(_("Apply"), id="apply", variant="primary")
                 yield Button(_("Close"), id="close", variant="default")

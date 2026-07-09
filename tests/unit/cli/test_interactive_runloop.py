@@ -53,11 +53,11 @@ class TestInteractiveRunLoop:
 
             def clear(self):
                 outputs.clear()
-            
-            # CRITICAL FIX: Rich Progress requires console.get_time and log methods
+
+            # Note: Rich Progress requires console.get_time and log methods
             def get_time(self):
                 return time.time
-            
+
             def log(self, *args, **kwargs):
                 outputs.append(("LOG", args, kwargs))
 
@@ -73,7 +73,7 @@ class TestInteractiveRunLoop:
         """
         # Skip only if coverage is running to prevent early test suite exit
         import sys
-        if any("--cov" in arg or "-m" in arg and "cov" in arg for arg in sys.argv):
+        if any("--cov" in arg or ("-m" in arg and "cov" in arg) for arg in sys.argv):
             pytest.skip(
                 "KeyboardInterrupt test skipped in coverage runs to prevent early test suite exit. "
                 "This test intentionally raises KeyboardInterrupt which pytest may interpret as a "
@@ -81,7 +81,6 @@ class TestInteractiveRunLoop:
                 "Run with --no-cov to execute this test.",
                 allow_module_level=False,
             )  # pragma: no cover
-        from ccbt.cli.interactive import InteractiveCLI
 
         # Patch Live context manager to a no-op
         class DummyLive:
@@ -117,7 +116,6 @@ class TestInteractiveRunLoop:
 
     @pytest.mark.asyncio
     async def test_status_no_torrent_and_basic_commands(self, console, monkeypatch):
-        from ccbt.cli.interactive import InteractiveCLI
 
         from tests.conftest import create_interactive_cli
         cli = create_interactive_cli(self.FakeSession(), console.obj)
@@ -137,7 +135,6 @@ class TestInteractiveRunLoop:
 
     @pytest.mark.asyncio
     async def test_download_interface_and_updates(self, console, monkeypatch):
-        from ccbt.cli.interactive import InteractiveCLI
 
         session = self.FakeSession()
         from tests.conftest import create_interactive_cli

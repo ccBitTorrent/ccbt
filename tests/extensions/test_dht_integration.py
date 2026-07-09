@@ -1,7 +1,5 @@
 """Tests for DHT extension integration with local bencode module."""
 
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -73,7 +71,7 @@ class TestDHTIntegration:
 
         target_id = bytes([2] * 20)
         closest = self.dht.find_closest_nodes(target_id)
-        
+
         assert isinstance(closest, list)
         assert len(closest) <= 8  # K=8 for closest nodes
 
@@ -93,7 +91,7 @@ class TestDHTIntegration:
         """Test peer storage and retrieval."""
         # Store a peer
         self.dht._store_peer(self.test_info_hash, "192.168.1.100", 6881)
-        
+
         # Retrieve peers
         peers = self.dht._get_stored_peers(self.test_info_hash)
         assert len(peers) == 1
@@ -104,11 +102,11 @@ class TestDHTIntegration:
         # Test adding nodes from compact format
         compact_data = b"\x00" * 26  # 20-byte ID + 4-byte IP + 2-byte port
         self.dht._add_nodes_from_compact_format(compact_data)
-        
+
         # Test storing peers from compact format
         peer_data = [b"\xc0\xa8\x01\x64\x1a\xe1"]  # 192.168.1.100:6881
         self.dht._store_peers_from_compact_format(self.test_info_hash, peer_data)
-        
+
         peers = self.dht._get_stored_peers(self.test_info_hash)
         assert ("192.168.1.100", 6881) in peers
 
@@ -144,7 +142,7 @@ class TestDHTIntegration:
         """Test handling get_peers query."""
         # Store some peers first
         self.dht._store_peer(self.test_info_hash, "192.168.1.100", 6881)
-        
+
         message = {
             "t": "cc",
             "y": "q",
@@ -160,7 +158,7 @@ class TestDHTIntegration:
         """Test handling announce_peer query."""
         # Generate a valid token first
         token = self.dht._generate_token(self.test_info_hash)
-        
+
         message = {
             "t": "dd",
             "y": "q",
@@ -208,7 +206,7 @@ class TestDHTIntegration:
         self.dht.add_node(node)
 
         await self.dht._handle_response("127.0.0.1", 6881, message)
-        
+
         # Node should be marked as alive
         assert self.test_node_id in self.dht.routing_table
 
@@ -235,7 +233,7 @@ class TestDHTIntegration:
         }
 
         await self.dht._handle_response("127.0.0.1", 6881, message)
-        
+
         # Peers should be stored
         peers = self.dht._get_stored_peers(self.test_info_hash)
         assert ("192.168.1.100", 6881) in peers
@@ -259,7 +257,7 @@ class TestDHTIntegration:
         peers_list = [PeerInfo(ip="192.168.1.100", port=6881)]
         nodes_list = []
         token = "test_token"
-        
+
         response = self.dht.encode_get_peers_response(transaction_id, peers_list, nodes_list, token)
         assert isinstance(response, bytes)
 
@@ -268,7 +266,7 @@ class TestDHTIntegration:
         transaction_id = b"dd"
         error_code = 203
         error_message = "Invalid token"
-        
+
         response = self.dht.encode_error_response(transaction_id, error_code, error_message)
         assert isinstance(response, bytes)
 
@@ -277,10 +275,10 @@ class TestDHTIntegration:
         # Test with different node IDs
         node_id1 = b"\x00" * 20
         node_id2 = b"\x01" * 20
-        
+
         index1 = self.dht._get_bucket_index(node_id1)
         index2 = self.dht._get_bucket_index(node_id2)
-        
+
         assert isinstance(index1, int)
         assert isinstance(index2, int)
         assert 0 <= index1 < 160
@@ -290,7 +288,7 @@ class TestDHTIntegration:
         """Test distance calculation between node IDs."""
         node_id1 = b"\x00" * 20
         node_id2 = b"\x01" * 20
-        
+
         distance = self.dht._calculate_distance(node_id1, node_id2)
         assert isinstance(distance, int)
         assert distance >= 0
@@ -300,14 +298,14 @@ class TestDHTIntegration:
         # Store some peers
         self.dht._store_peer(self.test_info_hash, "192.168.1.100", 6881)
         self.dht._store_peer(self.test_info_hash, "192.168.1.101", 6882)
-        
+
         # Verify they're stored
         peers = self.dht._get_stored_peers(self.test_info_hash)
         assert len(peers) == 2
-        
+
         # Test cleanup (this would be called periodically)
         # For now, just verify the method exists
-        assert hasattr(self.dht, '_cleanup_peer_storage')
+        assert hasattr(self.dht, "_cleanup_peer_storage")
 
     def test_routing_table_management(self):
         """Test routing table management."""
@@ -316,10 +314,10 @@ class TestDHTIntegration:
             node_id = bytes([i] * 20)
             node = DHTNode(node_id=node_id, ip=f"127.0.0.{i+1}", port=6881)
             self.dht.add_node(node)
-        
+
         # Verify nodes are in routing table
         assert len(self.dht.routing_table) == 10
-        
+
         # Test finding nodes
         target_id = bytes([5] * 20)
         closest = self.dht.find_closest_nodes(target_id)
@@ -331,9 +329,9 @@ class TestDHTIntegration:
         node = DHTNode(node_id=self.test_node_id, ip="127.0.0.1", port=6881)
         self.dht.add_node(node)
         self.dht._store_peer(self.test_info_hash, "192.168.1.100", 6881)
-        
+
         stats = self.dht.get_statistics()
-        
+
         assert "nodes_count" in stats
         assert "buckets_count" in stats
         assert "peer_storage_count" in stats

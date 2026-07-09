@@ -6,6 +6,11 @@ site_url: https://ccbittorrent.readthedocs.io/
 repo_url: https://github.com/ccBittorrent/ccbt
 repo_name: ccbt
 
+strict: false
+
+# Docs build strictness policy:
+# - local non-strict runs stay default in this config
+# - CI/RTD runs add `--strict` via MKDOCS_STRICT=true.
 theme:
   name: material
   custom_dir: ../docs/overrides  # Custom theme overrides for unsupported languages (relative to config file location)
@@ -161,6 +166,8 @@ plugins:
 # - Missing report directories (generated during CI)
 # - Multiple primary URLs (expected with i18n plugin for multi-language docs)
 # - Missing anchors in translated pages (some translations incomplete)
+# mkdocs.yml intentionally keeps `strict: false`; strict mode is enforced via
+# CI/runtime commands using `MKDOCS_STRICT=true`.
 strict: false
 
 markdown_extensions:
@@ -221,17 +228,25 @@ nav:
       - Bitonic: en/bitonic.md
       - btbt CLI: en/btbt-cli.md
       - Configuration: en/configuration.md
+      - Network troubleshooting: en/network-troubleshooting.md
       - Performance Tuning: en/performance.md
       - Examples: en/examples.md
   - BEP XET: en/bep_xet.md
   - Dev:
       - API Reference: en/API.md
       - Architecture: en/architecture.md
+      - Authenticated Swarms ADR: en/architecture/authenticated-swarms-adr.md
       - Contributing: en/contributing.md
+      - "Metadata exchange (diagnostics)": en/diagnostics/metadata-exchange-runbook.md
+      - "100% i18n plan": en/implementation-plans/i18n-100-percent-translation-plan.md
+      - "i18n full language plan": en/implementation-plans/i18n-full-language-and-translation-plan.md
       - Reports:
           - Coverage: en/reports/coverage.md
           - Bandit: en/reports/bandit/index.md
-          - Benchmarks: en/reports/benchmarks/index.md
+          - Benchmarks:
+              - Overview: en/reports/benchmarks/index.md
+              - Latest comparison: en/reports/benchmarks/generated/comparison_latest.md
+              - Trend charts: en/reports/benchmarks/generated/trend_charts.md
   - License: en/license.md
   - Blog: en/blog/index.md
   - Funding: en/funding.md

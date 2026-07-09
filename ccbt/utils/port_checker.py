@@ -72,7 +72,7 @@ def is_port_available(
 def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
     """Get resolution steps for port conflicts.
 
-    CRITICAL FIX: Enhanced to check for daemon usage and provide better error messages.
+    Note: Enhanced to check for daemon usage and provide better error messages.
 
     Args:
         port: Port number that's in conflict
@@ -82,8 +82,8 @@ def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
         Formatted string with resolution steps
 
     """
-    # CRITICAL FIX: Check if daemon might be using this port
-    # CRITICAL FIX: Use os.path.expanduser for consistent path resolution on Windows
+    # Note: Check if daemon might be using this port
+    # Note: Use os.path.expanduser for consistent path resolution on Windows
     # Path.home() can resolve differently in different processes, especially with spaces in usernames
     import os
     from pathlib import Path
@@ -111,7 +111,7 @@ def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
 
     resolution = "Resolution options:\n"
 
-    # CRITICAL FIX: Prioritize daemon check if PID file exists
+    # Note: Prioritize daemon check if PID file exists
     if daemon_might_be_running:
         resolution += (
             f"  1. Check if ccBitTorrent daemon is running and using this port:\n"

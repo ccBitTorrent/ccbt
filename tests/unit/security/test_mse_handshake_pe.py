@@ -27,16 +27,12 @@ class TestPEDetection:
         # Create mock reader with PE handshake (MSE message)
         mock_reader = AsyncMock()
 
-        # PE connection starts with MSE message length (4 bytes) + message type
-        # Example: [length=96][type=0x02 (SKEYE)][payload...]
+        # Post-transcript PE handshakes begin with 4-byte DH payload length.
         length_bytes = b"\x00\x00\x00\x60"  # 96 bytes total message
-        type_byte = b"\x02"  # SKEYE
 
         async def mock_read(n):
             if n == 4:
                 return length_bytes
-            if n == 1:
-                return type_byte
             return b""
 
         mock_reader.read = mock_read
@@ -46,7 +42,7 @@ class TestPEDetection:
         )
 
         assert is_pe is True
-        assert len(first_bytes) == 5  # 4 bytes length + 1 byte type
+        assert len(first_bytes) == 4
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_plain_connection(self):
@@ -78,15 +74,14 @@ class TestPEDetection:
         """Test detect_encrypted_handshake with invalid MSE message type."""
         mock_reader = AsyncMock()
 
-        # Valid length but invalid message type
+        # Valid length; detection no longer validates message type byte.
         length_bytes = b"\x00\x00\x00\x60"  # 96 bytes
-        invalid_type = b"\x99"  # Invalid message type (not 0x02, 0x03, 0x04)
 
         async def mock_read(n):
             if n == 4:
                 return length_bytes
             if n == 1:
-                return invalid_type
+                return b""
             return b""
 
         mock_reader.read = mock_read
@@ -95,9 +90,9 @@ class TestPEDetection:
             mock_reader, timeout=1.0
         )
 
-        # Should not detect as PE because message type is invalid
-        assert is_pe is False
-        assert len(first_bytes) == 5
+        # Post-transcript detection only validates initial length.
+        assert is_pe is True
+        assert len(first_bytes) == 4
 
     @pytest.mark.asyncio
     async def test_detect_encrypted_handshake_too_large_length(self):

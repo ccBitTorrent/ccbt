@@ -11,7 +11,6 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
@@ -154,7 +153,7 @@ async def test_tracker_service_add_tracker_error_handling():
     # Now try to add third (should fail due to limit, not exception)
     result = await svc.add_tracker("udp://tracker3.example.com:80")
     assert result is False
-    
+
     # Test exception path by breaking trackers dict
     original_trackers = svc.trackers
     # Create a dict that will raise on len() or iteration
@@ -169,7 +168,7 @@ async def test_tracker_service_add_tracker_error_handling():
             raise RuntimeError("Broken")
         def keys(self):
             raise RuntimeError("Broken")
-    
+
     svc.trackers = BadDict()  # type: ignore[assignment]
     result2 = await svc.add_tracker("udp://tracker4.example.com:80")
     # Should return False due to exception
@@ -337,7 +336,7 @@ async def test_tracker_service_monitoring_marks_unhealthy_trackers():
     # Actually test by directly calling the check function logic
     # The monitoring loop checks every 60s, but the check function can be triggered
     # by setting time appropriately
-    
+
     # Wait a bit to allow monitoring loop to potentially run
     await asyncio.sleep(0.2)
 
@@ -847,7 +846,7 @@ async def test_tracker_service_announce_peer_aggregation(monkeypatch):
         if "t1" in url:
             # Return mock peer list
             return ["peer1", "peer2"]  # type: ignore
-        elif "t2" in url:
+        if "t2" in url:
             return ["peer3", "peer4"]  # type: ignore
         return []
 

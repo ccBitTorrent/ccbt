@@ -15,15 +15,15 @@ class CharacterModifier:
 
     # Letter width definitions for "ccBitTonic"
     LETTER_WIDTHS = {
-        'c': 9, 'C': 9,
-        'i': 5, 'I': 5,
-        'o': 9, 'O': 9,
-        'r': 9, 'R': 9,
-        'e': 8, 'E': 8,
-        'n': 10, 'N': 10,
-        't': 10, 'T': 12,  # lowercase t is 10, capital T is 12
-        'B': 13,
-        ' ': 1,  # Space is 1 character
+        "c": 9, "C": 9,
+        "i": 5, "I": 5,
+        "o": 9, "O": 9,
+        "r": 9, "R": 9,
+        "e": 8, "E": 8,
+        "n": 10, "N": 10,
+        "t": 10, "T": 12,  # lowercase t is 10, capital T is 12
+        "B": 13,
+        " ": 1,  # Space is 1 character
     }
 
     @staticmethod
@@ -50,8 +50,8 @@ class CharacterModifier:
             List of (line_idx, start_col, width) tuples
         """
         positions = []
-        lines = text.split('\n')
-        
+        lines = text.split("\n")
+
         for line_idx, line in enumerate(lines):
             col = 0
             for char in line:
@@ -59,7 +59,7 @@ class CharacterModifier:
                     width = CharacterModifier.get_letter_width(char)
                     positions.append((line_idx, col, width))
                 col += 1
-        
+
         return positions
 
     @staticmethod
@@ -73,8 +73,8 @@ class CharacterModifier:
             Dictionary mapping letters to their positions
         """
         letter_map: dict[str, list[tuple[int, int, int]]] = {}
-        lines = text.split('\n')
-        
+        lines = text.split("\n")
+
         for line_idx, line in enumerate(lines):
             col = 0
             for char in line:
@@ -84,7 +84,7 @@ class CharacterModifier:
                     width = CharacterModifier.get_letter_width(char)
                     letter_map[char].append((line_idx, col, width))
                 col += 1
-        
+
         return letter_map
 
     @staticmethod
@@ -105,9 +105,9 @@ class CharacterModifier:
         Returns:
             List of letter dictionaries with 'line_idx', 'start_col', 'width', 'chars', 'char'
         """
-        lines = text.split('\n')
+        lines = text.split("\n")
         letters = []
-        
+
         # Find the first line with non-space content to determine letter positions
         first_content_line_idx = None
         first_content_line = None
@@ -116,32 +116,32 @@ class CharacterModifier:
                 first_content_line_idx = line_idx
                 first_content_line = line
                 break
-        
+
         if first_content_line is None:
             return letters
-        
+
         # Parse letters by scanning for letter starts and using width definitions
         # We'll scan through and when we find a non-space character, we'll
         # determine what letter it could be based on context and width
         col = 0
         i = 0
         letter_positions = []  # List of (start_col, width, char) tuples
-        
+
         # Known letter sequence for "ccBitTonic" - we'll use this to identify letters
         # But we need to detect them by width, not by character content
         # So we'll scan and when we find a letter start, we'll try to match it
-        
+
         # Improved parsing: scan through and identify letters by their width
         # We'll use the known sequence but also verify by checking if we've consumed
         # the expected width before finding the next letter start
-        letter_sequence = ['c', 'c', 'B', 'i', 't', 'T', 'o', 'n', 'i', 'c']
-        
+        letter_sequence = ["c", "c", "B", "i", "t", "T", "o", "n", "i", "c"]
+
         while i < len(first_content_line):
             if first_content_line[i] != " ":
                 # Found start of a letter
                 start_col = col
                 letter_idx = len(letter_positions)
-                
+
                 # Determine letter from sequence
                 if letter_idx < len(letter_sequence):
                     letter_char = letter_sequence[letter_idx]
@@ -152,31 +152,31 @@ class CharacterModifier:
                     block_width = 0
                     while block_start + block_width < len(first_content_line) and first_content_line[block_start + block_width] != " ":
                         block_width += 1
-                    
+
                     # Try to match block width to a known letter width
-                    letter_char = '?'
+                    letter_char = "?"
                     letter_width = block_width
                     for char, width in CharacterModifier.LETTER_WIDTHS.items():
-                        if width == block_width and char != ' ':
+                        if width == block_width and char != " ":
                             letter_char = char
                             letter_width = width
                             break
-                
+
                 # Verify we can actually move forward by this width
                 # Check if there's enough space or if we hit a space boundary
                 actual_width = letter_width
                 if i + actual_width > len(first_content_line):
                     actual_width = len(first_content_line) - i
-                
+
                 # Check if we hit a space before the full width
                 for check_idx in range(i, min(i + actual_width, len(first_content_line))):
                     if first_content_line[check_idx] == " ":
                         actual_width = check_idx - i
                         break
-                
+
                 # Store this letter position
                 letter_positions.append((start_col, actual_width, letter_char))
-                
+
                 # Move forward by the actual width consumed
                 i += actual_width
                 col += actual_width
@@ -184,13 +184,13 @@ class CharacterModifier:
                 # Space - skip it
                 i += 1
                 col += 1
-        
+
         # Now create letter entries - store entire column groups for each letter
         for letter_idx, (start_col, width, letter_char) in enumerate(letter_positions):
             # Store all columns for this letter across all lines
             # This represents the entire column group for the letter
             letter_columns = []  # List of column strings, one per line
-            
+
             for line_idx, line in enumerate(lines):
                 if start_col < len(line):
                     end_col = min(start_col + width, len(line))
@@ -202,7 +202,7 @@ class CharacterModifier:
                 else:
                     # Empty line for this letter
                     letter_columns.append(" " * width)
-            
+
             # Find which line has the most content (for reference)
             best_line_idx = first_content_line_idx
             max_non_space = 0
@@ -211,15 +211,15 @@ class CharacterModifier:
                 if non_space_count > max_non_space:
                     max_non_space = non_space_count
                     best_line_idx = line_idx
-            
+
             letters.append({
-                'line_idx': best_line_idx,  # Reference line index
-                'start_col': start_col,
-                'width': width,
-                'columns': letter_columns,  # All columns for this letter (one per line)
-                'char': letter_char,
+                "line_idx": best_line_idx,  # Reference line index
+                "start_col": start_col,
+                "width": width,
+                "columns": letter_columns,  # All columns for this letter (one per line)
+                "char": letter_char,
             })
-        
+
         return letters
 
     @staticmethod
@@ -236,17 +236,17 @@ class CharacterModifier:
         Returns:
             Modified text
         """
-        lines = text.split('\n')
+        lines = text.split("\n")
         result_lines = []
-        
+
         for line_idx, line in enumerate(lines):
             result_line = ""
             for col_idx, char in enumerate(line):
                 new_char = modifier_func(char, line_idx, col_idx)
                 result_line += new_char
             result_lines.append(result_line)
-        
-        return '\n'.join(result_lines)
+
+        return "\n".join(result_lines)
 
     @staticmethod
     def replace_character_group(
@@ -268,14 +268,14 @@ class CharacterModifier:
         Returns:
             Modified text
         """
-        lines = text.split('\n')
+        lines = text.split("\n")
         if 0 <= line_idx < len(lines):
             line = lines[line_idx]
             if start_col < len(line):
                 end_col = min(start_col + width, len(line))
                 new_line = line[:start_col] + replacement + line[end_col:]
                 lines[line_idx] = new_line
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     @staticmethod
     def add_variation_chars(
@@ -297,7 +297,7 @@ class CharacterModifier:
             if char == " " and random.random() < density:
                 return random.choice(variation_chars)
             return char
-        
+
         return CharacterModifier.modify_characters(text, modifier)
 
     @staticmethod
@@ -321,7 +321,7 @@ class CharacterModifier:
         lines = []
         pattern_chars = list(pattern)
         num_chars = len(pattern_chars)
-        
+
         for y in range(height):
             line = ""
             for x in range(width):
@@ -329,6 +329,6 @@ class CharacterModifier:
                 pattern_idx = int((x + y + time_offset * 2) / 4) % num_chars
                 line += pattern_chars[pattern_idx]
             lines.append(line)
-        
+
         return lines
 

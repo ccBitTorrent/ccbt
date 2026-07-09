@@ -7,8 +7,7 @@ TrackerSession and falls back to scrape cache when needed.
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import aiohttp
 import pytest
@@ -18,7 +17,7 @@ pytestmark = [pytest.mark.integration]
 
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER
 from ccbt.daemon.ipc_server import IPCServer
-from ccbt.discovery.tracker import AsyncTrackerClient, TrackerResponse, TrackerSession
+from ccbt.discovery.tracker import AsyncTrackerClient, TrackerSession
 from ccbt.models import ScrapeResult
 from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
 

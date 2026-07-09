@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from ccbt.utils.events import Event, EventType, get_event_bus
-from ccbt.plugins.metrics_plugin import Metric, MetricAggregate, MetricsCollector, MetricsPlugin
+from ccbt.plugins.metrics_plugin import (
+    Metric,
+    MetricsCollector,
+    MetricsPlugin,
+)
+from ccbt.utils.events import Event, EventType
 
 
 class TestMetricsCollector:
@@ -189,7 +193,7 @@ class TestMetricsPlugin:
 
         # Directly call the collector handler to test event handling
         assert plugin.collector is not None
-        
+
         event = Event(
             event_type=EventType.PERFORMANCE_METRIC.value,
             data={
@@ -208,6 +212,57 @@ class TestMetricsPlugin:
 
         await plugin.stop()
         await plugin.cleanup()
+
+    @pytest.mark.asyncio
+    async def test_handle_media_stream_event_metrics(self) -> None:
+        """Test media stream event handling and metric extraction."""
+        collector = MetricsCollector()
+
+        event = Event(
+            event_type=EventType.MEDIA_STREAM_READY.value,
+            data={
+                "stream_id": "stream-1",
+                "client_count": 3,
+                "bytes_served": 2048,
+                "buffer_progress": 0.82,
+                "available_bytes": 8192,
+            },
+            timestamp=1234567890.0,
+        )
+        await collector.handle(event)
+
+        names = {metric.name for metric in collector.metrics}
+        assert "media_stream_events_total" in names
+        assert "media_stream_client_count" in names
+        assert "media_stream_bytes_served" in names
+        assert "media_stream_buffer_progress" in names
+        assert "media_stream_available_bytes" in names
+
+        error_metrics = [
+            metric
+            for metric in collector.metrics
+            if metric.name == "media_stream_errors_total"
+        ]
+        assert error_metrics == []
+
+        event_error = Event(
+            event_type=EventType.MEDIA_STREAM_ERROR.value,
+            data={
+                "stream_id": "stream-1",
+                "last_error": "buffer_underflow",
+            },
+            timestamp=1234567891.0,
+        )
+        await collector.handle(event_error)
+
+        error_metrics = [
+            metric
+            for metric in collector.metrics
+            if metric.name == "media_stream_errors_total"
+        ]
+        assert len(error_metrics) == 1
+        assert error_metrics[0].tags["reason"] == "buffer_underflow"
+        assert error_metrics[0].tags["state"] == "error"
 
     def test_get_stats(self):
         """Test plugin statistics."""

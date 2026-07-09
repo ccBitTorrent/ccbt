@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
@@ -10,6 +12,31 @@ from ccbt.models import TorrentInfo as TorrentInfoModel
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+# Rate-limit repeated conversion-failure DEBUG lines (hot paths call this often).
+_CONVERSION_FAIL_LOG: dict[str, float] = {}
+_CONVERSION_FAIL_LOG_TTL_S = 60.0
+
+
+def _torrent_info_conversion_fail_key(torrent_data: dict[str, Any]) -> str:
+    raw = torrent_data.get("info_hash", b"")
+    if isinstance(raw, (bytes, bytearray)) and raw:
+        return raw[:20].hex()
+    return "unknown"
+
+
+def _log_conversion_failure_rate_limited(
+    logger: Any, torrent_data: dict[str, Any]
+) -> None:
+    if not logger or not logger.isEnabledFor(logging.DEBUG):
+        return
+    key = _torrent_info_conversion_fail_key(torrent_data)
+    now = time.monotonic()
+    last = _CONVERSION_FAIL_LOG.get(key)
+    if last is not None and (now - last) < _CONVERSION_FAIL_LOG_TTL_S:
+        return
+    _CONVERSION_FAIL_LOG[key] = now
+    logger.debug("Could not convert torrent_data to TorrentInfo (key=%s)", key)
 
 
 def get_torrent_info(
@@ -30,13 +57,20 @@ def get_torrent_info(
         return torrent_data
 
     if isinstance(torrent_data, dict):
+        _pi = torrent_data.get("pieces_info")
+        if isinstance(_pi, dict):
+            _pl = _pi.get("piece_length")
+        else:
+            _pl = torrent_data.get("piece_length")
+        if _pl is not None and int(_pl) <= 0:
+            return None
         # Try to extract file information from dict
         try:
             # Check if files are in the dict directly
             files = torrent_data.get("files", [])
             if not files:
                 # Check if in file_info
-                # CRITICAL FIX: Handle None values (common for magnet links)
+                # Note: Handle None values (common for magnet links)
                 file_info_dict = torrent_data.get("file_info") or {}
                 if isinstance(file_info_dict, dict) and "files" in file_info_dict:
                     files = file_info_dict["files"]
@@ -82,6 +116,7 @@ def get_torrent_info(
             return TorrentInfoModel(
                 name=torrent_data.get("name", "Unknown"),
                 info_hash=info_hash,
+                swarm_id=torrent_data.get("swarm_id"),
                 announce=torrent_data.get("announce", ""),
                 announce_list=torrent_data.get("announce_list"),
                 is_private=torrent_data.get("is_private", False),
@@ -102,7 +137,7 @@ def get_torrent_info(
             )
         except Exception:
             if logger:
-                logger.debug("Could not convert torrent_data to TorrentInfo")
+                _log_conversion_failure_rate_limited(logger, torrent_data)
             return None
 
     return None
@@ -161,7 +196,7 @@ def normalize_torrent_data(
         TypeError: If torrent_data is a list or invalid type
 
     """
-    # CRITICAL FIX: Validate torrent_data is not a list
+    # Note: Validate torrent_data is not a list
     if isinstance(td, list):
         error_msg = (
             f"torrent_data cannot be a list, got {type(td)}. "
@@ -336,7 +371,7 @@ def parse_magnet_link(
             magnet_info.info_hash,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.display_name,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.trackers,
-            magnet_info.web_seeds,  # CRITICAL FIX: Pass web seeds from magnet link
+            magnet_info.web_seeds,  # Note: Pass web seeds from magnet link
         )
     except Exception:  # pragma: no cover - defensive: parse_magnet error handling, returns None on failure
         if logger:
