@@ -211,7 +211,8 @@ class XetFolder:
             self._realtime_sync = None
         await self.folder_watcher.stop()
         await self.sync_manager.stop()
-        await self.dedup.aclose()
+        async with self.dedup._db_lock:
+            self.dedup.close()
         self.logger.info("Stopped XET folder sync for %s", self.folder_path)
 
     async def sync(self) -> tuple[bool, int]:
