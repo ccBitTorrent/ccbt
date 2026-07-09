@@ -1113,6 +1113,11 @@ class XetDeduplication:
             self.db.close()
             self.db = None
 
+    async def aclose(self) -> None:
+        """Close database connection under the DB lock (idempotent)."""
+        async with self._db_lock:
+            self.close()
+
     def __enter__(self):
         """Context manager entry."""
         return self
@@ -1127,4 +1132,4 @@ class XetDeduplication:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        self.close()
+        await self.aclose()

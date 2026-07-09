@@ -94,6 +94,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2, 4],
@@ -130,6 +131,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=None,
@@ -164,6 +166,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2, 4],
@@ -206,6 +209,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2],
@@ -273,6 +277,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 5, 10, 15],  # Only 0 and 5 are valid (out of 5 files)
@@ -308,6 +313,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=None,
@@ -361,6 +367,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x02" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0],

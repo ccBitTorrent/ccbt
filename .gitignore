@@ -9,6 +9,8 @@ MagicMock
 .coverage_html 
 .cursor
 scripts
+!dev/scripts/
+!dev/scripts/**
 compatibility_tests/
 lint_outputs/
 locales
