@@ -47,6 +47,8 @@ if sys.version_info >= (3, 10):
 
 
 @dataclass(**_SWARM_TIMEOUT_SIGNALS_KW)
+
+@dataclass(frozen=True, slots=True)
 class SwarmTimeoutSignals:
     """Peer counts for adaptive timeout health (handshake / DHT query timeouts)."""
 

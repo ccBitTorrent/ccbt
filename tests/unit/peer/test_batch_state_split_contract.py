@@ -6,7 +6,6 @@ import asyncio
 from unittest.mock import MagicMock
 
 from typing_extensions import Self
-
 import pytest
 
 from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
