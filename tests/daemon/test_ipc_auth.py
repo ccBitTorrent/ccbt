@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import aiohttp
 import pytest
+
+from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER
 import pytest_asyncio
 
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER

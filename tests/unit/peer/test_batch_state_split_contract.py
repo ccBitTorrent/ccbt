@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Self
 from unittest.mock import MagicMock
 
+from typing_extensions import Self
 import pytest
 
 from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
