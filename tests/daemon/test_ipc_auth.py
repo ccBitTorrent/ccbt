@@ -9,62 +9,8 @@ from __future__ import annotations
 
 import aiohttp
 import pytest
-import pytest_asyncio
 
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER
-from ccbt.daemon.ipc_server import IPCServer
-from ccbt.session.session import AsyncSessionManager
-
-
-@pytest_asyncio.fixture(scope="function")
-async def mock_session_manager(monkeypatch):
-    """Create a mock session manager with lightweight initialization.
-    
-    Disables heavy components (NAT, TCP server, DHT) to prevent test hangs.
-    """
-    from unittest.mock import patch
-
-    # Disable NAT auto port mapping to prevent 60s wait
-    monkeypatch.setenv("CCBT_NAT_AUTO_MAP_PORTS", "0")
-    # Disable DHT to prevent network initialization
-    monkeypatch.setenv("CCBT_ENABLE_DHT", "0")
-
-    session = AsyncSessionManager()
-
-    # Patch config to disable heavy components
-    session.config.network.enable_tcp = False
-    session.config.nat.auto_map_ports = False
-    session.config.discovery.enable_dht = False
-
-    # Mock heavy initialization methods to prevent hangs
-    session._make_nat_manager = lambda: None  # type: ignore[method-assign]
-    session._make_tcp_server = lambda: None  # type: ignore[method-assign]
-
-    # Mock DHT client start to avoid network initialization
-    async def mock_dht_start():
-        pass
-
-    with patch.object(session, "_make_dht_client", return_value=None):
-        await session.start()
-        yield session
-        await session.stop()
-
-
-@pytest.fixture
-async def ipc_server(mock_session_manager):
-    """Create IPC server for testing."""
-    api_key = "test-api-key-12345"
-    server = IPCServer(
-        session_manager=mock_session_manager,
-        api_key=api_key,
-        host="127.0.0.1",
-        port=0,  # Use random port
-    )
-    await server.start()
-    # Get actual port
-    actual_port = server.port
-    yield server, api_key, actual_port
-    await server.stop()
 
 
 @pytest.mark.asyncio

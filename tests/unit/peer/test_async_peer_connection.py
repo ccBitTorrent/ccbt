@@ -1,6 +1,7 @@
 """Tests for async peer connection manager."""
 
 import asyncio
+import contextlib
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -562,6 +563,17 @@ async def test_connect_to_peers_requeues_aborted_batch_peers(peer_manager, monke
     peer_manager._pending_peer_queue = []
     peer_manager._pending_peer_keys = set()
     peer_manager.max_peers_per_torrent = 10
+    peer_manager.config.network.connection_pool_warmup_enabled = False
+    monkeypatch.setattr(
+        peer_manager.connection_pool,
+        "warmup_connections",
+        AsyncMock(return_value=None),
+    )
+    if peer_manager._reconnection_task and not peer_manager._reconnection_task.done():
+        peer_manager._reconnection_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await peer_manager._reconnection_task
+        peer_manager._reconnection_task = None
 
     async def connect_with_split_results(peer: PeerInfo) -> None:
         if peer.port <= 6883:

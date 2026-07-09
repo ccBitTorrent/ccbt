@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install UV
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.cargo/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Set working directory
 WORKDIR /app
@@ -23,8 +23,8 @@ WORKDIR /app
 COPY . .
 
 # Install dependencies
-RUN /root/.cargo/bin/uv sync --dev
+RUN uv sync --dev
 
 # Default command (can be overridden)
-CMD ["/root/.cargo/bin/uv", "run", "pytest", "-c", "dev/pytest.ini", "tests/unit/", "-v"]
+CMD ["uv", "run", "pytest", "-c", "dev/pytest.ini", "tests/unit/", "-v"]
 

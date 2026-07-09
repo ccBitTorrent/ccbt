@@ -15,36 +15,28 @@ import pytest_asyncio
 
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, EventType
 from ccbt.daemon.ipc_server import IPCServer
-from ccbt.session.session import AsyncSessionManager
+
+from tests.daemon.conftest import _cancel_stray_tasks
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_session_manager():
-    """Create a mock session manager."""
-    session = AsyncSessionManager()
-    # Disable NAT to prevent hanging during start
-    session.config.nat.auto_map_ports = False
-    session.config.discovery.enable_dht = False
-    await session.start()
-    yield session
-    await session.stop()
-
-
-@pytest.fixture
 async def ipc_server(mock_session_manager):
-    """Create IPC server for testing."""
+    """Create IPC server with WebSocket support enabled."""
     api_key = "test-api-key-12345"
     server = IPCServer(
         session_manager=mock_session_manager,
         api_key=api_key,
         host="127.0.0.1",
-        port=0,  # Use random port
+        port=0,
         websocket_enabled=True,
     )
     await server.start()
     actual_port = server.port
-    yield server, api_key, actual_port
-    await server.stop()
+    try:
+        yield server, api_key, actual_port
+    finally:
+        await server.stop()
+        await _cancel_stray_tasks()
 
 
 @pytest.mark.asyncio
