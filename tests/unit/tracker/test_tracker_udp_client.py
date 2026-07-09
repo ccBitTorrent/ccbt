@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import struct
+import sys
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -1183,6 +1184,8 @@ class TestAsyncUDPTrackerClientModuleFunctions:
         await client.start()
         assert client.transport is not None
         await shutdown_udp_tracker_client()
+        if sys.platform == "win32":
+            await asyncio.sleep(0.5)
         assert client.transport is None
         await shutdown_udp_tracker_client()
         fresh = get_udp_tracker_client()

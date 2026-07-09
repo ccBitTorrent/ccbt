@@ -9,8 +9,9 @@ on:
 
 jobs:
   test:
-    name: test
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }}, ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     environment: approval-required
     permissions:
       contents: read
@@ -21,26 +22,27 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12']
+        shard: [daemon-integration, unit-peer-transport, unit-session-storage, unit-rest]
         exclude:
           # Reduce matrix size for faster CI
           - os: windows-latest
             python-version: '3.9'
           - os: macos-latest
             python-version: '3.9'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install UV
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      
+
       - name: Cache Python dependencies
         uses: actions/cache@v3
         with:
@@ -50,15 +52,15 @@ jobs:
           key: ${{ runner.os }}-python-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-${{ matrix.python-version }}-
-      
+
       - name: Cache pytest cache
         uses: actions/cache@v3
         with:
           path: .pytest_cache
-          key: ${{ runner.os }}-pytest-${{ matrix.python-version }}-${{ github.sha }}
+          key: ${{ runner.os }}-pytest-${{ matrix.python-version }}-${{ matrix.shard }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pytest-${{ matrix.python-version }}-
-      
+            ${{ runner.os }}-pytest-${{ matrix.python-version }}-${{ matrix.shard }}-
+
       - name: Install dependencies
         run: |
           uv sync --dev
@@ -66,51 +68,116 @@ jobs:
       - name: Prepare test report directories
         run: |
           mkdir -p site/reports
-      
+
       - name: Check for port conflicts
         run: |
-          # Check for common test ports that might be in use
-          # This helps detect lingering processes from previous test runs
           echo "Checking for port conflicts..."
           if command -v lsof &> /dev/null; then
-            # Unix-like systems (Linux, macOS)
             PORTS=(6881 6882 6883 5001 8080 8081 8082)
             for port in "${PORTS[@]}"; do
               if lsof -i :$port &> /dev/null; then
-                echo "⚠️  Warning: Port $port is in use"
+                echo "Warning: Port $port is in use"
                 lsof -i :$port || true
               fi
             done
           elif command -v netstat &> /dev/null; then
-            # Windows or older Unix systems
             PORTS=(6881 6882 6883 5001 8080 8081 8082)
             for port in "${PORTS[@]}"; do
               if netstat -an | grep -q ":$port "; then
-                echo "⚠️  Warning: Port $port is in use"
+                echo "Warning: Port $port is in use"
                 netstat -an | grep ":$port " || true
               fi
             done
           else
-            echo "⚠️  Port conflict detection tools not available, skipping check"
+            echo "Port conflict detection tools not available, skipping check"
           fi
           echo "Port conflict check complete"
         continue-on-error: true
-      
+
+      - name: Resolve shard test paths
+        id: shard
+        shell: bash
+        run: |
+          PATHS=$(uv run python dev/scripts/ci_get_test_shard_paths.py "${{ matrix.shard }}")
+          echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
+          echo "Running shard ${{ matrix.shard }}: $PATHS"
+
       - name: Run tests with coverage
         shell: bash
         env:
           CCBT_TEST_DEBUG_LOG: /tmp/ccbt-test-debug.log
         run: |
-          # Exclude compatibility tests from main test run (they run separately)
-          uv run pytest -c dev/pytest.ini tests/ \
+          SHARD_PATHS="${{ steps.shard.outputs.paths }}"
+          COV_ARGS=""
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.11" ]; then
+            COV_ARGS="--cov=ccbt --cov-report="
+          fi
+          # CI: 10-minute per-test timeout; shards keep each job under the 90-minute job limit.
+          uv run pytest -c dev/pytest.ini ${SHARD_PATHS} \
             -m "not compatibility" \
-            --cov=ccbt \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-report=term-missing
-      
-      - name: Upload coverage to Codecov
+            --timeout=600 \
+            --timeout-method=thread \
+            ${COV_ARGS}
+
+      - name: Upload shard coverage data
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data-py311-${{ matrix.shard }}
+          path: .coverage
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}-${{ matrix.shard }}
+          path: |
+            coverage.xml
+            htmlcov/
+            site/reports/junit.xml
+            site/reports/pytest.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  coverage:
+    name: coverage (ubuntu, py3.11)
+    runs-on: ubuntu-latest
+    needs: test
+    if: always()
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Download shard coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-py311-*
+          merge-multiple: true
+
+      - name: Combine coverage and upload to Codecov
+        run: |
+          uv run coverage combine || true
+          uv run coverage xml -o coverage.xml
+          uv run coverage report --fail-under=0
+
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
@@ -118,15 +185,3 @@ jobs:
           name: codecov-umbrella
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
-      
-      - name: Upload test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: |
-            coverage.xml
-            htmlcov/
-            site/reports/junit.xml
-            site/reports/pytest.log
-          retention-days: 7

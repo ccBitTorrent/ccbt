@@ -802,6 +802,7 @@ def mock_dht_client():
     mock_dht = MagicMock()
     mock_dht.start = AsyncMock()
     mock_dht.stop = AsyncMock()
+    mock_dht.bootstrap = AsyncMock()
     mock_dht.wait_for_bootstrap = AsyncMock(return_value=True)
     mock_dht.routing_table = MagicMock()
     mock_dht.routing_table.nodes = {}

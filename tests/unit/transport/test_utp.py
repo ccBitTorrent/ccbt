@@ -741,6 +741,7 @@ class TestUTPSocketManager:
                     assert manager1 is not manager2
 
                     await manager1.stop()
+                    await manager2.stop()
 
     @pytest.mark.asyncio
     async def test_register_connection(self, socket_manager, mock_config, remote_addr):

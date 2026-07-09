@@ -700,6 +700,17 @@ async def test_connect_to_peers_uses_pipeline_with_low_active_peer_count(
     peer_manager._running = True
     peer_manager.max_peers_per_torrent = 10
     peer_manager.connections.clear()
+    peer_manager.config.network.connection_pool_warmup_enabled = False
+    monkeypatch.setattr(
+        peer_manager.connection_pool,
+        "warmup_connections",
+        AsyncMock(return_value=None),
+    )
+    if peer_manager._reconnection_task and not peer_manager._reconnection_task.done():
+        peer_manager._reconnection_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await peer_manager._reconnection_task
+        peer_manager._reconnection_task = None
 
     peer_list = [
         {"ip": f"198.51.100.{idx}", "port": 6100 + idx, "peer_source": "tracker"}
