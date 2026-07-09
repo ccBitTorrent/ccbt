@@ -7,7 +7,6 @@ Provides validated data models for type safety and runtime validation.
 
 from __future__ import annotations
 
-import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -41,14 +40,7 @@ class AdaptiveTimeoutHealthPeerSource(str, Enum):
     """Use post-handshake active peers only (legacy behavior)."""
 
 
-_SWARM_TIMEOUT_SIGNALS_KW: dict[str, bool] = {"frozen": True}
-if sys.version_info >= (3, 10):
-    _SWARM_TIMEOUT_SIGNALS_KW["slots"] = True
-
-
-@dataclass(**_SWARM_TIMEOUT_SIGNALS_KW)
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SwarmTimeoutSignals:
     """Peer counts for adaptive timeout health (handshake / DHT query timeouts)."""
 

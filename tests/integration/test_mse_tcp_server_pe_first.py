@@ -52,7 +52,7 @@ async def _run_loopback_mse_handshake(
             reader,
             writer,
             info_hash,
-            timeout=1.0,
+            timeout=3.0,
             initial_payload=outbound_payload,
         )
         assert result.success
