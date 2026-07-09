@@ -11,8 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from ccbt.utils import style_policy
 
 if TYPE_CHECKING:
-    from rich.console import Console, RenderableType
-    from rich.console import RenderResult
+    from rich.console import Console, RenderResult
 
 
 class StableSplashRenderable:
@@ -21,7 +20,7 @@ class StableSplashRenderable:
     This renderable uses Textual's rendering approach to prevent blinking
     by maintaining a stable structure that only updates content, not structure.
     """
-    
+
     def __init__(
         self,
         frame_content: Any,
@@ -36,7 +35,7 @@ class StableSplashRenderable:
         self.frame_content = frame_content
         self.overlay_content = overlay_content
         self._cached_renderable: Optional[Any] = None
-    
+
     def update_frame(self, frame_content: Any) -> None:
         """Update the frame content without recreating structure.
         
@@ -45,7 +44,7 @@ class StableSplashRenderable:
         """
         self.frame_content = frame_content
         self._cached_renderable = None  # Invalidate cache
-    
+
     def update_overlay(self, overlay_content: Any) -> None:
         """Update the overlay content without recreating structure.
         
@@ -54,7 +53,7 @@ class StableSplashRenderable:
         """
         self.overlay_content = overlay_content
         self._cached_renderable = None  # Invalidate cache
-    
+
     def __rich_console__(
         self,
         console: Console,
@@ -72,22 +71,20 @@ class StableSplashRenderable:
         Yields:
             Stable renderable structure with overlay on top
         """
-        from rich.console import Group
-        from rich.segment import Segment
         from rich.measure import Measurement
-        
+
         # Rich's Group stacks vertically, which doesn't work for overlays
         # We need to render frame and overlay separately and combine them
         # The overlay is already positioned (top-right) by StableOverlayBox
-        
+
         # Create a renderable that ensures overlay is on top
         class LayeredRenderable:
             """Renderable that ensures overlay renders on top of frame."""
-            
+
             def __init__(self, frame: Any, overlay: Any) -> None:
                 self.frame = frame
                 self.overlay = overlay
-            
+
             def __rich_measure__(
                 self,
                 console: Console,
@@ -95,7 +92,7 @@ class StableSplashRenderable:
             ) -> Measurement:
                 """Measure based on frame."""
                 return Measurement.get(console, options, self.frame)
-            
+
             def __rich_console__(
                 self,
                 console: Console,
@@ -107,7 +104,7 @@ class StableSplashRenderable:
                 # Then render overlay (already positioned by Align.right)
                 # This will overlay on top
                 yield from console.render(self.overlay, options)
-        
+
         layered = LayeredRenderable(self.frame_content, self.overlay_content)
         yield layered
 
@@ -117,7 +114,7 @@ class StableOverlayBox:
     
     Uses Textual's rendering approach to maintain structure while updating content.
     """
-    
+
     def __init__(
         self,
         messages: list[str],
@@ -135,7 +132,7 @@ class StableOverlayBox:
         self.messages = messages
         self.title = title
         self._cached_panel: Optional[Any] = None
-    
+
     def update_messages(self, messages: list[str]) -> None:
         """Update messages without recreating box structure.
         
@@ -145,7 +142,7 @@ class StableOverlayBox:
         if messages != self.messages:
             self.messages = messages
             self._cached_panel = None  # Invalidate cache
-    
+
     def __rich_console__(
         self,
         console: Console,
@@ -160,11 +157,11 @@ class StableOverlayBox:
         Yields:
             Stable Panel renderable with messages INSIDE the box
         """
-        from rich.text import Text
+        import rich.box
         from rich.align import Align
         from rich.panel import Panel
-        import rich.box
-        
+        from rich.text import Text
+
         # Always create panel with current messages to ensure they're inside the box
         # This ensures messages are always linked to the box
         message_text = Text()
@@ -180,7 +177,7 @@ class StableOverlayBox:
         else:
             # Show placeholder when no messages yet
             message_text.append("Waiting for logs...", style="dim white")
-        
+
         # Create a Panel (box) around the messages
         # CRITICAL: Messages are INSIDE the Panel - they're part of the panel content
         panel = Panel(
@@ -190,10 +187,10 @@ class StableOverlayBox:
             box=rich.box.ROUNDED,
             padding=(0, 1),
         )
-        
+
         # Position panel at top-right corner
         # The Align wraps the panel, so the entire box (with messages inside) is positioned
         positioned_panel = Align.right(panel, vertical="top")
-        
+
         yield positioned_panel
 

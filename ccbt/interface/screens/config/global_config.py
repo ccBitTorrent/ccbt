@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Optional
 if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.containers import Container, Horizontal, Vertical
+    from textual.reactive import reactive
     from textual.widgets import (
         Button,
         DataTable,
@@ -24,6 +25,7 @@ else:
             Horizontal,
             Vertical,
         )
+        from textual.reactive import reactive
         from textual.widgets import (
             Button,
             DataTable,
@@ -41,6 +43,24 @@ else:
         Footer = None  # type: ignore[assignment, misc]
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -491,13 +511,15 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                         border_style="red",
                     )
                 )
-            except Exception as e:
+            except Exception:
                 self.logger.exception("Failed to show error message")
                 # Don't raise - prevent app crash
 
 
 class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
     """Detail screen for global configuration section with editable fields."""
+
+    system_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -784,7 +806,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 )
                 self._editors[opt_key] = editor
                 editors_container.mount(editor)
-            except Exception as e:
+            except Exception:
                 self.logger.exception("Failed to create editor for %s", opt_key)
                 # Continue with other editors instead of crashing
                 continue
@@ -799,14 +821,23 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         async def refresh_metrics_background():
             try:
                 await self._refresh_metrics()
-                # Set up auto-refresh for metrics after initial load
-                self.set_interval(3.0, self._refresh_metrics)
+                try:
+                    from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                    self.data_bind(system_metrics=TerminalDashboard.system_metrics)  # type: ignore[attr-defined]
+                except Exception as bind_exc:
+                    self.logger.debug("GlobalConfigDetailScreen data_bind skipped: %s", bind_exc)
             except Exception as e:
                 self.logger.debug("Could not refresh metrics: %s", e)
                 # Metrics are optional, don't crash if they fail
 
         # Start metrics refresh in background task
         asyncio.create_task(refresh_metrics_background())
+
+    def watch_system_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: refresh metrics section when App metrics update (F2.7.3)."""
+        if isinstance(value, dict) and value:
+            asyncio.create_task(self._refresh_metrics())
 
     def _check_unsaved_changes(self) -> bool:  # pragma: no cover
         """Check if there are unsaved changes by comparing current values with originals.

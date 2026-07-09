@@ -3711,7 +3711,8 @@ async def test_strict_ltep_timeout_closes_connection_if_extension_not_seen(
             return_value=None,
         ):
             peer_manager._start_strict_ltep_timeout(connection)
-            await asyncio.sleep(0.08)
+            # Windows timer slop: allow margin above the 0.05s strict timeout.
+            await asyncio.sleep(0.2)
             connection.close.assert_awaited_once()
             assert (
                 peer_manager._strict_ltep_timeout_tasks.get("203.0.113.11:50101")

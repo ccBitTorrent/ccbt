@@ -6,7 +6,7 @@ Provides bottom-right message display that can be cleared and refreshed.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -19,7 +19,7 @@ class MessageOverlay:
     Supports single-line or multi-line messages displayed in the bottom-right corner.
     Messages can be cleared and refreshed independently of the animation.
     """
-    
+
     def __init__(
         self,
         console: Optional[Console] = None,
@@ -44,7 +44,7 @@ class MessageOverlay:
         self.clear_on_update = clear_on_update
         self.messages: list[str] = []
         self._last_rendered: str = ""
-    
+
     def add_message(self, message: str, clear: Optional[bool] = None) -> None:
         """Add a message to the overlay.
         
@@ -54,24 +54,24 @@ class MessageOverlay:
         """
         if clear is None:
             clear = self.clear_on_update
-        
+
         if clear:
             self.messages = []
-        
+
         self.messages.append(message)
-        
+
         # Limit to max_lines
         if len(self.messages) > self.max_lines:
             self.messages = self.messages[-self.max_lines:]
-        
+
         self._update_display()
-    
+
     def clear_messages(self) -> None:
         """Clear all messages."""
         self.messages = []
         self._last_rendered = ""
         self._update_display()
-    
+
     def get_messages(self) -> list[str]:
         """Get current messages.
         
@@ -79,7 +79,7 @@ class MessageOverlay:
             List of current messages
         """
         return self.messages.copy()
-    
+
     def _update_display(self) -> None:
         """Update the display with current messages.
         
@@ -88,8 +88,7 @@ class MessageOverlay:
         """
         # The actual rendering happens in the animation adapter
         # This method is here for future extension
-        pass
-    
+
     def render_overlay(
         self,
         frame_content: Any,
@@ -108,21 +107,21 @@ class MessageOverlay:
         """
         if not self.messages:
             return frame_content
-        
+
         try:
             from rich.align import Align
             from rich.console import Group
             from rich.text import Text
         except ImportError:
             return frame_content
-        
+
         # Create message text
         message_text = Text()
         for i, msg in enumerate(self.messages):
             message_text.append(msg, style="dim white")
             if i < len(self.messages) - 1:
                 message_text.append("\n")
-        
+
         # Get terminal dimensions if not provided
         if width is None or height is None:
             try:
@@ -133,7 +132,7 @@ class MessageOverlay:
                     width, height = 80, 24
             except Exception:
                 width, height = 80, 24
-        
+
         # Position message overlay
         if self.position == "bottom_right":
             # Align to bottom-right
@@ -146,12 +145,12 @@ class MessageOverlay:
             overlay = Align.left(message_text, vertical="top")
         else:
             overlay = message_text
-        
+
         # Combine frame and overlay
         # For Rich, we can use a Group, but positioning is tricky
         # For now, return the overlay separately and let the adapter handle it
         return Group(frame_content, overlay)
-    
+
     def format_message(self, message: str, style: str = "dim white") -> str:
         """Format a message with style.
         
@@ -170,7 +169,7 @@ class LoggingMessageOverlay(MessageOverlay):
     
     Captures log messages and displays the last 5 log messages in the overlay.
     """
-    
+
     def __init__(
         self,
         console: Optional[Console] = None,
@@ -193,7 +192,7 @@ class LoggingMessageOverlay(MessageOverlay):
         self.log_levels = log_levels  # None = capture all levels
         self._log_handler: Optional[logging.Handler] = None
         self._log_buffer: list[tuple[str, str]] = []  # List of (level, message) tuples
-    
+
     def capture_log_message(self, level: str, message: str) -> None:
         """Capture a log message and add to overlay.
         
@@ -207,7 +206,7 @@ class LoggingMessageOverlay(MessageOverlay):
             self._log_buffer.append((level, message))
             if len(self._log_buffer) > self.max_lines:
                 self._log_buffer.pop(0)
-            
+
             # Update messages from buffer - rebuild from buffer, don't clear
             # This preserves messages between updates
             new_messages = []
@@ -217,27 +216,27 @@ class LoggingMessageOverlay(MessageOverlay):
                     log_msg = log_msg[:57] + "..."
                 formatted = f"{log_level}: {log_msg}"
                 new_messages.append(formatted)
-            
+
             # Always update messages to ensure they persist
             # This ensures messages are always available for the overlay box
             self.messages = new_messages
             # Don't call _update_display() here - the overlay box will fetch messages when rendering
-    
+
     def setup_log_capture(self) -> None:
         """Setup log message capture using Python logging handler.
         
         Adds a custom handler to capture log messages.
         """
         import logging
-        
+
         class LogCaptureHandler(logging.Handler):
             """Handler that captures log messages for overlay."""
-            
+
             def __init__(self, overlay: LoggingMessageOverlay) -> None:
                 super().__init__()
                 self.overlay = overlay
                 self.setLevel(logging.DEBUG)  # Capture all levels
-            
+
             def emit(self, record: logging.LogRecord) -> None:
                 """Emit a log record."""
                 try:
@@ -246,14 +245,14 @@ class LoggingMessageOverlay(MessageOverlay):
                     self.overlay.capture_log_message(level, message)
                 except Exception:
                     pass  # Ignore errors in log capture
-        
+
         # Create and add handler
         self._log_handler = LogCaptureHandler(self)
-        
+
         # Add to root logger to capture all logs
         root_logger = logging.getLogger()
         root_logger.addHandler(self._log_handler)
-    
+
     def teardown_log_capture(self) -> None:
         """Teardown log message capture."""
         if self._log_handler:

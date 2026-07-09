@@ -31,7 +31,7 @@ def test_parse_swarm_revocation_payload_supports_schema_fields() -> None:
 
 
 def test_parse_swarm_revocation_rejects_bad_types() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         parse_swarm_revocation_payload({"revoked_fingerprints": "no-list"})
 
 
@@ -64,7 +64,7 @@ def test_load_swarm_revocation_cache_surfaces_parse_errors(tmp_path) -> None:
     assert cache is None
     assert parse_error is True
 
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         load_swarm_revocation_cache(invalid, stale_tolerant=False)
 
 

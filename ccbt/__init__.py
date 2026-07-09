@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 __version__ = "0.0.1"
 
 # Ensure a default asyncio event loop exists on import for libraries/tests that
@@ -112,6 +114,7 @@ except Exception:  # nosec B110 - If asyncio is unavailable or any error occurs,
 
 # Backward compatibility: Re-export commonly used modules from new locations
 # This allows old imports like "from ccbt.bencode import ..." to continue working
+from ccbt import discovery
 from ccbt.config import config
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
 from ccbt.core import bencode, magnet, torrent
@@ -170,8 +173,9 @@ __all__ = [
     # Config
     "config",
     "decode",
-    # Discovery
     "dht",
+    # Discovery
+    "discovery",
     "encode",
     # Utils
     "events",
@@ -200,5 +204,18 @@ __all__ = [
 
 # Lazy attribute access for undefined attributes
 def __getattr__(name: str):  # pragma: no cover - import-time plumbing
+    if name in {
+        "config",
+        "core",
+        "discovery",
+        "peer",
+        "piece",
+        "session",
+        "storage",
+        "utils",
+    }:
+        module = importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
     msg = f"module '{__name__}' has no attribute '{name}'"
     raise AttributeError(msg)

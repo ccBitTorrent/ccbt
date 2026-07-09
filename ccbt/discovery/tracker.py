@@ -165,6 +165,7 @@ class TrackerResponse:
     download_url: Optional[str] = None
     tracker_id: Optional[str] = None
     warning_message: Optional[str] = None
+    min_interval: Optional[int] = None
 
 
 @dataclass
@@ -3042,6 +3043,8 @@ class AsyncTrackerClient:
         session = self.sessions[url]
         session.last_announce = time.time()
         session.interval = response.interval
+        if response.min_interval is not None:
+            session.min_interval = response.min_interval
         session.tracker_id = response.tracker_id
         session.failure_count = 0  # Reset failure count on success
         session.failure_streak = 0
@@ -3427,6 +3430,14 @@ class AsyncTrackerClient:
             if warning_message and isinstance(warning_message, bytes):
                 warning_message = warning_message.decode("utf-8")
 
+            min_interval_raw = decoded.get(b"min interval")
+            parsed_min_interval = self._coerce_tracker_int(
+                min_interval_raw,
+                "min interval",
+                tracker_url=tracker_url,
+                allow_missing=True,
+            )
+
             # Check for additional trackers in response (BEP 12)
             # Trackers may include "announce-list" or "announce" fields in responses
             discovered_trackers = []
@@ -3514,6 +3525,7 @@ class AsyncTrackerClient:
                 download_url=download_url,
                 tracker_id=tracker_id,
                 warning_message=warning_message,
+                min_interval=parsed_min_interval,
             )
 
         except Exception as e:

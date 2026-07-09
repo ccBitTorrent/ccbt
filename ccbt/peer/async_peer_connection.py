@@ -941,10 +941,11 @@ class AsyncPeerConnectionManager:
         self._pending_resume_task: Optional[asyncio.Task[None]] = None
         self._pending_resume_requested: bool = False
         self._pending_resume_retry_task: Optional[asyncio.Task[None]] = None
+        discovery_config = getattr(self.config, "discovery", None)
         self._requestable_deficit_last_notified_at: float = 0.0
         self._requestable_deficit_notify_min_interval_s: float = float(
             getattr(
-                self.config.discovery,
+                discovery_config,
                 "requestable_deficit_notify_min_interval_s",
                 5.0,
             )
@@ -1555,7 +1556,7 @@ class AsyncPeerConnectionManager:
         """After strict source sort, splice PEX/DHT peers after a tracker prefix window."""
         boost_n = int(
             getattr(
-                self.config.discovery,
+                getattr(self.config, "discovery", None),
                 "strict_tracker_pending_dht_pex_boost",
                 2,
             )
@@ -1563,7 +1564,7 @@ class AsyncPeerConnectionManager:
         )
         prefix_n = int(
             getattr(
-                self.config.discovery,
+                getattr(self.config, "discovery", None),
                 "strict_tracker_pending_tracker_prefix",
                 8,
             )
@@ -1630,7 +1631,7 @@ class AsyncPeerConnectionManager:
                 return 0
 
             if enqueued > 0 and getattr(
-                self.config.discovery,
+                getattr(self.config, "discovery", None),
                 "strict_tracker_source_connect_priority",
                 True,
             ):
@@ -17776,7 +17777,7 @@ class AsyncPeerConnectionManager:
 
             peer_source = peer_info.peer_source or "unknown"
             strict_tp = getattr(
-                self.config.discovery,
+                getattr(self.config, "discovery", None),
                 "strict_tracker_source_connect_priority",
                 True,
             )
@@ -17979,7 +17980,7 @@ class AsyncPeerConnectionManager:
 
         ranked_peers = [peer_info for peer_info, _ in peer_scores]
         strict_tp = getattr(
-            self.config.discovery,
+            getattr(self.config, "discovery", None),
             "strict_tracker_source_connect_priority",
             True,
         )

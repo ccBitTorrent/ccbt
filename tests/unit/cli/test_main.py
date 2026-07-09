@@ -3901,21 +3901,15 @@ def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
     expanded_path = tmp_path / "expanded.crt"
     expanded_path.write_text("fake ca cert")
 
-    # Mock Path to return expanded_path when expanduser is called
-    original_path_init = Path.__init__
+    original_expanduser = Path.expanduser
 
-    class MockPath(Path):
-        def expanduser(self):
+    def mock_expanduser(self):
+        if self.as_posix() == "~/ca.crt":
             return expanded_path
-
-    def mock_path_init(self, *args, **kwargs):
-        if args and str(args[0]) == "~/ca.crt":
-            # Return expanded path
-            return original_path_init(self, expanded_path, **kwargs)
-        return original_path_init(self, *args, **kwargs)
+        return original_expanduser(self)
 
     with monkeypatch.context() as m:
-        m.setattr(Path, "__init__", mock_path_init)
+        m.setattr(Path, "expanduser", mock_expanduser)
         cfg2 = _make_cfg()
         opts2 = {"ssl_ca_certs": "~/ca.crt"}
         _apply_ssl_overrides(cfg2, opts2)
@@ -4053,7 +4047,7 @@ def test_ssl_verify_certificates_disable_flag():
     assert cfg.security.ssl.ssl_verify_certificates is False
 
 
-def test_ssl_verify_flag_warns_on_strict_posture(caplog):
+def test_ssl_verify_flag_warns_on_strict_posture():
     """Test no_ssl_verify emits strict-posture warning when SSL verification is disabled."""
     from ccbt.cli.main import _apply_ssl_overrides
 
@@ -4063,10 +4057,12 @@ def test_ssl_verify_flag_warns_on_strict_posture(caplog):
     cfg.security.ssl.ssl_allow_insecure_peers = False
     opts = {"no_ssl_verify": True}
 
-    with caplog.at_level("WARNING"):
+    with patch("ccbt.cli.main.logger") as mock_logger:
         _apply_ssl_overrides(cfg, opts)
 
-    assert "Strict SSL posture requested while verification is disabled." in caplog.text
+    mock_logger.warning.assert_any_call(
+        "Strict SSL posture requested while verification is disabled."
+    )
 
 
 

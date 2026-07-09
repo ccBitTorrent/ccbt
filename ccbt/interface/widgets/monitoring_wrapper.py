@@ -11,17 +11,37 @@ from typing import Any, Optional
 
 try:
     from textual.containers import Container, Vertical
+    from textual.reactive import reactive
     from textual.widgets import Static
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:
+            pass
 
     class Vertical:  # type: ignore[no-redef]
         pass
 
     class Static:  # type: ignore[no-redef]
         pass
+
+    class reactive:  # type: ignore[no-redef]
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +52,12 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
     This extracts the content from existing MonitoringScreen classes
     and displays it within the graphs section without requiring a full screen push.
     """
+
+    # F2.6.12: optional local mirrors when bound to App reactives.
+    disk_io_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    system_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    torrents_data: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     MonitoringScreenWrapper {
@@ -70,63 +96,56 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             yield Static("Loading...", id="monitoring-placeholder")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Mount the monitoring wrapper and start refresh."""
+        """Mount the monitoring wrapper and bind App reactives (F2.6.12)."""
         try:
             self._content_widget = self.query_one("#monitoring-placeholder", Static)  # type: ignore[attr-defined]
-            # Content is refreshed via DataProvider only (no Screen instances)
-            self.set_interval(2.0, self._refresh_content)  # type: ignore[attr-defined]
-            self.call_later(self._refresh_content)  # type: ignore[attr-defined]
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+            if self._screen_type == "disk_io":
+                self.data_bind(disk_io_metrics=TerminalDashboard.disk_io_metrics)
+            elif self._screen_type == "system_resources":
+                self.data_bind(system_metrics=TerminalDashboard.system_metrics)
+            elif self._screen_type == "network":
+                self.data_bind(
+                    global_stats=TerminalDashboard.global_stats,
+                    torrents_data=TerminalDashboard.torrents_data,
+                )
+            else:
+                self.call_later(self._refresh_content)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting monitoring wrapper: %s", e)
 
+    def watch_disk_io_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render disk I/O panel (F2.6.12)."""
+        if self._content_widget and isinstance(value, dict) and value:
+            self._content_widget.update(self._render_disk_io_content(value))
+
+    def watch_system_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render system resources panel (F2.6.12)."""
+        if self._content_widget and isinstance(value, dict) and value:
+            self._content_widget.update(self._render_system_resources_content(value))
+
+    def watch_global_stats(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render network panel when stats update (F2.6.12)."""
+        if self._screen_type == "network" and self._content_widget and isinstance(value, dict):
+            torrents = self.torrents_data if isinstance(self.torrents_data, list) else []
+            self._content_widget.update(self._render_network_content(value, torrents))
+
+    def watch_torrents_data(self, value: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Reactive watcher: re-render network panel when torrent list updates (F2.6.12)."""
+        if self._screen_type == "network" and self._content_widget and isinstance(value, list):
+            stats = self.global_stats if isinstance(self.global_stats, dict) else {}
+            self._content_widget.update(self._render_network_content(stats, value))
+
     async def _refresh_content(self) -> None:  # pragma: no cover
-        """Refresh the monitoring content.
-        
-        Note: We can't directly mount Screen classes in containers.
-        Instead, we extract the data and render it ourselves using the
-        same logic as the monitoring screens, but without Header/Footer.
-        """
+        """Fallback refresh for unknown screen types."""
         if not self._content_widget:
             return
-        
-        try:
-            # Get monitoring content using the same data fetching logic
-            # as the monitoring screens, but render it in our container
-            content = await self._get_monitoring_content()
-            if content:
-                self._content_widget.update(content)
-            else:
-                self._content_widget.update(f"Monitoring: {self._screen_type}\n\nLoading metrics...")
-        except Exception as e:
-            logger.debug("Error refreshing monitoring content: %s", e)
-            if self._content_widget:
-                self._content_widget.update(f"Error loading {self._screen_type}: {e}")
+        self._content_widget.update(f"Monitoring: {self._screen_type}\n\nLoading metrics...")
 
-    async def _get_monitoring_content(self) -> Optional[str]:  # pragma: no cover
-        """Get monitoring content based on screen type.
-
-        Returns:
-            Formatted content string or None
-        """
+    def _render_disk_io_content(self, metrics: dict[str, Any]) -> str:  # pragma: no cover
+        """Render disk I/O metrics content from a metrics dict."""
         try:
-            if self._screen_type == "disk_io":
-                return await self._get_disk_io_content()
-            elif self._screen_type == "system_resources":
-                return await self._get_system_resources_content()
-            elif self._screen_type == "network":
-                return await self._get_network_content()
-            else:
-                return f"Monitoring: {self._screen_type}"
-        except Exception as e:
-            logger.debug("Error getting monitoring content: %s", e)
-            return None
-
-    async def _get_disk_io_content(self) -> str:  # pragma: no cover
-        """Get disk I/O metrics content from DataProvider (daemon or local)."""
-        try:
-            if not self._data_provider:
-                return "Data provider not available."
-            metrics = await self._data_provider.get_disk_io_metrics()
             read_throughput = float(metrics.get("read_throughput", 0.0))
             write_throughput = float(metrics.get("write_throughput", 0.0))
             cache_hit_rate = float(metrics.get("cache_hit_rate", 0.0))
@@ -157,15 +176,12 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             console.print(Panel(io_table, title="Disk I/O", border_style="blue"))
             return console.file.getvalue()  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Error getting disk I/O content: %s", e)
+            logger.debug("Error rendering disk I/O content: %s", e)
             return f"Disk I/O Error: {e}"
 
-    async def _get_system_resources_content(self) -> str:  # pragma: no cover
-        """Get system resources content from DataProvider (daemon or local)."""
+    def _render_system_resources_content(self, metrics: dict[str, Any]) -> str:  # pragma: no cover
+        """Render system resources content from a metrics dict."""
         try:
-            if not self._data_provider:
-                return "Data provider not available."
-            metrics = await self._data_provider.get_system_metrics()
             cpu = float(metrics.get("cpu_usage", 0.0))
             memory = float(metrics.get("memory_usage", 0.0))
             disk = float(metrics.get("disk_usage", 0.0))
@@ -195,29 +211,24 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             console.print(Panel(table, title="System Resources", border_style="green"))
             return console.file.getvalue()  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Error getting system resources content: %s", e)
+            logger.debug("Error rendering system resources content: %s", e)
             return f"System Resources Error: {e}"
 
-    async def _get_network_content(self) -> str:  # pragma: no cover
-        """Get network quality content.
-        
-        Uses the same logic as NetworkQualityScreen._refresh_data() but
-        renders to a string for display in our container widget.
-        """
+    def _render_network_content(
+        self,
+        stats: dict[str, Any],
+        torrents: list[dict[str, Any]],
+    ) -> str:  # pragma: no cover
+        """Render network quality content from global stats and torrent list."""
         try:
-            # CRITICAL: Use DataProvider instead of direct session access
-            stats = await self._data_provider.get_global_stats()
-            # Get all torrents status
-            torrents = await self._data_provider.list_torrents()
-            # Convert to dict format expected by monitoring screens
             all_status = {t.get("info_hash", ""): t for t in torrents}
-            
+
+            from io import StringIO
+
             from rich.console import Console
             from rich.panel import Panel
             from rich.table import Table
-            from io import StringIO
-            
-            # Global network stats table (matching NetworkQualityScreen format)
+
             global_table = Table(
                 title="Global Network Statistics",
                 expand=True,
@@ -226,36 +237,31 @@ class MonitoringScreenWrapper(Container):  # type: ignore[misc]
             )
             global_table.add_column("Metric", style="cyan", ratio=1)
             global_table.add_column("Value", style="green", ratio=2)
-            
+
             def format_speed(s: float) -> str:
-                """Format speed (matching NetworkQualityScreen)."""
                 if s >= 1024 * 1024:
                     return f"{s / (1024**2):.2f} MB/s"
                 if s >= 1024:
                     return f"{s / 1024:.2f} KB/s"
                 return f"{s:.2f} B/s"
-            
+
             global_table.add_row("Total Torrents", str(stats.get("num_torrents", 0)))
             global_table.add_row("Active Torrents", str(stats.get("num_active", 0)))
             global_table.add_row("Total Download Rate", format_speed(stats.get("download_rate", 0.0)))
             global_table.add_row("Total Upload Rate", format_speed(stats.get("upload_rate", 0.0)))
-            
-            # Calculate peer statistics
+
             total_peers = 0
             total_seeds = 0
             for status in all_status.values():
                 total_peers += status.get("connected_peers", 0)
                 total_seeds += status.get("active_peers", 0)
-            
+
             global_table.add_row("Total Peers", str(total_peers))
             global_table.add_row("Total Seeds", str(total_seeds))
-            
-            # Render table
+
             console = Console(file=StringIO(), width=80, height=15)
             console.print(Panel(global_table, title="Network Quality", border_style="blue"))
-            
             return console.file.getvalue()  # type: ignore[attr-defined]
         except Exception as e:
-            logger.debug("Error getting network content: %s", e)
+            logger.debug("Error rendering network content: %s", e)
             return f"Network Quality Error: {e}"
-

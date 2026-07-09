@@ -158,7 +158,7 @@ class FileSelectionDialog(ModalScreen):  # type: ignore[misc]
                     )
                     self._checkboxes[file_index] = checkbox
                     yield checkbox
-            
+
             with Horizontal(id="buttons"):
                 yield Button(_("Select All"), id="select-all", variant="default")
                 yield Button(_("Deselect All"), id="deselect-all", variant="default")

@@ -332,7 +332,7 @@ def test_dh_derive_stream_keys():
     shared_secret = dh.compute_shared_secret(
         keypair1.private_key, keypair2.public_key
     )
-    info_hash = bytes.fromhex("000102030405060708090a0b0c0d0e0f1011121314")
+    info_hash = bytes.fromhex("000102030405060708090a0b0c0d0e0f10111213")
 
     outbound_key, inbound_key = dh.derive_stream_keys(shared_secret, info_hash)
 
@@ -345,7 +345,7 @@ def test_dh_transcript_hash_helpers():
     """Test transcript hash helpers for req1/req2/req3."""
     dh = DHPeerExchange(key_size=768)
     shared_secret = bytes.fromhex("00112233445566778899aabbccddeeff0011223344")
-    info_hash = bytes.fromhex("11223344556677889900aabbccddeeff0011223344")
+    info_hash = bytes.fromhex("11223344556677889900aabbccddeeff00112233")
 
     req1 = dh.req1_hash(shared_secret)
     req2 = dh.req2_hash(info_hash)

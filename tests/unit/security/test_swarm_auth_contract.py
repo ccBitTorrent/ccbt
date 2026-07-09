@@ -171,7 +171,9 @@ def test_evaluate_swarm_auth_verification_order_allows_valid_proof(
     assert reason == "allow"
 
 
-def test_evaluate_swarm_auth_verification_order_allows_hybrid_family() -> None:
+def test_evaluate_swarm_auth_verification_order_allows_hybrid_family(
+    key_manager: Ed25519KeyManager,
+) -> None:
     peer_id = b"\x02" * 20
     info_hash_v1 = b"\x03" * 20
     info_hash_v2 = b"\x04" * 32

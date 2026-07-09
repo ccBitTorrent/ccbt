@@ -97,37 +97,47 @@ def _load_parity_expectations() -> dict[str, Any]:
 def _load_config_modules() -> dict[str, Any]:
     # Load ccbt.models and config modules without triggering ccbt/__init__.py side effects.
     ccbt_root = REPO_ROOT / "ccbt"
+    module_names = ("ccbt", "ccbt.config", "ccbt.models", "ccbt.config.config")
+    missing = object()
+    previous_modules = {name: sys.modules.get(name, missing) for name in module_names}
 
-    ccbt_pkg = types.ModuleType("ccbt")
-    ccbt_pkg.__path__ = [str(ccbt_root)]
-    sys.modules["ccbt"] = ccbt_pkg
+    try:
+        ccbt_pkg = types.ModuleType("ccbt")
+        ccbt_pkg.__path__ = [str(ccbt_root)]
+        sys.modules["ccbt"] = ccbt_pkg
 
-    cfg_pkg = types.ModuleType("ccbt.config")
-    cfg_pkg.__path__ = [str(ccbt_root / "config")]
-    sys.modules["ccbt.config"] = cfg_pkg
+        cfg_pkg = types.ModuleType("ccbt.config")
+        cfg_pkg.__path__ = [str(ccbt_root / "config")]
+        sys.modules["ccbt.config"] = cfg_pkg
 
-    models_spec = importlib.util.spec_from_file_location(
-        "ccbt.models", str(ccbt_root / "models.py")
-    )
-    models = importlib.util.module_from_spec(models_spec)
-    models.__package__ = "ccbt"
-    models.__file__ = str(ccbt_root / "models.py")
-    sys.modules["ccbt.models"] = models
-    models_spec.loader.exec_module(models)
+        models_spec = importlib.util.spec_from_file_location(
+            "ccbt.models", str(ccbt_root / "models.py")
+        )
+        models = importlib.util.module_from_spec(models_spec)
+        models.__package__ = "ccbt"
+        models.__file__ = str(ccbt_root / "models.py")
+        sys.modules["ccbt.models"] = models
+        models_spec.loader.exec_module(models)
 
-    config_spec = importlib.util.spec_from_file_location(
-        "ccbt.config.config", str(ccbt_root / "config" / "config.py")
-    )
-    config_module = importlib.util.module_from_spec(config_spec)
-    config_module.__package__ = "ccbt.config"
-    config_module.__file__ = str(ccbt_root / "config" / "config.py")
-    sys.modules["ccbt.config.config"] = config_module
-    config_spec.loader.exec_module(config_module)
+        config_spec = importlib.util.spec_from_file_location(
+            "ccbt.config.config", str(ccbt_root / "config" / "config.py")
+        )
+        config_module = importlib.util.module_from_spec(config_spec)
+        config_module.__package__ = "ccbt.config"
+        config_module.__file__ = str(ccbt_root / "config" / "config.py")
+        sys.modules["ccbt.config.config"] = config_module
+        config_spec.loader.exec_module(config_module)
 
-    return {
-        "config": config_module,
-        "models": models,
-    }
+        return {
+            "config": config_module,
+            "models": models,
+        }
+    finally:
+        for name, module in previous_modules.items():
+            if module is missing:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
 @pytest.mark.unit

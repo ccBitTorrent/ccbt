@@ -265,6 +265,8 @@ def run_pytest(
         ])
 
     logger.info(f"Running: {' '.join(cmd)}")
+    env = os.environ.copy()
+    env.setdefault("CCBT_TEST_MODE", "1")
     # Set timeout: longer for full suite, reasonable for selective tests
     # Since pytest.ini already has per-test timeout (600s), overall timeout is mainly
     # to catch pytest hangs, not individual test failures
@@ -277,7 +279,7 @@ def run_pytest(
     
     try:
         # Use subprocess.run instead of call to support timeout
-        result = subprocess.run(cmd, timeout=timeout_seconds, check=False)
+        result = subprocess.run(cmd, timeout=timeout_seconds, check=False, env=env)
         exit_code = result.returncode
         
         # Handle KeyboardInterrupt gracefully - if tests passed, allow it

@@ -6,8 +6,9 @@ import asyncio
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
     from textual.screen import ComposeResult
+
+    from ccbt.session.session import AsyncSessionManager
 else:
     try:
         from textual.screen import ComposeResult

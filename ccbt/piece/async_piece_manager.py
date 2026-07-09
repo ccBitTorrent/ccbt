@@ -5395,6 +5395,21 @@ class AsyncPieceManager:
                             },
                         )
                     )
+                    # Also emit a dedicated progress_updated event so the daemon
+                    # event bridge can forward it as EventType.PROGRESS_UPDATED
+                    # (R7): progress bars refresh on every verified piece instead
+                    # of waiting for the 3s poll.
+                    await emit_event(
+                        Event(
+                            event_type="progress_updated",
+                            data={
+                                "info_hash": info_hash_hex,
+                                "progress": progress_pct / 100.0,
+                                "verified_count": verified_count,
+                                "total_pieces": self.num_pieces,
+                            },
+                        )
+                    )
                 except Exception as e:
                     self.logger.debug("Failed to emit piece_verified event: %s", e)
 

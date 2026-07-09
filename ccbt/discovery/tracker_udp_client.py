@@ -89,6 +89,8 @@ class TrackerResponse:
     complete: Optional[int] = None  # Seeders in scrape response
     downloaded: Optional[int] = None  # Completed downloads in scrape response
     incomplete: Optional[int] = None  # Leechers in scrape response
+    # BEP 15 UDP announce responses do not carry min_interval; kept for type parity
+    min_interval: Optional[int] = None
 
 
 @dataclass

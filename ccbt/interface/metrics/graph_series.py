@@ -6,7 +6,7 @@ render legends, units, and styling without duplicating metadata.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -240,13 +240,11 @@ def list_series(keys: Iterable[str]) -> List[GraphMetricSeries]:
 
     Unknown keys are ignored to keep the API forgiving.
     """
-
     return [SERIES_REGISTRY[key] for key in keys if key in SERIES_REGISTRY]
 
 
 def list_series_by_category(category: SeriesCategory) -> List[GraphMetricSeries]:
     """Iterate all series in a category."""
-
     return [series for series in SERIES_REGISTRY.values() if series.category == category]
 
 
@@ -589,16 +587,14 @@ def format_series_value(value: Optional[float], series: GraphMetricSeries) -> st
 
     if series.unit == "%":
         return f"{value:.1f}%"
-    elif series.unit == "ms":
+    if series.unit == "ms":
         return f"{value:.1f} ms"
-    elif series.unit in ("KiB/s", "MB/s", "GiB"):
+    if series.unit in ("KiB/s", "MB/s", "GiB"):
         if value >= 1024 and series.unit == "KiB/s":
             return f"{value / 1024:.2f} MB/s"
-        elif value >= 1024 and series.unit == "MB/s":
+        if value >= 1024 and series.unit == "MB/s":
             return f"{value / 1024:.2f} GB/s"
-        elif value >= 1024 and series.unit == "GiB":
+        if value >= 1024 and series.unit == "GiB":
             return f"{value / 1024:.2f} TiB"
-        else:
-            return f"{value:.2f} {series.unit}"
-    else:
         return f"{value:.2f} {series.unit}"
+    return f"{value:.2f} {series.unit}"

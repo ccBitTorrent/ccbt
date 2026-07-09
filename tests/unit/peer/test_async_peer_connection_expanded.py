@@ -323,10 +323,10 @@ class TestAsyncPeerConnectionManagerBasics:
         assert async_peer_manager._connection_has_piece_info(connection) is True
 
     @pytest.mark.asyncio
-    async def test_disconnect_peer_removes_piece_manager_peer_and_clears_batch_flag(
+    async def test_disconnect_peer_removes_piece_manager_peer(
         self, async_peer_manager, peer_info
     ):
-        """Disconnect cleanup should remove stale peer availability and unblock recovery."""
+        """Disconnect cleanup should remove stale peer availability from piece manager."""
         connection = AsyncPeerConnection(peer_info, async_peer_manager.torrent_data)
         connection.state = ConnectionState.ACTIVE
         async_peer_manager.connections[str(peer_info)] = connection
@@ -339,7 +339,8 @@ class TestAsyncPeerConnectionManagerBasics:
         async_peer_manager.piece_manager._remove_peer.assert_awaited_once_with(
             connection
         )
-        assert async_peer_manager._connection_batches_in_progress is False
+        # Batch owner flags are cleared by connect_to_peers() finally/stop(), not per disconnect.
+        assert async_peer_manager._connection_batches_in_progress is True
 
     @pytest.mark.asyncio
     async def test_connect_to_peers_success(self, async_peer_manager, peer_info):

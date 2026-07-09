@@ -993,10 +993,17 @@ def _apply_network_overrides(cfg: Config, options: dict[str, Any]) -> None:
         cfg.network.enable_utp = True
     if options.get("disable_utp"):
         cfg.network.enable_utp = False
+    security = getattr(cfg, "security", None)
     if options.get("enable_encryption"):
-        cfg.security.enable_encryption = True
+        if security is not None:
+            security.enable_encryption = True
+        else:
+            cfg.network.enable_encryption = True
     if options.get("disable_encryption"):
-        cfg.security.enable_encryption = False
+        if security is not None:
+            security.enable_encryption = False
+        else:
+            cfg.network.enable_encryption = False
     if options.get("tcp_nodelay"):
         cfg.network.tcp_nodelay = True
     if options.get("no_tcp_nodelay"):

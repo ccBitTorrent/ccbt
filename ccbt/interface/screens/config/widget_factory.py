@@ -19,7 +19,6 @@ else:
         Static = None  # type: ignore[assignment, misc]
 
 from ccbt.interface.screens.config.widgets import ConfigValueEditor
-from ccbt.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +48,18 @@ def create_config_widget(
     if option_metadata is None:
         key_path = f"{section_name}.{option_key}"
         option_metadata = ConfigSchema.get_option_metadata(key_path)
-    
+
     # Determine value type
     value_type = option_metadata.get("type", "string") if option_metadata else "string"
     description = option_metadata.get("description", "") if option_metadata else ""
     constraints = {}
-    
+
     if option_metadata:
         if "minimum" in option_metadata:
             constraints["minimum"] = option_metadata["minimum"]
         if "maximum" in option_metadata:
             constraints["maximum"] = option_metadata["maximum"]
-    
+
     # Infer type from value if not in schema
     if value_type == "string" or value_type == "unknown":
         if isinstance(current_value, bool):
@@ -71,7 +70,7 @@ def create_config_widget(
             value_type = "float"
         elif isinstance(current_value, list):
             value_type = "list"
-    
+
     # Check for enum values
     enum_values = None
     if option_metadata:
@@ -87,10 +86,10 @@ def create_config_widget(
                     const_values.append(item["const"])
             if const_values:
                 enum_values = const_values
-    
+
     # Create appropriate widget
     widget_id = kwargs.pop("id", f"editor_{option_key}")
-    
+
     if value_type == "bool":
         # Use Checkbox for boolean values
         try:
@@ -121,21 +120,21 @@ def create_config_widget(
                 *args,
                 **kwargs,
             )
-    
+
     elif enum_values:
         # Use Select for enum values
         try:
             # Convert enum values to strings for Select
             options_list = [(str(v), str(v)) for v in enum_values]
             current_str = str(current_value)
-            
+
             # Find current value index
             current_index = 0
             for idx, (val, _) in enumerate(options_list):
                 if val == current_str:
                     current_index = idx
                     break
-            
+
             select = Select(
                 options_list,
                 value=current_index,
@@ -164,7 +163,7 @@ def create_config_widget(
                 *args,
                 **kwargs,
             )
-    
+
     else:
         # Use ConfigValueEditor (Input) for other types
         return ConfigValueEditor(
@@ -192,11 +191,11 @@ def get_widget_value(widget: Any) -> Any:
         widget_type = widget.value_type  # type: ignore[attr-defined]
     else:
         widget_type = "string"
-    
+
     # Handle Checkbox
     if hasattr(widget, "value") and isinstance(widget.value, bool):
         return widget.value
-    
+
     # Handle Select
     if hasattr(widget, "_enum_values"):
         enum_values = widget._enum_values  # type: ignore[attr-defined]
@@ -222,15 +221,15 @@ def get_widget_value(widget: Any) -> Any:
                                 return option_tuple[1]  # Return the value (second element)
                 except Exception:
                     pass
-    
+
     # Handle ConfigValueEditor (Input)
     if hasattr(widget, "get_parsed_value"):
         return widget.get_parsed_value()
-    
+
     # Fallback: try to get value directly
     if hasattr(widget, "value"):
         return widget.value  # type: ignore[attr-defined]
-    
+
     return None
 
 
@@ -248,10 +247,10 @@ def validate_widget_value(widget: Any) -> tuple[bool, str]:
         widget_type = widget.value_type  # type: ignore[attr-defined]
         if widget_type == "bool" or hasattr(widget, "_enum_values"):
             return True, ""
-    
+
     # Use widget's validation if available
     if hasattr(widget, "validate_value"):
         return widget.validate_value()
-    
+
     return True, ""
 

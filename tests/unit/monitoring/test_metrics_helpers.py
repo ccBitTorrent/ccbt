@@ -116,6 +116,7 @@ class TestGetMetricsCollector:
             mock_queue.put(1)  # Add item to queue
             mock_queue.put(2)
             mock_disk_io.write_queue = mock_queue
+            mock_session.disk_io_manager = mock_disk_io
             mock_get_disk_io.return_value = mock_disk_io
 
             # Call collect_performance_metrics

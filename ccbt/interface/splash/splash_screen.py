@@ -13,17 +13,17 @@ if TYPE_CHECKING:
     from textual.widgets import Static
 
 from ccbt.interface.splash.animation_config import (
-    AnimationConfig,
-    AnimationSequence,
-    BackgroundConfig,
     OCEAN_PALETTE,
     RAINBOW_PALETTE,
     SUNSET_PALETTE,
+    AnimationConfig,
+    AnimationSequence,
+    BackgroundConfig,
 )
-from ccbt.interface.splash.color_themes import COLOR_TEMPLATES
 from ccbt.interface.splash.animation_executor import AnimationExecutor
 from ccbt.interface.splash.animation_helpers import AnimationController
 from ccbt.interface.splash.ascii_art.logo_1 import LOGO_1
+from ccbt.interface.splash.color_themes import COLOR_TEMPLATES
 from ccbt.interface.splash.sequence_generator import SequenceGenerator
 from ccbt.utils import style_policy
 
@@ -57,7 +57,7 @@ class SplashScreen:
         await splash.run()
         ```
     """
-    
+
     def __init__(
         self,
         console: Optional[Console] = None,
@@ -80,19 +80,19 @@ class SplashScreen:
         self.logo_text = logo_text or LOGO_1
         self.duration = duration
         self.use_random_sequence = use_random_sequence
-        
+
         # Create controller with console and splash screen reference for overlay
         # Pass splash screen to renderer so it can always include overlay
         from ccbt.interface.splash.animation_helpers import FrameRenderer
         frame_renderer = FrameRenderer(console=console, splash_screen=self)
         self.controller = AnimationController(frame_renderer=frame_renderer)
-        
+
         # Store current frame renderable for overlay integration
         self._current_frame: Any = None
-        
+
         # Create executor with controller
         self.executor = AnimationExecutor(controller=self.controller)
-        
+
         # Copy color templates so we can extend them at runtime without mutating globals
         self._color_templates: dict[str, list[str]] = {
             key: list(value) for key, value in COLOR_TEMPLATES.items()
@@ -105,8 +105,8 @@ class SplashScreen:
         )
         # Build animation sequence - always use programmatic random generation
         self.sequence = self._build_random_sequence()
-    
-    
+
+
     def _build_random_sequence(self) -> AnimationSequence:
         """Build a random animation sequence using SequenceGenerator.
         
@@ -122,7 +122,7 @@ class SplashScreen:
             logo_text=self.logo_text,
             ensure_smooth=True,
         )
-    
+
     def _build_animation_sequence(self) -> AnimationSequence:
         """Build a comprehensive 90+ second animation sequence.
         
@@ -130,17 +130,17 @@ class SplashScreen:
             AnimationSequence with various transitions and patterns
         """
         sequence = AnimationSequence()
-        
+
         # Segment durations - longer to allow complete transitions
         # Each segment has: fade in (0.5s) -> full (2s) -> fade out (0.5s) -> fade in (0.5s) -> full (2.5s)
         # Improved calculation: ensure segments fit evenly into total duration
         segment_duration = 6.0  # Each segment is 6 seconds (allows complete cycle)
         num_segments = max(1, int(self.duration / segment_duration))
-        
+
         # Adjust segment duration to fit exactly into total duration for smoother transitions
         if num_segments > 0:
             segment_duration = self.duration / num_segments
-        
+
         # Animation patterns to cycle through with varied styles and directions
         patterns = [
             # 1. Color transition: Rainbow solid background with transition, ocean logo -> rainbow logo
@@ -722,12 +722,12 @@ class SplashScreen:
                 "bg_animation_speed": 1.1,
             },
         ]
-        
+
         # Add animations, randomly selecting patterns (programmatic, not deterministic)
         import random
         for i in range(num_segments):
             pattern = random.choice(patterns)
-            
+
             # Create background config
             bg_config = BackgroundConfig(
                 bg_type=pattern["bg_type"],
@@ -738,7 +738,7 @@ class SplashScreen:
             )
 
             template_palette = self._resolve_template(pattern.get("color_template"))
-            
+
             # Add pattern-specific config
             if pattern["bg_type"] == "stars":
                 bg_config.bg_star_count = pattern.get("bg_star_count", 100)
@@ -755,11 +755,11 @@ class SplashScreen:
                 bg_config.bg_flower_radius = pattern.get("bg_flower_radius", 0.3)
                 # Configure flower count and animation
                 # If flower_count not specified, use multiple flowers for animated backgrounds
-                bg_config.bg_flower_count = pattern.get("bg_flower_count", 
+                bg_config.bg_flower_count = pattern.get("bg_flower_count",
                     random.randint(4, 8) if bg_config.bg_animate else 1)
-                bg_config.bg_flower_rotation_speed = pattern.get("bg_flower_rotation_speed", 
+                bg_config.bg_flower_rotation_speed = pattern.get("bg_flower_rotation_speed",
                     random.uniform(0.8, 1.5))
-                bg_config.bg_flower_movement_speed = pattern.get("bg_flower_movement_speed", 
+                bg_config.bg_flower_movement_speed = pattern.get("bg_flower_movement_speed",
                     random.uniform(0.3, 0.7))
                 if "bg_direction" in pattern:
                     bg_config.bg_direction = pattern["bg_direction"]
@@ -774,7 +774,7 @@ class SplashScreen:
                     bg_config.bg_wave_lines = pattern["bg_vanishing_point"]
             elif pattern["bg_type"] == "wireframe_tunnel":
                 bg_config.bg_wave_lines = pattern.get("bg_wave_lines", bg_config.bg_wave_lines)
-            
+
             # Set background color palette - ensure all have backgrounds
             if "bg_color_palette" in pattern:
                 bg_config.bg_color_palette = pattern["bg_color_palette"]
@@ -784,22 +784,22 @@ class SplashScreen:
                 bg_config.bg_color_finish = pattern["bg_color_finish"]
             if template_palette and not bg_config.bg_color_palette:
                 bg_config.bg_color_palette = list(template_palette)
-            
+
             # Ensure ALL animations have a visible background (never "none")
             if bg_config.bg_type == "none":
                 bg_config.bg_type = "solid"
                 if not bg_config.bg_color_start and not bg_config.bg_color_palette:
                     bg_config.bg_color_start = RAINBOW_PALETTE
                     bg_config.bg_color_palette = RAINBOW_PALETTE
-            
+
             # Double-check: ensure background has colors set
             if not bg_config.bg_color_start and not bg_config.bg_color_palette:
                 bg_config.bg_color_start = RAINBOW_PALETTE
                 bg_config.bg_color_palette = RAINBOW_PALETTE
-            
+
             # Get animation style (default to color_transition)
             style = pattern.get("style", "color_transition")
-            
+
             # Build animation config based on style
             anim_kwargs = {
                 "style": style,
@@ -809,7 +809,7 @@ class SplashScreen:
                 "sequence_total_duration": self.duration,
                 "name": f"Segment {i+1}/{num_segments}: {style} ({pattern['bg_type']})",
             }
-            
+
             # Add style-specific parameters - prefer palettes over single colors
             if style == "color_transition":
                 # Use palettes for color transitions
@@ -912,12 +912,12 @@ class SplashScreen:
                 anim_kwargs["color_start"] = logo_color
                 if "whitespace_pattern" in pattern:
                     anim_kwargs["whitespace_pattern"] = pattern["whitespace_pattern"]
-            
+
             # Add animation using the sequence's add_animation method
             anim_config = sequence.add_animation(**anim_kwargs)
             # Adapt speed to duration
             anim_config.adapt_speed_to_duration()
-        
+
         return sequence
 
     def _resolve_template(self, template_key: Optional[str]) -> Optional[list[str]]:
@@ -928,7 +928,7 @@ class SplashScreen:
         if palette:
             return list(palette)
         return None
-    
+
     async def run(self) -> None:
         """Run the splash screen animation.
         
@@ -940,18 +940,18 @@ class SplashScreen:
         else:
             # Rich Console mode: Use controller's Live context
             await self._run_rich()
-    
+
     async def _run_rich(self) -> None:
         """Run animation with Rich Console."""
         # Don't print to console directly - it interferes with Live contexts
         # Messages will be shown in the overlay instead
-        
+
         for i, anim_config in enumerate(self.sequence.animations):
             # Check if we should stop (if splash_manager has stop_event)
-            if hasattr(self, '_splash_manager') and self._splash_manager:
-                if hasattr(self._splash_manager, '_stop_event') and self._splash_manager._stop_event.is_set():
+            if hasattr(self, "_splash_manager") and self._splash_manager:
+                if hasattr(self._splash_manager, "_stop_event") and self._splash_manager._stop_event.is_set():
                     break
-            
+
             try:
                 # Log segment info
                 import logging
@@ -972,18 +972,17 @@ class SplashScreen:
                 logger = logging.getLogger(__name__)
                 logger.error(f"Animation error in segment {i+1}: {e}")
                 continue
-        
+
         import logging
         logger = logging.getLogger(__name__)
         logger.info("Animation sequence completed")
-        
+
         # Ensure final frame always shows complete logo
         try:
             from rich.align import Align
             from rich.console import Group
             from rich.text import Text
-            from rich.live import Live
-            
+
             lines = self.logo_text.split("\n")
             logo_lines = []
             for line in lines:
@@ -994,23 +993,23 @@ class SplashScreen:
                     else:
                         text_line.append(char, style="white")
                 logo_lines.append(text_line)
-            
+
             centered = Align.center(Group(*logo_lines))
             if self.console:
                 # Update console with final complete logo
                 self.console.print(centered)
         except Exception:
             pass
-    
+
     async def _run_textual(self) -> None:
         """Run animation with Textual widget."""
         if not self.textual_widget:
             return
-        
+
         # For Textual, we need to manually update the widget
         # The animation executor uses Live context which doesn't work with Textual
         # So we'll use the controller directly with a custom update mechanism
-        
+
         for anim_config in self.sequence.animations:
             try:
                 # Execute animation with Textual widget update
@@ -1031,13 +1030,13 @@ class SplashScreen:
         """Execute animation with Textual widget updates."""
         if not self.textual_widget:
             return
-        
+
         # Create update callback for Textual widget
         def update_widget(renderable: Any) -> None:
             """Update Textual widget with renderable."""
             if self.textual_widget:
                 self.textual_widget.update(renderable)
-        
+
         if config.style == "color_transition":
             await self.controller.animate_color_transition(
                 config.logo_text,
@@ -1054,7 +1053,7 @@ class SplashScreen:
             # This is a limitation - other styles may not work perfectly with Textual
             # For now, fallback to Rich mode
             await self.executor.execute(config)
-    
+
     def __rich__(self) -> Any:
         """Rich renderable interface.
         
@@ -1069,7 +1068,7 @@ class SplashScreen:
                 frame_content = Text(self.logo_text, style="white")
             except ImportError:
                 return self.logo_text
-        
+
         return frame_content
 
 

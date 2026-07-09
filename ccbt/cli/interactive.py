@@ -2029,10 +2029,8 @@ Available Commands:
             and is_strict_ssl_posture(ssl_cfg)
         ):
             self.console.print(
-                _(
-                    "[yellow]Warning: certificate verification is disabled while SSL is"
-                    " in strict posture[/yellow]"
-                )
+                "[yellow]Warning: certificate verification is disabled while SSL is"
+                " in strict posture[/yellow]"
             )
 
     async def _show_network_stats(self) -> None:

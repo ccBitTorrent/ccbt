@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -98,7 +98,7 @@ class SecurityScanScreen(MonitoringScreen):  # type: ignore[misc]
 
             # Get security statistics
             stats = security_manager.get_security_statistics()
-            
+
             # Security statistics table
             stats_table = Table(
                 title=_("Security Statistics"),
@@ -129,11 +129,11 @@ class SecurityScanScreen(MonitoringScreen):  # type: ignore[misc]
                 box=None,
             )
             blacklist_table.add_column(_("IP Address"), style="red", ratio=1)
-            
+
             # Show up to 20 blacklisted IPs
             for ip in list(blacklist_ips)[:20]:
                 blacklist_table.add_row(ip)
-            
+
             if len(blacklist_ips) > 20:
                 blacklist_table.add_row(_("... and {count} more").format(count=len(blacklist_ips) - 20))
 

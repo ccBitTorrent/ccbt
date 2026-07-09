@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from rich.console import Group
+
     from ccbt.interface.splash.animation_config import BackgroundConfig
 
 if TYPE_CHECKING:
@@ -24,7 +25,7 @@ else:
     except ImportError:
         Console = None  # type: ignore[assignment, misc]
         Text = None  # type: ignore[assignment, misc]
-    
+
     # Import BackgroundConfig at runtime
     try:
         from ccbt.interface.splash.animation_config import BackgroundConfig
@@ -106,24 +107,23 @@ class FrameRenderer:
             Renderable object (Text or Group with overlay) for use with Live context
         """
         try:
-            from rich.text import Text
             from rich.align import Align
-            from rich.console import Group
-            
+            from rich.text import Text
+
             # Create base frame renderable
             text = Text(ascii_art, style=color)
             if center:
                 frame_renderable = Align.center(text)
             else:
                 frame_renderable = text
-            
+
             # Store frame without overlay - overlay will be added later in a stable way
             # Don't add overlay here to avoid recursion
-            
+
             # Store in splash screen for __rich__ method
             if self.splash_screen:
                 self.splash_screen._current_frame = frame_renderable
-            
+
             # If console is available and not in Live context, print directly
             if self.console is None:
                 print(ascii_art)
@@ -131,7 +131,7 @@ class FrameRenderer:
 
             if clear:
                 self.console.clear()
-            
+
             # Print if not in Live context (for backward compatibility)
             # When used with Live, the renderable will be returned and used
             self.console.print(frame_renderable)
@@ -234,7 +234,7 @@ class BackgroundRenderer:
             return [" " * width for _ in range(height)]
 
         lines = []
-        
+
         if bg_type == "solid":
             # Solid color background (can be animated palette)
             # Color selection happens in render_with_background, not here
@@ -250,7 +250,7 @@ class BackgroundRenderer:
             else:
                 start_color = bg_color if isinstance(bg_color, str) else "black"
                 end_color = "blue"
-            
+
             # Create gradient pattern (vertical gradient)
             for i in range(height):
                 # Create gradient line with varying density
@@ -260,7 +260,7 @@ class BackgroundRenderer:
                 for x in range(width):
                     # Create gradient effect using density
                     if random.random() < (0.1 + gradient_progress * 0.2):
-                        line += random.choice(['·', '░', '▒'])
+                        line += random.choice(["·", "░", "▒"])
                     else:
                         line += " "
                 lines.append(line)
@@ -281,16 +281,16 @@ class BackgroundRenderer:
             stars = []
             for _ in range(bg_star_count):
                 stars.append({
-                    'x': random.randint(0, width - 1),
-                    'y': random.randint(0, height - 1),
-                    'char': random.choice(['·', '*', '+', '.']),
+                    "x": random.randint(0, width - 1),
+                    "y": random.randint(0, height - 1),
+                    "char": random.choice(["·", "*", "+", "."]),
                 })
-            
+
             for y in range(height):
                 line = [" "] * width
                 for star in stars:
-                    if star['y'] == y:
-                        line[star['x']] = star['char']
+                    if star["y"] == y:
+                        line[star["x"]] = star["char"]
                 lines.append("".join(line))
 
         elif bg_type == "waves":
@@ -306,13 +306,13 @@ class BackgroundRenderer:
                     wave_period = width / max(bg_wave_lines, 1) if bg_wave_lines > 0 else width
                     wave_x = (x + wave_offset) % width
                     wave_phase = (wave_x / wave_period) * 2 * math.pi if wave_period > 0 else 0
-                    
+
                     # Create multiple wave lines across the height
                     # Each wave line has its own vertical position
                     wave_y_phase = (y / height) * bg_wave_lines * 2 * math.pi if height > 0 else 0
                     combined_phase = wave_phase + wave_y_phase + time_offset
                     wave_value = math.sin(combined_phase)
-                    
+
                     # Draw wave character when wave value is positive (upper half of wave)
                     if wave_value > 0:
                         line += bg_wave_char
@@ -326,7 +326,7 @@ class BackgroundRenderer:
                 line = ""
                 for _ in range(width):
                     if random.random() < bg_pattern_density:
-                        line += random.choice(['·', '*', '+', '×'])
+                        line += random.choice(["·", "*", "+", "×"])
                     else:
                         line += " "
                 lines.append(line)
@@ -336,7 +336,7 @@ class BackgroundRenderer:
             import math
             normalized_direction = (bg_direction or "orbit").lower()
             rotation_modifier = -1.0 if normalized_direction in {"counter_clockwise", "anticlockwise", "reverse"} else 1.0
-            
+
             # Determine flower size based on count
             if bg_flower_count == 1:
                 # Single large flower - make it much larger (80% of screen)
@@ -344,7 +344,7 @@ class BackgroundRenderer:
             else:
                 # Multiple flowers - smaller individual size
                 flower_radius_scale = bg_flower_radius
-            
+
             # Create grid for multiple flowers or single centered flower
             if bg_flower_count == 1:
                 # Single large flower centered
@@ -354,22 +354,22 @@ class BackgroundRenderer:
                 flower_positions = []
                 grid_cols = int(math.ceil(math.sqrt(bg_flower_count)))
                 grid_rows = int(math.ceil(bg_flower_count / grid_cols))
-                
+
                 for i in range(bg_flower_count):
                     col = i % grid_cols
                     row = i // grid_cols
-                    
+
                     # Base position in grid
                     base_x = int((col + 0.5) * width / grid_cols)
                     base_y = int((row + 0.5) * height / grid_rows)
-                    
+
                     # Add movement animation based on time_offset
                     movement_radius = min(width, height) * 0.15
                     phase = time_offset * bg_flower_movement_speed + i * 2 * math.pi / max(bg_flower_count, 1)
                     phase = phase % (2 * math.pi)
                     offset_x = 0
                     offset_y = 0
-                    
+
                     if normalized_direction in {"left_to_right", "right_to_left"}:
                         offset_x = int(math.sin(phase) * movement_radius)
                         if normalized_direction == "right_to_left":
@@ -396,42 +396,42 @@ class BackgroundRenderer:
                         movement_angle = rotation_modifier * phase
                         offset_x = int(math.cos(movement_angle) * movement_radius)
                         offset_y = int(math.sin(movement_angle) * movement_radius)
-                    
+
                     flower_x = base_x + offset_x
                     flower_y = base_y + offset_y
-                    
+
                     # Keep flowers within bounds
-                    flower_x = max(flower_radius_scale * min(width, height) / 2, 
+                    flower_x = max(flower_radius_scale * min(width, height) / 2,
                                   min(width - flower_radius_scale * min(width, height) / 2, flower_x))
                     flower_y = max(flower_radius_scale * min(width, height) / 2,
                                   min(height - flower_radius_scale * min(width, height) / 2, flower_y))
-                    
+
                     flower_positions.append((flower_x, flower_y, flower_radius_scale))
-            
+
             # Initialize empty grid
             grid = [[" " for _ in range(width)] for _ in range(height)]
-            
+
             # Render each flower
             for flower_idx, (center_x, center_y, radius_scale) in enumerate(flower_positions):
                 max_radius = min(width, height) * radius_scale / 2
-                
+
                 # Rotation angle for this flower (each flower rotates independently)
                 rotation_angle = (
                     rotation_modifier * time_offset * bg_flower_rotation_speed
                     + flower_idx * math.pi / 3
                 ) % (2 * math.pi)
-                
+
                 for y in range(height):
                     for x in range(width):
                         # Skip if already occupied by another flower (prioritize first flowers)
                         if grid[y][x] != " ":
                             continue
-                        
+
                         # Calculate distance from flower center
                         dx = x - center_x
                         dy = y - center_y
                         distance = math.sqrt(dx * dx + dy * dy)
-                        
+
                         if distance <= max_radius:
                             # Calculate angle relative to flower center
                             angle = math.atan2(dy, dx)
@@ -440,25 +440,25 @@ class BackgroundRenderer:
                             # Normalize angle to 0-2π
                             if angle < 0:
                                 angle += 2 * math.pi
-                            
+
                             # Create petal pattern using sine wave
                             # Each petal is a sine wave peak
                             petal_angle = (angle * bg_flower_petals) % (2 * math.pi)
                             petal_value = math.sin(petal_angle)
-                            
+
                             # Normalize distance to 0-1
                             normalized_dist = distance / max_radius if max_radius > 0 else 0
-                            
+
                             # Create flower shape: petals fade from center
                             # Use petal_value to create petal shape, fade with distance
                             if petal_value > 0.3 and normalized_dist < 0.9:
                                 # On petal: use flower character
-                                grid[y][x] = random.choice(['*', '·', '+', '×', '●', '○'])
+                                grid[y][x] = random.choice(["*", "·", "+", "×", "●", "○"])
                             elif normalized_dist < 0.1:
                                 # Center: always filled
-                                grid[y][x] = '*'
+                                grid[y][x] = "*"
                             # else: leave as space (already set)
-            
+
             # Convert grid to lines
             for y in range(height):
                 lines.append("".join(grid[y]))
@@ -589,7 +589,7 @@ class AnimationController:
         self.renderer = frame_renderer or FrameRenderer()
         self.background_renderer = BackgroundRenderer(self.renderer.console)
         self.default_duration = default_frame_duration
-    
+
     def _calculate_frame_duration(self, total_duration: float, num_frames: Optional[int] = None) -> float:
         """Calculate frame duration based on total animation duration.
         
@@ -603,14 +603,14 @@ class AnimationController:
         if num_frames is None:
             # Use refresh rate of 60 FPS as default for ultra-smooth animations
             num_frames = int(total_duration * 60)
-        
+
         if num_frames <= 0:
             return 0.016  # Default 60 FPS for ultra-smooth animations
-        
+
         frame_duration = total_duration / num_frames
         # Clamp between 0.008 (120 FPS max) and 0.033 (30 FPS min) for ultra-fluid animations
         return max(0.008, min(0.033, frame_duration))
-    
+
     def _adapt_speed_to_duration(self, base_speed: float, duration: float, sequence_duration: Optional[float] = None) -> float:
         """Adapt animation speed based on duration.
         
@@ -624,20 +624,19 @@ class AnimationController:
         """
         if sequence_duration is None or sequence_duration <= 0:
             return base_speed
-        
+
         # Scale speed inversely with duration ratio
         duration_ratio = duration / sequence_duration if sequence_duration > 0 else 1.0
-        
+
         if duration_ratio < 0.1:
             # Very short segments: faster speed
             return base_speed * (0.1 / max(duration_ratio, 0.01))
-        elif duration_ratio > 0.5:
+        if duration_ratio > 0.5:
             # Long segments: slower speed
             return base_speed * (0.5 / duration_ratio)
-        else:
-            # Normal segments: keep base speed
-            return base_speed
-    
+        # Normal segments: keep base speed
+        return base_speed
+
     def normalize_logo_lines(self, logo_text: str) -> list[str]:
         """Normalize logo lines for proper alignment.
         
@@ -654,7 +653,7 @@ class AnimationController:
         lines = []
 
         # Find the minimum leading whitespace across all non-empty lines
-        min_leading_spaces = float('inf')
+        min_leading_spaces = float("inf")
         for line in raw_lines:
             stripped = line.rstrip()
             if stripped:  # Only consider non-empty lines
@@ -749,10 +748,10 @@ class AnimationController:
             bg_wave_lines=bg_config.bg_wave_lines,
             bg_flower_petals=bg_config.bg_flower_petals,
             bg_flower_radius=bg_config.bg_flower_radius,
-            bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-            bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-            bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-            bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+            bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+            bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+            bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+            bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
             time_offset=time_offset,
         )
 
@@ -766,34 +765,33 @@ class AnimationController:
                 # This row contains logo - combine background and logo
                 logo_idx = y - logo_start_y
                 logo_line = logo_lines[logo_idx]
-                
+
                 # Create combined line with background color
                 combined_line = Text()
-                
+
                 # Add background with animated color
                 if bg_config.bg_type in ["solid", "gradient"] and bg_color:
                     # Use animated background color helper with separate animation speed
-                    bg_anim_speed = getattr(bg_config, 'bg_animation_speed', 1.0)
+                    bg_anim_speed = getattr(bg_config, "bg_animation_speed", 1.0)
                     bg_color_str = self._get_background_color(
                         bg_color, (0, y), time_offset, bg_anim_speed, "dim white"
                     )
                     combined_line = Text(bg_line, style=bg_color_str)
                 else:
                     combined_line = Text(bg_line, style="dim white")
-                
+
                 # Overlay logo on background (logo takes precedence)
                 # Logo line already has its colors, just append it
                 combined_lines.append(logo_line)
+            # Pure background line with animated color
+            elif bg_config.bg_type in ["solid", "gradient"] and bg_color:
+                bg_anim_speed = getattr(bg_config, "bg_animation_speed", 1.0)
+                bg_color_str = self._get_background_color(
+                    bg_color, (0, y), time_offset, bg_anim_speed, "dim white"
+                )
+                combined_lines.append(Text(bg_line, style=bg_color_str))
             else:
-                # Pure background line with animated color
-                if bg_config.bg_type in ["solid", "gradient"] and bg_color:
-                    bg_anim_speed = getattr(bg_config, 'bg_animation_speed', 1.0)
-                    bg_color_str = self._get_background_color(
-                        bg_color, (0, y), time_offset, bg_anim_speed, "dim white"
-                    )
-                    combined_lines.append(Text(bg_line, style=bg_color_str))
-                else:
-                    combined_lines.append(Text(bg_line, style="dim white"))
+                combined_lines.append(Text(bg_line, style="dim white"))
 
         return Group(*combined_lines)
 
@@ -808,10 +806,10 @@ class AnimationController:
         """
         if not lines:
             return []
-        
+
         max_width = max(len(line) for line in lines)
         columns = []
-        
+
         for col_idx in range(max_width):
             column = []
             for line in lines:
@@ -820,7 +818,7 @@ class AnimationController:
                 else:
                     column.append(" ")
             columns.append(column)
-        
+
         return columns
 
     def reconstruct_from_columns(self, columns: list[list[str]]) -> list[str]:
@@ -834,10 +832,10 @@ class AnimationController:
         """
         if not columns:
             return []
-        
+
         height = len(columns[0]) if columns else 0
         lines = []
-        
+
         for row_idx in range(height):
             line = ""
             for column in columns:
@@ -846,7 +844,7 @@ class AnimationController:
                 else:
                     line += " "
             lines.append(line)
-        
+
         return lines
 
     async def animate_columns_reveal(
@@ -883,7 +881,7 @@ class AnimationController:
 
         columns = self.get_columns(lines)
         num_columns = len(columns)
-        
+
         # Calculate frame duration for smooth animation
         if duration is None:
             # Estimate duration based on steps and default frame rate
@@ -1002,7 +1000,7 @@ class AnimationController:
                 display_columns = []
                 for col_idx, column in enumerate(columns):
                     group_idx = col_idx // column_groups
-                    
+
                     if direction == "left_to_right":
                         color_index = (group_idx + time_offset) % num_colors
                     elif direction == "right_to_left":
@@ -1092,21 +1090,21 @@ class AnimationController:
                     for col_idx, column in enumerate(columns):
                         if row_idx < len(column):
                             char = column[row_idx]
-                            
+
                             # Calculate wave offset for this column
                             wave_offset = int(
-                                wave_amplitude * 
-                                (col_idx / num_columns) * 
+                                wave_amplitude *
+                                (col_idx / num_columns) *
                                 (1 + (elapsed * wave_speed) % 2 - 1)
                             )
-                            
+
                             # Apply wave effect (shift characters vertically)
                             effective_row = (row_idx + wave_offset) % height
                             if effective_row < len(column):
                                 display_char = column[effective_row]
                             else:
                                 display_char = " "
-                            
+
                             if display_char == " ":
                                 text_line.append(display_char)
                             else:
@@ -1172,12 +1170,12 @@ class AnimationController:
                             effective_idx = (row_idx + scroll_offset) % height
                         else:  # down
                             effective_idx = (row_idx - scroll_offset) % height
-                        
+
                         if effective_idx < len(column):
                             char = column[effective_idx]
                         else:
                             char = " "
-                        
+
                         if char == " ":
                             text_line.append(char)
                         else:
@@ -1201,7 +1199,7 @@ class AnimationController:
         groups = []
         start_idx = 0
         in_group = False
-        
+
         for i, char in enumerate(line):
             if char != " " and not in_group:
                 # Start of a new group
@@ -1211,11 +1209,11 @@ class AnimationController:
                 # End of current group
                 groups.append((start_idx, i, line[start_idx:i]))
                 in_group = False
-        
+
         # Handle group at end of line
         if in_group:
             groups.append((start_idx, len(line), line[start_idx:]))
-        
+
         return groups
 
     def group_characters_custom(
@@ -1235,7 +1233,7 @@ class AnimationController:
             List of (start_idx, end_idx, group_text) tuples
         """
         groups = []
-        
+
         if group_size > 0:
             # Fixed-size groups
             for i in range(0, len(line), group_size):
@@ -1252,7 +1250,7 @@ class AnimationController:
             # Add remaining
             if start_idx < len(line):
                 groups.append((start_idx, len(line), line[start_idx:]))
-        
+
         return groups
 
     async def animate_row_groups_reveal(
@@ -1338,26 +1336,26 @@ class AnimationController:
                     original_line = lines[line_idx]
                     display_line = ""
                     current_pos = 0
-                    
+
                     for group_idx, (start_idx, end_idx, group_text) in enumerate(groups):
                         # Add any spaces before this group
                         while current_pos < start_idx and current_pos < len(original_line):
                             display_line += original_line[current_pos]
                             current_pos += 1
-                        
+
                         # Add group (revealed or hidden)
                         if group_idx in revealed_groups:
                             display_line += group_text
                         else:
                             display_line += " " * len(group_text)
-                        
+
                         current_pos = end_idx
-                    
+
                     # Add any remaining characters (spaces at end)
                     while current_pos < len(original_line):
                         display_line += original_line[current_pos]
                         current_pos += 1
-                    
+
                     display_lines.append(display_line)
 
                 # Build Rich Text objects
@@ -1430,7 +1428,7 @@ class AnimationController:
         num_colors = len(color_palette)
         start_time = asyncio.get_event_loop().time()
         end_time = start_time + duration
-        
+
         # Calculate adaptive frame duration based on total duration
         frame_duration = self._calculate_frame_duration(duration)
 
@@ -1444,7 +1442,7 @@ class AnimationController:
                 logo_lines = []
                 for line_idx, groups in enumerate(line_groups):
                     text_line = Text()
-                    
+
                     if not groups:
                         # Empty line - preserve it
                         original_line = lines[line_idx]
@@ -1457,13 +1455,13 @@ class AnimationController:
                     original_line = lines[line_idx]
                     num_groups = len(groups)
                     current_pos = 0
-                    
+
                     for group_idx, (start_idx, end_idx, group_text) in enumerate(groups):
                         # Add any spaces before this group
                         while current_pos < start_idx and current_pos < len(original_line):
                             text_line.append(original_line[current_pos])
                             current_pos += 1
-                        
+
                         # Calculate color for this group
                         if direction == "left_to_right":
                             color_index = (group_idx + time_offset) % num_colors
@@ -1481,21 +1479,21 @@ class AnimationController:
                             color_index = 0
 
                         style = color_palette[color_index]
-                        
+
                         # Add group characters with color
                         for char in group_text:
                             if char == " ":
                                 text_line.append(char)
                             else:
                                 text_line.append(char, style=style)
-                        
+
                         current_pos = end_idx
-                    
+
                     # Add any remaining characters (spaces at end)
                     while current_pos < len(original_line):
                         text_line.append(original_line[current_pos])
                         current_pos += 1
-                    
+
                     logo_lines.append(text_line)
 
                 centered = Align.center(Group(*logo_lines))
@@ -1558,7 +1556,7 @@ class AnimationController:
                 logo_lines = []
                 for line_idx, groups in enumerate(line_groups):
                     text_line = Text()
-                    
+
                     if not groups:
                         # Empty line - preserve it
                         original_line = lines[line_idx]
@@ -1571,41 +1569,41 @@ class AnimationController:
                     original_line = lines[line_idx]
                     num_groups = len(groups)
                     current_pos = 0
-                    
+
                     for group_idx, (start_idx, end_idx, group_text) in enumerate(groups):
                         # Add any spaces before this group
                         while current_pos < start_idx and current_pos < len(original_line):
                             text_line.append(original_line[current_pos])
                             current_pos += 1
-                        
+
                         # Calculate wave offset for this group
                         wave_offset = int(
-                            wave_amplitude * 
-                            (group_idx / num_groups) * 
+                            wave_amplitude *
+                            (group_idx / num_groups) *
                             (1 + (elapsed * wave_speed) % 2 - 1)
                         )
-                        
+
                         # Apply wave effect (shift groups horizontally)
                         effective_group_idx = (group_idx + wave_offset) % num_groups
                         if 0 <= effective_group_idx < len(groups):
                             display_group = groups[effective_group_idx][2]
                         else:
                             display_group = " " * len(group_text)
-                        
+
                         # Add group characters
                         for char in display_group:
                             if char == " ":
                                 text_line.append(char)
                             else:
                                 text_line.append(char, style=color)
-                        
+
                         current_pos = end_idx
-                    
+
                     # Add any remaining characters (spaces at end)
                     while current_pos < len(original_line):
                         text_line.append(original_line[current_pos])
                         current_pos += 1
-                    
+
                     logo_lines.append(text_line)
 
                 centered = Align.center(Group(*logo_lines))
@@ -1662,7 +1660,7 @@ class AnimationController:
 
                 for line_idx, groups in enumerate(line_groups):
                     text_line = Text()
-                    
+
                     if not groups:
                         # Empty line - preserve it
                         original_line = lines[line_idx]
@@ -1675,13 +1673,13 @@ class AnimationController:
                     original_line = lines[line_idx]
                     num_groups = len(groups)
                     current_pos = 0
-                    
+
                     for group_idx, (start_idx, end_idx, group_text) in enumerate(groups):
                         # Add any spaces before this group
                         while current_pos < start_idx and current_pos < len(original_line):
                             text_line.append(original_line[current_pos])
                             current_pos += 1
-                        
+
                         # Calculate fade alpha for this group
                         if direction == "left_to_right":
                             group_progress = (group_idx + 1) / num_groups
@@ -1718,14 +1716,14 @@ class AnimationController:
                                 text_line.append(char)
                             else:
                                 text_line.append(char, style=style)
-                        
+
                         current_pos = end_idx
-                    
+
                     # Add any remaining characters (spaces at end)
                     while current_pos < len(original_line):
                         text_line.append(original_line[current_pos])
                         current_pos += 1
-                    
+
                     logo_lines.append(text_line)
 
                 centered = Align.center(Group(*logo_lines))
@@ -1764,7 +1762,7 @@ class AnimationController:
 
         height = len(lines)
         max_width = max(len(line) for line in lines)
-        
+
         # Calculate frame duration
         frame_duration = self._calculate_frame_duration(duration)
         start_time = asyncio.get_event_loop().time()
@@ -1775,18 +1773,18 @@ class AnimationController:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 progress = min(1.0, elapsed / duration)
-                
+
                 logo_lines = []
-                
+
                 for row_idx, line in enumerate(lines):
                     # Calculate row progress (0.0 at top, 1.0 at bottom)
                     row_progress = row_idx / height if height > 0 else 0
-                    
+
                     # Calculate when this row should start appearing
                     # Rows appear sequentially from top to bottom
                     row_start_time = row_progress * duration
                     row_end_time = row_start_time + (duration / height) if height > 0 else duration
-                    
+
                     # Calculate row-specific progress
                     if elapsed < row_start_time:
                         # Row hasn't started yet
@@ -1799,9 +1797,9 @@ class AnimationController:
                         row_elapsed = elapsed - row_start_time
                         row_duration = row_end_time - row_start_time
                         row_alpha = row_elapsed / row_duration if row_duration > 0 else 1.0
-                    
+
                     text_line = Text()
-                    
+
                     if direction == "left_to_right_top_bottom":
                         # Reveal from left to right, rows from top to bottom
                         reveal_width = int(len(line) * row_alpha)
@@ -1813,7 +1811,7 @@ class AnimationController:
                                     text_line.append(char, style=color)
                             else:
                                 text_line.append(" ")
-                    
+
                     elif direction == "right_to_left_top_bottom":
                         # Reveal from right to left, rows from top to bottom
                         reveal_width = int(len(line) * row_alpha)
@@ -1837,7 +1835,7 @@ class AnimationController:
                                     text_line.append(char, style=color)
                             else:
                                 text_line.append(" ")
-                    
+
                     logo_lines.append(text_line)
 
                 centered = Align.center(Group(*logo_lines))
@@ -2116,7 +2114,7 @@ class AnimationController:
         num_colors = len(color_palette)
         start_time = asyncio.get_event_loop().time()
         end_time = start_time + duration
-        
+
         # Calculate adaptive frame duration based on total duration
         frame_duration = self._calculate_frame_duration(duration)
 
@@ -2215,7 +2213,7 @@ class AnimationController:
 
         max_width = max(len(line) for line in lines)
         height = len(lines)
-        
+
         # Calculate frame duration if duration is provided
         if duration is not None and duration > 0:
             frame_duration = duration / steps
@@ -2296,12 +2294,12 @@ class AnimationController:
                 # Always add overlay to ensure it persists across all frames
                 live.update(centered)
                 await asyncio.sleep(frame_duration)
-            
+
             # Ensure final frame always shows complete logo (progress = 1.0)
             final_lines = []
             for line in lines:
                 final_lines.append(line)
-            
+
             logo_lines = []
             for line in final_lines:
                 text_line = Text()
@@ -2311,7 +2309,7 @@ class AnimationController:
                     else:
                         text_line.append(char, style=color)
                 logo_lines.append(text_line)
-            
+
             centered = Align.center(Group(*logo_lines))
             live.update(centered)
             await asyncio.sleep(frame_duration)
@@ -2443,7 +2441,7 @@ class AnimationController:
                             text_line.append(char)
                         else:
                             # Calculate wave offset
-                            wave_offset = int(wave_amplitude * (line_idx / len(lines)) * 
+                            wave_offset = int(wave_amplitude * (line_idx / len(lines)) *
                                             (1 + (elapsed * wave_speed) % 2 - 1))
                             # Alternate colors for flag effect
                             color_idx = (char_idx + wave_offset) % len(color_palette)
@@ -2497,11 +2495,11 @@ class AnimationController:
         num_particles = int(max_width * height * density)
         for _ in range(num_particles):
             particles.append({
-                'x': random.uniform(0, max_width),
-                'y': random.uniform(0, height),
-                'char': random.choice(particle_chars),
-                'vx': random.uniform(-speed, speed),
-                'vy': random.uniform(-speed, speed),
+                "x": random.uniform(0, max_width),
+                "y": random.uniform(0, height),
+                "char": random.choice(particle_chars),
+                "vx": random.uniform(-speed, speed),
+                "vy": random.uniform(-speed, speed),
             })
 
         start_time = asyncio.get_event_loop().time()
@@ -2514,21 +2512,21 @@ class AnimationController:
 
                 # Update particles
                 for p in particles:
-                    p['x'] += p['vx'] * 0.1
-                    p['y'] += p['vy'] * 0.1
+                    p["x"] += p["vx"] * 0.1
+                    p["y"] += p["vy"] * 0.1
                     # Wrap around
-                    if p['x'] < 0:
-                        p['x'] = max_width
-                    if p['x'] > max_width:
-                        p['x'] = 0
-                    if p['y'] < 0:
-                        p['y'] = height
-                    if p['y'] > height:
-                        p['y'] = 0
+                    if p["x"] < 0:
+                        p["x"] = max_width
+                    if p["x"] > max_width:
+                        p["x"] = 0
+                    if p["y"] < 0:
+                        p["y"] = height
+                    if p["y"] > height:
+                        p["y"] = 0
 
                 # Build display
-                display_grid = [[' ' for _ in range(max_width)] for _ in range(height + 5)]
-                
+                display_grid = [[" " for _ in range(max_width)] for _ in range(height + 5)]
+
                 # Draw text
                 for i, line in enumerate(lines):
                     for j, char in enumerate(line):
@@ -2537,10 +2535,10 @@ class AnimationController:
 
                 # Draw particles
                 for p in particles:
-                    px, py = int(p['x']), int(p['y'])
+                    px, py = int(p["x"]), int(p["y"])
                     if 0 <= py < len(display_grid) and 0 <= px < len(display_grid[py]):
-                        if display_grid[py][px] == ' ':
-                            display_grid[py][px] = p['char']
+                        if display_grid[py][px] == " ":
+                            display_grid[py][px] = p["char"]
 
                 # Render
                 logo_lines = []
@@ -2602,13 +2600,12 @@ class AnimationController:
                     for char in line:
                         if char == " ":
                             text_line.append(char)
+                        # Random glitch
+                        elif random.random() < intensity:
+                            glitch_char = random.choice(glitch_chars)
+                            text_line.append(glitch_char, style="bright_red")
                         else:
-                            # Random glitch
-                            if random.random() < intensity:
-                                glitch_char = random.choice(glitch_chars)
-                                text_line.append(glitch_char, style="bright_red")
-                            else:
-                                text_line.append(char, style=base_color)
+                            text_line.append(char, style=base_color)
                     logo_lines.append(text_line)
 
                 centered = Align.center(Group(*logo_lines))
@@ -2640,10 +2637,10 @@ class AnimationController:
         """
         if color_input is None:
             return default
-        
+
         if isinstance(color_input, str):
             return color_input
-        
+
         if isinstance(color_input, list) and len(color_input) > 0:
             # Use position to select from palette
             if total_positions > 1:
@@ -2652,7 +2649,7 @@ class AnimationController:
             else:
                 palette_index = position % len(color_input)
             return color_input[palette_index]
-        
+
         return default
 
     def _get_color_at_position(
@@ -2679,15 +2676,15 @@ class AnimationController:
         """
         if color_input is None:
             return default
-        
+
         if isinstance(color_input, str):
             return color_input
-        
+
         if isinstance(color_input, list) and len(color_input) > 0:
             # Use position to cycle through palette
             position = (char_idx + line_idx) % len(color_input)
             return color_input[position]
-        
+
         return default
 
     # ============================================================================
@@ -2740,7 +2737,7 @@ class AnimationController:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 progress = min(1.0, elapsed / duration)
-                
+
                 # Interpolate between rainbow and target color
                 # Progress 0 = full rainbow, Progress 1 = full target color
                 rainbow_weight = 1.0 - progress
@@ -2756,14 +2753,14 @@ class AnimationController:
                             # Start with rainbow color
                             color_index = (char_idx + line_idx) % num_colors
                             rainbow_color = color_palette[color_index]
-                            
+
                             # Get target color (handle palette)
                             if isinstance(target_color, list) and len(target_color) > 0:
                                 target_idx = (char_idx + line_idx) % len(target_color)
                                 final_target = target_color[target_idx]
                             else:
                                 final_target = target_color if isinstance(target_color, str) else "white"
-                            
+
                             # Blend between rainbow and target
                             if progress < 0.5:
                                 # More rainbow
@@ -2774,7 +2771,7 @@ class AnimationController:
                             else:
                                 # Mostly target
                                 style = final_target
-                            
+
                             text_line.append(char, style=style)
                     logo_lines.append(text_line)
 
@@ -2827,7 +2824,7 @@ class AnimationController:
 
                 logo_lines = []
                 height = len(columns[0]) if columns else 0
-                
+
                 for row_idx in range(height):
                     text_line = Text()
                     for col_idx, column in enumerate(columns):
@@ -2835,7 +2832,7 @@ class AnimationController:
                             char = column[row_idx]
                         else:
                             char = " "
-                        
+
                         if char == " ":
                             text_line.append(char)
                         else:
@@ -2853,7 +2850,7 @@ class AnimationController:
                                 max_dist = num_columns // 2
                                 col_progress = distance / max_dist if max_dist > 0 else 0
                                 use_finish = progress >= col_progress
-                            
+
                             # Get color from palette or single color
                             if use_finish:
                                 style = self._get_color_at_position(
@@ -2863,7 +2860,7 @@ class AnimationController:
                                 style = self._get_color_at_position(
                                     color_start, col_idx, row_idx, num_columns, height, "white"
                                 )
-                            
+
                             text_line.append(char, style=style)
                     logo_lines.append(text_line)
 
@@ -2923,7 +2920,7 @@ class AnimationController:
                         # Calculate angle from center
                         dist_x = char_idx - center_x
                         dist_y = line_idx - center_y
-                        
+
                         # Calculate angle in degrees (0-360, where 0 is right, 90 is down)
                         if dist_x == 0 and dist_y == 0:
                             angle_deg = 0
@@ -2932,7 +2929,7 @@ class AnimationController:
                             angle_deg = math.degrees(angle_rad)
                             # Normalize to 0-360
                             angle_deg = (angle_deg + 360) % 360
-                        
+
                         # Determine if revealed based on direction and progress
                         revealed = False
                         if direction == "top_down":
@@ -2941,7 +2938,7 @@ class AnimationController:
                             start_angle = 270.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle + sweep_angle) % 360
-                            
+
                             # Check if angle is in the swept range
                             if sweep_angle >= 360:
                                 revealed = True
@@ -2949,39 +2946,39 @@ class AnimationController:
                                 revealed = (angle_deg >= start_angle and angle_deg <= end_angle)
                             else:  # Wraps around 360/0
                                 revealed = (angle_deg >= start_angle or angle_deg <= end_angle)
-                                
+
                         elif direction == "down_up":
                             # Start at bottom (90°), sweep counter-clockwise to top (270°)
                             start_angle = 90.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle - sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 revealed = True
                             elif end_angle <= start_angle:
                                 revealed = (angle_deg >= end_angle and angle_deg <= start_angle)
                             else:  # Wraps around
                                 revealed = (angle_deg >= end_angle or angle_deg <= start_angle)
-                                
+
                         elif direction == "left_right":
                             # Start at left (180°), sweep clockwise to right (0°/360°)
                             start_angle = 180.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle + sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 revealed = True
                             elif start_angle <= end_angle:
                                 revealed = (angle_deg >= start_angle and angle_deg <= end_angle)
                             else:
                                 revealed = (angle_deg >= start_angle or angle_deg <= end_angle)
-                                
+
                         elif direction == "right_left":
                             # Start at right (0°/360°), sweep counter-clockwise to left (180°)
                             start_angle = 0.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle - sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 revealed = True
                             elif end_angle <= start_angle:
@@ -2990,7 +2987,7 @@ class AnimationController:
                                 revealed = (angle_deg >= end_angle or angle_deg <= start_angle)
                         else:
                             revealed = True
-                        
+
                         if revealed:
                             display_line += char
                         else:
@@ -3053,21 +3050,21 @@ class AnimationController:
                         # Calculate angle from center
                         dist_x = char_idx - center_x
                         dist_y = line_idx - center_y
-                        
+
                         if dist_x == 0 and dist_y == 0:
                             angle_deg = 0
                         else:
                             angle_rad = math.atan2(dist_y, dist_x)
                             angle_deg = math.degrees(angle_rad)
                             angle_deg = (angle_deg + 360) % 360
-                        
+
                         # Determine if hidden based on direction and progress (reverse of reveal)
                         hidden = False
                         if direction == "top_down":
                             start_angle = 270.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle + sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 hidden = True
                             elif start_angle <= end_angle:
@@ -3078,7 +3075,7 @@ class AnimationController:
                             start_angle = 90.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle - sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 hidden = True
                             elif end_angle <= start_angle:
@@ -3089,7 +3086,7 @@ class AnimationController:
                             start_angle = 180.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle + sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 hidden = True
                             elif start_angle <= end_angle:
@@ -3100,14 +3097,14 @@ class AnimationController:
                             start_angle = 0.0
                             sweep_angle = 360.0 * progress
                             end_angle = (start_angle - sweep_angle) % 360
-                            
+
                             if sweep_angle >= 360:
                                 hidden = True
                             elif end_angle <= start_angle:
                                 hidden = (angle_deg >= end_angle and angle_deg <= start_angle)
                             else:
                                 hidden = (angle_deg >= end_angle or angle_deg <= start_angle)
-                        
+
                         if hidden:
                             display_line += " "
                         else:
@@ -3201,11 +3198,11 @@ class AnimationController:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 progress = min(1.0, elapsed / duration)
-                
+
                 # Calculate snake head position based on progress
                 # Progress 0 = nothing revealed, Progress 1 = all revealed
                 snake_head_pos = int(progress * total_positions)
-                
+
                 revealed = set()
                 # Reveal all positions from start up to snake head
                 # Also include snake_length positions after head for the "tail" effect
@@ -3228,7 +3225,7 @@ class AnimationController:
                                         revealed.add((line_idx, thick_col))
                         else:
                             revealed.add((line_idx, char_idx))
-                
+
                 # Add tail effect - fade out the last snake_length positions
                 # (optional: can be removed if not desired)
                 tail_start = max(0, snake_head_pos - snake_length)
@@ -3255,13 +3252,13 @@ class AnimationController:
                 # Always add overlay to ensure it persists across all frames
                 live.update(centered)
                 await asyncio.sleep(frame_duration)
-            
+
             # Ensure final frame always shows complete logo (progress = 1.0)
             final_revealed = set()
             for pos_idx in range(total_positions):
                 line_idx, char_idx = positions[pos_idx]
                 final_revealed.add((line_idx, char_idx))
-            
+
             logo_lines = []
             for line_idx, line in enumerate(lines):
                 text_line = Text()
@@ -3274,7 +3271,7 @@ class AnimationController:
                     else:
                         text_line.append(" ")
                 logo_lines.append(text_line)
-            
+
             centered = Align.center(Group(*logo_lines))
             live.update(centered)
             await asyncio.sleep(frame_duration)
@@ -3340,11 +3337,11 @@ class AnimationController:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 progress = min(1.0, elapsed / duration)
-                
+
                 # Calculate snake head position (progress 1 = all hidden)
                 # Progress 0 = nothing hidden, Progress 1 = all hidden
                 snake_head_pos = int(progress * total_positions)
-                
+
                 hidden = set()
                 # Hide all positions from start up to snake head
                 for pos_idx in range(snake_head_pos + 1):  # +1 to include head position
@@ -3374,11 +3371,10 @@ class AnimationController:
                     for char_idx, char in enumerate(line):
                         if (line_idx, char_idx) in hidden:
                             text_line.append(" ")
+                        elif char == " ":
+                            text_line.append(char)
                         else:
-                            if char == " ":
-                                text_line.append(char)
-                            else:
-                                text_line.append(char, style=color)
+                            text_line.append(char, style=color)
                     logo_lines.append(text_line)
 
                 centered = Align.center(Group(*logo_lines))
@@ -3417,17 +3413,17 @@ class AnimationController:
 
         # Parse letters based on spacing
         from ccbt.interface.splash.character_modifier import CharacterModifier
-        letter_data = CharacterModifier.parse_letters_by_width('\n'.join(lines))
+        letter_data = CharacterModifier.parse_letters_by_width("\n".join(lines))
 
         max_width = max(len(line) for line in lines)
         height = len(lines)
 
         with Live(console=self.renderer.console, refresh_per_second=60, transient=False) as live:
             for letter_idx, letter in enumerate(letter_data):
-                start_col = letter['start_col']
-                width = letter['width']
-                letter_columns = letter.get('columns', [])
-                
+                start_col = letter["start_col"]
+                width = letter["width"]
+                letter_columns = letter.get("columns", [])
+
                 # Build display showing letters up to this one
                 logo_lines = []
                 for display_line_idx in range(height):
@@ -3436,7 +3432,7 @@ class AnimationController:
                         # Check if this character should be shown
                         should_show = False
                         char_to_show = " "
-                        
+
                         # Check if this is the current letter
                         if start_col <= display_col_idx < start_col + width:
                             if display_line_idx < len(letter_columns):
@@ -3444,13 +3440,13 @@ class AnimationController:
                                 if col_idx_in_letter < len(letter_columns[display_line_idx]):
                                     should_show = True
                                     char_to_show = letter_columns[display_line_idx][col_idx_in_letter]
-                        
+
                         # Check if this is a previous letter
                         if not should_show:
                             for prev_letter in letter_data[:letter_idx]:
-                                prev_col = prev_letter['start_col']
-                                prev_width = prev_letter['width']
-                                prev_columns = prev_letter.get('columns', [])
+                                prev_col = prev_letter["start_col"]
+                                prev_width = prev_letter["width"]
+                                prev_columns = prev_letter.get("columns", [])
                                 if prev_col <= display_col_idx < prev_col + prev_width:
                                     if display_line_idx < len(prev_columns):
                                         col_idx_in_prev = display_col_idx - prev_col
@@ -3458,7 +3454,7 @@ class AnimationController:
                                             should_show = True
                                             char_to_show = prev_columns[display_line_idx][col_idx_in_prev]
                                             break
-                        
+
                         if should_show:
                             if char_to_show == " ":
                                 text_line.append(" ")
@@ -3503,13 +3499,13 @@ class AnimationController:
             return
 
         from ccbt.interface.splash.character_modifier import CharacterModifier
-        
+
         # Parse letters based on spacing (entire letters, not individual characters)
-        letter_data = CharacterModifier.parse_letters_by_width('\n'.join(lines))
-        
+        letter_data = CharacterModifier.parse_letters_by_width("\n".join(lines))
+
         # Add index to each letter
         for idx, letter in enumerate(letter_data):
-            letter['index'] = idx
+            letter["index"] = idx
 
         with Live(console=self.renderer.console, refresh_per_second=60, transient=False) as live:
             for step in range(steps + 1):
@@ -3517,20 +3513,20 @@ class AnimationController:
                 revealed_letters = set()
 
                 for letter in letter_data:
-                    letter_idx = letter['index']
-                    letter_columns = letter.get('columns', [])
+                    letter_idx = letter["index"]
+                    letter_columns = letter.get("columns", [])
                     max_height = len(lines)
-                    
+
                     # Find the topmost line where this letter has content
                     top_line_idx = max_height
                     for line_idx, column_seg in enumerate(letter_columns):
                         if column_seg.strip():  # Has non-space content
                             top_line_idx = min(top_line_idx, line_idx)
-                    
+
                     # If no content found, use reference line
                     if top_line_idx == max_height:
-                        top_line_idx = letter.get('line_idx', 0)
-                    
+                        top_line_idx = letter.get("line_idx", 0)
+
                     if direction == "odd_up_even_down":
                         # Odd letters (1-indexed, so index 1, 3, 5...) reveal upward
                         # Even letters (0-indexed, so index 0, 2, 4...) reveal downward
@@ -3585,13 +3581,13 @@ class AnimationController:
                 # Build display - copy entire column groups for revealed letters
                 max_width = max(len(line) for line in lines)
                 display_lines = [[" "] * max_width for _ in range(len(lines))]
-                
+
                 for letter in letter_data:
-                    if letter['index'] in revealed_letters:
-                        start_col = letter['start_col']
-                        width = letter['width']
-                        letter_columns = letter.get('columns', [])
-                        
+                    if letter["index"] in revealed_letters:
+                        start_col = letter["start_col"]
+                        width = letter["width"]
+                        letter_columns = letter.get("columns", [])
+
                         # Copy entire column group (all lines) for this letter
                         for line_idx, column_seg in enumerate(letter_columns):
                             if line_idx < len(display_lines):
@@ -3638,10 +3634,10 @@ class AnimationController:
         """
         if bg_color_input is None:
             return default
-        
+
         if isinstance(bg_color_input, str):
             return bg_color_input
-        
+
         if isinstance(bg_color_input, list) and len(bg_color_input) > 0:
             # Calculate palette index based on position and/or time
             if position:
@@ -3655,7 +3651,7 @@ class AnimationController:
                 # Time-based only
                 palette_index = int(time_offset * animation_speed) % len(bg_color_input)
             return bg_color_input[palette_index]
-        
+
         return default
 
     async def whitespace_background_animation(
@@ -3709,7 +3705,7 @@ class AnimationController:
         with Live(console=self.renderer.console, refresh_per_second=60, transient=False) as live:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
-                
+
                 # Generate background
                 bg_lines = CharacterModifier.create_whitespace_background(
                     width, height, pattern, elapsed
@@ -3820,7 +3816,7 @@ class AnimationController:
         with Live(console=self.renderer.console, refresh_per_second=60, transient=False) as live:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
-                
+
                 # Generate animated background
                 bg_color = bg_config.bg_color_start or bg_config.bg_color_palette
                 bg_lines = self.background_renderer.generate_background(
@@ -3835,10 +3831,10 @@ class AnimationController:
                     bg_wave_lines=bg_config.bg_wave_lines,
                     bg_flower_petals=bg_config.bg_flower_petals,
                     bg_flower_radius=bg_config.bg_flower_radius,
-                    bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                    bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                    bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                    bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                    bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                    bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                     time_offset=elapsed * bg_config.bg_speed if bg_config.bg_animate else 0.0,
                 )
 
@@ -3850,32 +3846,32 @@ class AnimationController:
 
                 # Apply logo animation style
                 logo_color_map = {}  # Map (line_idx, char_idx) -> color
-                
+
                 if logo_animation_style == "rainbow":
                     # Rainbow animation on logo
                     from ccbt.interface.splash.animation_config import RAINBOW_PALETTE
                     color_palette = logo_color_start if isinstance(logo_color_start, list) else RAINBOW_PALETTE
                     if isinstance(logo_color_start, str):
                         color_palette = [logo_color_start]
-                    
+
                     for line_idx, line in enumerate(lines):
                         for char_idx, char in enumerate(line):
                             if char != " ":
                                 color_index = (char_idx + line_idx + int(elapsed * 8)) % len(color_palette)
                                 logo_color_map[(line_idx, char_idx)] = color_palette[color_index]
-                
+
                 elif logo_animation_style == "fade":
                     # Fade animation
                     fade_color = logo_color_start if isinstance(logo_color_start, str) else (logo_color_start[0] if isinstance(logo_color_start, list) and logo_color_start else "white")
                     progress = (elapsed / duration) % 1.0
                     alpha = abs(1.0 - 2 * progress)  # Fade in and out
                     style = fade_color if alpha > 0.5 else f"{fade_color} dim"
-                    
+
                     for line_idx, line in enumerate(lines):
                         for char_idx, char in enumerate(line):
                             if char != " ":
                                 logo_color_map[(line_idx, char_idx)] = style
-                
+
                 else:
                     # Default: static color
                     logo_color = logo_color_start if isinstance(logo_color_start, str) else (logo_color_start[0] if isinstance(logo_color_start, list) and logo_color_start else "white")
@@ -3991,20 +3987,20 @@ class AnimationController:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 raw_progress = min(1.0, elapsed / duration)
-                
+
                 # Apply easing function for varied transitions
                 # Use ease-in-out-cubic for smooth transitions
                 if raw_progress < 0.5:
                     progress = 4 * raw_progress ** 3
                 else:
                     progress = 1 - pow(-2 * raw_progress + 2, 3) / 2
-                
+
                 # Generate animated background with transition
                 # Interpolate between bg_start and bg_finish
                 current_bg_color = self._interpolate_color_palette(
                     bg_start, bg_finish, progress
                 )
-                
+
                 # Generate background with transition
                 # Ensure background is never "none" - default to solid with colors
                 if bg_config.bg_type == "none":
@@ -4017,7 +4013,7 @@ class AnimationController:
                 else:
                     bg_type = bg_config.bg_type
                     bg_color = bg_config.bg_color_start or bg_config.bg_color_palette
-                
+
                 # Final safety check: ensure bg_color is never None
                 if not bg_color:
                     bg_color = ["black", "dim white"]
@@ -4033,10 +4029,10 @@ class AnimationController:
                     bg_wave_lines=bg_config.bg_wave_lines,
                     bg_flower_petals=bg_config.bg_flower_petals,
                     bg_flower_radius=bg_config.bg_flower_radius,
-                    bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                    bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                    bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                    bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                    bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                    bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                     time_offset=elapsed * bg_config.bg_speed if bg_config.bg_animate else 0.0,
                 )
 
@@ -4175,26 +4171,26 @@ class AnimationController:
         # If both are strings, return finish when progress > 0.5
         if isinstance(color_start, str) and isinstance(color_finish, str):
             return color_finish if progress >= 0.5 else color_start
-        
+
         # If one is string and one is list, convert string to single-item list
         start_palette = color_start if isinstance(color_start, list) else [color_start]
         finish_palette = color_finish if isinstance(color_finish, list) else [color_finish]
-        
+
         # Interpolate palette lengths
         max_len = max(len(start_palette), len(finish_palette))
         result_palette = []
-        
+
         for i in range(max_len):
             start_idx = i % len(start_palette)
             finish_idx = i % len(finish_palette)
-            
+
             if progress < 0.5:
                 # More start
                 result_palette.append(start_palette[start_idx])
             else:
                 # More finish
                 result_palette.append(finish_palette[finish_idx])
-        
+
         return result_palette
 
     @staticmethod
@@ -4337,10 +4333,10 @@ class AnimationController:
                 bg_wave_lines=bg_config.bg_wave_lines,
                 bg_flower_petals=bg_config.bg_flower_petals,
                 bg_flower_radius=bg_config.bg_flower_radius,
-                bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                 time_offset=0.0,
             )
 
@@ -4372,10 +4368,10 @@ class AnimationController:
                     bg_wave_lines=bg_config.bg_wave_lines,
                     bg_flower_petals=bg_config.bg_flower_petals,
                     bg_flower_radius=bg_config.bg_flower_radius,
-                    bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                    bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                    bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                    bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                    bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                    bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                     time_offset=elapsed * bg_config.bg_speed,
                 )
             else:
@@ -4484,7 +4480,7 @@ class AnimationController:
         else:
             live = Live(console=self.renderer.console, refresh_per_second=60, transient=False)
             live.__enter__()
-        
+
         last_progress = None
         try:
             for step in range(steps + 1):
@@ -4555,12 +4551,12 @@ class AnimationController:
         else:
             live = Live(console=self.renderer.console, refresh_per_second=60, transient=False)
             live.__enter__()
-        
+
         try:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
                 raw_progress = min(1.0, elapsed / duration)
-                
+
                 # Calculate logo fade with cycle: empty -> full -> empty -> full
                 # Cycle pattern: 0-0.25 fade in, 0.25-0.5 full, 0.5-0.75 fade out, 0.75-1.0 fade in again
                 cycle_progress = raw_progress % 1.0
@@ -4576,7 +4572,7 @@ class AnimationController:
                 else:
                     # Fade in again (0 -> 1)
                     logo_alpha = (cycle_progress - 0.75) / 0.25
-                
+
                 progress = raw_progress
 
                 # Generate animated background with color transitions
@@ -4589,11 +4585,11 @@ class AnimationController:
                     )
                 elif not bg_color_input:
                     bg_color_input = bg_config.bg_color_start or "dim white"
-                
+
                 bg_color = self._get_background_color(
                     bg_color_input, (0, 0), elapsed, bg_config.bg_animation_speed, "dim white"
                 )
-                
+
                 bg_lines = self.background_renderer.generate_background(
                     width=width,
                     height=height,
@@ -4606,10 +4602,10 @@ class AnimationController:
                     bg_wave_lines=bg_config.bg_wave_lines,
                     bg_flower_petals=bg_config.bg_flower_petals,
                     bg_flower_radius=bg_config.bg_flower_radius,
-                    bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                    bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                    bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                    bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                    bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                    bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                     time_offset=elapsed * bg_config.bg_speed if bg_config.bg_animate else 0.0,
                 )
 
@@ -4636,7 +4632,7 @@ class AnimationController:
                                             base_color = logo_color[color_index]
                                         else:
                                             base_color = logo_color
-                                        
+
                                         # Apply alpha-based fade with cycle
                                         if logo_alpha < 0.1:
                                             logo_color_style = "black"
@@ -4680,7 +4676,7 @@ class AnimationController:
                 elif live:
                     # Always add overlay to ensure it persists across all frames
                     live.update(centered)
-                
+
                 await asyncio.sleep(frame_duration)
         finally:
             if live:
@@ -4736,7 +4732,7 @@ class AnimationController:
         else:
             live = Live(console=self.renderer.console, refresh_per_second=20, transient=False)
             live.__enter__()
-        
+
         try:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
@@ -4751,11 +4747,11 @@ class AnimationController:
                     )
                 elif not bg_color_input:
                     bg_color_input = bg_config.bg_color_start or "dim white"
-                
+
                 bg_color = self._get_background_color(
                     bg_color_input, (0, 0), elapsed, bg_config.bg_animation_speed, "dim white"
                 )
-                
+
                 bg_lines = self.background_renderer.generate_background(
                     width=width,
                     height=height,
@@ -4768,10 +4764,10 @@ class AnimationController:
                     bg_wave_lines=bg_config.bg_wave_lines,
                     bg_flower_petals=bg_config.bg_flower_petals,
                     bg_flower_radius=bg_config.bg_flower_radius,
-                    bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                    bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                    bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                    bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                    bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                    bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                     time_offset=elapsed * bg_config.bg_speed if bg_config.bg_animate else 0.0,
                 )
 
@@ -4836,7 +4832,7 @@ class AnimationController:
                 elif live:
                     # Always add overlay to ensure it persists across all frames
                     live.update(centered)
-                
+
                 await asyncio.sleep(self.default_duration)
         finally:
             if live:
@@ -4894,7 +4890,7 @@ class AnimationController:
         else:
             live = Live(console=self.renderer.console, refresh_per_second=60, transient=False)
             live.__enter__()
-        
+
         try:
             while asyncio.get_event_loop().time() < end_time:
                 elapsed = asyncio.get_event_loop().time() - start_time
@@ -4910,11 +4906,11 @@ class AnimationController:
                     )
                 elif not bg_palette:
                     bg_palette = bg_config.bg_color_start or ["dim white"]
-                
+
                 bg_color = self._get_background_color(
                     bg_palette, (0, 0), elapsed, bg_config.bg_animation_speed, "dim white"
                 )
-                
+
                 bg_lines = self.background_renderer.generate_background(
                     width=width,
                     height=height,
@@ -4927,10 +4923,10 @@ class AnimationController:
                     bg_wave_lines=bg_config.bg_wave_lines,
                     bg_flower_petals=bg_config.bg_flower_petals,
                     bg_flower_radius=bg_config.bg_flower_radius,
-                    bg_flower_count=getattr(bg_config, 'bg_flower_count', 1),
-                    bg_flower_rotation_speed=getattr(bg_config, 'bg_flower_rotation_speed', 1.0),
-                    bg_flower_movement_speed=getattr(bg_config, 'bg_flower_movement_speed', 0.5),
-                bg_direction=getattr(bg_config, 'bg_direction', "left_to_right"),
+                    bg_flower_count=getattr(bg_config, "bg_flower_count", 1),
+                    bg_flower_rotation_speed=getattr(bg_config, "bg_flower_rotation_speed", 1.0),
+                    bg_flower_movement_speed=getattr(bg_config, "bg_flower_movement_speed", 0.5),
+                bg_direction=getattr(bg_config, "bg_direction", "left_to_right"),
                     time_offset=elapsed * bg_config.bg_speed if bg_config.bg_animate else 0.0,
                 )
 
@@ -4973,7 +4969,7 @@ class AnimationController:
                                             color_index = ((max_dist - dist) + time_offset) % len(logo_color_palette)
                                         else:
                                             color_index = (logo_x + logo_y + time_offset) % len(logo_color_palette)
-                                        
+
                                         text_line.append(char, style=logo_color_palette[color_index])
                                     else:
                                         # Use background
@@ -5008,7 +5004,7 @@ class AnimationController:
                 elif live:
                     # Always add overlay to ensure it persists across all frames
                     live.update(centered)
-                
+
                 await asyncio.sleep(frame_duration)
         finally:
             if live:

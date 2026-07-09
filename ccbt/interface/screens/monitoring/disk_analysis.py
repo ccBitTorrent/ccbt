@@ -38,6 +38,7 @@ from ccbt.config.config_capabilities import SystemCapabilities
 from ccbt.interface.commands.executor import CommandExecutor
 from ccbt.interface.screens.base import MonitoringScreen
 
+
 class DiskAnalysisScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display disk analysis from disk-detect and disk-stats commands."""
 
@@ -78,10 +79,9 @@ class DiskAnalysisScreen(MonitoringScreen):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and initialize command executor."""
-        # Initialize command executor
         if not hasattr(self, "_command_executor") or self._command_executor is None:
             self._command_executor = CommandExecutor(self.session)
-        await self._refresh_data()
+        await super().on_mount()
 
     async def _refresh_data(self) -> None:  # pragma: no cover
         """Refresh disk analysis display."""

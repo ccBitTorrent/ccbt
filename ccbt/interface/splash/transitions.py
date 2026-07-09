@@ -6,21 +6,19 @@ Provides base classes and implementations for various transition types with prec
 from __future__ import annotations
 
 import asyncio
-import random
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Union
 
+from ccbt.interface.splash.animation_config import BackgroundConfig
 from ccbt.interface.splash.color_matching import (
     generate_random_duration,
     generate_smooth_transition_palette,
-    interpolate_palette,
 )
-from ccbt.interface.splash.animation_config import BackgroundConfig
 
 
 class Transition(ABC):
     """Base class for all transitions."""
-    
+
     def __init__(
         self,
         duration: Optional[float] = None,
@@ -39,7 +37,7 @@ class Transition(ABC):
         self.duration = duration
         self.min_duration = min_duration
         self.max_duration = max_duration
-    
+
     @abstractmethod
     async def execute(
         self,
@@ -54,8 +52,7 @@ class Transition(ABC):
             text: Text to animate
             **kwargs: Additional transition parameters
         """
-        pass
-    
+
     def get_duration(self) -> float:
         """Get transition duration.
         
@@ -67,7 +64,7 @@ class Transition(ABC):
 
 class ColorTransition(Transition):
     """Color transition with precise duration control and smooth color matching."""
-    
+
     def __init__(
         self,
         logo_color_start: Union[str, list[str]],
@@ -100,11 +97,11 @@ class ColorTransition(Transition):
         self.bg_color_finish = bg_color_finish
         self.bg_config = bg_config or BackgroundConfig()
         self.ensure_smooth = ensure_smooth
-        
+
         # Ensure smooth transition if requested
         if ensure_smooth:
             self._ensure_smooth_colors()
-    
+
     def _ensure_smooth_colors(self) -> None:
         """Ensure smooth color matching between start and finish."""
         # Ensure logo colors transition smoothly
@@ -112,7 +109,7 @@ class ColorTransition(Transition):
             self.logo_color_start, self.logo_color_finish = generate_smooth_transition_palette(
                 self.logo_color_start, self.logo_color_finish, ensure_match=True
             )
-        
+
         # Ensure background colors transition smoothly
         if (
             isinstance(self.bg_color_start, list)
@@ -123,7 +120,7 @@ class ColorTransition(Transition):
             self.bg_color_start, self.bg_color_finish = generate_smooth_transition_palette(
                 self.bg_color_start, self.bg_color_finish, ensure_match=True
             )
-    
+
     async def execute(
         self,
         controller: Any,
@@ -152,7 +149,7 @@ class ColorTransition(Transition):
 
 class FadeTransition(Transition):
     """Fade transition (fade in/out)."""
-    
+
     def __init__(
         self,
         fade_type: str = "in",  # "in", "out", "in_out"
@@ -170,7 +167,7 @@ class FadeTransition(Transition):
         """
         super().__init__(duration, min_duration, max_duration)
         self.fade_type = fade_type
-    
+
     async def execute(
         self,
         controller: Any,
@@ -187,7 +184,7 @@ class FadeTransition(Transition):
             **kwargs: Additional parameters
         """
         steps = int(self.duration * 20)  # 20 steps per second
-        
+
         if self.fade_type == "in":
             await controller.fade_in(text, steps=steps, color=color)
         elif self.fade_type == "out":
@@ -200,7 +197,7 @@ class FadeTransition(Transition):
 
 class SlideTransition(Transition):
     """Slide transition (slide in/out from direction)."""
-    
+
     def __init__(
         self,
         direction: str = "left",
@@ -221,7 +218,7 @@ class SlideTransition(Transition):
         super().__init__(duration, min_duration, max_duration)
         self.direction = direction
         self.slide_type = slide_type
-    
+
     async def execute(
         self,
         controller: Any,
@@ -245,9 +242,9 @@ class SlideTransition(Transition):
             "bottom": "down_up",
         }
         reveal_direction = direction_map.get(self.direction, "left_right")
-        
+
         steps = int(self.duration * 20)
-        
+
         if self.slide_type == "in":
             await controller.reveal_animation(
                 text, direction=reveal_direction, color=color, steps=steps
@@ -260,7 +257,7 @@ class SlideTransition(Transition):
 
 class CrossfadeTransition(Transition):
     """Crossfade transition between two texts."""
-    
+
     def __init__(
         self,
         text1: str,
@@ -287,7 +284,7 @@ class CrossfadeTransition(Transition):
         self.text2 = text2
         self.color1 = color1
         self.color2 = color2
-    
+
     async def execute(
         self,
         controller: Any,
@@ -304,10 +301,10 @@ class CrossfadeTransition(Transition):
         # Fade out text1, fade in text2
         steps = int(self.duration * 20)
         half_steps = steps // 2
-        
+
         # Fade out first text
         await controller.fade_out(self.text1, steps=half_steps, color=self.color1)
-        
+
         # Fade in second text
         await controller.fade_in(self.text2, steps=half_steps, color=self.color2)
 

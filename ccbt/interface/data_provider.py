@@ -52,7 +52,7 @@ def _compute_dht_health_score(metrics: dict[str, Any]) -> tuple[float, str]:
     depth_score = min(1.0, float(metrics.get("query_depth_achieved", 0.0)) / 8.0)
     nodes_score = min(1.0, float(metrics.get("nodes_queried_per_query", 0.0)) / 20.0)
     health_score = max(0.0, min(1.0, (peers_score + depth_score + nodes_score) / 3.0))
-    
+
     if health_score >= 0.75:
         label = "excellent"
     elif health_score >= 0.55:
@@ -108,7 +108,6 @@ def _to_float(value: Any, default: float = 0.0) -> float:
 
 def _guess_media_metadata(path: str) -> tuple[Optional[str], bool]:
     """Return a best-effort MIME type and playable-media flag."""
-
     mime_type, _encoding = mimetypes.guess_type(path)
     is_media = bool(
         Path(path).suffix.lower() in _MEDIA_EXTENSIONS
@@ -316,7 +315,6 @@ class DataProvider(ABC):
             - total_downloaded, total_uploaded
             - connected_peers, uptime
         """
-        pass
 
     @abstractmethod
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
@@ -328,7 +326,6 @@ class DataProvider(ABC):
         Returns:
             Dictionary with torrent status or None if not found
         """
-        pass
 
     @abstractmethod
     async def get_aggressive_discovery_status(
@@ -336,7 +333,6 @@ class DataProvider(ABC):
         info_hash_hex: str,
     ) -> dict[str, Any]:
         """Get DHT aggressive discovery status for a specific torrent."""
-        pass
 
     @abstractmethod
     async def list_torrents(self) -> list[dict[str, Any]]:
@@ -345,22 +341,18 @@ class DataProvider(ABC):
         Returns:
             List of torrent status dictionaries
         """
-        pass
 
     @abstractmethod
     async def list_xet_folders(self) -> list[dict[str, Any]]:
         """List all active XET workspaces using the canonical runtime read model."""
-        pass
 
     @abstractmethod
     async def get_xet_folder_status(self, folder_key: str) -> Optional[dict[str, Any]]:
         """Get the live status snapshot for a specific XET workspace."""
-        pass
 
     @abstractmethod
     async def get_xet_discovery_status(self) -> dict[str, Any]:
         """Get shared XET discovery backend status."""
-        pass
 
     @abstractmethod
     async def get_torrent_peers(self, info_hash_hex: str) -> list[dict[str, Any]]:
@@ -372,7 +364,6 @@ class DataProvider(ABC):
         Returns:
             List of peer dictionaries
         """
-        pass
 
     @abstractmethod
     async def get_torrent_files(self, info_hash_hex: str) -> list[dict[str, Any]]:
@@ -384,7 +375,6 @@ class DataProvider(ABC):
         Returns:
             List of file dictionaries
         """
-        pass
 
     @abstractmethod
     async def get_media_stream_status(
@@ -392,12 +382,10 @@ class DataProvider(ABC):
         info_hash_hex: str,
     ) -> Optional[dict[str, Any]]:
         """Get media stream status for a torrent if one is active."""
-        pass
 
     @abstractmethod
     async def get_media_candidates(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Return playable media candidates for the torrent."""
-        pass
 
     @abstractmethod
     async def get_torrent_trackers(self, info_hash_hex: str) -> list[dict[str, Any]]:
@@ -416,7 +404,6 @@ class DataProvider(ABC):
             - last_update: Last update timestamp (float)
             - error: Error message if any (Optional[str])
         """
-        pass
 
     @abstractmethod
     async def get_torrent_piece_availability(self, info_hash_hex: str) -> list[int]:
@@ -430,7 +417,6 @@ class DataProvider(ABC):
             Index corresponds to piece index, value is peer count (0 = not available).
             Empty list if not available or torrent not found.
         """
-        pass
 
     @abstractmethod
     async def get_peer_metrics(self) -> dict[str, Any]:
@@ -442,7 +428,6 @@ class DataProvider(ABC):
             - active_peers: Number of active peers
             - peers: List of peer metrics dictionaries
         """
-        pass
 
     @abstractmethod
     async def get_dht_health_summary(self, limit: int = 8) -> dict[str, Any]:
@@ -461,7 +446,6 @@ class DataProvider(ABC):
                 - items: List of worst-performing torrents (length <= limit)
                 - all_items: Full list of torrents with DHT metrics
         """
-        pass
 
     @abstractmethod
     async def get_peer_quality_distribution(self) -> dict[str, Any]:
@@ -475,7 +459,6 @@ class DataProvider(ABC):
             - top_peers: Top 10 highest quality peers with details
             - per_torrent: List of per-torrent quality summaries
         """
-        pass
 
     @abstractmethod
     async def get_global_kpis(self) -> dict[str, Any]:
@@ -499,7 +482,6 @@ class DataProvider(ABC):
             - memory_usage: Memory usage (0.0-1.0)
             - disk_usage: Disk usage (0.0-1.0)
         """
-        pass
 
     @abstractmethod
     async def get_metrics(self) -> dict[str, Any]:
@@ -508,12 +490,10 @@ class DataProvider(ABC):
         Returns:
             Dictionary with metrics data
         """
-        pass
 
     @abstractmethod
     async def get_rate_samples(self, seconds: int = 120) -> list[dict[str, Any]]:
         """Get recent upload/download rate samples for graphing."""
-        pass
 
     @abstractmethod
     async def get_disk_io_metrics(self) -> dict[str, Any]:
@@ -526,7 +506,6 @@ class DataProvider(ABC):
             - cache_hit_rate: Cache hit rate as percentage (0-100)
             - timing_ms: Average disk operation timing in milliseconds
         """
-        pass
 
     @abstractmethod
     async def get_network_timing_metrics(self) -> dict[str, Any]:
@@ -537,7 +516,6 @@ class DataProvider(ABC):
             - utp_delay_ms: Average uTP delay in milliseconds
             - network_overhead_rate: Network overhead rate in KiB/s
         """
-        pass
 
     @abstractmethod
     async def get_system_metrics(self) -> dict[str, Any]:
@@ -549,7 +527,6 @@ class DataProvider(ABC):
             - memory_usage: Memory usage as percentage (0-100)
             - disk_usage: Disk usage as percentage (0-100)
         """
-        pass
 
     @abstractmethod
     async def get_per_torrent_performance(self, info_hash_hex: str) -> dict[str, Any]:
@@ -566,7 +543,6 @@ class DataProvider(ABC):
             - top_peers (list of peer performance metrics)
             - piece_download_rate, swarm_availability
         """
-        pass
 
     async def get_swarm_health_samples(
         self,
@@ -737,7 +713,10 @@ class DataProvider(ABC):
     @abstractmethod
     async def get_piece_health(self, info_hash_hex: str) -> dict[str, Any]:
         """Get piece availability and selection metrics for pictogram rendering."""
-        pass
+
+    @abstractmethod
+    async def get_scrape_result(self, info_hash_hex: str) -> Optional[Any]:
+        """Get cached scrape result (seeders/leechers/completed) for a torrent."""
 
 
 class DaemonDataProvider(DataProvider):
@@ -768,7 +747,7 @@ class DaemonDataProvider(DataProvider):
         self._cache_invalidation_keys: set[str] = set()
         self._cache_invalidate_all: bool = False
         self._cache_invalidation_task: Optional[asyncio.Task[None]] = None
-    
+
     def get_adapter(self) -> Optional[Any]:
         """Get the DaemonInterfaceAdapter instance for widget registration.
         
@@ -863,11 +842,10 @@ class DaemonDataProvider(DataProvider):
                     self._cache_invalidation_task = asyncio.create_task(
                         self._flush_cache_invalidations(),
                     )
-            else:
-                if key is None:
-                    self._cache.clear()
-                elif key in self._cache:
-                    self._cache.pop(key, None)
+            elif key is None:
+                self._cache.clear()
+            elif key in self._cache:
+                self._cache.pop(key, None)
         except Exception:
             # If no event loop, just clear synchronously (not ideal but safe)
             if key is None:
@@ -901,11 +879,11 @@ class DaemonDataProvider(DataProvider):
         Args:
             event_type: Event type (e.g., "PROGRESS_UPDATED", "PIECE_COMPLETED")
             info_hash: Optional torrent info hash for targeted invalidation
-        """    
+        """
         normalized_event_type = self._normalize_event_type(event_type)
         if normalized_event_type is None:
             return
-        
+
         # Map event types to cache keys
         if normalized_event_type == EventType.PROGRESS_UPDATED:
             # Progress events - invalidate progress-related caches
@@ -1023,7 +1001,7 @@ class DaemonDataProvider(DataProvider):
         return await self._get_cached("global_stats", _fetch)
 
     async def get_ui_snapshot(self) -> dict[str, Any]:
-        """Get dashboard first-paint snapshot (global stats, torrents, services, rate samples) from daemon."""
+        """Get dashboard first-paint snapshot (global stats, torrents, services, rate samples, peers) from daemon."""
         async def _fetch() -> dict[str, Any]:
             response = await self._client.get_ui_snapshot()
             out = response.model_dump()
@@ -1230,7 +1208,6 @@ class DaemonDataProvider(DataProvider):
 
     async def get_media_candidates(self, info_hash_hex: str) -> list[dict[str, Any]]:
         """Return playable media candidates for a torrent."""
-
         files = await self.get_torrent_files(info_hash_hex)
         return [file_info for file_info in files if file_info.get("is_media")]
 
@@ -1260,7 +1237,7 @@ class DaemonDataProvider(DataProvider):
             except Exception as e:
                 logger.debug("Error getting torrent trackers: %s", e)
                 return []
-        
+
         # Cache with 3 second TTL
         return await self._get_cached(f"trackers_{info_hash_hex}", _fetch, ttl=3.0)
 
@@ -1275,7 +1252,7 @@ class DaemonDataProvider(DataProvider):
             except Exception as e:
                 logger.debug("Error fetching metrics: %s", e)
                 return {}
-        
+
         # Cache with 5 second TTL
         return await self._get_cached("metrics", _fetch, ttl=5.0)
 
@@ -1284,25 +1261,25 @@ class DaemonDataProvider(DataProvider):
         async def _fetch() -> list[dict[str, Any]]:
             max_retries = 2  # Reduced retries for faster failure
             retry_delay = 0.5
-            
+
             for attempt in range(max_retries):
                 try:
-                    logger.debug("DaemonDataProvider: Fetching rate samples (seconds=%d) from IPC client (attempt %d/%d)", 
+                    logger.debug("DaemonDataProvider: Fetching rate samples (seconds=%d) from IPC client (attempt %d/%d)",
                                seconds, attempt + 1, max_retries)
                     response = await self._client.get_rate_samples(seconds)
                     logger.debug("DaemonDataProvider: Received RateSamplesResponse with %d samples", len(response.samples) if response.samples else 0)
-                    
+
                     if not response.samples:
                         logger.warning("DaemonDataProvider: No samples in response from IPC client")
                         return []
-                    
+
                     # Convert RateSample objects to dicts
                     samples = [sample.model_dump() for sample in response.samples]
                     logger.debug("DaemonDataProvider: Converted %d samples to dicts", len(samples))
                     return samples
                 except asyncio.TimeoutError:
                     if attempt < max_retries - 1:
-                        logger.debug("DaemonDataProvider: Timeout fetching rate samples (attempt %d/%d), retrying in %.1fs...", 
+                        logger.debug("DaemonDataProvider: Timeout fetching rate samples (attempt %d/%d), retrying in %.1fs...",
                                    attempt + 1, max_retries, retry_delay)
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5  # Exponential backoff
@@ -1311,14 +1288,14 @@ class DaemonDataProvider(DataProvider):
                     return []
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        logger.debug("DaemonDataProvider: Error fetching rate samples (attempt %d/%d): %s, retrying...", 
+                        logger.debug("DaemonDataProvider: Error fetching rate samples (attempt %d/%d): %s, retrying...",
                                    attempt + 1, max_retries, e)
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5
                         continue
                     logger.error("DaemonDataProvider: Error fetching rate samples after %d attempts: %s", max_retries, e, exc_info=True)
                     return []
-            
+
             return []
 
         cache_key = f"rate_samples_{seconds}"
@@ -1329,10 +1306,10 @@ class DaemonDataProvider(DataProvider):
         async def _fetch() -> dict[str, Any]:
             max_retries = 2
             retry_delay = 0.5
-            
+
             for attempt in range(max_retries):
                 try:
-                    logger.debug("DaemonDataProvider: Fetching disk I/O metrics from IPC client (attempt %d/%d)", 
+                    logger.debug("DaemonDataProvider: Fetching disk I/O metrics from IPC client (attempt %d/%d)",
                                attempt + 1, max_retries)
                     response = await self._client.get_disk_io_metrics()
                     metrics = response.model_dump()
@@ -1340,7 +1317,7 @@ class DaemonDataProvider(DataProvider):
                     return metrics
                 except asyncio.TimeoutError:
                     if attempt < max_retries - 1:
-                        logger.debug("DaemonDataProvider: Timeout fetching disk I/O metrics (attempt %d/%d), retrying...", 
+                        logger.debug("DaemonDataProvider: Timeout fetching disk I/O metrics (attempt %d/%d), retrying...",
                                    attempt + 1, max_retries)
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5
@@ -1354,7 +1331,7 @@ class DaemonDataProvider(DataProvider):
                     }
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        logger.debug("DaemonDataProvider: Error fetching disk I/O metrics (attempt %d/%d): %s, retrying...", 
+                        logger.debug("DaemonDataProvider: Error fetching disk I/O metrics (attempt %d/%d): %s, retrying...",
                                    attempt + 1, max_retries, e)
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5
@@ -1366,7 +1343,7 @@ class DaemonDataProvider(DataProvider):
                         "cache_hit_rate": 0.0,
                         "timing_ms": 0.0,
                     }
-            
+
             return {
                 "read_throughput": 0.0,
                 "write_throughput": 0.0,
@@ -1381,10 +1358,10 @@ class DaemonDataProvider(DataProvider):
         async def _fetch() -> dict[str, Any]:
             max_retries = 2
             retry_delay = 0.5
-            
+
             for attempt in range(max_retries):
                 try:
-                    logger.debug("DaemonDataProvider: Fetching network timing metrics from IPC client (attempt %d/%d)", 
+                    logger.debug("DaemonDataProvider: Fetching network timing metrics from IPC client (attempt %d/%d)",
                                attempt + 1, max_retries)
                     response = await self._client.get_network_timing_metrics()
                     metrics = response.model_dump()
@@ -1392,7 +1369,7 @@ class DaemonDataProvider(DataProvider):
                     return metrics
                 except asyncio.TimeoutError:
                     if attempt < max_retries - 1:
-                        logger.debug("DaemonDataProvider: Timeout fetching network timing metrics (attempt %d/%d), retrying...", 
+                        logger.debug("DaemonDataProvider: Timeout fetching network timing metrics (attempt %d/%d), retrying...",
                                    attempt + 1, max_retries)
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5
@@ -1404,7 +1381,7 @@ class DaemonDataProvider(DataProvider):
                     }
                 except Exception as e:
                     if attempt < max_retries - 1:
-                        logger.debug("DaemonDataProvider: Error fetching network timing metrics (attempt %d/%d): %s, retrying...", 
+                        logger.debug("DaemonDataProvider: Error fetching network timing metrics (attempt %d/%d): %s, retrying...",
                                    attempt + 1, max_retries, e)
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5
@@ -1414,7 +1391,7 @@ class DaemonDataProvider(DataProvider):
                         "utp_delay_ms": 0.0,
                         "network_overhead_rate": 0.0,
                     }
-            
+
             return {
                 "utp_delay_ms": 0.0,
                 "network_overhead_rate": 0.0,
@@ -1437,34 +1414,34 @@ class DaemonDataProvider(DataProvider):
                 # Fetch Prometheus metrics and parse for system metrics
                 prometheus_text = await self._client.get_metrics()
                 parsed_metrics = self._parse_prometheus_metrics(prometheus_text)
-                
+
                 # Extract system metrics from parsed Prometheus data
                 system_data = parsed_metrics.get("system", {})
-                
+
                 # Try to extract CPU, memory, and disk usage
                 # Prometheus metrics may have various names, try common ones
                 cpu_usage = 0.0
                 memory_usage = 0.0
                 disk_usage = 0.0
-                
+
                 # Look for CPU usage (common names: cpu_usage, cpu_usage_percent, system_cpu_usage)
                 for key in ["cpu_usage", "cpu_usage_percent", "system_cpu_usage", "cpu_percent"]:
                     if key in system_data:
                         cpu_usage = float(system_data[key])
                         break
-                
+
                 # Look for memory usage (common names: memory_usage, memory_usage_percent, system_memory_usage)
                 for key in ["memory_usage", "memory_usage_percent", "system_memory_usage", "memory_percent"]:
                     if key in system_data:
                         memory_usage = float(system_data[key])
                         break
-                
+
                 # Look for disk usage (common names: disk_usage, disk_usage_percent, system_disk_usage)
                 for key in ["disk_usage", "disk_usage_percent", "system_disk_usage", "disk_percent"]:
                     if key in system_data:
                         disk_usage = float(system_data[key])
                         break
-                
+
                 # If not found in system metrics, try global metrics
                 if cpu_usage == 0.0 or memory_usage == 0.0 or disk_usage == 0.0:
                     global_data = parsed_metrics.get("global", {})
@@ -1483,7 +1460,7 @@ class DaemonDataProvider(DataProvider):
                             if key in global_data:
                                 disk_usage = float(global_data[key])
                                 break
-                
+
                 metrics = {
                     "cpu_usage": cpu_usage,
                     "memory_usage": memory_usage,
@@ -1639,17 +1616,17 @@ class DaemonDataProvider(DataProvider):
                     "top_peers": [],
                     "per_torrent": [],
                 }
-            
+
             all_peers: dict[str, dict[str, Any]] = {}  # peer_key -> peer data
             per_torrent_summaries: list[dict[str, Any]] = []
             total_quality_sum = 0.0
             total_peers_counted = 0
-            
+
             for torrent in torrents:
                 info_hash_hex = torrent.get("info_hash")
                 if not info_hash_hex:
                     continue
-                
+
                 try:
                     peer_quality_response = await self._client.get_torrent_peer_quality(info_hash_hex)
                 except Exception as exc:
@@ -1659,12 +1636,12 @@ class DaemonDataProvider(DataProvider):
                         exc,
                     )
                     continue
-                
+
                 if not peer_quality_response:
                     continue
-                
+
                 quality_data = peer_quality_response.model_dump()
-                
+
                 # Aggregate per-torrent summary
                 per_torrent_summaries.append({
                     "info_hash": info_hash_hex,
@@ -1675,7 +1652,7 @@ class DaemonDataProvider(DataProvider):
                     "medium_quality_peers": quality_data.get("medium_quality_peers", 0),
                     "low_quality_peers": quality_data.get("low_quality_peers", 0),
                 })
-                
+
                 # Aggregate top peers (deduplicate by peer_key)
                 top_peers = quality_data.get("top_quality_peers", [])
                 for peer in top_peers:
@@ -1691,14 +1668,14 @@ class DaemonDataProvider(DataProvider):
                             all_peers[peer_key].update(peer)
                         if info_hash_hex not in all_peers[peer_key].get("torrents", []):
                             all_peers[peer_key].setdefault("torrents", []).append(info_hash_hex)
-                
+
                 # Aggregate quality scores
                 avg_score = quality_data.get("average_quality_score", 0.0)
                 peer_count = quality_data.get("total_peers_ranked", 0)
                 if peer_count > 0:
                     total_quality_sum += avg_score * peer_count
                     total_peers_counted += peer_count
-            
+
             # Calculate overall distribution
             quality_tiers = {
                 "excellent": 0,
@@ -1706,7 +1683,7 @@ class DaemonDataProvider(DataProvider):
                 "fair": 0,
                 "poor": 0,
             }
-            
+
             for peer_data in all_peers.values():
                 score = float(peer_data.get("quality_score", 0.0))
                 if score >= 0.7:
@@ -1717,17 +1694,17 @@ class DaemonDataProvider(DataProvider):
                     quality_tiers["fair"] += 1
                 else:
                     quality_tiers["poor"] += 1
-            
+
             # Calculate overall average quality
             average_quality = total_quality_sum / total_peers_counted if total_peers_counted > 0 else 0.0
-            
+
             # Get top 10 peers by quality score
             top_peers_list = sorted(
                 all_peers.values(),
                 key=lambda p: float(p.get("quality_score", 0.0)),
                 reverse=True,
             )[:10]
-            
+
             return {
                 "total_peers": len(all_peers),
                 "quality_tiers": quality_tiers,
@@ -1735,7 +1712,7 @@ class DaemonDataProvider(DataProvider):
                 "top_peers": top_peers_list,
                 "per_torrent": per_torrent_summaries,
             }
-        
+
         return await self._get_cached("peer_quality_distribution", _fetch, ttl=2.0)
 
     async def get_global_kpis(self) -> dict[str, Any]:
@@ -1764,7 +1741,7 @@ class DaemonDataProvider(DataProvider):
                     "memory_usage": 0.0,
                     "disk_usage": 0.0,
                 }
-        
+
         return await self._get_cached("global_kpis", _fetch, ttl=2.0)
 
     async def get_per_torrent_performance(self, info_hash_hex: str) -> dict[str, Any]:
@@ -1802,15 +1779,15 @@ class DaemonDataProvider(DataProvider):
             "system": {},
             "performance": {},
         }
-        
+
         if not prometheus_text:
             return result
-        
+
         try:
             lines = prometheus_text.strip().split("\n")
             current_metric_name = None
             current_metric_type = None
-            
+
             for line in lines:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -1822,7 +1799,7 @@ class DaemonDataProvider(DataProvider):
                             current_metric_name = parts[0]
                             current_metric_type = parts[1]
                     continue
-                
+
                 # Parse metric line: metric_name{labels} value timestamp
                 if "{" in line:
                     # Has labels
@@ -1839,13 +1816,13 @@ class DaemonDataProvider(DataProvider):
                     metric_name = parts[0]
                     labels_str = ""
                     value_str = " ".join(parts[1:])
-                
+
                 # Extract value (ignore timestamp)
                 try:
                     value = float(value_str.split()[0])
                 except (ValueError, IndexError):
                     continue
-                
+
                 # Parse labels
                 labels: dict[str, str] = {}
                 if labels_str:
@@ -1854,7 +1831,7 @@ class DaemonDataProvider(DataProvider):
                             key, val = label_pair.split("=", 1)
                             # Remove quotes
                             labels[key.strip()] = val.strip('"')
-                
+
                 # Categorize metrics
                 if "torrent" in metric_name.lower() or "info_hash" in labels:
                     # Per-torrent metric
@@ -1871,10 +1848,10 @@ class DaemonDataProvider(DataProvider):
                 else:
                     # Global metric
                     result["global"][metric_name] = value
-                    
+
         except Exception as e:
             logger.debug("Error parsing Prometheus metrics: %s", e)
-        
+
         return result
 
     async def get_torrent_piece_availability(self, info_hash_hex: str) -> list[int]:
@@ -1918,7 +1895,7 @@ class DaemonDataProvider(DataProvider):
 
             histogram = self._build_availability_histogram(availability)
             max_peers = max(availability) if availability else 0
-            
+
             # Extract prioritized piece IDs from selection metrics
             prioritized_pieces: list[int] = []
             if selection_metrics:
@@ -1938,7 +1915,7 @@ class DaemonDataProvider(DataProvider):
                                 i for i, count in enumerate(availability)
                                 if count == min_availability and count > 0
                             ][:10]  # Limit to top 10
-            
+
             # Only expose a DHT success ratio when the backend provides an explicit
             # success counter. Derived guesses were misleading during stalled downloads.
             dht_success_ratio: Optional[float] = None
@@ -1967,6 +1944,14 @@ class DaemonDataProvider(DataProvider):
 
         cache_key = f"piece_health_{info_hash_hex}"
         return await self._get_cached(cache_key, _fetch, ttl=2.0)
+
+    async def get_scrape_result(self, info_hash_hex: str) -> Optional[Any]:
+        """Get cached scrape result from the daemon for a torrent."""
+        try:
+            return await self._client.get_scrape_result(info_hash_hex)
+        except Exception as exc:
+            logger.debug("Error getting scrape result for %s: %s", info_hash_hex, exc)
+            return None
 
     @staticmethod
     def _build_availability_histogram(availability: list[int]) -> dict[str, int]:
@@ -2004,14 +1989,12 @@ class DaemonDataProvider(DataProvider):
         if self._executor:
             # Use executor for command execution (consistent with CLI)
             try:
-                from ccbt.executor.base import CommandResult
                 result = await self._executor.execute(command, *args, **kwargs)
                 return result
             except Exception as e:
                 logger.debug("Error executing command via executor: %s", e)
                 # Fall back to IPC client if executor fails
-                pass
-        
+
         # Note: For batch operations and service status, try IPC client directly
         # if executor is not available or fails
         if command in ("torrent.batch_pause", "torrent.batch_resume", "torrent.batch_restart", "torrent.batch_remove"):
@@ -2019,25 +2002,25 @@ class DaemonDataProvider(DataProvider):
                 if command == "torrent.batch_pause":
                     info_hashes = kwargs.get("info_hashes", [])
                     return await self._client.batch_pause_torrents(info_hashes)
-                elif command == "torrent.batch_resume":
+                if command == "torrent.batch_resume":
                     info_hashes = kwargs.get("info_hashes", [])
                     return await self._client.batch_resume_torrents(info_hashes)
-                elif command == "torrent.batch_restart":
+                if command == "torrent.batch_restart":
                     info_hashes = kwargs.get("info_hashes", [])
                     return await self._client.batch_restart_torrents(info_hashes)
-                elif command == "torrent.batch_remove":
+                if command == "torrent.batch_remove":
                     info_hashes = kwargs.get("info_hashes", [])
                     remove_data = kwargs.get("remove_data", False)
                     return await self._client.batch_remove_torrents(info_hashes, remove_data=remove_data)
             except Exception as e:
                 logger.debug("Error executing batch command via IPC client: %s", e)
-        
+
         if command == "services.status":
             try:
                 return await self._client.get_services_status()
             except Exception as e:
                 logger.debug("Error getting services status via IPC client: %s", e)
-        
+
         # Fallback: use IPC client directly for read operations
         # For write operations, we should use executor
         logger.debug("No executor available, command may not be supported via IPC client")
@@ -2185,17 +2168,17 @@ class LocalDataProvider(DataProvider):
             info_hash = bytes.fromhex(info_hash_hex)
             async with self._session.lock:
                 torrent_session = self._session.torrents.get(info_hash)
-            
+
             if not torrent_session:
                 logger.debug("Torrent session not found for info_hash: %s", info_hash_hex[:8])
                 return []
-            
+
             # Extract file information from torrent data
             files_list: list[dict[str, Any]] = []
-            
+
             # Get torrent data (could be dict or TorrentInfoModel)
             torrent_data = torrent_session.torrent_data
-            
+
             # Extract file_info from torrent_data
             file_info: Optional[dict[str, Any]] = None
             if isinstance(torrent_data, dict):
@@ -2204,18 +2187,18 @@ class LocalDataProvider(DataProvider):
                 file_info = torrent_data.file_info
                 if hasattr(file_info, "model_dump"):
                     file_info = file_info.model_dump()
-            
+
             if not file_info:
                 logger.debug("No file_info found in torrent data for %s", info_hash_hex[:8])
                 return []
-            
+
             # Handle single-file and multi-file torrents
             if file_info.get("type") == "single":
                 # Single-file torrent
                 file_name = file_info.get("name", "Unknown")
                 file_size = file_info.get("length", 0)
                 file_path = str(torrent_session.output_dir / file_name)
-                
+
                 # Calculate progress from piece manager if available
                 progress = 0.0
                 if torrent_session.piece_manager:
@@ -2229,7 +2212,7 @@ class LocalDataProvider(DataProvider):
                             progress = verified_pieces / total_pieces
                     except Exception:
                         pass
-                
+
                 files_list.append({
                     "index": 0,
                     "path": file_path,
@@ -2246,7 +2229,7 @@ class LocalDataProvider(DataProvider):
                 # Multi-file torrent
                 files = file_info.get("files", [])
                 base_path = torrent_session.output_dir
-                
+
                 for idx, file_data in enumerate(files):
                     # Extract file path
                     if isinstance(file_data, dict):
@@ -2257,10 +2240,10 @@ class LocalDataProvider(DataProvider):
                             file_name = "/".join(str(p) for p in path_parts)
                         else:
                             file_name = f"file_{idx}"
-                        
+
                         file_size = file_data.get("length", 0)
                         full_path = str(base_path / file_name)
-                        
+
                         # Calculate progress (simplified - would need piece-to-file mapping for accuracy)
                         progress = 0.0
                         if torrent_session.piece_manager:
@@ -2275,7 +2258,7 @@ class LocalDataProvider(DataProvider):
                                     progress = verified_pieces / total_pieces
                             except Exception:
                                 pass
-                        
+
                         files_list.append({
                             "index": idx,
                             "path": full_path,
@@ -2288,7 +2271,7 @@ class LocalDataProvider(DataProvider):
                             "mime_type": _guess_media_metadata(full_path)[0],
                             "is_media": _guess_media_metadata(full_path)[1],
                         })
-            
+
             return files_list
         except Exception as e:
             logger.debug("Error getting torrent files: %s", e)
@@ -2317,17 +2300,17 @@ class LocalDataProvider(DataProvider):
             info_hash = bytes.fromhex(info_hash_hex)
             async with self._session.lock:
                 torrent_session = self._session.torrents.get(info_hash)
-            
+
             if not torrent_session:
                 logger.debug("Torrent session not found for info_hash: %s", info_hash_hex[:8])
                 return []
-            
+
             # Extract tracker URLs from torrent data
             trackers_list: list[dict[str, Any]] = []
-            
+
             # Get torrent data (could be dict or TorrentInfoModel)
             torrent_data = torrent_session.torrent_data
-            
+
             # Extract announce URLs
             announce_urls: list[str] = []
             if isinstance(torrent_data, dict):
@@ -2340,7 +2323,7 @@ class LocalDataProvider(DataProvider):
                             announce_urls.extend(tier)
                         elif isinstance(tier, str):
                             announce_urls.append(tier)
-                
+
                 # Fallback to single announce URL
                 if not announce_urls:
                     announce = torrent_data.get("announce")
@@ -2354,7 +2337,7 @@ class LocalDataProvider(DataProvider):
                             announce_urls.extend(tier)
                 if not announce_urls and hasattr(torrent_data, "announce"):
                     announce_urls.append(torrent_data.announce)
-            
+
             # Build tracker list with basic status
             # Note: Full tracker status (seeds, peers, last_update) would require
             # accessing tracker client state, which may not be directly available
@@ -2369,7 +2352,7 @@ class LocalDataProvider(DataProvider):
                         "last_update": 0.0,  # Would need last announce time
                         "error": None,  # Would need tracker error state
                     })
-            
+
             return trackers_list
         except Exception as e:
             logger.debug("Error getting torrent trackers: %s", e)
@@ -2436,7 +2419,7 @@ class LocalDataProvider(DataProvider):
                     logger.debug("Error collecting local piece selection metrics: %s", exc)
 
         histogram = self._build_availability_histogram(availability)
-        
+
         # Extract prioritized piece IDs from selection metrics
         prioritized_pieces: list[int] = []
         if piece_selection:
@@ -2451,7 +2434,7 @@ class LocalDataProvider(DataProvider):
                     i for i, count in enumerate(availability)
                     if count == min_availability and count > 0
                 ][:10]  # Limit to top 10
-        
+
         return {
             "info_hash": info_hash_hex,
             "availability": availability,
@@ -2463,6 +2446,14 @@ class LocalDataProvider(DataProvider):
             "peer_quality": {},
             "prioritized_pieces": prioritized_pieces,
         }
+
+    async def get_scrape_result(self, info_hash_hex: str) -> Optional[Any]:
+        """Get cached scrape result from the local session for a torrent."""
+        try:
+            return await self._session.get_scrape_result(info_hash_hex)
+        except Exception as exc:
+            logger.debug("Error getting scrape result for %s: %s", info_hash_hex, exc)
+            return None
 
     async def get_metrics(self) -> dict[str, Any]:
         """Get metrics from local metrics collector."""
@@ -2773,17 +2764,17 @@ class LocalDataProvider(DataProvider):
                     "top_peers": [],
                     "per_torrent": [],
                 }
-            
+
             all_peers: dict[str, dict[str, Any]] = {}
             per_torrent_summaries: list[dict[str, Any]] = []
             total_quality_sum = 0.0
             total_peers_counted = 0
-            
+
             for torrent in torrents:
                 info_hash_hex = torrent.get("info_hash")
                 if not info_hash_hex:
                     continue
-                
+
                 try:
                     peers = await self.get_torrent_peers(info_hash_hex)
                 except Exception as exc:
@@ -2793,29 +2784,29 @@ class LocalDataProvider(DataProvider):
                         exc,
                     )
                     continue
-                
+
                 if not peers:
                     continue
-                
+
                 # Calculate quality scores from peer metrics
                 # Quality is based on download/upload rates and connection stability
                 peer_qualities: list[float] = []
                 high_quality = 0
                 medium_quality = 0
                 low_quality = 0
-                
+
                 for peer in peers:
                     download_rate = float(peer.get("download_rate", 0.0) or 0.0)
                     upload_rate = float(peer.get("upload_rate", 0.0) or 0.0)
-                    
+
                     # Simple quality score: based on rates (normalized)
                     # Higher rates = better quality
                     total_rate = download_rate + upload_rate
                     # Normalize to 0-1 scale (assuming max 10 MiB/s = 1.0)
                     quality_score = min(total_rate / (10 * 1024 * 1024), 1.0)
-                    
+
                     peer_qualities.append(quality_score)
-                    
+
                     peer_key = f"{peer.get('ip', 'unknown')}:{peer.get('port', 0)}"
                     if peer_key not in all_peers:
                         all_peers[peer_key] = {
@@ -2837,7 +2828,7 @@ class LocalDataProvider(DataProvider):
                             })
                         if info_hash_hex not in all_peers[peer_key].get("torrents", []):
                             all_peers[peer_key].setdefault("torrents", []).append(info_hash_hex)
-                    
+
                     # Categorize
                     if quality_score >= 0.7:
                         high_quality += 1
@@ -2845,11 +2836,11 @@ class LocalDataProvider(DataProvider):
                         medium_quality += 1
                     else:
                         low_quality += 1
-                
+
                 avg_quality = sum(peer_qualities) / len(peer_qualities) if peer_qualities else 0.0
                 total_quality_sum += avg_quality * len(peers)
                 total_peers_counted += len(peers)
-                
+
                 per_torrent_summaries.append({
                     "info_hash": info_hash_hex,
                     "name": torrent.get("name") or info_hash_hex[:12],
@@ -2859,7 +2850,7 @@ class LocalDataProvider(DataProvider):
                     "medium_quality_peers": medium_quality,
                     "low_quality_peers": low_quality,
                 })
-            
+
             # Calculate overall distribution
             quality_tiers = {
                 "excellent": 0,
@@ -2867,7 +2858,7 @@ class LocalDataProvider(DataProvider):
                 "fair": 0,
                 "poor": 0,
             }
-            
+
             for peer_data in all_peers.values():
                 score = float(peer_data.get("quality_score", 0.0))
                 if score >= 0.7:
@@ -2878,17 +2869,17 @@ class LocalDataProvider(DataProvider):
                     quality_tiers["fair"] += 1
                 else:
                     quality_tiers["poor"] += 1
-            
+
             # Calculate overall average quality
             average_quality = total_quality_sum / total_peers_counted if total_peers_counted > 0 else 0.0
-            
+
             # Get top 10 peers by quality score
             top_peers_list = sorted(
                 all_peers.values(),
                 key=lambda p: float(p.get("quality_score", 0.0)),
                 reverse=True,
             )[:10]
-            
+
             return {
                 "total_peers": len(all_peers),
                 "quality_tiers": quality_tiers,
@@ -2896,7 +2887,7 @@ class LocalDataProvider(DataProvider):
                 "top_peers": top_peers_list,
                 "per_torrent": per_torrent_summaries,
             }
-        
+
         return await self._get_cached("peer_quality_distribution", _fetch, ttl=2.0)
 
     async def get_global_kpis(self) -> dict[str, Any]:
@@ -2909,38 +2900,38 @@ class LocalDataProvider(DataProvider):
             try:
                 # Get global stats
                 global_stats = await self._session.get_global_stats()
-                
+
                 # Get system metrics
                 system_metrics = await self.get_system_metrics()
-                
+
                 # Get peer metrics
                 peer_metrics = await self.get_peer_metrics()
-                
+
                 # Aggregate KPIs
                 total_peers = int(peer_metrics.get("total_peers", 0))
                 active_peers = int(peer_metrics.get("active_peers", 0))
                 peers = peer_metrics.get("peers", []) or []
-                
+
                 # Calculate average rates
                 total_download_rate = 0.0
                 total_upload_rate = 0.0
                 total_bytes_downloaded = 0
                 total_bytes_uploaded = 0
-                
+
                 for peer in peers:
                     total_download_rate += float(peer.get("download_rate", 0.0) or 0.0)
                     total_upload_rate += float(peer.get("upload_rate", 0.0) or 0.0)
                     total_bytes_downloaded += int(peer.get("bytes_downloaded", 0) or 0)
                     total_bytes_uploaded += int(peer.get("bytes_uploaded", 0) or 0)
-                
+
                 avg_download_rate = total_download_rate / len(peers) if peers else 0.0
                 avg_upload_rate = total_upload_rate / len(peers) if peers else 0.0
-                
+
                 # Calculate efficiency metrics (simplified)
                 bandwidth_utilization = min(1.0, (total_download_rate + total_upload_rate) / (10 * 1024 * 1024)) if peers else 0.0
                 connection_efficiency = active_peers / max(total_peers, 1) if total_peers > 0 else 0.0
                 overall_efficiency = (bandwidth_utilization + connection_efficiency) / 2.0
-                
+
                 return {
                     "total_peers": total_peers,
                     "average_download_rate": avg_download_rate,
@@ -2977,7 +2968,7 @@ class LocalDataProvider(DataProvider):
                     "memory_usage": 0.0,
                     "disk_usage": 0.0,
                 }
-        
+
         return await self._get_cached("global_kpis", _fetch, ttl=2.0)
 
     async def get_per_torrent_performance(self, info_hash_hex: str) -> dict[str, Any]:
@@ -2990,11 +2981,11 @@ class LocalDataProvider(DataProvider):
 
             # Get peers
             peers = await self.get_torrent_peers(info_hash_hex)
-            
+
             # Get metrics collector for peer performance
             from ccbt.monitoring import get_metrics_collector
             metrics_collector = get_metrics_collector()
-            
+
             top_peers = []
             for peer in peers[:10]:  # Top 10 peers
                 peer_key = f"{peer.get('ip', 'unknown')}:{peer.get('port', 0)}"
@@ -3009,7 +3000,7 @@ class LocalDataProvider(DataProvider):
                     "bytes_downloaded": 0,
                     "bytes_uploaded": 0,
                 }
-                
+
                 # Try to get detailed metrics from metrics collector
                 if metrics_collector:
                     peer_metrics = metrics_collector.get_peer_metrics(peer_key)
@@ -3023,19 +3014,19 @@ class LocalDataProvider(DataProvider):
                             "bytes_downloaded": peer_metrics.bytes_downloaded,
                             "bytes_uploaded": peer_metrics.bytes_uploaded,
                         })
-                
+
                 top_peers.append({
                     "peer_key": peer_key,
                     **peer_metrics_data,
                 })
-            
+
             # Sort by download rate
             top_peers.sort(key=lambda p: p.get("download_rate", 0.0), reverse=True)
-            
+
             # Calculate piece download rate (estimate)
             piece_size = 16384  # Default piece size
             piece_download_rate = status.get("download_rate", 0.0) / piece_size if piece_size > 0 else 0.0
-            
+
             return {
                 "info_hash": info_hash_hex,
                 "download_rate": status.get("download_rate", 0.0),
@@ -3078,11 +3069,9 @@ def create_data_provider(session: AsyncSessionManager, executor: Optional[Any] =
                     executor = session._executor  # type: ignore[attr-defined]
             # Pass adapter to data provider for widget registration
             return DaemonDataProvider(session._client, executor, adapter=session)  # type: ignore[attr-defined]
-        else:
-            # Fallback: create a new IPC client
-            from ccbt.daemon.ipc_client import IPCClient
-            ipc_client = IPCClient()
-            return DaemonDataProvider(ipc_client, executor, adapter=session)
-    else:
-        return LocalDataProvider(session)
+        # Fallback: create a new IPC client
+        from ccbt.daemon.ipc_client import IPCClient
+        ipc_client = IPCClient()
+        return DaemonDataProvider(ipc_client, executor, adapter=session)
+    return LocalDataProvider(session)
 

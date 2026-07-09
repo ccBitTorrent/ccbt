@@ -20,13 +20,16 @@ else:
         DataProvider = None  # type: ignore[assignment, misc]
 
 try:
-    from textual.containers import Container, Vertical, Horizontal
-    from textual.widgets import DataTable, Static, Input, Button
+    from textual.containers import Container, Horizontal, Vertical
+    from textual.reactive import reactive
     from textual.screen import ModalScreen
+    from textual.widgets import Button, DataTable, Input, Static
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
+            pass
 
     class Vertical:  # type: ignore[no-redef]
         pass
@@ -43,14 +46,35 @@ except ImportError:
     class Input:  # type: ignore[no-redef]
         pass
 
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
+
     class Button:  # type: ignore[no-redef]
         pass
 
     class ModalScreen:  # type: ignore[no-redef]
         pass
 
-from ccbt.interface.widgets.reusable_table import ReusableDataTable
+
 from ccbt.i18n import _
+from ccbt.interface.widgets.reusable_table import ReusableDataTable
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +98,9 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
         ("r", "remove_tracker", _("Remove Tracker")),
         ("f", "force_announce", _("Force Announce")),
     ]
+
+    # F2.4.5: reactive bound to TerminalDashboard.selected_torrent_trackers.
+    selected_torrent_trackers: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -104,7 +131,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
         """Mount the trackers screen."""
         try:
             self._trackers_table = self.query_one("#trackers-table", DataTable)  # type: ignore[attr-defined]
-            
+
             if self._trackers_table:
                 self._trackers_table.add_columns(
                     _("URL"),
@@ -116,24 +143,56 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                     _("Error"),
                 )
                 self._trackers_table.zebra_stripes = True
-            
-            # Schedule periodic refresh
-            self.set_interval(5.0, self.refresh_trackers)  # type: ignore[attr-defined]
-            # Initial refresh
+
+            # F2.4.5: bind to the App selected_torrent_trackers reactive
+            # (replaces the set_interval(5.0, self.refresh_trackers) self-poll).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(
+                    selected_torrent_trackers=TerminalDashboard.selected_torrent_trackers
+                )
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug("TorrentTrackersScreen data_bind skipped: %s", exc)
+            # Initial refresh (fallback for contexts where the reactive has not
+            # been populated yet; the reactive drives subsequent updates).
             self.call_later(self.refresh_trackers)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting trackers screen: %s", e)
 
-    async def refresh_trackers(self) -> None:  # pragma: no cover
-        """Refresh trackers table with latest data."""
+    def watch_selected_torrent_trackers(
+        self, value: list[dict[str, Any]]
+    ) -> None:  # pragma: no cover
+        """Reactive watcher: render the trackers table from the bound list (F2.4.5)."""
+        if isinstance(value, list):
+            import asyncio as _asyncio
+
+            _asyncio.create_task(self.refresh_trackers(trackers_override=value))
+
+    async def refresh_trackers(
+        self, trackers_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:  # pragma: no cover
+        """Refresh trackers table with latest data.
+
+        Args:
+            trackers_override: When provided (from the selected_torrent_trackers
+                reactive watcher), skip the ``get_torrent_trackers()`` fetch and
+                render from this list directly.
+        """
         if not self._trackers_table or not self._data_provider or not self._info_hash:
             return
-        
+
         try:
             # Use DataProvider to get tracker information
-            trackers = await self._data_provider.get_torrent_trackers(self._info_hash)
+            trackers = (
+                trackers_override
+                if trackers_override is not None
+                else await self._data_provider.get_torrent_trackers(self._info_hash)
+            )
             self._trackers_table.clear()
-            
+
             if not trackers:
                 self._trackers_table.add_row(
                     _("N/A"),
@@ -145,7 +204,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                     _("No trackers found"),
                 )
                 return
-            
+
             for idx, tracker in enumerate(trackers):
                 url = tracker.get("url", "N/A")
                 status = tracker.get("status", "unknown")
@@ -154,19 +213,22 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                 downloaders = tracker.get("downloaders", 0)
                 last_update = tracker.get("last_update", 0.0)
                 error = tracker.get("error")
-                
+
                 # Format last update time
                 if last_update and last_update > 0:
                     from datetime import datetime
+
                     try:
-                        last_update_str = datetime.fromtimestamp(last_update).strftime("%Y-%m-%d %H:%M:%S")
+                        last_update_str = datetime.fromtimestamp(last_update).strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
                     except Exception:
                         last_update_str = _("N/A")
                 else:
                     last_update_str = _("Never")
-                
+
                 error_str = error if error else ""
-                
+
                 self._trackers_table.add_row(
                     url,
                     status,
@@ -194,71 +256,105 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
         """Force announce to selected tracker."""
         if not self._command_executor or not self._info_hash:
             return
-        
+
         try:
             result = await self._command_executor.execute_command(
                 "torrent.force_announce",
                 info_hash=self._info_hash,
             )
-            
+
             if result and hasattr(result, "success") and result.success:
                 if hasattr(self, "app"):
                     self.app.notify(_("Announce sent"), severity="success")  # type: ignore[attr-defined]
                 # Refresh trackers to show updated status
                 await self.refresh_trackers()
             else:
-                error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                error_msg = (
+                    result.error
+                    if result and hasattr(result, "error")
+                    else _("Unknown error")
+                )
                 if hasattr(self, "app"):
-                    self.app.notify(_("Failed to announce: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                    self.app.notify(
+                        _("Failed to announce: {error}").format(error=error_msg),
+                        severity="error",
+                    )  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error forcing announce: %s", e)
             if hasattr(self, "app"):
-                self.app.notify(_("Error forcing announce: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Error forcing announce: {error}").format(error=str(e)),
+                    severity="error",
+                )  # type: ignore[attr-defined]
 
     async def action_add_tracker(self) -> None:  # pragma: no cover
         """Add a tracker URL to the torrent."""
         if not self._command_executor or not self._info_hash:
             return
-        
+
         try:
             # Show input dialog for tracker URL
             if hasattr(self, "app"):
                 dialog = TrackerInputDialog()
                 tracker_url = await self.app.push_screen(dialog)  # type: ignore[attr-defined]
-                
+
                 if tracker_url:
                     # Validate URL format (basic check)
                     if not tracker_url.startswith(("http://", "https://", "udp://")):
                         if hasattr(self, "app"):
-                            self.app.notify(_("Invalid tracker URL format. Must start with http://, https://, or udp://"), severity="error")  # type: ignore[attr-defined]
+                            self.app.notify(
+                                _(
+                                    "Invalid tracker URL format. Must start with http://, https://, or udp://"
+                                ),
+                                severity="error",
+                            )  # type: ignore[attr-defined]
                         return
-                    
+
                     # Add tracker via executor
                     result = await self._command_executor.execute_command(
                         "torrent.add_tracker",
                         info_hash=self._info_hash,
                         tracker_url=tracker_url,
                     )
-                    
+
                     if result and hasattr(result, "success") and result.success:
                         if hasattr(self, "app"):
-                            self.app.notify(_("Tracker added: {url}").format(url=tracker_url), severity="success")  # type: ignore[attr-defined]
+                            self.app.notify(
+                                _("Tracker added: {url}").format(url=tracker_url),
+                                severity="success",
+                            )  # type: ignore[attr-defined]
                         # Refresh trackers list
                         await self.refresh_trackers()
                     else:
-                        error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                        error_msg = (
+                            result.error
+                            if result and hasattr(result, "error")
+                            else _("Unknown error")
+                        )
                         if hasattr(self, "app"):
-                            self.app.notify(_("Failed to add tracker: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                            self.app.notify(
+                                _("Failed to add tracker: {error}").format(
+                                    error=error_msg
+                                ),
+                                severity="error",
+                            )  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error adding tracker: %s", e)
             if hasattr(self, "app"):
-                self.app.notify(_("Error adding tracker: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Error adding tracker: {error}").format(error=str(e)),
+                    severity="error",
+                )  # type: ignore[attr-defined]
 
     async def action_remove_tracker(self) -> None:  # pragma: no cover
         """Remove selected tracker from the torrent."""
-        if not self._trackers_table or not self._command_executor or not self._info_hash:
+        if (
+            not self._trackers_table
+            or not self._command_executor
+            or not self._info_hash
+        ):
             return
-        
+
         try:
             # Get selected tracker URL
             selected_key = self._trackers_table.get_selected_key()
@@ -271,7 +367,7 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                 if hasattr(self, "app"):
                     self.app.notify(_("Invalid tracker selection"), severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             # Try to use executor command if available
             # Note: This may not exist yet - will need to be implemented
             try:
@@ -280,28 +376,45 @@ class TorrentTrackersScreen(Container):  # type: ignore[misc]
                     info_hash=self._info_hash,
                     tracker_url=tracker_url,
                 )
-                
+
                 if result and hasattr(result, "success") and result.success:
                     if hasattr(self, "app"):
-                        self.app.notify(_("Tracker removed: {url}").format(url=tracker_url), severity="success")  # type: ignore[attr-defined]
+                        self.app.notify(
+                            _("Tracker removed: {url}").format(url=tracker_url),
+                            severity="success",
+                        )  # type: ignore[attr-defined]
                     # Refresh trackers list
                     await self.refresh_trackers()
                 else:
-                    error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                    error_msg = (
+                        result.error
+                        if result and hasattr(result, "error")
+                        else _("Unknown error")
+                    )
                     if hasattr(self, "app"):
-                        self.app.notify(_("Failed to remove tracker: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                        self.app.notify(
+                            _("Failed to remove tracker: {error}").format(
+                                error=error_msg
+                            ),
+                            severity="error",
+                        )  # type: ignore[attr-defined]
             except Exception as e:
                 # Executor command may not exist - log and show message
                 logger.warning("Remove tracker command not available: %s", e)
                 if hasattr(self, "app"):
                     self.app.notify(  # type: ignore[attr-defined]
-                        _("Remove tracker not yet implemented. Selected tracker: {url}").format(url=selected_key),
+                        _(
+                            "Remove tracker not yet implemented. Selected tracker: {url}"
+                        ).format(url=selected_key),
                         severity="info",
                     )
         except Exception as e:
             logger.debug("Error removing tracker: %s", e)
             if hasattr(self, "app"):
-                self.app.notify(_("Error removing tracker: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
+                self.app.notify(
+                    _("Error removing tracker: {error}").format(error=str(e)),
+                    severity="error",
+                )  # type: ignore[attr-defined]
 
 
 class TrackerInputDialog(ModalScreen):  # type: ignore[misc]
@@ -354,7 +467,9 @@ class TrackerInputDialog(ModalScreen):  # type: ignore[misc]
         except Exception as e:
             logger.debug("Error mounting tracker input dialog: %s", e)
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+    async def on_button_pressed(
+        self, event: Button.Pressed
+    ) -> None:  # pragma: no cover
         """Handle button presses."""
         if event.button.id == "confirm":
             try:
@@ -384,4 +499,3 @@ class TrackerInputDialog(ModalScreen):  # type: ignore[misc]
     async def action_cancel(self) -> None:  # pragma: no cover
         """Cancel tracker URL input."""
         self.dismiss(None)  # type: ignore[attr-defined]
-

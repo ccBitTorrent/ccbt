@@ -20,15 +20,39 @@ else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Container, Horizontal, Vertical
+        from textual.reactive import reactive
         from textual.widgets import Button, Select, Static
     except ImportError:
         ComposeResult = Any  # type: ignore[assignment, misc]
         Container = object  # type: ignore[assignment, misc]
+
+        def _container_data_bind(self, **kwargs: Any) -> None:
+            pass
+
+        Container.data_bind = _container_data_bind  # type: ignore[attr-defined]
         Horizontal = object  # type: ignore[assignment, misc]
         Vertical = object  # type: ignore[assignment, misc]
         Button = object  # type: ignore[assignment, misc]
         Select = object  # type: ignore[assignment, misc]
         Static = object  # type: ignore[assignment, misc]
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
     try:
         from ccbt.interface.commands.executor import CommandExecutor
@@ -42,6 +66,10 @@ logger = logging.getLogger(__name__)
 
 class MediaPlaybackWidget(Container):  # type: ignore[misc]
     """Embedded Textual control surface for torrent media playback."""
+
+    # F2.6.11: bound to App media reactives via data_bind.
+    media_candidates: reactive = reactive([], layout=False)  # type: ignore[assignment]
+    media_stream_status: reactive = reactive(None, layout=False)  # type: ignore[assignment]
 
     DEFAULT_CSS = """
     MediaPlaybackWidget {
@@ -112,28 +140,40 @@ class MediaPlaybackWidget(Container):  # type: ignore[misc]
         yield Static("", id="media-launch-status")
 
     async def on_mount(self) -> None:  # type: ignore[override]
-        """Initialize refresh hooks."""
+        """Initialize adapter hooks and reactive bindings (F2.6.11)."""
         self._adapter = getattr(self._data_provider, "get_adapter", lambda: None)()
         if self._adapter is not None and hasattr(self._adapter, "register_widget"):
             with contextlib.suppress(Exception):
                 self._adapter.register_widget(self)
 
-        def schedule_refresh() -> None:
-            with contextlib.suppress(Exception):
-                if self._refresh_work_task is not None and not self._refresh_work_task.done():
-                    self._refresh_work_task.cancel()
-                self._refresh_work_task = asyncio.create_task(
-                    self.refresh_media_state()
-                )
+        try:
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
 
-        self._refresh_task = self.set_interval(1.5, schedule_refresh)  # type: ignore[attr-defined]
+            self.data_bind(
+                media_candidates=TerminalDashboard.media_candidates,
+                media_stream_status=TerminalDashboard.media_stream_status,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.debug("MediaPlaybackWidget data_bind skipped: %s", exc)
+
         await self.refresh_media_state()
 
+    def watch_media_candidates(self, value: list[dict[str, Any]]) -> None:  # pragma: no cover
+        """Reactive watcher: update selector when candidates change (F2.6.11)."""
+        if isinstance(value, list):
+            self._media_candidates = value
+            if self._selected_file_index is None and self._media_candidates:
+                self._selected_file_index = int(self._media_candidates[0]["index"])
+            self._update_file_selector()
+
+    def watch_media_stream_status(self, value: Optional[dict[str, Any]]) -> None:  # pragma: no cover
+        """Reactive watcher: update status panel when stream state changes (F2.6.11)."""
+        if value is not None:
+            self._stream_status = value
+            self._render_status()
+
     def on_unmount(self) -> None:  # pragma: no cover
-        """Clean up event subscriptions and refresh task."""
-        if self._refresh_task is not None:
-            with contextlib.suppress(Exception):
-                self._refresh_task.stop()
+        """Clean up event subscriptions."""
         if self._refresh_work_task is not None and not self._refresh_work_task.done():
             with contextlib.suppress(Exception):
                 self._refresh_work_task.cancel()

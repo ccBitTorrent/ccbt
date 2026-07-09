@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -12,6 +11,7 @@ if TYPE_CHECKING:
 else:
     try:
         from textual.app import ComposeResult  # type: ignore
+        from textual.reactive import reactive  # type: ignore
         from textual.widgets import Static  # type: ignore
     except ImportError:  # pragma: no cover
         ComposeResult = Any  # type: ignore[assignment,misc]
@@ -19,10 +19,31 @@ else:
         class Static:  # type: ignore[no-redef]
             """Fallback Static widget when Textual is unavailable."""
 
+            def data_bind(self, **kwargs: Any) -> None:
+                """No-op data_bind when textual is unavailable."""
+                pass
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from ccbt.i18n import _
 
@@ -41,6 +62,9 @@ class GlobalKPIsPanel(Static):  # type: ignore[misc]
     }
     """
 
+    # F2.6.2: bound to TerminalDashboard.global_kpis via data_bind.
+    global_kpis: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+
     def __init__(
         self,
         data_provider: Optional[Any],
@@ -49,66 +73,24 @@ class GlobalKPIsPanel(Static):  # type: ignore[misc]
     ) -> None:
         super().__init__(**kwargs)
         self._data_provider = data_provider
-        self._refresh_interval = refresh_interval
-        self._update_task: Optional[Any] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose widget layout."""
         yield Static(id="global-kpis-placeholder")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Start periodic updates when the widget is mounted."""
-        self._start_updates()
-
-    def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Stop periodic updates when the widget is removed."""
-        if self._update_task:
-            if hasattr(self._update_task, "stop"):
-                self._update_task.stop()  # type: ignore[attr-defined]
-            elif hasattr(self._update_task, "cancel"):
-                self._update_task.cancel()  # type: ignore[attr-defined]
-            self._update_task = None
-
-    def _start_updates(self) -> None:  # pragma: no cover
-        """Initialize refresh timer."""
-
-        def schedule_update() -> None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.get_event_loop()
-            loop.create_task(self._update_from_provider())
-
+        """Bind to App global_kpis reactive (F2.6.2)."""
         try:
-            self._update_task = self.set_interval(self._refresh_interval, schedule_update)  # type: ignore[attr-defined]
-            self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
-        except Exception as exc:
-            logger.error("GlobalKPIsPanel: Failed to start update loop: %s", exc, exc_info=True)
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
 
-    async def _update_from_provider(self) -> None:
-        """Fetch global KPIs data and update widget output."""
-        if not self._data_provider:
-            self.update(
-                Panel(
-                    _("Global KPIs data is unavailable in the current mode."),
-                    border_style="yellow",
-                )
-            )
-            return
+            self.data_bind(global_kpis=TerminalDashboard.global_kpis)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("GlobalKPIsPanel data_bind skipped: %s", exc)
 
-        try:
-            kpis = await self._data_provider.get_global_kpis()
-        except Exception as exc:
-            logger.error("GlobalKPIsPanel: Error loading data: %s", exc, exc_info=True)
-            self.update(
-                Panel(
-                    _("Failed to load global KPIs: {error}").format(error=str(exc)),
-                    border_style="red",
-                )
-            )
-            return
-
-        self.update(self._render_kpis(kpis))
+    def watch_global_kpis(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render KPIs from the bound dict (F2.6.2)."""
+        if isinstance(value, dict) and value:
+            self.update(self._render_kpis(value))
 
     def _render_kpis(self, kpis: dict[str, Any]) -> Panel:
         """Render global KPIs view."""

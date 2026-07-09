@@ -55,25 +55,17 @@ def _persist_auth_config(config_manager: Any, message: str) -> None:
     if config_manager.config_file:
         if _should_skip_project_local_write(config_manager.config_file):
             console.print(
-                _(
-                    "[yellow]Authenticated swarm setting updated "
-                    "(test mode, write skipped)[/yellow]"
-                )
+                "[yellow]Authenticated swarm setting updated "
+                "(test mode, write skipped)[/yellow]"
             )
             return
         config_toml = config_manager.export(fmt="toml")
         config_manager.config_file.write_text(config_toml, encoding="utf-8")
-        console.print(
-            _("[green]{message}: {config_file}[/green]").format(
-                message=message, config_file=config_manager.config_file
-            )
-        )
+        console.print(f"[green]{message}: {config_manager.config_file}[/green]")
     else:
         console.print(
-            _(
-                "[yellow]Authenticated swarm setting updated "
-                "(configuration not persisted - no config file)[/yellow]"
-            )
+            "[yellow]Authenticated swarm setting updated "
+            "(configuration not persisted - no config file)[/yellow]"
         )
 
 

@@ -434,10 +434,8 @@ def security(
         )
     if strict_ssl_posture:
         console.print(
-            _(
-                "[yellow]Warning: SSL certificate verification is disabled while SSL is used"
-                " in strict mode[/yellow]"
-            ),
+            "[yellow]Warning: SSL certificate verification is disabled while SSL is used"
+            " in strict mode[/yellow]",
         )
     if swarm_auth:
         auth_cfg = getattr(cfg.security, "authenticated_swarms", None)

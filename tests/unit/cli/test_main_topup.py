@@ -163,11 +163,29 @@ def test_magnet_interactive_path(monkeypatch):
         def parse_magnet_link(self, _link: str):
             return {"info_hash": b"\x00" * 20, "name": "t"}
 
-    async def _start_interactive(session, torrent_data, console, resume=False):
+        async def add_magnet(self, _link: str, output_dir=None, resume=False):
+            return (b"\x00" * 20).hex()
+
+    async def _start_interactive(
+        session, magnet_link, info_hash_hex, console, resume=False, output_dir=None
+    ):
         return None
 
+    class MockPath:
+        def exists(self):
+            return False
+
+    class MockDaemonManager:
+        def __init__(self):
+            self.pid_file = MockPath()
+
+    async def _mock_get_executor():
+        return (None, False)
+
     monkeypatch.setattr(cli_main, "AsyncSessionManager", lambda *_a, **_k: _Mgr())
-    monkeypatch.setattr(cli_main, "start_interactive_download", _start_interactive)
+    monkeypatch.setattr(cli_main, "DaemonManager", MockDaemonManager)
+    monkeypatch.setattr(cli_main, "_get_executor", _mock_get_executor)
+    monkeypatch.setattr(cli_main, "start_interactive_magnet_download", _start_interactive)
     monkeypatch.setattr(cli_main.asyncio, "run", _run_coro_locally)
 
     res = runner.invoke(cli_main.cli, ["magnet", "magnet:?xt=urn:btih:abc", "-i"])

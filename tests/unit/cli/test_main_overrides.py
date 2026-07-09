@@ -681,21 +681,15 @@ def test_ssl_ca_certs_path_expansion_and_validation(tmp_path, monkeypatch):
     expanded_path = tmp_path / "expanded.crt"
     expanded_path.write_text("fake ca cert")
 
-    # Mock Path to return expanded_path when expanduser is called
-    original_path_init = Path.__init__
+    original_expanduser = Path.expanduser
 
-    class MockPath(Path):
-        def expanduser(self):
+    def mock_expanduser(self):
+        if self.as_posix() == "~/ca.crt":
             return expanded_path
-
-    def mock_path_init(self, *args, **kwargs):
-        if args and str(args[0]) == "~/ca.crt":
-            # Return expanded path
-            return original_path_init(self, expanded_path, **kwargs)
-        return original_path_init(self, *args, **kwargs)
+        return original_expanduser(self)
 
     with monkeypatch.context() as m:
-        m.setattr(Path, "__init__", mock_path_init)
+        m.setattr(Path, "expanduser", mock_expanduser)
         cfg2 = _make_cfg()
         opts2 = {"ssl_ca_certs": "~/ca.crt"}
         _apply_ssl_overrides(cfg2, opts2)

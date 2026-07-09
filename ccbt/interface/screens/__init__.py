@@ -5,8 +5,8 @@ from __future__ import annotations
 from ccbt.interface.screens.base import (
     ConfigScreen,
     ConfirmationDialog,
-    InputDialog,
     GlobalConfigScreen,
+    InputDialog,
     MonitoringScreen,
     PerTorrentConfigScreen,
 )
@@ -14,8 +14,8 @@ from ccbt.interface.screens.base import (
 __all__ = [
     "ConfigScreen",
     "ConfirmationDialog",
-    "InputDialog",
     "GlobalConfigScreen",
+    "InputDialog",
     "MonitoringScreen",
     "PerTorrentConfigScreen",
 ]

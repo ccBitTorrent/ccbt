@@ -5183,11 +5183,39 @@ class IPCServer:
             except Exception as e:
                 logger.debug("UI snapshot: rate samples unavailable: %s", e)
 
+            # Aggregated peers across torrents (R9): cap at 200 rows so the
+            # dashboard's peer panel populates on first paint instead of
+            # waiting for the 3s _peers_update_loop / per-torrent HTTP fetch.
+            peers: list[dict[str, Any]] = []
+            try:
+                peer_cap = 200
+                for t in torrents:
+                    if len(peers) >= peer_cap:
+                        break
+                    ih = t.get("info_hash") if isinstance(t, dict) else None
+                    if not ih:
+                        continue
+                    peer_result = await self.executor.execute(
+                        "torrent.get_peers", info_hash=ih
+                    )
+                    if not peer_result.success:
+                        continue
+                    for p in peer_result.data.get("peers", []):
+                        if len(peers) >= peer_cap:
+                            break
+                        if isinstance(p, dict):
+                            row = dict(p)
+                            row.setdefault("info_hash", ih)
+                            peers.append(row)
+            except Exception as e:
+                logger.debug("UI snapshot: peers aggregation unavailable: %s", e)
+
             response = UISnapshotResponse(
                 global_stats=global_stats,
                 torrents=torrents,
                 services_status=services_status,
                 rate_samples=rate_samples,
+                peers=peers,
             )
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as e:
@@ -5802,6 +5830,9 @@ class IPCServer:
                 "piece_downloaded": EventType.PIECE_DOWNLOADED,
                 "piece_verified": EventType.PIECE_VERIFIED,
                 "piece_completed": EventType.PIECE_COMPLETED,
+                # Progress events (R7): bridge progress_updated so the UI refreshes
+                # progress bars on every verified piece instead of polling.
+                "progress_updated": EventType.PROGRESS_UPDATED,
                 # Torrent events
                 "torrent_added": EventType.TORRENT_ADDED,
                 "torrent_removed": EventType.TORRENT_REMOVED,

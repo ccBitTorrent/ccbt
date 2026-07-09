@@ -134,6 +134,7 @@ class PeerConnectionPool:
         self._warmup_attempts = 0
         self._warmup_successes = 0
         self._soft_cleanup_marks: dict[str, float] = {}
+        self._stale_connection_marks: dict[str, float] = {}
         self._cleanup_reason_counts: dict[str, int] = {
             "stale_only": 0,
             "protocol_error": 0,

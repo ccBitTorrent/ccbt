@@ -16,7 +16,6 @@ except ImportError:
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             """Initialize theme (stub)."""
-            pass
 
 
 # Rainbow color palette (ROYGBIV)
@@ -81,7 +80,7 @@ def create_rainbow_theme() -> Theme:
         "rainbow-6": RAINBOW_SEQUENCE[5],  # Indigo
         "rainbow-7": RAINBOW_SEQUENCE[6],  # Violet
     }
-    
+
     return Theme(
         name="rainbow",
         dark=True,
@@ -101,11 +100,11 @@ def apply_rainbow_border_class(widget: Any, index: int) -> Any:
     """
     if not hasattr(widget, "add_class"):
         return widget
-    
+
     # Calculate which rainbow color to use (0-6, cycling)
     color_index = index % 7
     rainbow_class = f"rainbow-{color_index + 1}"
-    
+
     # Remove any existing rainbow classes
     for i in range(1, 8):
         existing_class = f"rainbow-{i}"
@@ -114,13 +113,13 @@ def apply_rainbow_border_class(widget: Any, index: int) -> Any:
                 widget.remove_class(existing_class)  # type: ignore[attr-defined]
             except Exception:
                 pass
-    
+
     # Add the appropriate rainbow class
     try:
         widget.add_class(rainbow_class)  # type: ignore[attr-defined]
     except Exception:
         pass
-    
+
     return widget
 
 

@@ -1467,6 +1467,14 @@ class ConfigManager:
             # Create config file in current directory
             self.config_file = Path.cwd() / "ccbt.toml"
 
+        if os.environ.get("CCBT_TEST_MODE") == "1":
+            try:
+                if self.config_file.resolve() == (Path.cwd() / "ccbt.toml").resolve():
+                    logging.debug("Skipping project config save in CCBT_TEST_MODE")
+                    return
+            except OSError:
+                pass
+
         # Ensure parent directory exists
         self.config_file.parent.mkdir(parents=True, exist_ok=True)
 

@@ -35,27 +35,17 @@ class TestXetProtocol:
     @pytest.mark.asyncio
     async def test_protocol_start(self, protocol):
         """Test protocol start."""
-        # Mock DHT client so cas_client gets initialized
         mock_dht = AsyncMock()
         protocol.dht_client = mock_dht
 
-        with patch("ccbt.protocols.xet.P2PCASClient") as mock_cas_class:
-            mock_cas = AsyncMock()
-            mock_cas_class.return_value = mock_cas
+        await protocol.start()
 
-            await protocol.start()
-
-            assert protocol.state == ProtocolState.CONNECTED
-            # cas_client may be None if no dht/tracker client
-            # Just verify protocol started successfully
-            assert protocol.state == ProtocolState.CONNECTED
+        assert protocol.state == ProtocolState.CONNECTED
 
     @pytest.mark.asyncio
     async def test_protocol_stop(self, protocol):
         """Test protocol stop."""
-        # Start protocol first
-        with patch("ccbt.protocols.xet.P2PCASClient"):
-            await protocol.start()
+        await protocol.start()
 
         # Stop protocol
         await protocol.stop()
@@ -241,12 +231,9 @@ class TestXetProtocol:
     @pytest.mark.asyncio
     async def test_protocol_lifecycle(self, protocol):
         """Test full protocol lifecycle."""
-        # Start
-        with patch("ccbt.protocols.xet.P2PCASClient"):
-            await protocol.start()
-            assert protocol.state == ProtocolState.CONNECTED
+        await protocol.start()
+        assert protocol.state == ProtocolState.CONNECTED
 
-        # Stop
         await protocol.stop()
         assert protocol.state == ProtocolState.DISCONNECTED
 

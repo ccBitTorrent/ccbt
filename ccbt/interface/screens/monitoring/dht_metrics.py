@@ -12,6 +12,7 @@ else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -24,6 +25,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.panel import Panel
 from rich.table import Table
 
@@ -33,6 +52,9 @@ from ccbt.interface.screens.base import MonitoringScreen
 
 class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display DHT metrics and statistics."""
+
+    _reactive_sources = ("dht_health_summary",)
+    dht_health_summary: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -62,7 +84,7 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             yield Static(id="node_info")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh DHT metrics display."""
         try:
             dht_stats_widget = self.query_one("#dht_stats", Static)
@@ -70,8 +92,51 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             content = self.query_one("#content", Static)
             node_info_widget = self.query_one("#node_info", Static)
 
+            summary_override = overrides.get("dht_health_summary_override")
+            if summary_override is None and isinstance(self.dht_health_summary, dict) and self.dht_health_summary:
+                summary_override = self.dht_health_summary
+
             # Prefer DataProvider in daemon mode (DHT health summary)
             provider = getattr(self, "_data_provider", None)
+            if isinstance(summary_override, dict) and summary_override:
+                summary = summary_override
+                stats_table = Table(title=_("DHT Health (daemon)"), expand=True, show_header=False, box=None)
+                stats_table.add_column(_("Metric"), style="cyan", ratio=1)
+                stats_table.add_column(_("Value"), style="green", ratio=2)
+                stats_table.add_row(_("Torrents with DHT"), str(summary.get("torrents_with_dht", 0)))
+                stats_table.add_row(_("Total queries"), str(summary.get("total_queries", 0)))
+                stats_table.add_row(
+                    _("Bootstrap recovery attempts"),
+                    str(summary.get("total_bootstrap_recovery_attempts", 0)),
+                )
+                stats_table.add_row(
+                    _("Zero-state count"),
+                    str(summary.get("total_bootstrap_zero_state_count", 0)),
+                )
+                stats_table.add_row(
+                    _("Bootstrap health"),
+                    str(summary.get("bootstrap_health_state", "unknown")),
+                )
+                dht_stats_widget.update(Panel(stats_table, border_style="blue"))
+                all_items = summary.get("all_items", summary.get("items", []))
+                if all_items:
+                    detail_table = Table(title=_("Per-torrent DHT"), expand=True)
+                    detail_table.add_column(_("Torrent"), style="cyan", ratio=2)
+                    detail_table.add_column(_("Health"), style="green", ratio=1)
+                    detail_table.add_column(_("Queries"), style="yellow", ratio=1)
+                    for item in all_items[:15]:
+                        detail_table.add_row(
+                            str(item.get("info_hash_hex", item.get("info_hash", "")))[:16],
+                            str(item.get("health_label", "-")),
+                            str(item.get("queries_sent", item.get("total_queries", 0))),
+                        )
+                    content.update(Panel(detail_table))
+                    routing_table_widget.update("")
+                else:
+                    content.update(Panel(_("No DHT metrics per torrent yet."), border_style="dim"))
+                    routing_table_widget.update("")
+                node_info_widget.update("")
+                return
             if provider:
                 try:
                     summary = await provider.get_dht_health_summary(limit=20)
@@ -115,16 +180,15 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                     content.update(Panel(_("Error loading DHT summary: {error}").format(error=str(e)), title=_("Error"), border_style="red"))
                 return
 
-            # Local session: get DHT client
+            # Local session: get DHT client via the module-level accessor only
+            # (do not probe session.dht_client / session.dht — those attributes
+            # don't exist on DaemonInterfaceAdapter; R6).
             dht_client = None
             try:
                 from ccbt.discovery.dht import get_dht_client
                 dht_client = get_dht_client()
             except Exception:
-                if hasattr(self.session, "dht_client"):
-                    dht_client = self.session.dht_client
-                elif hasattr(self.session, "dht"):
-                    dht_client = self.session.dht
+                dht_client = None
 
             if not dht_client:
                 content.update(
@@ -223,7 +287,7 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             if hasattr(dht_client, "node_id"):
                 node_id = dht_client.node_id
                 node_id_hex = node_id.hex() if isinstance(node_id, bytes) else str(node_id)
-                
+
                 node_table = Table(
                     title=_("Local Node Information"),
                     expand=True,
@@ -234,10 +298,10 @@ class DHTMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                 node_table.add_column(_("Value"), style="green", ratio=2)
 
                 node_table.add_row(_("Node ID"), node_id_hex[:32] + "..." if len(node_id_hex) > 32 else node_id_hex)
-                
+
                 if hasattr(dht_client, "port"):
                     node_table.add_row(_("Port"), str(dht_client.port))
-                
+
                 if hasattr(dht_client, "bootstrap_nodes"):
                     bootstrap_count = len(dht_client.bootstrap_nodes) if dht_client.bootstrap_nodes else 0
                     node_table.add_row(_("Bootstrap Nodes"), str(bootstrap_count))

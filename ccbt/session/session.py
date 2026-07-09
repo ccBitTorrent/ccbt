@@ -7482,49 +7482,57 @@ class AsyncSessionManager:
         7. Queue manager (if enabled - manages torrent priorities)
         8. Background tasks
         """
-        # CRITICAL: Start NAT manager first (UPnP/NAT-PMP discovery and port mapping)
-        # This must happen before services that need incoming connections
-        try:
-            self.nat_manager = self._make_nat_manager()
-            if self.nat_manager:
-                await self.nat_manager.start()
-                # Map all required ports (TCP, UDP, DHT, etc.)
-                if self.config.nat.auto_map_ports:
-                    await self.nat_manager.map_listen_ports()
-                    # Wait for port mappings to complete (with timeout)
-                    await self.nat_manager.wait_for_mapping(timeout=60.0)
-                    self.logger.info(
-                        "NAT manager initialized and ports mapped successfully"
-                    )
-                else:
-                    self.logger.info(
-                        "NAT manager initialized (auto_map_ports disabled)"
-                    )
-                # Emit COMPONENT_STARTED event
-                try:
-                    from ccbt.utils.events import Event, emit_event
 
-                    await emit_event(
-                        Event(
-                            event_type="component_started",
-                            data={
-                                "component_name": "nat_manager",
-                                "status": "running",
-                            },
+        # Start NAT discovery/mapping in the background. Router discovery can take
+        # over a minute on networks without UPnP/NAT-PMP; it must not block daemon
+        # IPC readiness or dashboard attachment.
+        async def start_nat_manager() -> None:
+            try:
+                if self.nat_manager:
+                    await self.nat_manager.start()
+                    # Map all required ports (TCP, UDP, DHT, etc.)
+                    if self.config.nat.auto_map_ports:
+                        await self.nat_manager.map_listen_ports()
+                        # Wait for port mappings to complete (with timeout)
+                        await self.nat_manager.wait_for_mapping(timeout=60.0)
+                        self.logger.info(
+                            "NAT manager initialized and ports mapped successfully"
                         )
-                    )
-                except Exception as e:
-                    self.logger.debug(
-                        "Failed to emit COMPONENT_STARTED event for NAT: %s", e
-                    )
-            else:
-                self.logger.warning("Failed to create NAT manager")
-        except Exception:
-            # Best-effort: log and continue
-            self.logger.warning(
-                "NAT manager initialization failed. Port mapping may not work, which could prevent incoming connections.",
-                exc_info=True,
-            )
+                    else:
+                        self.logger.info(
+                            "NAT manager initialized (auto_map_ports disabled)"
+                        )
+                    # Emit COMPONENT_STARTED event
+                    try:
+                        from ccbt.utils.events import Event, emit_event
+
+                        await emit_event(
+                            Event(
+                                event_type="component_started",
+                                data={
+                                    "component_name": "nat_manager",
+                                    "status": "running",
+                                },
+                            )
+                        )
+                    except Exception as e:
+                        self.logger.debug(
+                            "Failed to emit COMPONENT_STARTED event for NAT: %s", e
+                        )
+                else:
+                    self.logger.warning("Failed to create NAT manager")
+            except Exception:
+                # Best-effort: log and continue
+                self.logger.warning(
+                    "NAT manager initialization failed. Port mapping may not work, which could prevent incoming connections.",
+                    exc_info=True,
+                )
+
+        self.nat_manager = self._make_nat_manager()
+        self._task_supervisor.create_task(
+            start_nat_manager(),
+            name="manager_nat_startup",
+        )
 
         # OPTIMIZATION: Start network components in parallel (TCP server, UDP tracker, DHT)
         # These components don't need port mapping to complete - they only need external port

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sys
 from typing import Any, Optional
 
 import click
@@ -105,11 +106,14 @@ def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
         raise click.ClickException(SESSION_CREATION_FAILED_MSG)
 
     try:
-        # Ensure daemon adapter is connected before launching Textual app.
-        if hasattr(session, "start") and callable(session.start):
-            start_result = session.start()
-            if asyncio.iscoroutine(start_result):
-                asyncio.run(start_result)
+        # CRITICAL: Do NOT call session.start() here in a throwaway asyncio.run().
+        # Doing so binds the aiohttp ClientSession + WebSocket tasks to a loop that
+        # closes before Textual starts its own loop, leaving the adapter with a dead
+        # connection (_websocket_connected=True on a closed loop). The adapter is
+        # started inside Textual's event loop by TerminalDashboard.on_mount ->
+        # _ensure_adapter_ready() -> await self.session.start(). The IPCClient's
+        # _ensure_session() recreates the aiohttp session on Textual's loop on first
+        # use, so the IPCClient returned by _ensure_daemon_running() is safe to reuse.
 
         # If rules path provided, pre-load into global alert manager before launching
         if rules:
@@ -130,10 +134,25 @@ def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
         # Pass splash_manager to run_dashboard so it can end when dashboard is rendered
         run_dashboard(session, refresh=refresh, splash_manager=splash_manager)
     except KeyboardInterrupt:
+        # Treat user interrupt as graceful dashboard exit instead of an error.
+        console.print(_("[yellow]Dashboard stopped (interrupt received).[/yellow]"))
         # Clear splash on interrupt
         if splash_manager:
             with contextlib.suppress(Exception):
                 splash_manager.stop_splash()
+        return
+    except click.Abort:
+        # Click maps EOF/terminal abort to click.Abort. For Textual this often means
+        # the command was launched without an interactive TTY, so the dashboard cannot
+        # stay attached to a terminal UI.
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise click.ClickException(
+                _(
+                    "Dashboard requires an interactive terminal (TTY). "
+                    "Please run 'btbt dashboard --no-splash' in a regular terminal window."
+                )
+            ) from None
+        # Interactive terminal + abort: keep Click's native behavior.
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
         # Clear splash on error

@@ -6,14 +6,14 @@ Demonstrates the splash screen with various background animations and color tran
 from __future__ import annotations
 
 import asyncio
-import sys
 import os
+import sys
 
 # Handle Unicode encoding for Windows
-if os.name == 'nt':
+if os.name == "nt":
     try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -32,25 +32,25 @@ except ImportError:
     # Fallback: direct import
     import sys
     from pathlib import Path
-    
+
     splash_dir = Path(__file__).parent
     if str(splash_dir) not in sys.path:
         sys.path.insert(0, str(splash_dir))
-    
-    from splash_screen import SplashScreen, run_splash_screen
+
+    from splash_screen import SplashScreen
 
 
 async def demo_rich_console() -> None:
     """Demo splash screen with Rich Console (CLI mode)."""
     console = Console()
-    
+
     console.print("\n" + "=" * 80)
     console.print("Splash Screen Demo - Rich Console Mode")
     console.print("=" * 80)
     console.print("\nThis demo will run for 90 seconds with various background animations")
     console.print("and color transitions. Press Ctrl+C to stop early.\n")
     console.print("=" * 80 + "\n")
-    
+
     try:
         # Create splash screen
         console.print(style_policy.markup("Creating splash screen...", style_policy.DIM_STYLE))
@@ -60,7 +60,7 @@ async def demo_rich_console() -> None:
             f"{len(splash.sequence.animations)} "
             f"{style_policy.markup('animation segments', style_policy.SUCCESS_STYLE)}\n"
         )
-        
+
         # Run the animation (executor handles Live internally)
         console.print(
             f"{style_policy.markup('Starting animation...', style_policy.WARNING_STYLE)}\n"

@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.containers import Vertical
+    from textual.reactive import reactive
     from textual.widgets import Footer, Header, Static
 else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -24,6 +26,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.panel import Panel
 from rich.table import Table
 
@@ -32,6 +52,9 @@ from ccbt.interface.screens.base import MonitoringScreen
 
 class DiskIOMetricsScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display disk I/O statistics (throughput, queue depth, cache stats)."""
+
+    _reactive_sources = ("disk_io_metrics",)
+    disk_io_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -62,13 +85,47 @@ class DiskIOMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             yield Static(id="config_info")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh disk I/O metrics display."""
         try:
             content = self.query_one("#content", Static)
             io_stats = self.query_one("#io_stats", Static)
             cache_stats = self.query_one("#cache_stats", Static)
             config_info = self.query_one("#config_info", Static)
+
+            metrics_override = overrides.get("disk_io_metrics_override")
+            if metrics_override is None:
+                try:
+                    if isinstance(self.disk_io_metrics, dict) and self.disk_io_metrics:
+                        metrics_override = self.disk_io_metrics
+                except Exception:
+                    metrics_override = None
+
+            if isinstance(metrics_override, dict) and metrics_override:
+                io_table = Table(title="Disk I/O Statistics", expand=True)
+                io_table.add_column("Metric", style="cyan", ratio=2)
+                io_table.add_column("Value", style="green", ratio=2)
+
+                def format_speed(kib_s: float) -> str:
+                    bps = kib_s * 1024.0
+                    for unit, factor in [("GB/s", 1024**3), ("MB/s", 1024**2), ("KB/s", 1024)]:
+                        if bps >= factor:
+                            return f"{bps / factor:.2f} {unit}"
+                    return f"{bps:.2f} B/s"
+
+                read_tp = float(metrics_override.get("read_throughput", 0.0))
+                write_tp = float(metrics_override.get("write_throughput", 0.0))
+                cache_hit = float(metrics_override.get("cache_hit_rate", 0.0))
+                timing_ms = float(metrics_override.get("timing_ms", 0.0))
+                io_table.add_row("Read Throughput", format_speed(read_tp))
+                io_table.add_row("Write Throughput", format_speed(write_tp))
+                io_table.add_row("Cache Hit Rate", f"{cache_hit:.1f}%")
+                io_table.add_row("Timing (avg ms)", f"{timing_ms:.2f}")
+                content.update(Panel(io_table, title="Disk I/O (live)", border_style="blue"))
+                io_stats.update("")
+                cache_stats.update("")
+                config_info.update("")
+                return
 
             # Get disk I/O manager
             try:

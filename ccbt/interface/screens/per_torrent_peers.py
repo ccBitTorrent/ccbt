@@ -21,17 +21,41 @@ else:
 
 try:
     from textual.containers import Container
+    from textual.reactive import reactive
     from textual.widgets import DataTable
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
+            pass
 
     class DataTable:  # type: ignore[no-redef]
         pass
 
-from ccbt.interface.widgets.reusable_table import ReusableDataTable
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
+
+
 from ccbt.i18n import _
+from ccbt.interface.widgets.reusable_table import ReusableDataTable
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +77,9 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("b", "ban_peer", _("Ban Peer")),
     ]
+
+    # F2.4.4: reactive bound to TerminalDashboard.selected_torrent_peers.
+    selected_torrent_peers: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -83,7 +110,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
         """Mount the peers screen."""
         try:
             self._peers_table = self.query_one("#peers-table", DataTable)  # type: ignore[attr-defined]
-            
+
             if self._peers_table:
                 self._peers_table.add_columns(
                     _("IP Address"),
@@ -94,22 +121,54 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                     _("Status"),
                 )
                 self._peers_table.zebra_stripes = True
-            
-            # Schedule periodic refresh
-            self.set_interval(2.0, self.refresh_peers)  # type: ignore[attr-defined]
-            # Initial refresh
+
+            # F2.4.4: bind to the App selected_torrent_peers reactive (replaces
+            # the set_interval(2.0, self.refresh_peers) self-poll).
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(
+                    selected_torrent_peers=TerminalDashboard.selected_torrent_peers
+                )
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug("TorrentPeersScreen data_bind skipped: %s", exc)
+            # Initial refresh (fallback for contexts where the reactive has not
+            # been populated yet; the reactive drives subsequent updates).
             self.call_later(self.refresh_peers)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting peers screen: %s", e)
 
-    async def refresh_peers(self) -> None:  # pragma: no cover
-        """Refresh peers table with latest data."""
+    def watch_selected_torrent_peers(
+        self, value: list[dict[str, Any]]
+    ) -> None:  # pragma: no cover
+        """Reactive watcher: render the peers table from the bound list (F2.4.4)."""
+        if isinstance(value, list):
+            import asyncio as _asyncio
+
+            _asyncio.create_task(self.refresh_peers(peers_override=value))
+
+    async def refresh_peers(
+        self, peers_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:  # pragma: no cover
+        """Refresh peers table with latest data.
+
+        Args:
+            peers_override: When provided (from the selected_torrent_peers
+                reactive watcher), skip the ``get_torrent_peers()`` fetch and
+                render from this list directly.
+        """
         if not self._peers_table or not self._data_provider or not self._info_hash:
             return
-        
+
         try:
-            peers = await self._data_provider.get_torrent_peers(self._info_hash)
-            
+            peers = (
+                peers_override
+                if peers_override is not None
+                else await self._data_provider.get_torrent_peers(self._info_hash)
+            )
+
             # Clear and repopulate table
             self._peers_table.clear()
             for idx, peer in enumerate(peers):
@@ -119,19 +178,19 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                 upload_rate = peer.get("upload_rate", 0.0)
                 client = peer.get("client", "?")
                 choked = peer.get("choked", False)
-                
+
                 # Format speeds
                 def format_speed(bps: float) -> str:
                     """Format bytes per second."""
                     if bps >= 1024 * 1024:
                         return f"{bps / (1024 * 1024):.2f} MB/s"
-                    elif bps >= 1024:
+                    if bps >= 1024:
                         return f"{bps / 1024:.2f} KB/s"
                     return f"{bps:.2f} B/s"
-                
+
                 down_str = format_speed(download_rate)
                 up_str = format_speed(upload_rate)
-                
+
                 # Format status
                 status_parts = []
                 if choked:
@@ -141,7 +200,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                 if upload_rate > 0:
                     status_parts.append(_("Uploading"))
                 status = ", ".join(status_parts) if status_parts else _("Idle")
-                
+
                 # Include peer index to avoid key collisions for repeated endpoints
                 row_key = f"{ip}:{port}|{idx}"
                 self._peers_table.add_row(
@@ -160,7 +219,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
         """Ban selected peer (add to blacklist)."""
         if not self._peers_table or not self._command_executor or not self._info_hash:
             return
-        
+
         try:
             # Get selected peer key (IP:port)
             selected_key = self._peers_table.get_selected_key()
@@ -168,7 +227,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                 if hasattr(self, "app"):
                     self.app.notify(_("No peer selected"), severity="warning")  # type: ignore[attr-defined]
                 return
-            
+
             # Parse IP:port from key format "<ip>:<port>|<index>"
             try:
                 peer_key = selected_key.split("|", 1)[0]
@@ -178,7 +237,7 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                 if hasattr(self, "app"):
                     self.app.notify(_("Invalid peer selection"), severity="error")  # type: ignore[attr-defined]
                 return
-            
+
             # Use security.ban_peer executor command
             try:
                 result = await self._command_executor.execute_command(
@@ -186,27 +245,40 @@ class TorrentPeersScreen(Container):  # type: ignore[misc]
                     ip=ip,
                     reason=f"Banned from torrent {self._info_hash[:8]}",
                 )
-                
+
                 if result and hasattr(result, "success") and result.success:
                     if hasattr(self, "app"):
-                        self.app.notify(_("Peer {ip}:{port} banned").format(ip=ip, port=port), severity="success")  # type: ignore[attr-defined]
+                        self.app.notify(
+                            _("Peer {ip}:{port} banned").format(ip=ip, port=port),
+                            severity="success",
+                        )  # type: ignore[attr-defined]
                     # Refresh peers list
                     await self.refresh_peers()
                 else:
-                    error_msg = result.error if result and hasattr(result, "error") else _("Unknown error")
+                    error_msg = (
+                        result.error
+                        if result and hasattr(result, "error")
+                        else _("Unknown error")
+                    )
                     if hasattr(self, "app"):
-                        self.app.notify(_("Failed to ban peer: {error}").format(error=error_msg), severity="error")  # type: ignore[attr-defined]
+                        self.app.notify(
+                            _("Failed to ban peer: {error}").format(error=error_msg),
+                            severity="error",
+                        )  # type: ignore[attr-defined]
             except Exception as e:
                 # Executor command may not exist - log and show message
                 logger.warning("Peer ban command not available: %s", e)
                 if hasattr(self, "app"):
                     self.app.notify(  # type: ignore[attr-defined]
-                        _("Peer banning not yet implemented. Selected peer: {ip}:{port}").format(ip=ip, port=port),
+                        _(
+                            "Peer banning not yet implemented. Selected peer: {ip}:{port}"
+                        ).format(ip=ip, port=port),
                         severity="info",
                     )
         except Exception as e:
             logger.debug("Error banning peer: %s", e)
             if hasattr(self, "app"):
-                self.app.notify(_("Error banning peer: {error}").format(error=str(e)), severity="error")  # type: ignore[attr-defined]
-
-
+                self.app.notify(
+                    _("Error banning peer: {error}").format(error=str(e)),
+                    severity="error",
+                )  # type: ignore[attr-defined]

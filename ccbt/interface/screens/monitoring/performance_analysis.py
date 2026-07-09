@@ -86,7 +86,7 @@ class PerformanceAnalysisScreen(MonitoringScreen):  # type: ignore[misc]
         # Initialize command executor
         if not hasattr(self, "_command_executor") or self._command_executor is None:
             self._command_executor = CommandExecutor(self.session)
-        await self._refresh_data()
+        await super().on_mount()
 
     async def _refresh_data(self) -> None:  # pragma: no cover
         """Refresh performance analysis display."""

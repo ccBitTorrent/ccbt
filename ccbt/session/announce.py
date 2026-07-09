@@ -637,7 +637,13 @@ class AnnounceLoop:
 
     async def run(self) -> None:
         """Run the announce loop."""
-        base_announce_interval = float(self.s.config.network.announce_interval)
+        # Use the discovery-scoped tracker announce interval (default 60s) as the base
+        # cadence. network.announce_interval (default 1800s) is deprecated for tracker
+        # pacing and is no longer used here; tracker `interval` and `min interval`
+        # responses, adaptive adjustment, and weak-swarm acceleration all layer on top
+        # of this base. See RC-4/5 fix.
+        disc = self.s.config.discovery
+        base_announce_interval = float(disc.tracker_announce_interval)
 
         def _tracker_seed_ratio(response: Any) -> float:
             complete = getattr(response, "complete", None)
@@ -953,19 +959,85 @@ class AnnounceLoop:
                 )
                 tracker_interval = getattr(response, "interval", None)
                 if isinstance(tracker_interval, (int, float)) and tracker_interval > 0:
-                    next_announce_interval = max(
-                        30.0,
-                        min(float(tracker_interval), base_announce_interval),
+                    # Use the adaptive min/max bounds as the ceiling (not base_announce_interval)
+                    # so a tracker asking for a long interval (e.g. 1800s) is honored up to
+                    # tracker_adaptive_interval_max, and the floor is the configured adaptive
+                    # min rather than a hardcoded 30s. See RC-4/5 fix.
+                    adaptive_min = float(
+                        getattr(disc, "tracker_adaptive_interval_min", 20.0)
                     )
+                    adaptive_max = float(
+                        getattr(disc, "tracker_adaptive_interval_max", 3600.0)
+                    )
+                    next_announce_interval = max(
+                        adaptive_min,
+                        min(float(tracker_interval), adaptive_max),
+                    )
+                # Apply adaptive interval adjustment based on tracker performance and
+                # peer count. This was previously dead code (defined but never called).
+                # It runs BEFORE the weak-swarm cap so a healthy swarm lengthens the
+                # interval and a weak swarm can still cap it down. The tracker's
+                # `min interval` floor is applied LAST to guarantee we never violate
+                # tracker pacing. See RC-4/5 fix (Step 7).
+                _adaptive_peer_count = 0
+                if isinstance(swarm_state, dict):
+                    try:
+                        _adaptive_peer_count = int(
+                            swarm_state.get("active_peers", 0) or 0
+                        )
+                    except (TypeError, ValueError):
+                        _adaptive_peer_count = 0
+                if getattr(disc, "tracker_adaptive_interval_enabled", True):
+                    _adaptive_fn = getattr(
+                        self.s.tracker, "_calculate_adaptive_interval", None
+                    )
+                    if _adaptive_fn is not None:
+                        try:
+                            next_announce_interval = float(
+                                _adaptive_fn(
+                                    announce_url,
+                                    next_announce_interval,
+                                    peer_count=_adaptive_peer_count,
+                                )
+                            )
+                        except Exception:
+                            self.s.logger.debug(
+                                "Adaptive interval calculation failed; using current interval %.1fs",
+                                next_announce_interval,
+                                exc_info=True,
+                            )
                 cached_status = getattr(self.s, "_cached_status", {})
                 if not isinstance(cached_status, dict):
                     cached_status = {}
-                connected_peers = int(cached_status.get("connected_peers", 0) or 0)
-                productive_peers = int(
-                    cached_status.get("productive_peers", connected_peers) or 0
-                )
-                requestable_peers = int(
-                    cached_status.get("requestable_peers", connected_peers) or 0
+                # Prefer live swarm recovery state (already fetched above for logging)
+                # over _cached_status, which can be stale and mask the zero-requestable
+                # condition. Fall back to cached_status only when swarm_state lacks the
+                # key. See RC-4/5 fix (Step 6).
+                _swarm = swarm_state if isinstance(swarm_state, dict) else {}
+
+                def _swarm_int(
+                    key: str,
+                    cached_key: str,
+                    default: int = 0,
+                    *,
+                    swarm_map: dict = _swarm,
+                    cached_map: dict = cached_status,
+                ) -> int:
+                    val = swarm_map.get(key)
+                    if val is None:
+                        val = cached_map.get(cached_key, default)
+                    try:
+                        return int(val or 0)
+                    except (TypeError, ValueError):
+                        return default
+
+                connected_peers = _swarm_int("active_peers", "connected_peers", 0)
+                productive_peers = _swarm_int("productive_peers", "productive_peers", 0)
+                # Default requestable fallback to 0 (not connected_peers) so the
+                # acceleration trigger fires when the key is missing but the swarm is
+                # effectively dead. See RC-4/5 fix.
+                requestable_peers = _swarm_int(
+                    "requestable_peers", "requestable_peers", 0
                 )
                 handshake_complete_peers = int(
                     cached_status.get("handshake_complete_peers", 0) or 0
@@ -992,14 +1064,28 @@ class AnnounceLoop:
                 else:
                     self.s.tracker_connection_status = "connected"
                     self.s.last_tracker_error = None
-                    if (
-                        connected_peers == 0
-                        or productive_peers == 0
-                        or requestable_peers == 0
-                    ):
+                    # Tiered weak-swarm acceleration:
+                    # - no connected peers at all -> 60s (most aggressive)
+                    # - connected but none requestable -> 90s (the "swarm looks alive
+                    #   but is dead" case from RC-2)
+                    # - connected and requestable but none productive -> 120s
+                    # The tracker `min interval` floor applied below (after this block)
+                    # guarantees we never violate tracker pacing. See RC-4/5 fix (Step 6).
+                    if connected_peers == 0:
+                        next_announce_interval = min(next_announce_interval, 60.0)
+                        weak_reason = "connected=0"
+                    elif requestable_peers == 0:
+                        next_announce_interval = min(next_announce_interval, 90.0)
+                        weak_reason = "requestable=0"
+                    elif productive_peers == 0:
                         next_announce_interval = min(next_announce_interval, 120.0)
+                        weak_reason = "productive=0"
+                    else:
+                        weak_reason = ""
+                    if weak_reason:
                         self.s.logger.debug(
-                            "Tracker announce produced peers but swarm remains weak (connected=%d, productive=%d, requestable=%d, handshake_complete=%d, extension_capable=%d, metadata_capable=%d); using accelerated reannounce interval %.1fs",
+                            "Tracker announce produced peers but swarm remains weak (%s; connected=%d, productive=%d, requestable=%d, handshake_complete=%d, extension_capable=%d, metadata_capable=%d); using accelerated reannounce interval %.1fs",
+                            weak_reason,
                             connected_peers,
                             productive_peers,
                             requestable_peers,
@@ -1008,6 +1094,28 @@ class AnnounceLoop:
                             metadata_capable_peers,
                             next_announce_interval,
                         )
+
+                # Apply tracker `min interval` (BEP 3) as the FINAL floor so weak-swarm
+                # acceleration and adaptive adjustment can never produce an interval
+                # below what the tracker allows. This prevents tracker bans. See RC-4/5
+                # fix (Step 5).
+                tracker_sessions = getattr(self.s.tracker, "sessions", {})
+                if announce_url and isinstance(tracker_sessions, dict):
+                    _sess = tracker_sessions.get(announce_url)
+                    if _sess is not None:
+                        _sess_min = getattr(_sess, "min_interval", None)
+                        if (
+                            isinstance(_sess_min, (int, float))
+                            and _sess_min > 0
+                            and next_announce_interval < float(_sess_min)
+                        ):
+                            self.s.logger.debug(
+                                "Capping reannounce interval to tracker min_interval %.1fs (was %.1fs) for %s",
+                                float(_sess_min),
+                                next_announce_interval,
+                                announce_url,
+                            )
+                            next_announce_interval = float(_sess_min)
 
                 # Emit TRACKER_ANNOUNCE_SUCCESS event
                 try:

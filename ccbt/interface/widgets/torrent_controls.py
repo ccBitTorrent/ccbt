@@ -21,11 +21,13 @@ else:
 
 try:
     from textual.containers import Container, Horizontal, Vertical
+    from textual.reactive import reactive
     from textual.widgets import Button, DataTable, Input, Select, Static
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
-        pass
+        def data_bind(self, **kwargs: Any) -> None:  # type: ignore[no-redef]
+            """No-op data_bind when textual is unavailable."""
 
     class Horizontal:  # type: ignore[no-redef]
         pass
@@ -48,7 +50,26 @@ except ImportError:
     class Static:  # type: ignore[no-redef]
         pass
 
-from rich.panel import Panel
+    class reactive:  # type: ignore[no-redef]
+        """Stub reactive descriptor for textual compatibility."""
+
+        def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.default = default
+
+        def __class_getitem__(cls, item: Any) -> type:
+            return cls
+
+        def __set_name__(self, owner: Any, name: str) -> None:
+            self._name = name
+
+        def __get__(self, instance: Any, owner: Any) -> Any:
+            if instance is None:
+                return self
+            return instance.__dict__.get(self._name, self.default)
+
+        def __set__(self, instance: Any, value: Any) -> None:
+            instance.__dict__[self._name] = value
+
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +124,9 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
         min-height: 3;
     }
     """
+
+    # F2.3.4: reactive bound to TerminalDashboard.torrents_data via data_bind.
+    torrents_data: reactive = reactive([])  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -170,67 +194,76 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
             if not self._torrent_selector:
                 try:
                     self._torrent_selector = self.query_one("#torrent-selector", Select)  # type: ignore[attr-defined]
-                    logger.info("TorrentControlsWidget.on_mount: Found _torrent_selector: %s", self._torrent_selector is not None)
+                    logger.info(
+                        "TorrentControlsWidget.on_mount: Found _torrent_selector: %s",
+                        self._torrent_selector is not None,
+                    )
                 except Exception as e:
-                    logger.error("TorrentControlsWidget.on_mount: Error querying selector: %s", e, exc_info=True)
+                    logger.error(
+                        "TorrentControlsWidget.on_mount: Error querying selector: %s",
+                        e,
+                        exc_info=True,
+                    )
                     # Try again after a brief delay
                     self.call_after_refresh(lambda: self._retry_selector_query())  # type: ignore[attr-defined]
                     return
-            
+
             # Note: Verify data provider is available
             if not self._data_provider:
                 logger.warning("TorrentControlsWidget.on_mount: Data provider is None")
                 return
-            
+
             # Note: Initial refresh on mount - only if both are available
             if self._torrent_selector and self._data_provider:
                 await self._refresh_torrent_list()
-            
-            # Set up periodic refresh with proper async handling
-            import asyncio
-            
-            def schedule_refresh() -> None:
-                """Schedule async refresh (wrapper for set_interval)."""
-                try:
-                    # Note: Only schedule if widget is properly initialized
-                    if self._torrent_selector and self._data_provider:
-                        asyncio.create_task(self._refresh_torrent_list())
-                    else:
-                        logger.debug("TorrentControlsWidget: Skipping refresh - selector or data provider not available")
-                except Exception as e:
-                    logger.debug("Error scheduling torrent list refresh: %s", e)
-            
-            # Note: set_interval doesn't work with async functions directly
-            # Use wrapper function that creates async task
-            # Only set up refresh task if widget is properly initialized
-            if self._torrent_selector and self._data_provider:
-                # Note: Reduced interval from 5.0s to 1.0s for tighter updates
-                self._refresh_task = self.set_interval(1.0, schedule_refresh)  # type: ignore[attr-defined]
-                logger.debug("TorrentControlsWidget.on_mount: Set up periodic refresh")
+
+            # F2.3.4: bind to the App torrents_data reactive (replaces the
+            # set_interval(1.0, schedule_refresh) self-poll). The watch handler
+            # repopulates the selector from the bound list.
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                self.data_bind(torrents_data=TerminalDashboard.torrents_data)
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
+                logger.debug("TorrentControlsWidget data_bind skipped: %s", exc)
         except Exception as e:
             logger.error("Error mounting torrent controls: %s", e, exc_info=True)
-    
+
+    def watch_torrents_data(
+        self, value: list[dict[str, Any]]
+    ) -> None:  # pragma: no cover
+        """Reactive watcher: repopulate the selector from the bound list (F2.3.4)."""
+        if self._torrent_selector and self._data_provider:
+            asyncio.create_task(self._refresh_torrent_list(torrents_override=value))
+
     def _retry_selector_query(self) -> None:  # pragma: no cover
         """Retry querying the selector after widget is fully mounted."""
         try:
             if not self._torrent_selector:
                 self._torrent_selector = self.query_one("#torrent-selector", Select)  # type: ignore[attr-defined]
-                logger.info("TorrentControlsWidget: Successfully queried selector on retry")
-                # Now set up the refresh task
+                logger.info(
+                    "TorrentControlsWidget: Successfully queried selector on retry"
+                )
+                # F2.3.4: no set_interval self-poll; bind to the App reactive.
                 if self._torrent_selector and self._data_provider:
-                    import asyncio
-                    def schedule_refresh() -> None:
-                        try:
-                            if self._torrent_selector and self._data_provider:
-                                asyncio.create_task(self._refresh_torrent_list())
-                        except Exception as e:
-                            logger.debug("Error scheduling torrent list refresh: %s", e)
-                    # Note: Reduced interval from 5.0s to 1.0s for tighter updates
-                    self._refresh_task = self.set_interval(1.0, schedule_refresh)  # type: ignore[attr-defined]
+                    try:
+                        from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                        self.data_bind(torrents_data=TerminalDashboard.torrents_data)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        logger.debug(
+                            "TorrentControlsWidget retry data_bind skipped: %s", exc
+                        )
                     # Trigger initial refresh
                     asyncio.create_task(self._refresh_torrent_list())
         except Exception as e:
-            logger.error("TorrentControlsWidget: Error retrying selector query: %s", e, exc_info=True)
+            logger.error(
+                "TorrentControlsWidget: Error retrying selector query: %s",
+                e,
+                exc_info=True,
+            )
 
     async def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount and cleanup."""
@@ -247,10 +280,6 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
             message: LanguageChanged message with new locale
         """
         try:
-            from ccbt.interface.widgets.language_selector import (
-                LanguageSelectorWidget,
-            )
-
             # Verify this is a LanguageChanged message
             if not hasattr(message, "locale"):
                 return
@@ -346,13 +375,22 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
         except Exception as e:
             logger.debug("Error refreshing torrent controls translations: %s", e)
 
-    async def _refresh_torrent_list(self) -> None:  # pragma: no cover
-        """Refresh the torrent selector list."""
+    async def _refresh_torrent_list(
+        self, torrents_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:  # pragma: no cover
+        """Refresh the torrent selector list.
+
+        Args:
+            torrents_override: When provided (from the torrents_data reactive
+                watcher), skip the ``list_torrents()`` fetch and use this list.
+        """
         # Note: Check if widget is visible and attached before refreshing
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
-            logger.debug("TorrentControlsWidget: Widget not attached or not visible, skipping refresh")
+            logger.debug(
+                "TorrentControlsWidget: Widget not attached or not visible, skipping refresh"
+            )
             return
-        
+
         # Note: Re-query selector if it's None (may happen if called before on_mount completes)
         if not self._torrent_selector:
             try:
@@ -363,31 +401,48 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                 # Schedule retry after widget is fully mounted
                 self.call_after_refresh(self._retry_selector_query)  # type: ignore[attr-defined]
                 return
-        
+
         if not self._torrent_selector or not self._data_provider:
-            logger.debug("TorrentControlsWidget: Missing selector or data provider (selector: %s, provider: %s)", 
-                        self._torrent_selector is not None, self._data_provider is not None)
+            logger.debug(
+                "TorrentControlsWidget: Missing selector or data provider (selector: %s, provider: %s)",
+                self._torrent_selector is not None,
+                self._data_provider is not None,
+            )
             return
 
         try:
-            logger.debug("TorrentControlsWidget: Fetching torrents from data provider...")
+            logger.debug(
+                "TorrentControlsWidget: Fetching torrents from data provider..."
+            )
             # Note: Use shorter timeout for UI responsiveness
             try:
-                torrents = await asyncio.wait_for(
-                    self._data_provider.list_torrents(),
-                    timeout=10.0  # 10 second timeout for UI responsiveness (increased from 5.0)
-                )
+                if torrents_override is not None:
+                    # F2.3.4: render from the bound reactive value (no re-fetch).
+                    torrents = list(torrents_override)
+                else:
+                    torrents = await asyncio.wait_for(
+                        self._data_provider.list_torrents(),
+                        timeout=10.0,  # 10 second timeout for UI responsiveness (increased from 5.0)
+                    )
             except asyncio.TimeoutError:
-                logger.debug("TorrentControlsWidget: List torrents timed out, keeping existing options")
+                logger.debug(
+                    "TorrentControlsWidget: List torrents timed out, keeping existing options"
+                )
                 # Keep existing options, don't update - prevents UI hang
                 return
             except Exception as e:
-                logger.debug("TorrentControlsWidget: Error fetching torrent list (will retry next cycle): %s", e)
+                logger.debug(
+                    "TorrentControlsWidget: Error fetching torrent list (will retry next cycle): %s",
+                    e,
+                )
                 # Keep existing options, don't update
                 return
-            
-            logger.debug("TorrentControlsWidget: Retrieved %d torrents", len(torrents) if torrents else 0)
-            
+
+            logger.debug(
+                "TorrentControlsWidget: Retrieved %d torrents",
+                len(torrents) if torrents else 0,
+            )
+
             options: list[tuple[str, str]] = []
             for torrent in torrents:
                 info_hash = torrent.get("info_hash", "")
@@ -395,36 +450,53 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                 options.append((name, info_hash))
 
             # Note: Ensure selector is visible before updating
-            if not self._torrent_selector.is_attached or not self._torrent_selector.display:  # type: ignore[attr-defined]
-                logger.debug("TorrentControlsWidget: Selector not attached or not visible")
+            if (
+                not self._torrent_selector.is_attached
+                or not self._torrent_selector.display
+            ):  # type: ignore[attr-defined]
+                logger.debug(
+                    "TorrentControlsWidget: Selector not attached or not visible"
+                )
                 return
 
             # Update selector if options changed
-            current_value = self._torrent_selector.value if hasattr(self._torrent_selector, "value") else None
+            current_value = (
+                self._torrent_selector.value
+                if hasattr(self._torrent_selector, "value")
+                else None
+            )
             self._torrent_selector.set_options(options)  # type: ignore[attr-defined]
             # Restore selection if still valid
             if current_value and any(opt[1] == current_value for opt in options):
                 self._torrent_selector.value = current_value  # type: ignore[attr-defined]
-            
-            logger.debug("TorrentControlsWidget: Updated selector with %d options", len(options))
+
+            logger.debug(
+                "TorrentControlsWidget: Updated selector with %d options", len(options)
+            )
 
         except Exception as e:
             logger.error("Error refreshing torrent list: %s", e, exc_info=True)
 
-    async def on_select_changed(self, event: Select.Changed) -> None:  # pragma: no cover
+    async def on_select_changed(
+        self, event: Select.Changed
+    ) -> None:  # pragma: no cover
         """Handle torrent selection change."""
         if event.select.id == "torrent-selector":
             self._selected_info_hash = event.value
             if self._selected_hash_callback and self._selected_info_hash:
                 self._selected_hash_callback(self._selected_info_hash)
 
-    async def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+    async def on_button_pressed(
+        self, event: Button.Pressed
+    ) -> None:  # pragma: no cover
         """Handle button presses."""
         # Note: Ensure widget is still attached and valid before accessing
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
-            logger.debug("TorrentControlsWidget: Widget not attached or not visible, ignoring button press")
+            logger.debug(
+                "TorrentControlsWidget: Widget not attached or not visible, ignoring button press"
+            )
             return
-        
+
         if not self._selected_info_hash:
             try:
                 status = self.query_one("#status-message", Static)  # type: ignore[attr-defined]
@@ -535,7 +607,9 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                         upload_limit_kib=up_limit,
                     )
                     if result.success:
-                        status.update(f"[green]Limits set: ↓{down_limit} ↑{up_limit} KiB/s[/green]")
+                        status.update(
+                            f"[green]Limits set: ↓{down_limit} ↑{up_limit} KiB/s[/green]"
+                        )
                     else:
                         status.update(f"[red]Failed: {result.error}[/red]")
                 except ValueError:
@@ -544,8 +618,3 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
         except Exception as e:
             logger.debug("Error executing control action: %s", e)
             status.update(f"[red]Error: {e}[/red]")
-
-
-
-
-

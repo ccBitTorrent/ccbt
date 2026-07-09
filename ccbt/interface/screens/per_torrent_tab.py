@@ -23,7 +23,7 @@ else:
 
 try:
     from textual.containers import Container
-    from textual.widgets import Select, Static, Tabs, Tab
+    from textual.widgets import Select, Static, Tab, Tabs
 except ImportError:
     # Fallback for when textual is not available
     class Container:  # type: ignore[no-redef]
@@ -113,7 +113,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         # Torrent selector
         from ccbt.interface.widgets.torrent_selector import TorrentSelector
         yield TorrentSelector(self._data_provider, id="torrent-selector")
-        
+
         # Sub-tabs for different views
         yield Tabs(
             Tab(_("Files"), id="sub-tab-files"),
@@ -126,7 +126,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
             Tab(_("Config"), id="sub-tab-config"),
             id="per-torrent-sub-tabs",
         )
-        
+
         # Content area for sub-tab content
         with Container(id="per-torrent-sub-content"):
             yield Static(_("Select a torrent and sub-tab to view details"), id="sub-content-placeholder")
@@ -216,7 +216,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                         return
             except Exception as e:
                 logger.debug("PerTorrentTabContent: Error getting active tab: %s", e)
-        
+
         # Note: If no active tab, default to first tab (sub-tab-files)
         if not self._active_sub_tab_id:
             self._active_sub_tab_id = "sub-tab-files"
@@ -261,14 +261,14 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         if self._loading_sub_tab == sub_tab_id:
             logger.debug("PerTorrentTabContent: Already loading %s, skipping", sub_tab_id)
             return
-        
+
         self._loading_sub_tab = sub_tab_id
         try:
             # Note: Ensure content area is visible and attached
             if not self._content_area:
                 logger.warning("PerTorrentTabContent: Content area not available")
                 return
-            
+
             if not self._content_area.is_attached or not self._content_area.display:  # type: ignore[attr-defined]
                 logger.debug("PerTorrentTabContent: Content area not attached or not visible")
                 # Try to make it visible
@@ -297,7 +297,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 self._content_area.mount(placeholder)  # type: ignore[attr-defined]
                 self._active_sub_tab_id = sub_tab_id
                 return
-            
+
             # Clear existing content - remove all children first
             try:
                 # Get all children and remove them individually to ensure proper cleanup
@@ -311,7 +311,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 self._content_area.remove_children()  # type: ignore[attr-defined]
             except Exception:
                 pass
-            
+
             # Load appropriate screen based on sub-tab
             if sub_tab_id == "sub-tab-files":
                 from ccbt.interface.screens.per_torrent_files import TorrentFilesScreen
@@ -332,7 +332,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 except Exception:
                     # Registry check failed, continue anyway
                     pass
-                
+
                 screen = TorrentFilesScreen(
                     self._data_provider,
                     self._command_executor,
@@ -361,7 +361,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 except Exception as e:
                     logger.debug("Error mounting file explorer widget: %s", e)
                     error_msg = Static(
-                        f"Error loading file explorer: {str(e)}",
+                        f"Error loading file explorer: {e!s}",
                         id="file-explorer-error",
                     )
                     self._content_area.mount(error_msg)  # type: ignore[attr-defined]
@@ -406,7 +406,9 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 # Trigger initial refresh after mount
                 self.call_later(screen.refresh_peers)  # type: ignore[attr-defined]
             elif sub_tab_id == "sub-tab-trackers":
-                from ccbt.interface.screens.per_torrent_trackers import TorrentTrackersScreen
+                from ccbt.interface.screens.per_torrent_trackers import (
+                    TorrentTrackersScreen,
+                )
                 screen = TorrentTrackersScreen(
                     self._data_provider,
                     self._command_executor,
@@ -432,7 +434,9 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                 # Use per-torrent config wrapper
                 # CRITICAL: Use DataProvider/Executor instead of direct session access
                 if self._data_provider and self._command_executor and self._selected_info_hash:
-                    from ccbt.interface.widgets.config_wrapper import ConfigScreenWrapper
+                    from ccbt.interface.widgets.config_wrapper import (
+                        ConfigScreenWrapper,
+                    )
                     wrapper = ConfigScreenWrapper(
                         "torrent",
                         self._data_provider,
@@ -485,19 +489,19 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         if not self.is_attached or not self.display:  # type: ignore[attr-defined]
             logger.debug("PerTorrentTabContent: Widget not attached or not visible, skipping refresh")
             return
-        
+
         # Call parent's refresh method first (handles layout/repaint)
         try:
             super().refresh(*args, **kwargs)
         except (AttributeError, TypeError):
             # Parent doesn't have refresh or signature mismatch, continue
             pass
-        
+
         # Then refresh our custom content
         if not self._selected_info_hash or not self._active_sub_tab_id:
             logger.debug("PerTorrentTabContent: No torrent selected or no active sub-tab, skipping refresh")
             return
-        
+
         # Schedule async refresh as a task
         # Note: Use asyncio.create_task to ensure it runs in the correct event loop
         import asyncio
@@ -510,17 +514,19 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
             logger.debug("PerTorrentTabContent: Error scheduling refresh task: %s", e)
             # Fallback to call_later
             self.call_later(self._refresh_content)  # type: ignore[attr-defined]
-    
+
     async def _refresh_content(self) -> None:  # pragma: no cover
         """Internal async method to refresh content."""
         if not self._selected_info_hash or not self._active_sub_tab_id:
             return
-        
+
         try:
             # Refresh based on active sub-tab
             if self._active_sub_tab_id == "sub-tab-files":
                 try:
-                    from ccbt.interface.screens.per_torrent_files import TorrentFilesScreen
+                    from ccbt.interface.screens.per_torrent_files import (
+                        TorrentFilesScreen,
+                    )
                     # Note: query_one() doesn't accept can_be_none parameter in Textual
                     try:
                         files_screen = self.query_one(TorrentFilesScreen)  # type: ignore[attr-defined]
@@ -532,7 +538,9 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                     pass
             elif self._active_sub_tab_id == "sub-tab-peers":
                 try:
-                    from ccbt.interface.screens.per_torrent_peers import TorrentPeersScreen
+                    from ccbt.interface.screens.per_torrent_peers import (
+                        TorrentPeersScreen,
+                    )
                     # Note: query_one() doesn't accept can_be_none parameter in Textual
                     try:
                         peers_screen = self.query_one(TorrentPeersScreen)  # type: ignore[attr-defined]
@@ -544,7 +552,9 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                     pass
             elif self._active_sub_tab_id == "sub-tab-trackers":
                 try:
-                    from ccbt.interface.screens.per_torrent_trackers import TorrentTrackersScreen
+                    from ccbt.interface.screens.per_torrent_trackers import (
+                        TorrentTrackersScreen,
+                    )
                     # Note: query_one() doesn't accept can_be_none parameter in Textual
                     try:
                         trackers_screen = self.query_one(TorrentTrackersScreen)  # type: ignore[attr-defined]
@@ -556,7 +566,9 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                     pass
             elif self._active_sub_tab_id == "sub-tab-info":
                 try:
-                    from ccbt.interface.screens.per_torrent_info import TorrentInfoScreen
+                    from ccbt.interface.screens.per_torrent_info import (
+                        TorrentInfoScreen,
+                    )
                     # Note: query_one() doesn't accept can_be_none parameter in Textual
                     try:
                         info_screen = self.query_one(TorrentInfoScreen)  # type: ignore[attr-defined]
@@ -590,27 +602,25 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
         Note: This prevents the "Callback is still pending after 3 seconds" warning
         by properly cleaning up all async tasks when the widget is removed.
         """
-        import asyncio
-        
         # Cancel any pending refresh tasks
         # Note: We can't directly track tasks created with create_task, but we can
         # set a flag to prevent new tasks from being created
         self._loading_sub_tab = None
-        
+
         # Clear any watchers to prevent callbacks after unmount
         try:
             if self._sub_tabs:
                 self.unwatch(self._sub_tabs, Tabs.TabActivated, self.on_tabs_tab_activated)  # type: ignore[attr-defined]
         except Exception:
             pass
-        
+
         try:
             selector = self.query_one("#torrent-selector", can_focus=False)  # type: ignore[attr-defined]
             from ccbt.interface.widgets.torrent_selector import TorrentSelector
             self.unwatch(selector, TorrentSelector.TorrentSelected, self._on_torrent_selected)  # type: ignore[attr-defined]
         except Exception:
             pass
-        
+
         # Clear content area to prevent any pending operations
         if self._content_area:
             try:
@@ -624,7 +634,7 @@ class PerTorrentTabContent(Container):  # type: ignore[misc]
                         pass
             except Exception:
                 pass
-        
+
         # Call parent's on_unmount if it exists
         try:
             super().on_unmount()  # type: ignore[attr-defined]

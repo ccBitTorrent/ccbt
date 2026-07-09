@@ -199,6 +199,7 @@ class TestMagnetIndexMerging:
         # Create magnet info with existing indices
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],
@@ -224,6 +225,7 @@ class TestMagnetIndexMerging:
         # Create magnet info without existing indices
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],
@@ -254,6 +256,7 @@ class TestMagnetPriorityMerging:
         # Create magnet info with existing priorities
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],
@@ -280,6 +283,7 @@ class TestMagnetPriorityMerging:
         # Create magnet info without existing priorities
         mi = MagnetInfo(
             info_hash=b"test_hash_20_bytes_",
+            swarm_id="test_hash_20_bytes_",
             trackers=["http://tracker.example.com"],
             display_name="test",
             web_seeds=[],

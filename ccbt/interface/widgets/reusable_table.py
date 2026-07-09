@@ -44,12 +44,11 @@ class ReusableDataTable(DataTable):  # type: ignore[misc]
         """
         if size >= 1024 * 1024 * 1024:
             return f"{size / (1024**3):.2f} GB"
-        elif size >= 1024 * 1024:
+        if size >= 1024 * 1024:
             return f"{size / (1024**2):.2f} MB"
-        elif size >= 1024:
+        if size >= 1024:
             return f"{size / 1024:.2f} KB"
-        else:
-            return f"{size} B"
+        return f"{size} B"
 
     def format_speed(self, speed: float) -> str:
         """Format speed to human-readable string.
@@ -62,10 +61,9 @@ class ReusableDataTable(DataTable):  # type: ignore[misc]
         """
         if speed >= 1024 * 1024:
             return f"{speed / (1024 * 1024):.2f} MB/s"
-        elif speed >= 1024:
+        if speed >= 1024:
             return f"{speed / 1024:.2f} KB/s"
-        else:
-            return f"{speed:.2f} B/s"
+        return f"{speed:.2f} B/s"
 
     def format_percentage(self, value: float, decimals: int = 1) -> str:
         """Format percentage value.

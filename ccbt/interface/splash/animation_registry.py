@@ -6,10 +6,9 @@ Provides registration and weighted selection of animations for random sequences.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 from ccbt.interface.splash.animation_config import (
-    BackgroundConfig,
     OCEAN_PALETTE,
     RAINBOW_PALETTE,
     SUNSET_PALETTE,
@@ -19,7 +18,7 @@ from ccbt.interface.splash.animation_config import (
 @dataclass
 class AnimationMetadata:
     """Metadata for an animation type."""
-    
+
     name: str
     style: str
     default_duration: float
@@ -34,12 +33,12 @@ class AnimationMetadata:
 
 class AnimationRegistry:
     """Registry for animation types with metadata and weighted selection."""
-    
+
     def __init__(self) -> None:
         """Initialize animation registry."""
         self._animations: dict[str, AnimationMetadata] = {}
         self._register_defaults()
-    
+
     def register(
         self,
         metadata: AnimationMetadata,
@@ -50,7 +49,7 @@ class AnimationRegistry:
             metadata: Animation metadata
         """
         self._animations[metadata.name] = metadata
-    
+
     def get(self, name: str) -> Optional[AnimationMetadata]:
         """Get animation metadata by name.
         
@@ -61,7 +60,7 @@ class AnimationRegistry:
             AnimationMetadata or None if not found
         """
         return self._animations.get(name)
-    
+
     def list(self) -> list[str]:
         """List all registered animation names.
         
@@ -69,7 +68,7 @@ class AnimationRegistry:
             List of animation names
         """
         return list(self._animations.keys())
-    
+
     def select_random(self, exclude: Optional[list[str]] = None) -> Optional[AnimationMetadata]:
         """Select a random animation based on weights.
         
@@ -81,34 +80,34 @@ class AnimationRegistry:
         """
         if exclude is None:
             exclude = []
-        
+
         available = [
             (name, meta)
             for name, meta in self._animations.items()
             if name not in exclude
         ]
-        
+
         if not available:
             return None
-        
+
         # Weighted random selection
         import random
-        
+
         total_weight = sum(meta.weight for _, meta in available)
         if total_weight == 0:
             return random.choice(available)[1]
-        
+
         r = random.uniform(0, total_weight)
         cumulative = 0.0
-        
+
         for name, meta in available:
             cumulative += meta.weight
             if r <= cumulative:
                 return meta
-        
+
         # Fallback to last
         return available[-1][1]
-    
+
     def _register_defaults(self) -> None:
         """Register default animation types."""
         # Color transition animations
@@ -123,7 +122,7 @@ class AnimationRegistry:
             color_palettes=[RAINBOW_PALETTE, OCEAN_PALETTE],
             background_types=["solid", "stars", "waves"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="color_transition_ocean_sunset",
             style="color_transition",
@@ -135,7 +134,7 @@ class AnimationRegistry:
             color_palettes=[OCEAN_PALETTE, SUNSET_PALETTE],
             background_types=["solid", "pattern", "particles"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="color_transition_sunset_rainbow",
             style="color_transition",
@@ -147,7 +146,7 @@ class AnimationRegistry:
             color_palettes=[SUNSET_PALETTE, RAINBOW_PALETTE],
             background_types=["solid", "stars", "waves"],
         ))
-        
+
         # Background reveal animations
         self.register(AnimationMetadata(
             name="background_reveal_top_down",
@@ -161,7 +160,7 @@ class AnimationRegistry:
             background_types=["stars", "waves", "pattern"],
             directions=["top_down"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_reveal_left_right",
             style="background_reveal",
@@ -174,7 +173,7 @@ class AnimationRegistry:
             background_types=["waves", "pattern", "particles"],
             directions=["left_right"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_reveal_radiant",
             style="background_reveal",
@@ -187,7 +186,7 @@ class AnimationRegistry:
             background_types=["stars", "particles"],
             directions=["radiant"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_reveal_flower_radiant",
             style="background_reveal",
@@ -200,7 +199,7 @@ class AnimationRegistry:
             background_types=["flower"],
             directions=["radiant_center_out", "radiant_center_in"],
         ))
-        
+
         # Background rainbow animations
         self.register(AnimationMetadata(
             name="background_rainbow_left_right",
@@ -214,7 +213,7 @@ class AnimationRegistry:
             background_types=["waves", "stars", "pattern"],
             directions=["left_to_right"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_rainbow_radiant_out",
             style="background_rainbow",
@@ -227,7 +226,7 @@ class AnimationRegistry:
             background_types=["stars", "particles"],
             directions=["radiant_center_out"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_rainbow_radiant_in",
             style="background_rainbow",
@@ -240,7 +239,7 @@ class AnimationRegistry:
             background_types=["stars", "particles"],
             directions=["radiant_center_in"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_rainbow_gradient",
             style="background_rainbow",
@@ -253,7 +252,7 @@ class AnimationRegistry:
             background_types=["gradient"],
             directions=["left_to_right", "radiant_center_out"],
         ))
-        
+
         # Background fade animations
         self.register(AnimationMetadata(
             name="background_fade_in",
@@ -266,7 +265,7 @@ class AnimationRegistry:
             color_palettes=[OCEAN_PALETTE, SUNSET_PALETTE],
             background_types=["solid", "pattern", "particles"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_fade_out",
             style="background_fade_out",
@@ -278,7 +277,7 @@ class AnimationRegistry:
             color_palettes=[SUNSET_PALETTE, OCEAN_PALETTE],
             background_types=["solid", "stars"],
         ))
-        
+
         # Background disappear animations
         self.register(AnimationMetadata(
             name="background_disappear_radiant",
@@ -292,7 +291,7 @@ class AnimationRegistry:
             background_types=["pattern", "particles"],
             directions=["radiant"],
         ))
-        
+
         self.register(AnimationMetadata(
             name="background_disappear_flower",
             style="background_disappear",
@@ -305,7 +304,7 @@ class AnimationRegistry:
             background_types=["flower"],
             directions=["radiant_center_in"],
         ))
-        
+
         # Background glitch animations
         self.register(AnimationMetadata(
             name="background_glitch",

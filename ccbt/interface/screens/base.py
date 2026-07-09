@@ -15,11 +15,13 @@ if TYPE_CHECKING:
 else:
     try:
         from textual.screen import ModalScreen, Screen
+        from textual.reactive import reactive
         from textual.widgets import Button, Static
     except ImportError:
         # Fallback for when textual is not available
         class Screen:  # type: ignore[no-redef]
-            pass
+            def data_bind(self, **kwargs: Any) -> None:
+                pass
 
         class ModalScreen:  # type: ignore[no-redef]
             pass
@@ -29,6 +31,24 @@ else:
 
         class Static:  # type: ignore[no-redef]
             pass
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 
 try:
@@ -67,10 +87,20 @@ class ConfigScreen(Screen):  # type: ignore[misc]
         self.config_manager = session.config if hasattr(session, "config") else None
         self._has_unsaved_changes = False
         self._data_provider: Optional[Any] = None
+        # Detect DaemonInterfaceAdapter so subclasses can skip session-internals
+        # access (torrents/piece_manager/_per_torrent_limits) that don't exist on
+        # the adapter (R6).
+        from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
+
+        self._is_daemon_session = isinstance(session, DaemonInterfaceAdapter)
         # Provide per-screen logger for subclasses (many expect self.logger)
         self.logger = logging.getLogger(
             f"{__name__}.{self.__class__.__qualname__}"
         )
+
+    async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Populate the App-owned DataProvider so subclasses read via it (R6)."""
+        self._data_provider = getattr(self.app, "_data_provider", None)
 
     async def action_back(self) -> None:  # pragma: no cover
         """Navigate back to previous screen."""
@@ -286,6 +316,25 @@ class MonitoringScreen(Screen):  # type: ignore[misc]
         ("q", "quit", "Quit"),
     ]
 
+    # F2.7.1: TerminalDashboard reactive attribute names to bind (subclass sets).
+    _reactive_sources: ClassVar[tuple[str, ...]] = ()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        for attr_name in getattr(cls, "_reactive_sources", ()):
+            watch_name = f"watch_{attr_name}"
+            if hasattr(cls, watch_name):
+                continue
+
+            def _make_watcher(name: str) -> Any:
+                def _watcher(self: MonitoringScreen, value: Any) -> None:
+                    self._schedule_reactive_refresh(name, value)
+
+                _watcher.__name__ = watch_name
+                return _watcher
+
+            setattr(cls, watch_name, _make_watcher(attr_name))
+
     def __init__(
         self,
         session: AsyncSessionManager,
@@ -301,23 +350,22 @@ class MonitoringScreen(Screen):  # type: ignore[misc]
         """
         super().__init__(*args, **kwargs)
         self.session = session
-        
+
         # Detect if using DaemonInterfaceAdapter
         from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
         self._is_daemon_session = isinstance(session, DaemonInterfaceAdapter)
-        
+
         # Adjust refresh interval for daemon sessions (WebSocket provides real-time updates)
         if self._is_daemon_session:
             # Use longer refresh interval for daemon (WebSocket handles real-time updates)
             self.refresh_interval = max(3.0, float(refresh_interval) * 1.5)
         else:
             self.refresh_interval = max(0.5, float(refresh_interval))
-        
+
         self.metrics_collector = get_metrics_collector()
         self.alert_manager = get_alert_manager()
         self.plugin_manager = get_plugin_manager()
         self._refresh_task: Optional[asyncio.Task] = None
-        self._refresh_interval_id: Optional[Any] = None
         # Command executor for executing CLI commands (will be set in on_mount to avoid circular import)
         self._command_executor: Optional[Any] = None
         # DataProvider from app when available (daemon-first reads)
@@ -353,50 +401,37 @@ class MonitoringScreen(Screen):  # type: ignore[misc]
         # Initial data load
         await self._refresh_data()
 
-        # Set up periodic refresh
-        self._refresh_interval_id = self.set_interval(
-            self.refresh_interval, self._schedule_refresh
-        )
+        # F2.7.1: bind App reactives instead of set_interval self-poll.
+        sources = self._reactive_sources
+        if sources:
+            try:
+                from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                bind_map = {
+                    name: getattr(TerminalDashboard, name) for name in sources
+                }
+                self.data_bind(**bind_map)  # type: ignore[attr-defined]
+            except Exception as exc:
+                logger.debug("MonitoringScreen data_bind skipped: %s", exc)
 
     async def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Unmount the screen and stop refresh."""
-        if self._refresh_interval_id:
-            self._refresh_interval_id.stop()  # type: ignore[attr-defined]
         if self._refresh_task and not self._refresh_task.done():
             self._refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._refresh_task
 
-    def _schedule_refresh(self) -> None:  # pragma: no cover
-        """Schedule a data refresh."""
+    def _schedule_reactive_refresh(self, source: str, value: Any) -> None:  # pragma: no cover
+        """Schedule _refresh_data with a reactive override (F2.7.1)."""
         if self._refresh_task and not self._refresh_task.done():
             return
-        self._refresh_task = asyncio.create_task(self._refresh_data())
+        self._refresh_task = asyncio.create_task(
+            self._refresh_data(**{f"{source}_override": value})
+        )
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh screen data. Override in subclasses."""
         # Default implementation does nothing
-    
-    def _get_cached_status(self) -> dict[str, Any]:
-        """Get cached status from DaemonInterfaceAdapter if available.
-        
-        Returns:
-            Cached status dict, or empty dict if not using DaemonInterfaceAdapter
-        """
-        if self._is_daemon_session:
-            # Access cached status from DaemonInterfaceAdapter
-            if hasattr(self.session, "_cached_torrents"):
-                # Return a copy to avoid modification
-                import asyncio
-                try:
-                    # Try to get cached status synchronously (if lock is not held)
-                    if hasattr(self.session, "_cache_lock"):
-                        # For async access, we'd need to await, but this is called from sync context
-                        # Return empty dict and let async refresh handle it
-                        return {}
-                except Exception:
-                    pass
-        return {}
 
     async def action_back(self) -> None:  # pragma: no cover
         """Navigate back to previous screen."""

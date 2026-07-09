@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ccbt.interface.screens.monitoring.alerts import AlertsDashboardScreen
+from ccbt.interface.screens.monitoring.dht_metrics import DHTMetricsScreen
 from ccbt.interface.screens.monitoring.disk_analysis import DiskAnalysisScreen
 from ccbt.interface.screens.monitoring.disk_io import DiskIOMetricsScreen
 from ccbt.interface.screens.monitoring.historical import HistoricalTrendsScreen
@@ -16,17 +17,16 @@ from ccbt.interface.screens.monitoring.performance_analysis import (
 )
 from ccbt.interface.screens.monitoring.queue import QueueMetricsScreen
 from ccbt.interface.screens.monitoring.scrape import ScrapeResultsScreen
+from ccbt.interface.screens.monitoring.security_scan import SecurityScanScreen
 from ccbt.interface.screens.monitoring.system_resources import SystemResourcesScreen
 from ccbt.interface.screens.monitoring.tracker import TrackerMetricsScreen
 from ccbt.interface.screens.monitoring.xet import XetManagementScreen
-from ccbt.interface.screens.monitoring.security_scan import SecurityScanScreen
-from ccbt.interface.screens.monitoring.dht_metrics import DHTMetricsScreen
 
 __all__ = [
     "AlertsDashboardScreen",
+    "DHTMetricsScreen",
     "DiskAnalysisScreen",
     "DiskIOMetricsScreen",
-    "DHTMetricsScreen",
     "HistoricalTrendsScreen",
     "IPFSManagementScreen",
     "MetricsExplorerScreen",

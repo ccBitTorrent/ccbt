@@ -7,11 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import TYPE_CHECKING, Any, Optional
-
-if TYPE_CHECKING:
-    from rich.console import Console
-    from textual.widgets import Static
+from typing import Any, Optional
 
 from ccbt.cli.verbosity import VerbosityManager
 from ccbt.interface.splash.animation_adapter import AnimationAdapter
@@ -20,7 +16,7 @@ from ccbt.interface.splash.splash_screen import SplashScreen
 
 class SplashManager:
     """Manages splash screen display based on verbosity and task duration."""
-    
+
     def __init__(
         self,
         console: Optional[Any] = None,
@@ -41,7 +37,7 @@ class SplashManager:
         self._adapter: Optional[AnimationAdapter] = None
         self._stop_event = threading.Event()  # Event to signal splash to stop
         self._running_task: Optional[asyncio.Task[None]] = None  # Track running task for cancellation
-    
+
     def should_show_splash(self) -> bool:
         """Check if splash screen should be shown.
         
@@ -55,7 +51,7 @@ class SplashManager:
         # Show splash ONLY when verbosity is NORMAL (verbosity_count == 0)
         # Do NOT show when any verbosity flags are used (-v, -vv, -vvv)
         return self.verbosity.verbosity_count == 0
-    
+
     def create_splash_screen(
         self,
         duration: float = 90.0,
@@ -78,7 +74,7 @@ class SplashManager:
         )
         self._splash_screen = splash
         return splash
-    
+
     def create_adapter(self) -> AnimationAdapter:
         """Create an animation adapter instance.
         
@@ -91,7 +87,7 @@ class SplashManager:
         )
         self._adapter = adapter
         return adapter
-    
+
     async def show_splash_for_task(
         self,
         task_name: str,
@@ -108,24 +104,24 @@ class SplashManager:
         if not self.should_show_splash():
             # Don't show splash if verbosity flags are set
             return
-        
+
         # CRITICAL: Don't show splash if no console or textual_widget is available
         # The splash screen requires either a Rich Console or a Textual widget to render
         if not self.console and not self.textual_widget:
             return
-        
+
         # Create splash screen
         duration = task_duration if task_duration else max_duration
         splash = self.create_splash_screen(duration=duration)
         # Store reference to splash manager in splash screen for stop event checking
         splash._splash_manager = self  # type: ignore[attr-defined]
-        
+
         # Start splash screen in background
         # Run splash screen
         try:
             # Store reference to running task for cancellation
             self._running_task = asyncio.create_task(splash.run())
-            
+
             # Run splash screen asynchronously with stop event checking
             try:
                 await asyncio.wait_for(
@@ -149,14 +145,14 @@ class SplashManager:
                     await self._running_task
                 except (asyncio.CancelledError, Exception):
                     pass
-            
+
             # Ensure console is cleared when splash ends
             if self.console:
                 try:
                     self.console.clear()
                 except Exception:
                     pass
-    
+
     def stop_splash(self) -> None:
         """Stop the splash screen animation immediately.
         
@@ -166,7 +162,7 @@ class SplashManager:
         """
         # Signal splash to stop (checked in animation loop)
         self._stop_event.set()
-        
+
         # Try to cancel running task if it exists and we're in the same event loop
         # Note: This may not work if the task is in a different thread, but that's OK
         # because the stop event will cause the animation loop to exit
@@ -179,9 +175,9 @@ class SplashManager:
             except (RuntimeError, AttributeError):
                 # Not in an event loop or task is in different thread - that's OK
                 pass
-        
+
         # Clear progress messages handled by stopping animation lifecycle.
-        
+
         # CRITICAL: Clear the console to stop the Live context display
         # This ensures the splash screen actually stops displaying
         # Multiple clear attempts to ensure it's fully cleared
@@ -194,7 +190,7 @@ class SplashManager:
                 self.console.print("")
             except Exception:
                 pass
-    
+
     @staticmethod
     def from_cli_context(
         ctx: Optional[dict[str, Any]] = None,
@@ -210,10 +206,10 @@ class SplashManager:
             SplashManager instance
         """
         from ccbt.cli.verbosity import get_verbosity_from_ctx
-        
+
         verbosity = get_verbosity_from_ctx(ctx)
         return SplashManager(console=console, verbosity=verbosity)
-    
+
     @staticmethod
     def from_verbosity_count(
         verbosity_count: int = 0,
@@ -252,13 +248,13 @@ async def show_splash_if_needed(
         SplashManager instance if splash was shown, None otherwise
     """
     manager = SplashManager(console=console, verbosity=verbosity)
-    
+
     if manager.should_show_splash():
         await manager.show_splash_for_task(
             task_name=task_name,
             max_duration=duration,
         )
         return manager
-    
+
     return None
 

@@ -292,9 +292,13 @@ async def test_cleanup_stale_connections():
         mock_connection = {"peer_info": PeerInfo(ip="127.0.0.1", port=6881)}
         pool.pool[peer_id] = mock_connection
 
-        # Set last_used to be beyond 2x max_idle_time
-        metrics = ConnectionMetrics(last_used=time.time() - 3.0)
+        # Set timestamps beyond the small-pool scaled stale threshold
+        metrics = ConnectionMetrics(
+            created_at=time.time() - 40.0,
+            last_used=time.time() - 7.0,
+        )
         pool.metrics[peer_id] = metrics
+        pool._stale_connection_marks[peer_id] = time.time() - 31
 
         await pool._cleanup_stale_connections()
 

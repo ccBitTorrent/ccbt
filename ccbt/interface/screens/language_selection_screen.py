@@ -109,7 +109,7 @@ class LanguageSelectionScreen(ModalScreen):  # type: ignore[misc]
 
         with Container(id="dialog"):
             yield Static(_("Select Language"), id="title")
-            
+
             with Container(id="language-selector-container"):
                 self._language_selector = LanguageSelectorWidget(
                     self._data_provider,
@@ -117,7 +117,7 @@ class LanguageSelectionScreen(ModalScreen):  # type: ignore[misc]
                     id="language-selector"
                 )
                 yield self._language_selector
-            
+
             with Horizontal(id="buttons"):
                 yield Button(_("Close"), id="close", variant="default")
 
@@ -146,9 +146,6 @@ class LanguageSelectionScreen(ModalScreen):  # type: ignore[misc]
             message: LanguageChanged message with new locale
         """
         try:
-            from ccbt.interface.widgets.language_selector import (
-                LanguageSelectorWidget,
-            )
 
             # Verify this is a LanguageChanged message
             if not hasattr(message, "locale"):
@@ -164,7 +161,7 @@ class LanguageSelectionScreen(ModalScreen):  # type: ignore[misc]
             if self.app:  # type: ignore[attr-defined]
                 # Post message to app so it can handle propagation
                 self.app.post_message(message)  # type: ignore[attr-defined]
-                
+
                 # Dismiss after a short delay to allow propagation
                 self.call_later(self._dismiss_after_change)  # type: ignore[attr-defined]
 

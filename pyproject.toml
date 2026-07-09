@@ -7,7 +7,7 @@ name = "ccbt"
 version = "0.0.1"
 description = "The Easiest , Smallest & Fastest High-performance BitTorrent Client With All The Features"
 readme = "dev/README_PyPI.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "GPL-2.0"}
 authors = [
     {name = "ccBitTorrent Contributors", email = "joseph.pollack@emle.eu"},
@@ -39,7 +39,7 @@ dependencies = [
     "rich>=14.2.0",
     "click>=8.1.8",
     "msgpack>=1.1.1",
-    "textual>=0.73.0",
+    "textual>=8.0.0",
     "cryptography>=46.0.3",
     "pyyaml>=6.0.3",
     "defusedxml>=0.7.1",
@@ -85,7 +85,7 @@ dev = [
     "mkdocs-static-i18n>=1.0.0",
     "mkdocs-blog-plugin>=0.25.0",
     "ty>=0.0.1a24",
-    "textual-dev>=1.6.1",
+    "textual-dev>=1.7.0",
 ]
 
 [project.urls]
@@ -314,7 +314,7 @@ dev = [
     "pylint>=3.0.0",
     "ruff>=0.14.2",
     "safety>=2.0.0",
-    "textual-dev>=1.6.1",
+    "textual-dev>=1.7.0",
     "ty>=0.0.1a24",
     "mkdocs-coverage>=1.1.0",
     "mkdocs-static-i18n>=1.0.0",

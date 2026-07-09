@@ -835,6 +835,10 @@ class UISnapshotResponse(BaseModel):
         default_factory=list,
         description="Recent rate samples for graph (timestamp, download_rate, upload_rate); may be truncated",
     )
+    peers: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Aggregated peer rows across torrents (capped) for first-paint peer panels; same shape as GET /torrents/{ih}/peers rows",
+    )
 
 
 # Protocol Models

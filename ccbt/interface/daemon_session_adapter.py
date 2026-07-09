@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 class _SnapshotTorrentRef:
     """Minimal ref for a torrent entry from a UI snapshot (used for self.torrents after resync)."""
 
-    __slots__ = ("info_hash", "_data")
+    __slots__ = ("_data", "info_hash")
 
     def __init__(self, info_hash_hex: str, data: dict[str, Any]) -> None:
         self.info_hash = info_hash_hex
@@ -121,9 +121,26 @@ class DaemonInterfaceAdapter:
         self._peers_update_task: Optional[asyncio.Task] = None
         self._event_callbacks: dict[EventType, list[Callable[[dict[str, Any]], None]]] = {}
         self._websocket_connected = False
+        # CRITICAL: Track the event loop that start() bound the WebSocket tasks to.
+        # If a previous start() ran on a throwaway asyncio.run() loop that has since
+        # closed (e.g. the old CLI launch path), _ensure_adapter_ready must detect
+        # this and restart the adapter on the current (Textual) loop. Without this
+        # check, _websocket_connected stays True while the tasks are dead, and the
+        # UI silently fails to bind to live data ("Event loop is closed" swallowed).
+        self._start_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Widget event callbacks - widgets that want to receive real-time updates
         self._widget_callbacks: list[Any] = []  # List of widget instances with event handler methods
+
+        # List-based adapter listeners (R4 fix). The legacy single-slot `on_*`
+        # callbacks below are kept for backward compatibility with direct
+        # assignment, but ReactiveUpdateManager.subscribe_to_adapter() and any
+        # other multi-consumer must register via add_adapter_listener() so that
+        # multiple subscribers can coexist without overwriting each other. The
+        # _handle_websocket_event dispatcher invokes BOTH the single-slot and
+        # every list listener, so direct assignment continues to work and list
+        # subscribers are additive.
+        self._adapter_listeners: dict[str, list[Callable[..., Any]]] = {}
 
         # Callbacks (matching AsyncSessionManager interface)
         self.on_torrent_added: Optional[Callable[[bytes, str], None]] = None
@@ -159,8 +176,146 @@ class DaemonInterfaceAdapter:
         """Return the full websocket subscription set."""
         return list(WEBSOCKET_EVENT_SUBSCRIPTIONS)
 
+    def add_adapter_listener(
+        self, name: str, callback: Callable[..., Any]
+    ) -> None:
+        """Register an additional listener for an adapter callback slot.
+
+        R4 fix: the adapter's ``on_*`` attributes (on_global_stats,
+        on_torrent_list_delta, ...) are single-slot — direct assignment
+        overwrites any prior consumer. ReactiveUpdateManager and any other
+        multi-consumer must register through this method so multiple
+        subscribers coexist without race. The dispatcher invokes every list
+        listener in addition to the legacy single-slot value.
+
+        Args:
+            name: Adapter callback slot name (e.g. "on_global_stats",
+                "on_torrent_added", "on_torrent_list_delta").
+            callback: Callback to append. Must match the slot's signature
+                (dict for the ``on_*_event``/``on_global_stats``/
+                ``on_torrent_list_delta`` slots; ``(bytes, str)`` for
+                ``on_torrent_added``/``on_torrent_complete``; ``(bytes,)`` for
+                ``on_torrent_removed``; ``(str, str)`` for
+                ``on_xet_folder_added``; ``(str,)`` for
+                ``on_xet_folder_removed``).
+        """
+        self._adapter_listeners.setdefault(name, []).append(callback)
+
+    def remove_adapter_listener(
+        self, name: str, callback: Callable[..., Any]
+    ) -> None:
+        """Remove a previously-registered list listener.
+
+        Args:
+            name: Adapter callback slot name.
+            callback: Callback to remove (no-op if not registered).
+        """
+        listeners = self._adapter_listeners.get(name)
+        if not listeners:
+            return
+        try:
+            listeners.remove(callback)
+        except ValueError:
+            pass
+
+    async def _dispatch_listeners(self, name: str, *args: Any) -> None:
+        """Invoke every list listener registered for ``name``.
+
+        Awaits coroutine return values. Errors in one listener do not stop the
+        others (matches the resilience of the legacy ``_dispatch`` helper).
+        """
+        listeners = self._adapter_listeners.get(name)
+        if not listeners:
+            return
+        for callback in list(listeners):
+            try:
+                result = callback(*args)
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as cb_error:
+                self.logger.debug(
+                    "Error in adapter listener %s: %s",
+                    getattr(callback, "__name__", "?"),
+                    cb_error,
+                )
+
+    def _is_started_on_current_loop(self) -> bool:
+        """Return True if start() previously bound WebSocket tasks to the running loop.
+
+        Guards against the dead-loop trap: if start() ran on a throwaway
+        asyncio.run() loop that has since closed, _websocket_connected stays True
+        but the tasks are gone. Callers (_ensure_adapter_ready) use this to decide
+        whether to restart the adapter on the current loop.
+        """
+        if self._start_loop is None:
+            return False
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return False
+        if self._start_loop is not current_loop:
+            return False
+        if self._start_loop.is_closed():
+            return False
+        # Tasks must still be alive (or not yet created if WS connect failed)
+        if self._websocket_task is not None and self._websocket_task.done():
+            return False
+        return True
+
+    async def _take_over_websocket_receive(self) -> None:
+        """Cancel IPCClient's internal WebSocket receive loop and take it over.
+
+        connect_websocket() spawns IPCClient._websocket_receive_loop() as
+        IPCClient._websocket_task. The adapter runs its own _websocket_event_loop()
+        to batch/dispatch events, so two concurrent ``receive()`` calls would race
+        on the same aiohttp WebSocket ("Concurrent call to receive() is not
+        allowed"). This helper cancels the IPC client's task and waits for it to
+        settle before the adapter subscribes / starts its own loop.
+
+        Used by both the initial start() and the reconnect path in
+        _websocket_event_loop().
+        """
+        client_task = getattr(self._client, "_websocket_task", None)
+        if client_task and not client_task.done():
+            client_task.cancel()
+            try:
+                await asyncio.wait_for(client_task, timeout=0.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                # Cancellation completed or timed out - either way, task is cancelled
+                pass
+            except Exception:
+                # Any other exception - task is likely cancelled anyway
+                pass
+            finally:
+                self._client._websocket_task = None  # type: ignore[attr-defined]
+        # Small delay so the async-for loop fully releases the WebSocket receiver
+        # before we subscribe / start our own loop. Prevents a receive() race.
+        await asyncio.sleep(0.1)
+
     async def start(self) -> None:
-        """Connect to daemon and start WebSocket subscription."""
+        """Connect to daemon and start WebSocket subscription.
+
+        Loop-aware: if a previous start() bound tasks to a different (now likely
+        closed) loop, stop those stale resources first, then re-bind to the
+        current running loop. This makes the adapter safe to call from
+        _ensure_adapter_ready() inside Textual's on_mount even if the CLI launch
+        path accidentally invoked start() on a throwaway asyncio.run() loop.
+        """
+        # If we are already started on this very loop, do not double-connect.
+        if self._is_started_on_current_loop():
+            self.logger.debug("Daemon interface adapter already started on this loop, skipping")
+            return
+
+        # If started on a stale/different loop, tear down those resources first.
+        if self._start_loop is not None or self._websocket_task is not None or self._peers_update_task is not None:
+            self.logger.info(
+                "Restarting daemon interface adapter on a new event loop (previous loop=%s, closed=%s)",
+                self._start_loop,
+                self._start_loop.is_closed() if self._start_loop is not None else "n/a",
+            )
+            with contextlib.suppress(Exception):
+                await self.stop()
+
         max_retries = 3
         retry_delay = 1.0
 
@@ -185,30 +340,12 @@ class DaemonInterfaceAdapter:
                 if await self._client.connect_websocket():
                     self._websocket_connected = True
 
-                    # CRITICAL: Cancel IPC client's receive loop - we'll use our own
-                    # This prevents "Concurrent call to receive() is not allowed" error
+                    # CRITICAL: Cancel IPC client's receive loop - we'll use our own.
+                    # This prevents "Concurrent call to receive() is not allowed" error.
                     # The IPC client starts _websocket_receive_loop() in connect_websocket(),
-                    # but we need to use our own _websocket_event_loop() for proper event handling
-                    if self._client._websocket_task and not self._client._websocket_task.done():  # type: ignore[attr-defined]
-                        self._client._websocket_task.cancel()  # type: ignore[attr-defined]
-                        # Wait for cancellation to complete with timeout
-                        try:
-                            await asyncio.wait_for(
-                                self._client._websocket_task,  # type: ignore[attr-defined]
-                                timeout=0.5
-                            )
-                        except (asyncio.CancelledError, asyncio.TimeoutError):
-                            # Cancellation completed or timed out - either way, task is cancelled
-                            pass
-                        except Exception:
-                            # Any other exception - task is likely cancelled anyway
-                            pass
-                        finally:
-                            self._client._websocket_task = None  # type: ignore[attr-defined]
-
-                    # CRITICAL: Add a small delay to ensure the async for loop has fully stopped
-                    # This prevents race conditions where the loop might still be waiting for a message
-                    await asyncio.sleep(0.1)
+                    # but we need to use our own _websocket_event_loop() for proper event
+                    # handling. Same logic is reused by the reconnect path.
+                    await self._take_over_websocket_receive()
 
                     # Subscribe to relevant events
                     await self._client.subscribe_events(self._subscription_events())
@@ -227,6 +364,10 @@ class DaemonInterfaceAdapter:
                     # Start background task to update peers cache periodically
                     self._peers_update_task = asyncio.create_task(self._peers_update_loop())
 
+                    # Record the loop we bound to so _is_started_on_current_loop()
+                    # can detect a future dead-loop situation.
+                    self._start_loop = asyncio.get_running_loop()
+
                     self.logger.info("WebSocket connected and subscribed to events")
                 else:
                     self.logger.warning("Failed to connect WebSocket, will use polling only")
@@ -234,6 +375,9 @@ class DaemonInterfaceAdapter:
                 # Initial status fetch (if WebSocket failed we still need cache)
                 if not self._websocket_connected:
                     await self._refresh_cache()
+                else:
+                    # Even on success, record the loop so restart detection works.
+                    self._start_loop = asyncio.get_running_loop()
 
                 self.logger.info("Daemon interface adapter started")
                 return
@@ -325,6 +469,12 @@ class DaemonInterfaceAdapter:
 
                         # Try to reconnect WebSocket
                         if await self._client.connect_websocket():
+                            # CRITICAL: cancel the IPC client's freshly-spawned receive loop
+                            # before subscribing, exactly as the initial start() does. Without
+                            # this, two concurrent receive() calls race on the same WebSocket
+                            # ("Concurrent call to receive() is not allowed") and event flow
+                            # stops mid-session. Reuses the same helper as start() for parity.
+                            await self._take_over_websocket_receive()
                             await self._client.subscribe_events(
                                 self._subscription_events(),
                             )
@@ -414,6 +564,15 @@ class DaemonInterfaceAdapter:
                         self.logger.warning(
                             "DaemonInterfaceAdapter: TORRENT_ADDED event received but on_torrent_added callback not set"
                         )
+                # R4 fix: also dispatch to list-based listeners (add_adapter_listener).
+                # Multiple subscribers (e.g. ReactiveUpdateManager + App auto-select)
+                # coexist without overwriting the single-slot on_torrent_added.
+                if info_hash_hex:
+                    try:
+                        info_hash = bytes.fromhex(info_hash_hex)
+                        await self._dispatch_listeners("on_torrent_added", info_hash, name)
+                    except ValueError:
+                        pass
                 await self._refresh_cache()
 
             elif event.type == EventType.TORRENT_REMOVED:
@@ -422,6 +581,12 @@ class DaemonInterfaceAdapter:
                     try:
                         info_hash = bytes.fromhex(info_hash_hex)
                         await self.on_torrent_removed(info_hash)
+                    except ValueError:
+                        pass
+                if info_hash_hex:
+                    try:
+                        info_hash = bytes.fromhex(info_hash_hex)
+                        await self._dispatch_listeners("on_torrent_removed", info_hash)
                     except ValueError:
                         pass
                 await self._refresh_cache()
@@ -433,6 +598,12 @@ class DaemonInterfaceAdapter:
                     try:
                         info_hash = bytes.fromhex(info_hash_hex)
                         await self.on_torrent_complete(info_hash, name)
+                    except ValueError:
+                        pass
+                if info_hash_hex:
+                    try:
+                        info_hash = bytes.fromhex(info_hash_hex)
+                        await self._dispatch_listeners("on_torrent_complete", info_hash, name)
                     except ValueError:
                         pass
                 await self._refresh_cache()
@@ -463,15 +634,19 @@ class DaemonInterfaceAdapter:
                 folder_path = event.data.get("folder_path", "")
                 if folder_key and self.on_xet_folder_added:
                     await _dispatch(self.on_xet_folder_added, folder_key, folder_path)
+                await self._dispatch_listeners("on_xet_folder_added", folder_key, folder_path)
                 await self._refresh_xet_folders_cache()
                 await _dispatch(self.on_xet_event, _event_payload())
+                await self._dispatch_listeners("on_xet_event", _event_payload())
 
             elif event.type == EventType.XET_FOLDER_REMOVED:
                 folder_key = event.data.get("folder_key", "")
                 if folder_key and self.on_xet_folder_removed:
                     await _dispatch(self.on_xet_folder_removed, folder_key)
+                await self._dispatch_listeners("on_xet_folder_removed", folder_key)
                 await self._refresh_xet_folders_cache()
                 await _dispatch(self.on_xet_event, _event_payload())
+                await self._dispatch_listeners("on_xet_event", _event_payload())
 
             elif event.type in (
                 EventType.XET_FOLDER_CHANGED,
@@ -481,6 +656,7 @@ class DaemonInterfaceAdapter:
             ):
                 await self._refresh_xet_folders_cache()
                 await _dispatch(self.on_xet_event, _event_payload())
+                await self._dispatch_listeners("on_xet_event", _event_payload())
 
             elif event.type in (
                 EventType.MEDIA_STREAM_STARTED,
@@ -499,6 +675,7 @@ class DaemonInterfaceAdapter:
                         self._media_status_cache.pop(stream_id, None)
                 self._notify_widgets_media_event(event.type.value, event.data)
                 await _dispatch(self.on_media_event, _event_payload())
+                await self._dispatch_listeners("on_media_event", _event_payload())
 
             elif event.type in [
                 EventType.METADATA_FETCH_STARTED,
@@ -509,6 +686,7 @@ class DaemonInterfaceAdapter:
                 # Metadata fetch events - just log for now, could trigger UI updates
                 self.logger.debug("Metadata fetch event: %s for %s", event.type, event.data.get("info_hash", ""))
                 await _dispatch(self.on_metadata_event, _event_payload())
+                await self._dispatch_listeners("on_metadata_event", _event_payload())
 
             elif event.type in [
                 EventType.FILE_SELECTION_CHANGED,
@@ -537,6 +715,7 @@ class DaemonInterfaceAdapter:
                 # Don't refresh immediately - peers update loop will handle it
                 self._notify_widgets_peer_event(event.type.value, event.data)
                 await _dispatch(self.on_peer_metrics, _event_payload())
+                await self._dispatch_listeners("on_peer_metrics", _event_payload())
 
             elif event.type in [
                 EventType.SEEDING_STARTED,
@@ -559,6 +738,7 @@ class DaemonInterfaceAdapter:
                     self._global_stats_cache = None
                 # Notify listeners with fresh metrics payload (if provided)
                 await _dispatch(self.on_global_stats, _event_payload())
+                await self._dispatch_listeners("on_global_stats", _event_payload())
                 # Don't refresh immediately - let polling handle it or trigger specific update
 
             elif event.type in [
@@ -576,6 +756,7 @@ class DaemonInterfaceAdapter:
                 self._notify_widgets_tracker_event(event.type.value, event.data)
                 # Don't refresh immediately - trackers update on demand
                 await _dispatch(self.on_tracker_event, _event_payload())
+                await self._dispatch_listeners("on_tracker_event", _event_payload())
 
             elif event.type in [
                 EventType.PIECE_REQUESTED,
@@ -624,6 +805,7 @@ class DaemonInterfaceAdapter:
                     self.on_torrent_list_delta,
                     _event_payload(),
                 )
+                await self._dispatch_listeners("on_torrent_list_delta", _event_payload())
 
             # Call registered callbacks
             if event.type in self._event_callbacks:
@@ -644,7 +826,7 @@ class DaemonInterfaceAdapter:
             )
             torrents_normalized = [
                 _normalize_torrent_read_model(
-                    t if isinstance(t, dict) else getattr(t, "model_dump", lambda: {})(),
+                    t if isinstance(t, dict) else getattr(t, "model_dump", dict)(),
                 )
                 for t in (response.torrents or [])
             ]
@@ -663,6 +845,14 @@ class DaemonInterfaceAdapter:
                         continue
                     self._cached_torrents[info_hash_hex] = t
                     self.torrents[info_hash] = _SnapshotTorrentRef(info_hash_hex, t)
+            # Pre-populate the aggregated peers cache from the snapshot (R9) so
+            # the peer panel paints on first connect/reconnect instead of
+            # waiting for the 3s _peers_update_loop.
+            snapshot_peers = getattr(response, "peers", None) or []
+            if snapshot_peers:
+                import time as _time
+
+                self._cached_peers = (list(snapshot_peers), _time.time())
             self.logger.debug("Resynced adapter caches from UI snapshot")
         except Exception as e:
             self.logger.debug("Resync from snapshot failed: %s", e)

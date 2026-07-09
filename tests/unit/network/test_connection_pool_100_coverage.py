@@ -173,15 +173,19 @@ async def test_cleanup_stale_connections(connection_pool):
     peer_id1 = f"{peer_info1.ip}:{peer_info1.port}"
     peer_id2 = f"{peer_info2.ip}:{peer_info2.port}"
 
-    # Create stale connection (idle for more than max_idle_time * 2)
+    # Create stale connection beyond the small-pool scaled stale threshold
     connection1 = {
         "peer_info": peer_info1,
         "connection": MagicMock(),
-        "created_at": time.time() - 200  # Very old
+        "created_at": time.time() - 400  # Very old
     }
     connection_pool.pool[peer_id1] = connection1
-    metrics1 = ConnectionMetrics(last_used=time.time() - 200)
+    metrics1 = ConnectionMetrics(
+        created_at=time.time() - 400,
+        last_used=time.time() - 400,
+    )
     connection_pool.metrics[peer_id1] = metrics1
+    connection_pool._stale_connection_marks[peer_id1] = time.time() - 31
 
     # Create fresh connection
     connection2 = {
@@ -199,14 +203,17 @@ async def test_cleanup_stale_connections(connection_pool):
 
     try:
         # Cleanup stale connections
-        with patch.object(connection_pool.logger, "info") as mock_info:
+        with patch.object(connection_pool.logger, "debug") as mock_debug:
             await connection_pool._cleanup_stale_connections()
 
             # Stale connection should be removed
             assert peer_id1 not in connection_pool.pool
             assert peer_id2 in connection_pool.pool  # Fresh connection should remain
 
-            mock_info.assert_called_once()
+            assert any(
+                "stale connections" in str(call).lower()
+                for call in mock_debug.call_args_list
+            )
     finally:
         # Release semaphores
         for _ in range(2):

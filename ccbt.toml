@@ -74,7 +74,6 @@ optimistic_unchoke_top_candidates = 3
 optimistic_unchoke_use_jitter = true
 optimistic_unchoke_interval = 30.0
 unchoke_interval = 10.0
-# Remote UNCHOKE stall recovery (see docs/en/network-troubleshooting.md)
 peer_choked_hard_timeout_seconds = 30.0
 peer_choked_anchor_timeout_seconds = 75.0
 peer_choked_solo_grace_seconds = 180.0
@@ -100,7 +99,6 @@ tracker_dns_refused_escalation_streak = 5
 tracker_zero_active_batches_before_dht_short_circuit = 3
 connection_pool_max_connections = 150
 connection_pool_max_idle_time = 300.0
-# On Windows the client may force warmup off at runtime to avoid WinError 121; this is the default intent.
 connection_pool_warmup_enabled = true
 connection_pool_warmup_count = 10
 connection_pool_health_check_interval = 60.0

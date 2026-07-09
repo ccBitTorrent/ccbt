@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -12,15 +11,37 @@ if TYPE_CHECKING:
 else:
     try:
         from textual.app import ComposeResult  # type: ignore
-        from textual.widgets import Static, DataTable  # type: ignore
+        from textual.reactive import reactive  # type: ignore
+        from textual.widgets import DataTable, Static  # type: ignore
     except ImportError:  # pragma: no cover
         ComposeResult = Any  # type: ignore[assignment,misc]
 
         class Static:  # type: ignore[no-redef]
             """Fallback Static widget when Textual is unavailable."""
 
+            def data_bind(self, **kwargs: Any) -> None:
+                pass
+
         class DataTable:  # type: ignore[no-redef]
             """Fallback DataTable widget when Textual is unavailable."""
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 from rich.console import Group
 from rich.panel import Panel
@@ -51,6 +72,9 @@ class PeerQualityDistributionWidget(Static):  # type: ignore[misc]
     }
     """
 
+    # F2.6.4: bound to TerminalDashboard.peer_quality_distribution via data_bind.
+    peer_quality_distribution: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+
     def __init__(
         self,
         data_provider: Optional[Any],
@@ -59,66 +83,24 @@ class PeerQualityDistributionWidget(Static):  # type: ignore[misc]
     ) -> None:
         super().__init__(**kwargs)
         self._data_provider = data_provider
-        self._refresh_interval = refresh_interval
-        self._update_task: Optional[Any] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose widget layout."""
         yield Static(id="peer-quality-placeholder")
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Start periodic updates when the widget is mounted."""
-        self._start_updates()
-
-    def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
-        """Stop periodic updates when the widget is removed."""
-        if self._update_task:
-            if hasattr(self._update_task, "stop"):
-                self._update_task.stop()  # type: ignore[attr-defined]
-            elif hasattr(self._update_task, "cancel"):
-                self._update_task.cancel()  # type: ignore[attr-defined]
-            self._update_task = None
-
-    def _start_updates(self) -> None:  # pragma: no cover
-        """Initialize refresh timer."""
-
-        def schedule_update() -> None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.get_event_loop()
-            loop.create_task(self._update_from_provider())
-
+        """Bind to App peer_quality_distribution reactive (F2.6.4)."""
         try:
-            self._update_task = self.set_interval(self._refresh_interval, schedule_update)  # type: ignore[attr-defined]
-            self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
-        except Exception as exc:
-            logger.error("PeerQualityDistributionWidget: Failed to start update loop: %s", exc, exc_info=True)
+            from ccbt.interface.terminal_dashboard import TerminalDashboard
 
-    async def _update_from_provider(self) -> None:
-        """Fetch peer quality distribution data and update widget output."""
-        if not self._data_provider:
-            self.update(
-                Panel(
-                    _("Peer quality data is unavailable in the current mode."),
-                    border_style="yellow",
-                )
-            )
-            return
+            self.data_bind(peer_quality_distribution=TerminalDashboard.peer_quality_distribution)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("PeerQualityDistributionWidget data_bind skipped: %s", exc)
 
-        try:
-            distribution = await self._data_provider.get_peer_quality_distribution()
-        except Exception as exc:
-            logger.error("PeerQualityDistributionWidget: Error loading data: %s", exc, exc_info=True)
-            self.update(
-                Panel(
-                    _("Failed to load peer quality distribution: {error}").format(error=str(exc)),
-                    border_style="red",
-                )
-            )
-            return
-
-        self.update(self._render_distribution(distribution))
+    def watch_peer_quality_distribution(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: render distribution from the bound dict (F2.6.4)."""
+        if isinstance(value, dict) and value:
+            self.update(self._render_distribution(value))
 
     def _render_distribution(self, distribution: dict[str, Any]) -> Panel:
         """Render peer quality distribution view."""
@@ -187,7 +169,7 @@ class PeerQualityDistributionWidget(Static):  # type: ignore[misc]
                 download_rate = float(peer.get("download_rate", 0.0))
                 upload_rate = float(peer.get("upload_rate", 0.0))
                 torrents = peer.get("torrents", [])
-                
+
                 # Format rates
                 def _format_rate(rate: float) -> str:
                     if rate >= 1024 * 1024:
@@ -195,7 +177,7 @@ class PeerQualityDistributionWidget(Static):  # type: ignore[misc]
                     if rate >= 1024:
                         return f"{rate / 1024:.1f} KiB/s"
                     return f"{rate:.0f} B/s"
-                
+
                 top_peers_table.add_row(
                     peer_key[:40],  # Truncate long keys
                     self._format_quality_badge(quality_score),
