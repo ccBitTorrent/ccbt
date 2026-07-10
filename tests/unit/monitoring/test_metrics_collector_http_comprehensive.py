@@ -178,9 +178,7 @@ def mock_config_enabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
@@ -200,9 +198,7 @@ def mock_config_disabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

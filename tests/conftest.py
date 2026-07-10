@@ -35,7 +35,7 @@ def make_torrent_data(
 
 # Import network mock fixtures to make them available to all tests
 # This ensures fixtures from tests/fixtures/network_mocks.py are discoverable
-pytest_plugins = ["tests.fixtures.network_mocks"]
+pytest_plugins = ["tests.fixtures.network_mocks", "tests.fixtures.config_mocks"]
 
 # Import timeout hooks for per-test timeout management
 # This applies timeout markers based on test categories

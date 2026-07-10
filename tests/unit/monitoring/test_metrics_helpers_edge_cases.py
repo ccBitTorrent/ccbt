@@ -91,12 +91,10 @@ class TestHelperFunctionsEdgeCases:
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
 
         # Patch get_config to raise
-        from ccbt import config as config_module
-
         def raise_error():
             raise RuntimeError("Config access failed")
 
-        monkeypatch.setattr(config_module, "get_config", raise_error)
+        monkeypatch.setattr("ccbt.config.config.get_config", raise_error)
 
         # Should return None, not raise
         result = await init_metrics()
@@ -140,9 +138,7 @@ class TestHelperFunctionsEdgeCases:
         # Set it as a property on the class
         type(mock_config).observability = PropertyMock(side_effect=AttributeError("observability"))
 
-        from ccbt import config as config_module
-
-        monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+        monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
         # Should return None when accessing config.observability fails
         result = await init_metrics()
@@ -213,9 +209,7 @@ def mock_config_enabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

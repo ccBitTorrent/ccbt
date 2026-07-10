@@ -851,7 +851,7 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
     peer_manager._running = True
     peer_manager.max_peers_per_torrent = 60
     peer_manager.config.network.enable_fail_fast_dht = True
-    peer_manager.config.network.max_concurrent_connection_attempts = 3
+    peer_manager.config.network.max_concurrent_connection_attempts = 2
     peer_manager._connect_to_peer = AsyncMock(side_effect=ConnectionError("refused"))
     peer_manager._calculate_adaptive_handshake_timeout = lambda: 0.01
     _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
@@ -865,7 +865,7 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
 
     peer_manager._event_bus = _EventBus()
 
-    peer_list = [{"ip": "198.51.100.1", "port": 6200 + idx} for idx in range(10)]
+    peer_list = [{"ip": "198.51.100.1", "port": 6200 + idx} for idx in range(12)]
 
     monkeypatch.setattr(
         peer_manager,
@@ -2269,6 +2269,8 @@ async def test_connect_to_peers_preserves_peer_completion_context(
 ):
     """Completion context hints are carried per peer into _connect_to_peer inputs."""
     peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     captured_peers = []
 
     async def fake_connect_to_peer(peer_info: PeerInfo) -> None:
@@ -2286,7 +2288,11 @@ async def test_connect_to_peers_preserves_peer_completion_context(
         {"ip": "192.0.2.2", "port": 6882, "complete": True, "completion_percent": 0.0},
     ]
 
-    await peer_manager.connect_to_peers(peer_list)
+    try:
+        await peer_manager.connect_to_peers(peer_list)
+    finally:
+        await _cancel_reconnection_task(peer_manager)
+        await _cancel_stray_connect_tasks()
 
     by_ip = {peer.ip: peer for peer in captured_peers}
     assert by_ip["192.0.2.1"].is_seeder is False

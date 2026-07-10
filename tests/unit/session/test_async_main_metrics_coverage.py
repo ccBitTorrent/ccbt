@@ -206,9 +206,7 @@ def mock_config_enabled(monkeypatch):
     mock_config.discovery = Mock()
     mock_config.discovery.enable_dht = False
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
@@ -253,9 +251,7 @@ def mock_config_disabled(monkeypatch):
     mock_config.discovery = Mock()
     mock_config.discovery.enable_dht = False
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
