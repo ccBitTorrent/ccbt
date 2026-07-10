@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import random
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -85,19 +86,34 @@ except Exception:
 
 
 def _ensure_unittest_patch_targets() -> None:
-    """Register submodules on parent packages for unittest.patch on Windows CI."""
-    import ccbt.config
-    import ccbt.peer
-
-    if not hasattr(ccbt.config, "config"):
-        ccbt.config.config = importlib.import_module("ccbt.config.config")
-    for submodule in ("async_peer_connection", "ssl_peer", "utp_peer", "peer"):
-        if not hasattr(ccbt.peer, submodule):
-            setattr(
-                ccbt.peer,
-                submodule,
-                importlib.import_module(f"ccbt.peer.{submodule}"),
-            )
+    """Register submodules on parent packages for unittest.patch on all platforms."""
+    config_submodules = (
+        "config",
+        "config_backup",
+        "config_capabilities",
+        "config_conditional",
+        "config_diff",
+    )
+    peer_submodules = (
+        "async_peer_connection",
+        "ssl_peer",
+        "utp_peer",
+        "peer",
+        "connection_pool",
+    )
+    for submodule in config_submodules:
+        module = importlib.import_module(f"ccbt.config.{submodule}")
+        pkg = importlib.import_module("ccbt.config")
+        if getattr(pkg, submodule, None) is not module:
+            setattr(pkg, submodule, module)
+    for submodule in peer_submodules:
+        module = importlib.import_module(f"ccbt.peer.{submodule}")
+        pkg = importlib.import_module("ccbt.peer")
+        if getattr(pkg, submodule, None) is not module:
+            setattr(pkg, submodule, module)
+    cli_main = importlib.import_module("ccbt.cli.main")
+    if sys.modules.get("ccbt.cli.main") is not cli_main:
+        sys.modules["ccbt.cli.main"] = cli_main
 
 
 def pytest_configure(config):

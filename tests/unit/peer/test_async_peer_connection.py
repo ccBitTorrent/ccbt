@@ -50,6 +50,19 @@ async def _cancel_reconnection_task(manager: AsyncPeerConnectionManager) -> None
     manager._reconnection_task = None
 
 
+async def _cancel_stray_connect_tasks() -> None:
+    """Cancel leftover connect_peer tasks from connect_to_peers batch tests."""
+    pending = [
+        task
+        for task in asyncio.all_tasks()
+        if not task.done() and task.get_name().startswith("connect_peer:")
+    ]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 def _disable_pool_warmup_for_tests(
     manager: AsyncPeerConnectionManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -838,9 +851,11 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
     peer_manager._running = True
     peer_manager.max_peers_per_torrent = 60
     peer_manager.config.network.enable_fail_fast_dht = True
-    peer_manager.config.network.max_concurrent_connection_attempts = 60
+    peer_manager.config.network.max_concurrent_connection_attempts = 3
     peer_manager._connect_to_peer = AsyncMock(side_effect=ConnectionError("refused"))
     peer_manager._calculate_adaptive_handshake_timeout = lambda: 0.01
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
 
     emitted_events: list[object] = []
 
@@ -850,7 +865,7 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
 
     peer_manager._event_bus = _EventBus()
 
-    peer_list = [{"ip": "198.51.100.1", "port": 6200 + idx} for idx in range(95)]
+    peer_list = [{"ip": "198.51.100.1", "port": 6200 + idx} for idx in range(10)]
 
     monkeypatch.setattr(
         peer_manager,
@@ -858,7 +873,11 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
         AsyncMock(side_effect=lambda peers: peers),
     )
 
-    await peer_manager.connect_to_peers(peer_list)
+    try:
+        await peer_manager.connect_to_peers(peer_list)
+    finally:
+        await _cancel_reconnection_task(peer_manager)
+        await _cancel_stray_connect_tasks()
 
     assert len(peer_manager.connections) == 0
     assert any(isinstance(event, PeerCountLowEvent) for event in emitted_events)

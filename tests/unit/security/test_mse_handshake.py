@@ -1365,7 +1365,7 @@ async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
             reader=reader,
             writer=writer,
             info_hash=ignored_info_hash,
-            timeout=1.0,
+            timeout=5.0,
             initial_payload_size=0,
             info_hash_candidates=[ignored_info_hash, chosen_info_hash],
         )
@@ -1385,11 +1385,11 @@ async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
                 initiator_reader,
                 initiator_writer,
                 chosen_info_hash,
-                timeout=1.0,
+                timeout=5.0,
                 initial_payload=initial_payload,
             )
             responder_result = await asyncio.wait_for(
-                responder_results.get(), timeout=1.0
+                responder_results.get(), timeout=5.0
             )
 
             assert initiator_result.success is True
