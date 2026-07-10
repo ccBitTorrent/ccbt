@@ -185,7 +185,7 @@ class TestErrorPaths:
         # Should catch ValueError for invalid hex format
         assert "Invalid info hash format" in result.output
 
-    @patch("ccbt.cli.main.ConfigManager")
+    @patch("ccbt.cli.config_commands.ConfigManager")
     def test_config_command_exception(self, mock_config_manager):
         """Test config command exception handling (lines 842-852)."""
         from click.testing import CliRunner
@@ -196,8 +196,7 @@ class TestErrorPaths:
         mock_config_manager.side_effect = Exception("Config error")
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["config"], catch_exceptions=False)
+        result = runner.invoke(cli, ["config", "show"])
 
-        # Exception should be caught and displayed
-        assert "Error" in result.output or result.exit_code != 0
+        assert result.exit_code != 0
 

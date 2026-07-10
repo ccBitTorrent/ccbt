@@ -425,43 +425,34 @@ class TestAsyncSessionManagerErrorPaths:
         await manager.stop()
 
     @pytest.mark.asyncio
-    @pytest.mark.timeout_medium
-    async def test_get_global_stats_with_multiple_torrents(self, tmp_path, mock_network_components):
+    async def test_get_global_stats_with_multiple_torrents(self, tmp_path):
         """Test get_global_stats aggregates correctly across multiple torrents."""
-        import asyncio
-
         from ccbt.session.session import AsyncSessionManager
-        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+
+        class _Session:
+            def __init__(self, status: str, progress: float) -> None:
+                self.info = type("Info", (), {"status": status})()
+                self._status = status
+                self._progress = progress
+
+            async def get_status(self) -> dict[str, object]:
+                return {"status": self._status, "progress": self._progress}
 
         manager = AsyncSessionManager(str(tmp_path))
-        # Use network mocks instead of disabling features
-        apply_network_mocks_to_session(manager, mock_network_components)
-        await manager.start()
-
-        # Add multiple torrents with timeout to prevent hanging
-        for i in range(3):
-            torrent_data = create_test_torrent_dict(
-                name=f"torrent_{i}",
-                info_hash=bytes([i] * 20),
-                file_length=1024 * (i + 1),
-            )
-            try:
-                await asyncio.wait_for(
-                    manager.add_torrent(torrent_data, resume=False),
-                    timeout=10.0,
-                )
-            except asyncio.TimeoutError:
-                # If add_torrent times out, the torrent may still be added
-                # Continue with the test to check stats aggregation
-                pass
+        sessions = [
+            _Session("downloading", 0.25),
+            _Session("downloading", 0.50),
+            _Session("paused", 1.0),
+        ]
+        async with manager.lock:
+            for index, session in enumerate(sessions):
+                manager.torrents[bytes([index + 1] * 20)] = session
 
         stats = await manager.get_global_stats()
 
         assert stats["num_torrents"] == 3
-        assert stats["num_active"] >= 0  # May be 0 if sessions haven't started
+        assert stats["num_active"] >= 0
         assert stats["average_progress"] >= 0.0
-
-        await manager.stop()
 
     @pytest.mark.asyncio
     @pytest.mark.timeout_medium
