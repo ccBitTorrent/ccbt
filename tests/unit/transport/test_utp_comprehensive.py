@@ -47,7 +47,7 @@ class TestConnectionLifecycle:
         mock_manager.get_transport.return_value = mock_transport
         mock_manager._generate_connection_id.return_value = 12345
         mock_manager.register_connection = MagicMock()
-        connection.utp_socket_manager = mock_manager
+        connection.socket_manager = mock_manager
 
         await connection.initialize_transport()
 

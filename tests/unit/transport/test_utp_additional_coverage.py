@@ -960,9 +960,9 @@ class TestInitializeTransport:
         mock_socket_manager = MagicMock(spec=UTPSocketManager)
         mock_transport = MagicMock()
         mock_socket_manager.get_transport.return_value = mock_transport
-        mock_socket_manager._generate_connection_id.return_value = 54321
+        mock_socket_manager.generate_connection_id.return_value = 54321
         mock_socket_manager.register_connection = MagicMock()
-        conn.utp_socket_manager = mock_socket_manager
+        conn.socket_manager = mock_socket_manager
 
         await conn.initialize_transport()
 
@@ -984,9 +984,9 @@ class TestInitializeTransport:
         mock_socket_manager = MagicMock(spec=UTPSocketManager)
         mock_transport = MagicMock()
         mock_socket_manager.get_transport.return_value = mock_transport
-        mock_socket_manager._generate_connection_id.return_value = 99999
+        mock_socket_manager.generate_connection_id.return_value = 99999
         mock_socket_manager.register_connection = MagicMock()
-        conn.utp_socket_manager = mock_socket_manager
+        conn.socket_manager = mock_socket_manager
 
         await conn.initialize_transport()
 

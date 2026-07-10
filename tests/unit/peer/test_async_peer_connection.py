@@ -40,6 +40,28 @@ from ccbt.utils.exceptions import MessageError
 from ccbt.utils.shutdown import clear_shutdown, set_shutdown
 
 
+async def _cancel_reconnection_task(manager: AsyncPeerConnectionManager) -> None:
+    """Stop background reconnection work started by the peer manager."""
+    task = manager._reconnection_task
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    manager._reconnection_task = None
+
+
+def _disable_pool_warmup_for_tests(
+    manager: AsyncPeerConnectionManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent connect_to_peers from opening real sockets during unit tests."""
+    manager.config.network.connection_pool_warmup_enabled = False
+    monkeypatch.setattr(
+        manager.connection_pool,
+        "warmup_connections",
+        AsyncMock(return_value=None),
+    )
+
+
 @pytest.fixture
 def mock_torrent_data():
     """Create mock torrent data."""
@@ -79,12 +101,9 @@ async def peer_manager(mock_torrent_data, mock_piece_manager):
     try:
         yield manager
     finally:
-        # Note: Ensure proper cleanup
-        try:
+        await _cancel_reconnection_task(manager)
+        with contextlib.suppress(Exception):
             await manager.stop()
-        except Exception:
-            # Ignore errors during cleanup
-            pass
         from ccbt.utils.network_optimizer import reset_network_optimizer
 
         reset_network_optimizer()
@@ -139,8 +158,11 @@ async def test_peer_manager_context_manager(mock_torrent_data, mock_piece_manage
 
 
 @pytest.mark.asyncio
-async def test_connect_to_peers_success(peer_manager, peer_info):
+async def test_connect_to_peers_success(peer_manager, peer_info, monkeypatch):
     """Test successful peer connection."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
 
     # Mock the connection process
@@ -250,9 +272,12 @@ async def test_connect_to_peers_success(peer_manager, peer_info):
 
 @pytest.mark.asyncio
 async def test_outbound_magnet_peer_sends_proactive_extension_handshake(
-    peer_manager, peer_info
+    peer_manager, peer_info, monkeypatch
 ):
     """Magnet peers should proactively send BEP 10 handshake after the base handshake."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_manager.piece_manager._metadata_incomplete = True
     peer_manager.piece_manager.num_pieces = 0
     peer_manager.torrent_data["file_info"] = None
@@ -467,6 +492,9 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
     peer_manager, peer_info, monkeypatch
 ):
     """Per-peer timeout in connect_to_peers should follow adaptive handshake timeout."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
     adaptive_timeout = 0.25
     monkeypatch.setattr(
@@ -504,9 +532,12 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
 
 @pytest.mark.asyncio
 async def test_connect_to_peers_rejects_outbound_when_swarm_auth_denies(
-    peer_manager, peer_info
+    peer_manager, peer_info, monkeypatch
 ):
     """Outbound swarm-auth decision should abort connection attempts."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_manager.torrent_data["info_hash"] = b"x" * 20
 
     mock_reader = AsyncMock()
@@ -736,6 +767,8 @@ async def test_connect_to_peers_recycles_stale_unchoke_peer_faster_when_sparse(
 ):
     """Sparse swarms should recycle stale-unchoke failures without waiting full backoff."""
     peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_manager._failed_peers["203.0.113.77:6881"] = {
         "timestamp": time.time() - 20.0,
         "count": 4,

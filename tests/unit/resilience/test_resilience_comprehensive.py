@@ -505,7 +505,7 @@ class TestConvenienceFunctions:
         """Test timeout_for_connections with timeout."""
         @timeout_for_connections(seconds=0.1)
         def slow_connection_operation():
-            time.sleep(0.2)
+            time.sleep(0.35)
             return "should_not_reach"
 
         with pytest.raises(TimeoutError):

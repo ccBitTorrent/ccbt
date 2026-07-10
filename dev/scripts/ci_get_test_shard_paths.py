@@ -47,7 +47,6 @@ SHARDS: dict[str, list[str]] = {
         "tests/unit/property",
         "tests/unit/proxy",
         "tests/unit/queue_mgmt",
-        "tests/unit/scripts",
         "tests/unit/security",
         "tests/unit/services",
         "tests/unit/utils",

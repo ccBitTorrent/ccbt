@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
+from ccbt.config.config import get_config
 from ccbt.monitoring import get_metrics_collector
 from ccbt.utils.shutdown import is_shutting_down
 
@@ -664,8 +665,6 @@ class PeerConnectionPool:
         """
         # Get connection timeout from config
         try:
-            from ccbt.config.config import get_config
-
             config = get_config()
             timeout = config.network.connection_timeout
         except Exception:

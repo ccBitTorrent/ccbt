@@ -173,11 +173,16 @@ jobs:
 
       - name: Combine coverage and upload to Codecov
         run: |
+          if ! ls .coverage* 1>/dev/null 2>&1; then
+            echo "No coverage data from test shards; skipping combine."
+            exit 0
+          fi
           uv run coverage combine || true
           uv run coverage xml -o coverage.xml
           uv run coverage report --fail-under=0
 
       - name: Upload coverage to Codecov
+        if: hashFiles('.coverage', 'coverage.xml') != ''
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml

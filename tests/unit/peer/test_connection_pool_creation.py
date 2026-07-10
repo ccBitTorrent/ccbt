@@ -119,7 +119,7 @@ class TestPeerConnectionPoolCreation:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_success(
         self, mock_get_config, mock_open_connection
     ):
@@ -146,7 +146,7 @@ class TestPeerConnectionPoolCreation:
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
     @patch("asyncio.wait_for")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_with_timeout(
         self, mock_get_config, mock_wait_for, mock_open_connection
     ):
@@ -173,7 +173,7 @@ class TestPeerConnectionPoolCreation:
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
     @patch("asyncio.wait_for")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_timeout_error(
         self, mock_get_config, mock_wait_for, mock_open_connection
     ):
@@ -193,7 +193,7 @@ class TestPeerConnectionPoolCreation:
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
     @patch("asyncio.wait_for")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_os_error(
         self, mock_get_config, mock_wait_for, mock_open_connection
     ):
@@ -213,7 +213,7 @@ class TestPeerConnectionPoolCreation:
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
     @patch("asyncio.wait_for")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_unexpected_error(
         self, mock_get_config, mock_wait_for, mock_open_connection
     ):
@@ -232,7 +232,7 @@ class TestPeerConnectionPoolCreation:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_config_fallback(
         self, mock_get_config, mock_open_connection
     ):
@@ -253,7 +253,7 @@ class TestPeerConnectionPoolCreation:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_ipv6(
         self, mock_get_config, mock_open_connection
     ):
@@ -277,7 +277,7 @@ class TestPeerConnectionPoolCreation:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_create_peer_connection_invalid_port(
         self, mock_get_config, mock_open_connection
     ):
@@ -310,7 +310,7 @@ class TestPeerConnectionPoolIntegration:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_acquire_creates_connection(
         self, mock_get_config, mock_open_connection
     ):
@@ -345,7 +345,7 @@ class TestPeerConnectionPoolIntegration:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_connection_reuse(
         self, mock_get_config, mock_open_connection
     ):
@@ -389,7 +389,7 @@ class TestPeerConnectionPoolIntegration:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_connection_validation(
         self, mock_get_config, mock_open_connection
     ):
@@ -429,7 +429,7 @@ class TestPeerConnectionPoolIntegration:
 
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
-    @patch("ccbt.config.config.get_config")
+    @patch("ccbt.peer.connection_pool.get_config")
     async def test_connection_removal_closes_pooled_connection(
         self, mock_get_config, mock_open_connection
     ):

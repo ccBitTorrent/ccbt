@@ -100,7 +100,7 @@ class TestConnectionInitialization:
         mock_manager.get_transport.return_value = mock_transport
         mock_manager._generate_connection_id.return_value = 54321
         mock_manager._initialized = True  # Ensure manager is initialized
-        conn.utp_socket_manager = mock_manager
+        conn.socket_manager = mock_manager
 
         await conn.initialize_transport()
 
@@ -120,7 +120,7 @@ class TestConnectionInitialization:
         mock_transport = MagicMock()
         mock_manager.get_transport.return_value = mock_transport
         mock_manager._initialized = True
-        conn.utp_socket_manager = mock_manager
+        conn.socket_manager = mock_manager
 
         await conn.initialize_transport()
 
