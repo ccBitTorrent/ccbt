@@ -5,7 +5,6 @@ This module handles configuration loading, validation, templating, and migration
 
 from __future__ import annotations
 
-from ccbt.config import config  # noqa: F401 — patch target for tests
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
 from ccbt.config.config_backup import ConfigBackup
 from ccbt.config.config_capabilities import SystemCapabilities

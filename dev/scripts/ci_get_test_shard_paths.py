@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 SHARDS: dict[str, list[str]] = {
     "daemon-integration": [
@@ -66,7 +67,17 @@ def main() -> int:
     if paths is None:
         print(f"unknown shard: {shard}", file=sys.stderr)
         return 1
-    print(" ".join(paths))
+    existing = [path for path in paths if Path(path).exists()]
+    missing = [path for path in paths if not Path(path).exists()]
+    if missing:
+        print(
+            f"warning: skipping missing shard paths: {' '.join(missing)}",
+            file=sys.stderr,
+        )
+    if not existing:
+        print(f"no existing paths for shard: {shard}", file=sys.stderr)
+        return 1
+    print(" ".join(existing))
     return 0
 
 

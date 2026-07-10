@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 import os
@@ -83,8 +84,25 @@ except Exception:
 # #endregion
 
 
+def _ensure_unittest_patch_targets() -> None:
+    """Register submodules on parent packages for unittest.patch on Windows CI."""
+    import ccbt.config
+    import ccbt.peer
+
+    if not hasattr(ccbt.config, "config"):
+        ccbt.config.config = importlib.import_module("ccbt.config.config")
+    for submodule in ("async_peer_connection", "ssl_peer", "utp_peer", "peer"):
+        if not hasattr(ccbt.peer, submodule):
+            setattr(
+                ccbt.peer,
+                submodule,
+                importlib.import_module(f"ccbt.peer.{submodule}"),
+            )
+
+
 def pytest_configure(config):
     """Register all project markers to avoid warnings when ini isn't loaded."""
+    _ensure_unittest_patch_targets()
     # #region agent log
     _debug_log("E", "conftest.py:pytest_configure", "Pytest configuration started", {})
     # #endregion
