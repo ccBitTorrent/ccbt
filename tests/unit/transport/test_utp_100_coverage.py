@@ -548,46 +548,47 @@ class TestUTPSocketManagerCoverage:
     def test_ecn_support_enabled(self, socket_manager):
         """Test ECN support enabled when socket option available."""
         import socket as std_socket
+
+        ip_recvtos = getattr(std_socket, "IP_RECVTOS", None)
+        if ip_recvtos is None:
+            pytest.skip("IP_RECVTOS not available in this Python build")
+
         mock_socket = MagicMock()
         mock_socket.setsockopt = MagicMock()
 
         mock_transport = MagicMock()
         mock_transport.get_extra_info.return_value = mock_socket
 
-        # Test ECN setup code path directly (without calling start() which creates real socket)
         socket_manager.transport = mock_transport
-        if hasattr(socket_manager.transport, "get_extra_info"):
-            sock = socket_manager.transport.get_extra_info("socket")
-            if sock:
-                try:
-                    sock.setsockopt(std_socket.IPPROTO_IP, std_socket.IP_RECVTOS, 1)
-                except (OSError, AttributeError):
-                    pass
+        sock = socket_manager.transport.get_extra_info("socket")
+        if sock:
+            sock.setsockopt(std_socket.IPPROTO_IP, ip_recvtos, 1)
 
-        # Should attempt to enable IP_RECVTOS
         mock_transport.get_extra_info.assert_called_with("socket")
-        mock_socket.setsockopt.assert_called_with(std_socket.IPPROTO_IP, std_socket.IP_RECVTOS, 1)
+        mock_socket.setsockopt.assert_called_with(
+            std_socket.IPPROTO_IP, ip_recvtos, 1
+        )
 
     def test_ecn_support_not_available(self, socket_manager):
         """Test ECN support not available when socket option fails."""
         import socket as std_socket
+
+        ip_recvtos = getattr(std_socket, "IP_RECVTOS", None)
+        if ip_recvtos is None:
+            pytest.skip("IP_RECVTOS not available in this Python build")
+
         mock_socket = MagicMock()
         mock_socket.setsockopt.side_effect = OSError("Not supported")
 
         mock_transport = MagicMock()
         mock_transport.get_extra_info.return_value = mock_socket
 
-        # Test ECN setup code path directly
         socket_manager.transport = mock_transport
-        if hasattr(socket_manager.transport, "get_extra_info"):
-            sock = socket_manager.transport.get_extra_info("socket")
-            if sock:
-                try:
-                    sock.setsockopt(std_socket.IPPROTO_IP, std_socket.IP_RECVTOS, 1)
-                except (OSError, AttributeError):
-                    pass  # Expected
+        sock = socket_manager.transport.get_extra_info("socket")
+        if sock:
+            with pytest.raises(OSError):
+                sock.setsockopt(std_socket.IPPROTO_IP, ip_recvtos, 1)
 
-        # Should handle gracefully (OSError caught)
         mock_socket.setsockopt.assert_called()
 
     def test_ecn_no_socket(self, socket_manager):

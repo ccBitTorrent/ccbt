@@ -5,6 +5,7 @@ import struct
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
@@ -420,9 +421,9 @@ class TestMessageBuffer:
 class TestMessageDecoderFactoryBehavior:
     """Test cases for AsyncMessageDecoder."""
 
-    @pytest.fixture
-    def decoder(self):
-        """Create an AsyncMessageDecoder instance."""
+    @pytest_asyncio.fixture
+    async def decoder(self):
+        """Create an AsyncMessageDecoder instance on the active event loop."""
         return AsyncMessageDecoder()
 
     @pytest.mark.asyncio

@@ -573,88 +573,43 @@ class TestMSEHandshakeFullFlow:
     @pytest.mark.asyncio
     async def test_full_handshake_rc4(self, info_hash):
         """Test full handshake between initiator and receiver with RC4."""
-        # Use queues to synchronize message exchange
-        initiator_to_receiver = asyncio.Queue()
-        receiver_to_initiator = asyncio.Queue()
+        responder_results: asyncio.Queue[MSEHandshakeResult] = asyncio.Queue()
 
-        # Create both sides
-        initiator = MSEHandshake(prefer_rc4=True)
-        receiver = MSEHandshake(prefer_rc4=True)
-
-        # Setup initiator writer to put data in queue
-        def initiator_write(data):
-            initiator_to_receiver.put_nowait(data)
-
-        initiator_writer = MagicMock()
-        initiator_writer.write = MagicMock(side_effect=initiator_write)
-        initiator_writer.drain = AsyncMock()
-
-        # Setup receiver writer to put data in queue
-        def receiver_write(data):
-            receiver_to_initiator.put_nowait(data)
-
-        receiver_writer = MagicMock()
-        receiver_writer.write = MagicMock(side_effect=receiver_write)
-        receiver_writer.drain = AsyncMock()
-
-        # Setup initiator reader to read from receiver queue
-        async def initiator_readexactly(n):
-            data = await receiver_to_initiator.get()
-            if len(data) >= n:
-                result = data[:n]
-                if len(data) > n:
-                    # Put remaining back
-                    await receiver_to_initiator.put(data[n:])
-                return result
-            # Need more data - wait for next chunk
-            next_data = await receiver_to_initiator.get()
-            combined = data + next_data
-            result = combined[:n]
-            if len(combined) > n:
-                await receiver_to_initiator.put(combined[n:])
-            return result
-
-        initiator_reader = AsyncMock()
-        initiator_reader.readexactly = initiator_readexactly
-
-        # Setup receiver reader to read from initiator queue
-        async def receiver_readexactly(n):
-            data = await initiator_to_receiver.get()
-            if len(data) >= n:
-                result = data[:n]
-                if len(data) > n:
-                    # Put remaining back
-                    await initiator_to_receiver.put(data[n:])
-                return result
-            # Need more data - wait for next chunk
-            next_data = await initiator_to_receiver.get()
-            combined = data + next_data
-            result = combined[:n]
-            if len(combined) > n:
-                await initiator_to_receiver.put(combined[n:])
-            return result
-
-        receiver_reader = AsyncMock()
-        receiver_reader.readexactly = receiver_readexactly
-
-        # Run handshake in parallel
-        initiator_task = asyncio.create_task(
-            initiator.initiate_as_initiator(
-                initiator_reader, initiator_writer, info_hash
+        async def responder(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            handshake = MSEHandshake(prefer_rc4=True)
+            result = await handshake.respond_as_receiver(
+                reader, writer, info_hash, timeout=5.0
             )
-        )
-        receiver_task = asyncio.create_task(
-            receiver.respond_as_receiver(
-                receiver_reader, receiver_writer, info_hash
+            await responder_results.put(result)
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(responder, "127.0.0.1", 0)
+        try:
+            server_port = server.sockets[0].getsockname()[1]
+            initiator_reader, initiator_writer = await asyncio.open_connection(
+                "127.0.0.1", server_port
             )
-        )
+            try:
+                initiator = MSEHandshake(prefer_rc4=True)
+                initiator_result = await initiator.initiate_as_initiator(
+                    initiator_reader,
+                    initiator_writer,
+                    info_hash,
+                    timeout=5.0,
+                )
+                receiver_result = await asyncio.wait_for(
+                    responder_results.get(), timeout=5.0
+                )
+            finally:
+                initiator_writer.close()
+                await initiator_writer.wait_closed()
+        finally:
+            server.close()
+            await server.wait_closed()
 
-        # Wait for both to complete
-        initiator_result, receiver_result = await asyncio.gather(
-            initiator_task, receiver_task
-        )
-
-        # Both should succeed
         assert initiator_result.success is True
         assert receiver_result.success is True
         assert initiator_result.cipher is not None

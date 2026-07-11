@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import pytest_asyncio
 
 from ccbt.transport.utp import (
     UTPConnection,
@@ -469,9 +470,9 @@ class TestSendMethod:
 class TestReceiveMethod:
     """Tests for receive() method edge cases."""
 
-    @pytest.fixture
-    def connection(self):
-        """Create a connected connection."""
+    @pytest_asyncio.fixture
+    async def connection(self):
+        """Create a connected connection on the active event loop."""
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
         conn.transport = MagicMock()
         conn.state = UTPConnectionState.CONNECTED
