@@ -1675,3 +1675,55 @@ class TestTrackerClientExpanded:
         mock_parse.assert_called_once()
         mock_update.assert_called_once()
 
+
+class TestTrackerRedirectAndHttpPortGuards:
+    """HTTP(S) tracker URL validation and redirect safety."""
+
+    @pytest.fixture
+    def tracker_client(self):
+        with patch("ccbt.discovery.tracker.get_config"):
+            return AsyncTrackerClient()
+
+    def test_normalize_rejects_http_on_udp_port_1337(
+        self, tracker_client: AsyncTrackerClient
+    ) -> None:
+        with pytest.raises(TrackerError, match="UDP-only port 1337"):
+            tracker_client._normalize_tracker_url(
+                "http://tracker.opentrackr.org:1337/announce"
+            )
+
+    def test_rejects_opentrackr_https_redirect_to_http_1337(
+        self, tracker_client: AsyncTrackerClient
+    ) -> None:
+        original = "https://tracker.opentrackr.org:443/announce"
+        location = "http://tracker.opentrackr.org:1337/announce"
+        assert tracker_client._is_acceptable_tracker_redirect(original, location) is False
+
+
+class TestAsyncTrackerClientRedirectGuards:
+    """Async HTTP redirect guard tests using the standard client fixture."""
+
+    @pytest.fixture
+    def client(self):
+        return AsyncTrackerClient()
+
+    @pytest.mark.asyncio
+    async def test_make_request_async_rejects_unsafe_redirect(self, client):
+        """Reject opentrackr-style HTTPS redirects to HTTP on UDP port 1337."""
+        await client.start()
+        mock_response = AsyncMock()
+        mock_response.status = 301
+        mock_response.read = AsyncMock(return_value=b"")
+        mock_response.headers = {
+            "Location": "http://tracker.opentrackr.org:1337/announce"
+        }
+
+        with patch.object(client.session, "get") as mock_get:
+            mock_get.return_value.__aenter__.return_value = mock_response
+            with pytest.raises(TrackerError, match="redirect rejected"):
+                await client._make_request_async(
+                    "https://tracker.opentrackr.org:443/announce?info_hash=x"
+                )
+
+        await client.stop()
+

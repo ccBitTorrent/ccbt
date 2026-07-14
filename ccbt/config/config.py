@@ -721,6 +721,16 @@ class ConfigManager:
                 "network.adaptive_timeout_normal_max_peers"
             ),
             "CCBT_METADATA_EXCHANGE_TIMEOUT": "network.metadata_exchange_timeout",
+            "CCBT_METADATA_EXCHANGE_MAX_PEERS": "network.metadata_exchange_max_peers",
+            "CCBT_METADATA_EXCHANGE_COLD_START_MAX_PEERS": (
+                "network.metadata_exchange_cold_start_max_peers"
+            ),
+            "CCBT_METADATA_EXCHANGE_COLD_START_TIMEOUT": (
+                "network.metadata_exchange_cold_start_timeout"
+            ),
+            "CCBT_METADATA_PHASE_PLAINTEXT_CONNECT_ATTEMPTS": (
+                "network.metadata_phase_plaintext_connect_attempts"
+            ),
             "CCBT_PEER_QUALITY_PROBATION_TIMEOUT": "network.peer_quality_probation_timeout",
             "CCBT_METADATA_PIECE_TIMEOUT": "network.metadata_piece_timeout",
             "CCBT_BITFIELD_HAVE_WAIT_TIMEOUT_S": "network.bitfield_have_wait_timeout_s",

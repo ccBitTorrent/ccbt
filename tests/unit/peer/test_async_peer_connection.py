@@ -141,12 +141,12 @@ async def test_effective_bitfield_have_wait_timeout_metadata_multiplier(
     )
     manager.config.network.bitfield_have_wait_timeout_s = 100.0
     manager.config.network.bitfield_have_wait_metadata_incomplete_multiplier = 2.0
-    assert manager._effective_bitfield_have_wait_timeout_s() == 200.0
+    assert manager.effective_bitfield_have_wait_timeout_s() == 200.0
     manager.config.network.bitfield_have_wait_metadata_incomplete_multiplier = 1.0
-    assert manager._effective_bitfield_have_wait_timeout_s() == 100.0
+    assert manager.effective_bitfield_have_wait_timeout_s() == 100.0
     mock_piece_manager._metadata_incomplete = False
     mock_piece_manager.num_pieces = 100
-    assert manager._effective_bitfield_have_wait_timeout_s() == 100.0
+    assert manager.effective_bitfield_have_wait_timeout_s() == 100.0
     await manager.stop()
 
 
@@ -501,10 +501,10 @@ async def test_connect_to_peers_connection_failure(peer_manager, peer_info):
 
 
 @pytest.mark.asyncio
-async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
+async def test_connect_to_peers_outer_timeout_covers_tcp_and_handshake(
     peer_manager, peer_info, monkeypatch
 ):
-    """Per-peer timeout in connect_to_peers should follow adaptive handshake timeout."""
+    """Per-peer timeout in connect_to_peers must cover TCP connect(s) plus handshake."""
     peer_manager._running = True
     _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
     await _cancel_reconnection_task(peer_manager)
@@ -515,11 +515,14 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
         "_calculate_adaptive_handshake_timeout",
         lambda: adaptive_timeout,
     )
+    monkeypatch.setattr(peer_manager, "_estimate_tcp_connect_budget_s", lambda: 0.05)
+    monkeypatch.setattr(peer_manager, "get_active_peers", lambda: [])
+    expected_timeout = peer_manager._connect_task_timeout_s()
 
     # _connect_to_peer is patched to avoid inner transport logic; it must exceed the
     # outer timeout so the wrapper path is exercised.
     async def slow_connect(_: PeerInfo) -> None:
-        await asyncio.sleep(adaptive_timeout * 4)
+        await asyncio.sleep(expected_timeout + 0.1)
 
     peer_manager._connect_to_peer = AsyncMock(side_effect=slow_connect)
 
@@ -536,10 +539,9 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
     ):
         await peer_manager.connect_to_peers(peer_list)
 
-    # The per-peer connect wrapper must use the adaptive handshake timeout. Batch-level
-    # gather waits may record larger timeouts first; assert the adaptive value appears.
     assert captured_timeouts
-    assert adaptive_timeout in captured_timeouts
+    assert expected_timeout in captured_timeouts
+    assert expected_timeout > adaptive_timeout
     assert len(peer_manager.connections) == 0
 
 

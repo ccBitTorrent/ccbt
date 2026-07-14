@@ -668,10 +668,10 @@ async def test_immediate_tracker_connection_schedules_metadata_fallback(
 
 
 @pytest.mark.asyncio
-async def test_immediate_tracker_defers_metadata_fallback_while_batches_in_progress(
+async def test_immediate_tracker_runs_metadata_fallback_under_severe_starvation_during_batches(
     monkeypatch,
 ) -> None:
-    """Do not stack tracker metadata fallback while connect batches run and no sockets yet."""
+    """Magnet cold start should still fetch metadata while connect batches run with zero actives."""
     from ccbt.session.session import AsyncTorrentSession
 
     td = {
@@ -686,9 +686,22 @@ async def test_immediate_tracker_defers_metadata_fallback_while_batches_in_progr
     session.handle_magnet_metadata_exchange = AsyncMock(return_value=False)
     session.download_manager.peer_manager = SimpleNamespace(
         connections={},
+        get_active_peers=lambda: [],
         _connection_batches_in_progress=True,
+        _batch_owner_active=True,
+        _pending_peer_queue=[],
+        _pending_peer_queue_lock=asyncio.Lock(),
     )
     session.piece_manager._metadata_incomplete = True
+    session._get_swarm_recovery_state = AsyncMock(
+        return_value={
+            "metadata_incomplete": True,
+            "requestable_peers": 0,
+            "productive_peers": 0,
+            "peers_with_piece_info": 0,
+            "active_peers": 0,
+        }
+    )
 
     async def fake_connect_to_peers(
         self: object, peers: list[dict[str, object]]
@@ -720,7 +733,7 @@ async def test_immediate_tracker_defers_metadata_fallback_while_batches_in_progr
     for _ in range(40):
         await original_sleep(0.01)
 
-    session.handle_magnet_metadata_exchange.assert_not_called()
+    session.handle_magnet_metadata_exchange.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -777,16 +790,16 @@ async def test_immediate_tracker_connection_enforces_batch_caps(monkeypatch) -> 
         if connect_to_download.await_count:
             break
 
-    # With 2 existing connections and max peers 4, callback should attempt at most 2 peers.
+    # Inactive placeholder connection entries no longer consume immediate capacity.
     connect_to_download.assert_awaited_once()
-    assert len(connect_to_download.await_args.args[0]) == 2
+    assert len(connect_to_download.await_args.args[0]) == 4
 
 
 @pytest.mark.asyncio
 async def test_immediate_tracker_connection_from_single_udp_announce_can_exceed_default_source_cap(
     monkeypatch,
 ) -> None:
-    """Single-URL announce responses should fill the tracker immediate burst batch (default 16)."""
+    """Single-URL announce responses should fill the tracker immediate burst batch (default 50)."""
     from ccbt.session.session import AsyncTorrentSession
 
     td = {
@@ -833,9 +846,9 @@ async def test_immediate_tracker_connection_from_single_udp_announce_can_exceed_
             break
 
     connect_to_download.assert_awaited_once()
-    # Default discovery.tracker_immediate_connect_burst_* is 16; bounded batch cannot exceed that.
+    # Default discovery.tracker_immediate_connect_burst_* is 50; bounded batch cannot exceed that.
     batch = connect_to_download.await_args.args[0]
-    assert len(batch) == 16
+    assert len(batch) == 30
 
 
 @pytest.mark.asyncio

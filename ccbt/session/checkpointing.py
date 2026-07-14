@@ -7,6 +7,7 @@ import contextlib
 import time
 from typing import TYPE_CHECKING, Any, Optional, cast
 
+from ccbt.core.magnet import collect_announce_urls_from_torrent_data
 from ccbt.session.fast_resume import FastResumeLoader
 from ccbt.session.tasks import TaskSupervisor
 
@@ -139,13 +140,7 @@ class CheckpointController:
         # Enrich with announce URLs and display name if available
         td = self._ctx.torrent_data
         if isinstance(td, dict):
-            announce_urls: list[str] = []
-            if td.get("announce"):
-                announce_urls.append(td["announce"])
-            if td.get("announce_list"):
-                for tier in td["announce_list"]:
-                    announce_urls.extend(tier)
-            checkpoint.announce_urls = announce_urls
+            checkpoint.announce_urls = collect_announce_urls_from_torrent_data(td)
             checkpoint.display_name = td.get(
                 "name", getattr(self._ctx.info, "name", "")
             )
@@ -234,13 +229,7 @@ class CheckpointController:
             # Add announce URLs from torrent data
             td = self._ctx.torrent_data
             if isinstance(td, dict):
-                announce_urls: list[str] = []
-                if "announce" in td:
-                    announce_urls.append(td["announce"])
-                if "announce_list" in td:
-                    for tier in td["announce_list"]:
-                        announce_urls.extend(tier)
-                checkpoint.announce_urls = announce_urls
+                checkpoint.announce_urls = collect_announce_urls_from_torrent_data(td)
 
                 # Add display name
                 checkpoint.display_name = td.get(
@@ -1026,6 +1015,32 @@ class CheckpointController:
     ) -> None:
         """Restore tracker lists from checkpoint."""
         try:
+            if not checkpoint.tracker_list and not checkpoint.tracker_health:
+                checkpoint_urls = list(checkpoint.announce_urls or [])
+            else:
+                checkpoint_urls = list(checkpoint.announce_urls or [])
+                if checkpoint.tracker_list:
+                    for entry in checkpoint.tracker_list:
+                        if isinstance(entry, dict):
+                            url = entry.get("url")
+                            if isinstance(url, str) and url.strip():
+                                checkpoint_urls.append(url.strip())
+                        elif isinstance(entry, str) and entry.strip():
+                            checkpoint_urls.append(entry.strip())
+
+            torrent_data = getattr(session, "torrent_data", None)
+            if isinstance(torrent_data, dict) and checkpoint_urls:
+                from ccbt.core.magnet import merge_tracker_urls_into_torrent_data
+
+                if (
+                    merge_tracker_urls_into_torrent_data(torrent_data, checkpoint_urls)
+                    and self._ctx.logger
+                ):
+                    self._ctx.logger.info(
+                        "Restored %d tracker URL(s) from checkpoint into torrent data",
+                        len(checkpoint_urls),
+                    )
+
             if not checkpoint.tracker_list and not checkpoint.tracker_health:
                 return
 

@@ -21,6 +21,7 @@ from ccbt.discovery.tracker_udp_client import (
     reset_udp_tracker_client_for_testing,
     shutdown_udp_tracker_client,
 )
+from ccbt.utils.shutdown import clear_shutdown, set_shutdown
 
 
 class TestTrackerEnums:
@@ -1175,6 +1176,30 @@ class TestAsyncUDPTrackerClientModuleFunctions:
         await client.stop()
         # Verify cleanup
         assert client.transport is None
+
+    @pytest.mark.asyncio
+    async def test_connect_aborts_during_shutdown_without_retry(self):
+        """In-flight tracker connect must not sleep through shutdown backoff."""
+        client = AsyncUDPTrackerClient(test_mode=True)
+        await client.start()
+        session = TrackerSession(
+            url="udp://127.0.0.1:65535",
+            host="127.0.0.1",
+            port=65535,
+        )
+        set_shutdown()
+        try:
+            await client._connect_to_tracker(
+                session,
+                max_retries=5,
+                retry_delay=5.0,
+                base_timeout=10.0,
+            )
+        finally:
+            clear_shutdown()
+            await client.stop()
+
+        assert session.is_connected is False
 
     @pytest.mark.asyncio
     async def test_shutdown_udp_tracker(self):

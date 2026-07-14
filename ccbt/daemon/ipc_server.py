@@ -1909,6 +1909,9 @@ class IPCServer:
                 )
 
             info_hash_bytes = bytes.fromhex(info_hash_hex)
+            torrent_session = None
+            peer_manager = None
+            peer_quality_metrics = None
             async with self.session_manager.lock:
                 torrent_session = self.session_manager.torrents.get(info_hash_bytes)
                 if not torrent_session:
@@ -1920,69 +1923,65 @@ class IPCServer:
                         status=404,
                     )
 
-                # Get peer manager
-                peer_manager = None
-                if hasattr(torrent_session, "download_manager"):
-                    download_manager = torrent_session.download_manager
-                    if hasattr(download_manager, "peer_manager"):
-                        peer_manager = download_manager.peer_manager
+                download_manager = getattr(torrent_session, "download_manager", None)
+                if download_manager is not None:
+                    peer_manager = getattr(download_manager, "peer_manager", None)
+                if peer_manager is None:
+                    peer_manager = getattr(torrent_session, "peer_manager", None)
 
-                # Get peer quality metrics from PeerConnectionHelper if available
                 peer_helper = getattr(torrent_session, "_peer_helper", None)
-                peer_quality_metrics = (
-                    getattr(peer_helper, "_peer_quality_metrics", None)
-                    if peer_helper
-                    else None
-                )
+                if peer_helper is not None:
+                    peer_quality_metrics = getattr(
+                        peer_helper,
+                        "_peer_quality_metrics",
+                        None,
+                    )
 
-                # Collect peer quality scores
-                quality_scores = []
-                top_peers = []
+            quality_scores: list[float] = []
+            top_peers: list[dict[str, Any]] = []
+            high_quality = 0
+            medium_quality = 0
+            low_quality = 0
+            avg_score = 0.0
 
-                if peer_manager and hasattr(peer_manager, "get_active_peers"):
-                    active_peers = peer_manager.get_active_peers()
-                    for peer in active_peers:
-                        if not hasattr(peer, "peer_info") or not hasattr(peer, "stats"):
-                            continue
+            if peer_manager and hasattr(peer_manager, "get_active_peers"):
+                active_peers = peer_manager.get_active_peers()
+                for peer in active_peers:
+                    if not hasattr(peer, "peer_info") or not hasattr(peer, "stats"):
+                        continue
 
-                        # Calculate quality score (placeholder - should use actual ranking logic)
-                        download_rate = getattr(peer.stats, "download_rate", 0.0)
-                        upload_rate = getattr(peer.stats, "upload_rate", 0.0)
-                        performance_score = getattr(
-                            peer.stats, "performance_score", 0.5
-                        )
+                    download_rate = getattr(peer.stats, "download_rate", 0.0)
+                    upload_rate = getattr(peer.stats, "upload_rate", 0.0)
+                    performance_score = getattr(peer.stats, "performance_score", 0.5)
 
-                        # Simple quality score calculation (matches ranking logic)
-                        max_rate = 10 * 1024 * 1024
-                        upload_norm = (
-                            min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
-                        )
-                        download_norm = (
-                            min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
-                        )
-                        quality_score = (
-                            (upload_norm * 0.6)
-                            + (download_norm * 0.4)
-                            + (performance_score * 0.2)
-                        )
+                    max_rate = 10 * 1024 * 1024
+                    upload_norm = (
+                        min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
+                    )
+                    download_norm = (
+                        min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
+                    )
+                    quality_score = (
+                        (upload_norm * 0.6)
+                        + (download_norm * 0.4)
+                        + (performance_score * 0.2)
+                    )
 
-                        quality_scores.append(quality_score)
-                        top_peers.append(
-                            {
-                                "peer_key": str(peer.peer_info),
-                                "ip": peer.peer_info.ip,
-                                "port": peer.peer_info.port,
-                                "quality_score": quality_score,
-                                "download_rate": download_rate,
-                                "upload_rate": upload_rate,
-                            }
-                        )
+                    quality_scores.append(quality_score)
+                    top_peers.append(
+                        {
+                            "peer_key": str(peer.peer_info),
+                            "ip": peer.peer_info.ip,
+                            "port": peer.peer_info.port,
+                            "quality_score": quality_score,
+                            "download_rate": download_rate,
+                            "upload_rate": upload_rate,
+                        }
+                    )
 
-                # Sort top peers by quality
                 top_peers.sort(key=lambda p: p["quality_score"], reverse=True)
-                top_peers = top_peers[:10]  # Top 10
+                top_peers = top_peers[:10]
 
-                # Calculate distribution
                 high_quality = sum(1 for s in quality_scores if s > 0.7)
                 medium_quality = sum(1 for s in quality_scores if 0.3 < s <= 0.7)
                 low_quality = sum(1 for s in quality_scores if s <= 0.3)
@@ -1991,42 +1990,39 @@ class IPCServer:
                     sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
                 )
 
-                # Use stored metrics if available and current calculation is empty
-                if not quality_scores and peer_quality_metrics:
-                    last_ranking = peer_quality_metrics.get("last_ranking", {})
-                    avg_score = last_ranking.get("average_score", 0.0)
-                    high_quality = last_ranking.get("high_quality_count", 0)
-                    medium_quality = last_ranking.get("medium_quality_count", 0)
-                    low_quality = last_ranking.get("low_quality_count", 0)
+            if not quality_scores and peer_quality_metrics:
+                last_ranking = peer_quality_metrics.get("last_ranking", {})
+                avg_score = last_ranking.get("average_score", 0.0)
+                high_quality = last_ranking.get("high_quality_count", 0)
+                medium_quality = last_ranking.get("medium_quality_count", 0)
+                low_quality = last_ranking.get("low_quality_count", 0)
 
-                    # Get top peers from stored scores if available
-                    stored_scores = peer_quality_metrics.get("quality_scores", [])
-                    if stored_scores:
-                        # Recalculate distribution
-                        high_quality = sum(1 for s in stored_scores if s > 0.7)
-                        medium_quality = sum(1 for s in stored_scores if 0.3 < s <= 0.7)
-                        low_quality = sum(1 for s in stored_scores if s <= 0.3)
-                        avg_score = (
-                            sum(stored_scores) / len(stored_scores)
-                            if stored_scores
-                            else 0.0
-                        )
+                stored_scores = peer_quality_metrics.get("quality_scores", [])
+                if stored_scores:
+                    high_quality = sum(1 for s in stored_scores if s > 0.7)
+                    medium_quality = sum(1 for s in stored_scores if 0.3 < s <= 0.7)
+                    low_quality = sum(1 for s in stored_scores if s <= 0.3)
+                    avg_score = (
+                        sum(stored_scores) / len(stored_scores)
+                        if stored_scores
+                        else 0.0
+                    )
 
-                response = PeerQualityMetricsResponse(
-                    info_hash=info_hash_hex,
-                    total_peers_ranked=len(quality_scores),
-                    average_quality_score=avg_score,
-                    high_quality_peers=high_quality,
-                    medium_quality_peers=medium_quality,
-                    low_quality_peers=low_quality,
-                    top_quality_peers=top_peers,
-                    quality_distribution={
-                        "high": high_quality,
-                        "medium": medium_quality,
-                        "low": low_quality,
-                    },
-                )
-                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+            response = PeerQualityMetricsResponse(
+                info_hash=info_hash_hex,
+                total_peers_ranked=len(quality_scores),
+                average_quality_score=avg_score,
+                high_quality_peers=high_quality,
+                medium_quality_peers=medium_quality,
+                low_quality_peers=low_quality,
+                top_quality_peers=top_peers,
+                quality_distribution={
+                    "high": high_quality,
+                    "medium": medium_quality,
+                    "low": low_quality,
+                },
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Failed to get peer quality metrics")
             return web.json_response(  # type: ignore[attr-defined]
@@ -5171,6 +5167,32 @@ class IPCServer:
 
             torrents = list(status_dict.values())
 
+            rate_samples: list[dict[str, Any]] = []
+            try:
+                rate_samples = await asyncio.wait_for(
+                    self.session_manager.get_rate_samples(120),
+                    timeout=3.0,
+                )
+            except Exception:
+                logger.debug("UI snapshot: rate samples unavailable", exc_info=True)
+
+            if (
+                float(global_stats.get("download_rate", 0.0) or 0.0) == 0.0
+                and rate_samples
+            ):
+                latest = max(
+                    rate_samples,
+                    key=lambda sample: float(sample.get("timestamp", 0.0)),
+                )
+                global_stats["download_rate"] = float(
+                    latest.get("download_rate", 0.0) or 0.0
+                )
+                global_stats["upload_rate"] = float(
+                    latest.get("upload_rate", 0.0) or 0.0
+                )
+                global_stats["total_download_rate"] = global_stats["download_rate"]
+                global_stats["total_upload_rate"] = global_stats["upload_rate"]
+
             # Services status (same shape as GET /services/status)
             services_status = {"services": {}}
             if self.session_manager:
@@ -5203,15 +5225,6 @@ class IPCServer:
                 "enabled": True,
                 "status": "running",
             }
-
-            rate_samples: list[dict[str, Any]] = []
-            try:
-                rate_samples = await asyncio.wait_for(
-                    self.session_manager.get_rate_samples(120),
-                    timeout=3.0,
-                )
-            except Exception:
-                logger.debug("UI snapshot: rate samples unavailable", exc_info=True)
 
             system_metrics: dict[str, Any] = {}
             disk_io_metrics: dict[str, Any] = {}

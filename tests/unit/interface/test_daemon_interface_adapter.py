@@ -188,6 +188,8 @@ async def test_start_restarts_on_current_loop_after_dead_loop_bind(
     start() on Textual's loop must stop the stale resources and re-bind, rather
     than skipping because _websocket_connected is already True.
     """
+    monkeypatch.setenv("CCBT_DASHBOARD_WEBSOCKET", "1")
+
     ipc_client = MagicMock()
     ipc_client.is_daemon_running = AsyncMock(return_value=True)
     ipc_client.connect_websocket = AsyncMock(return_value=True)

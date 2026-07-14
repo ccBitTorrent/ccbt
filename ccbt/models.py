@@ -1028,6 +1028,33 @@ class NetworkConfig(BaseModel):
         le=300.0,
         description="Metadata exchange timeout in seconds (BEP 9 compliant)",
     )
+    metadata_exchange_max_peers: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum parallel peers for metadata exchange after cold start",
+    )
+    metadata_exchange_cold_start_max_peers: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Parallel peers for metadata exchange during magnet cold start",
+    )
+    metadata_exchange_cold_start_timeout: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=120.0,
+        description="Per-fetch timeout (seconds) for metadata during magnet cold start",
+    )
+    metadata_phase_plaintext_connect_attempts: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description=(
+            "Outbound peer connects to skip MSE for this many attempts per peer "
+            "while metadata is incomplete and no active peers exist"
+        ),
+    )
     metadata_piece_timeout: float = Field(
         default=15.0,
         ge=5.0,
@@ -1125,12 +1152,21 @@ class NetworkConfig(BaseModel):
         description="Maximum concurrent connection attempts to prevent OS socket exhaustion (BitTorrent spec compliant)",
     )
     connect_to_peers_parallel_batches: int = Field(
-        default=1,
+        default=2,
         ge=1,
         le=8,
         description=(
             "Maximum concurrent connect_to_peers batches per torrent (1 = legacy single-flight). "
             "Values above 1 reduce discovery callback queueing but increase parallel handshake load."
+        ),
+    )
+    pending_peer_queue_max_age_s: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description=(
+            "Maximum age in seconds for peers waiting in the outbound pending queue "
+            "before they are dropped during cold-start discovery bursts."
         ),
     )
     mse_initiator_timeout_scale_zero_active: float = Field(
@@ -2664,7 +2700,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_connect_burst_total: int = Field(
-        default=16,
+        default=50,
         ge=1,
         le=512,
         description=(
@@ -2673,7 +2709,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_connect_burst_per_source: int = Field(
-        default=16,
+        default=50,
         ge=1,
         le=512,
         description=(
@@ -2699,7 +2735,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_per_source_cap_mode: str = Field(
-        default="half_max_peers",
+        default="full_max_peers",
         description=(
             "half_max_peers: per-source limit min(burst, max(1, max_peers_per_torrent//2)). "
             "full_max_peers: min(burst_per_source, max_peers_per_torrent)."
@@ -2874,13 +2910,12 @@ class DiscoveryConfig(BaseModel):
     # Default trackers for magnet links without tr= parameters
     default_trackers: list[str] = Field(
         default_factory=lambda: [
-            "https://tracker.opentrackr.org:443/announce",
-            "https://tracker.torrent.eu.org:443/announce",
-            "https://tracker.openbittorrent.com:443/announce",
-            "http://tracker.opentrackr.org:1337/announce",
-            "http://tracker.openbittorrent.com:80/announce",
             "udp://tracker.opentrackr.org:1337/announce",
-            "udp://tracker.openbittorrent.com:80/announce",
+            "http://tracker.dler.org:6969/announce",
+            "http://tracker.renfei.net:8080/announce",
+            "https://tracker.nekomi.cn/announce",
+            "http://bt2.archive.org:6969/announce",
+            "https://tr.nyacat.pw/announce",
         ],
         description="Default trackers to use for magnet links without tr= parameters",
     )
@@ -2916,6 +2951,24 @@ class DiscoveryConfig(BaseModel):
             "Per-torrent pending peer queue depth at which new tracker ingress merges "
             "are held (0 disables). Session applies min(config, max(64, 2*MPT+3*burst)) "
             "so large values still engage on low max_peers_per_torrent."
+        ),
+    )
+    tracker_ingress_hold_buffer_max: int = Field(
+        default=500,
+        ge=0,
+        le=10000,
+        description=(
+            "Max tracker peers buffered while ingress hold is active (0 disables buffer; "
+            "peers are dropped when hold engages and buffer is full)"
+        ),
+    )
+    tracker_immediate_pending_budget_max: int = Field(
+        default=400,
+        ge=50,
+        le=5000,
+        description=(
+            "Per-torrent pending peer queue depth above which immediate tracker overflow "
+            "is deferred to the ingress hold buffer instead of the connect queue"
         ),
     )
     # Legacy removal tracked under project todo legacy-markers-deprecation (do not drop silently).

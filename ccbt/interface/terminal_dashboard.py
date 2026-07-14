@@ -1860,7 +1860,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
         """Handle lazy bind requests from dynamically mounted widgets."""
         self.schedule_reactive_bind(event.widget)
         with contextlib.suppress(Exception):
-            from ccbt.interface.reactive_bridge import bind_widget_from_app, fan_out_app_reactives
+            from ccbt.interface.reactive_bridge import (
+                bind_widget_from_app,
+                fan_out_app_reactives,
+            )
 
             if bind_widget_from_app(self, event.widget):
                 fan_out_app_reactives(self)
@@ -2034,7 +2037,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         try:
             from ccbt.interface.content_load import coalesce_gather_result
 
-            aux_timeout = 5.0
+            aux_timeout = 12.0
 
             async def _timed(coro: Any) -> Any:
                 return await asyncio.wait_for(coro, timeout=aux_timeout)
@@ -3300,14 +3303,21 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self._ipc_reachable = True
         self._last_status = dict(all_status)
         torrents_list = list(all_status.values())
+        rate_samples = getattr(self, "rate_samples", None) or []
+        if isinstance(stats, dict):
+            stats = _enrich_global_stats_from_samples(
+                stats,
+                torrents_list,
+                rate_samples if isinstance(rate_samples, list) else None,
+            )
 
         with contextlib.suppress(Exception):
-            setattr(self, "global_stats", stats)
+            self.global_stats = stats
         with contextlib.suppress(Exception):
             self.watch_global_stats(stats)
 
         with contextlib.suppress(Exception):
-            setattr(self, "torrents_data", torrents_list)
+            self.torrents_data = torrents_list
         with contextlib.suppress(Exception):
             self.watch_torrents_data(torrents_list)
 
@@ -5164,6 +5174,40 @@ class TerminalDashboard(App):  # type: ignore[misc]
             )
 
 
+def _enrich_global_stats_from_samples(
+    stats: dict[str, Any],
+    torrents: list[dict[str, Any]],
+    rate_samples: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Backfill zero global rates/progress from torrent summaries and rate history."""
+    enriched = dict(stats)
+    if float(enriched.get("download_rate", 0.0) or 0.0) == 0.0 and torrents:
+        enriched["download_rate"] = sum(
+            float(t.get("download_rate", t.get("total_download_rate", 0.0)) or 0.0)
+            for t in torrents
+        )
+        enriched["upload_rate"] = sum(
+            float(t.get("upload_rate", t.get("total_upload_rate", 0.0)) or 0.0)
+            for t in torrents
+        )
+        enriched["total_download_rate"] = enriched["download_rate"]
+        enriched["total_upload_rate"] = enriched["upload_rate"]
+    if float(enriched.get("average_progress", 0.0) or 0.0) == 0.0 and torrents:
+        enriched["average_progress"] = sum(
+            float(t.get("progress", 0.0) or 0.0) for t in torrents
+        ) / len(torrents)
+    if rate_samples and float(enriched.get("download_rate", 0.0) or 0.0) == 0.0:
+        latest = max(
+            rate_samples,
+            key=lambda sample: float(sample.get("timestamp", 0.0)),
+        )
+        enriched["download_rate"] = float(latest.get("download_rate", 0.0) or 0.0)
+        enriched["upload_rate"] = float(latest.get("upload_rate", 0.0) or 0.0)
+        enriched["total_download_rate"] = enriched["download_rate"]
+        enriched["total_upload_rate"] = enriched["upload_rate"]
+    return enriched
+
+
 def _derive_global_stats_from_torrents(
     torrents: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -5190,8 +5234,12 @@ def _derive_global_stats_from_torrents(
         elif status in ("downloading", "starting"):
             num_active += 1
 
-        total_download_rate += float(torrent.get("download_rate", 0.0) or 0.0)
-        total_upload_rate += float(torrent.get("upload_rate", 0.0) or 0.0)
+        total_download_rate += float(
+            torrent.get("download_rate", torrent.get("total_download_rate", 0.0)) or 0.0
+        )
+        total_upload_rate += float(
+            torrent.get("upload_rate", torrent.get("total_upload_rate", 0.0)) or 0.0
+        )
         total_progress += float(torrent.get("progress", 0.0) or 0.0)
         total_downloaded += int(torrent.get("downloaded", 0) or 0)
         total_uploaded += int(torrent.get("uploaded", 0) or 0)
@@ -5317,11 +5365,16 @@ async def _wait_for_daemon_health_check(
                 )
         except Exception as check_error:
             # Log exceptions at INFO level to help diagnose connection/auth issues
+            error_label = (
+                "timed out"
+                if isinstance(check_error, asyncio.TimeoutError)
+                else str(check_error) or type(check_error).__name__
+            )
             logger.info(
                 "Daemon health check exception (base_url=%s, elapsed=%.1fs): %s",
                 ipc_client.base_url,
                 elapsed,
-                check_error,
+                error_label,
             )
             logger.debug("Full exception details:", exc_info=check_error)
 
@@ -5524,21 +5577,27 @@ async def _prepare_dashboard_session(
     success, probe_client = await _ensure_daemon_running(
         splash_manager=splash_manager,
     )
-    if not success or probe_client is None:
-        return (False, None)
+    try:
+        if not success or probe_client is None:
+            return (False, None)
 
-    cfg = get_config()
-    ipc_port, api_key, _ = resolve_daemon_connection_params(cfg)
-    with contextlib.suppress(Exception):
-        await probe_client.close()
-    await _drain_windows_sockets()
+        cfg = get_config()
+        ipc_port, api_key, _ = resolve_daemon_connection_params(cfg)
+        with contextlib.suppress(Exception):
+            await probe_client.close()
+        await _drain_windows_sockets()
 
-    fresh_client = IPCClient(
-        api_key=api_key,
-        base_url=f"http://127.0.0.1:{ipc_port}",
-        timeout=25.0,
-    )
-    return (True, DaemonInterfaceAdapter(fresh_client))
+        fresh_client = IPCClient(
+            api_key=api_key,
+            base_url=f"http://127.0.0.1:{ipc_port}",
+            timeout=25.0,
+        )
+        return (True, DaemonInterfaceAdapter(fresh_client))
+    except BaseException:
+        if probe_client is not None:
+            with contextlib.suppress(Exception):
+                await probe_client.close()
+        raise
 
 
 async def _ensure_daemon_running(
@@ -5559,6 +5618,7 @@ async def _ensure_daemon_running(
     from ccbt.config.config import get_config
     from ccbt.daemon.daemon_manager import (
         DEFAULT_IPC_PORT,
+        is_daemon_ipc_listening,
         read_daemon_config,
         resolve_daemon_connection_params,
     )
@@ -5588,7 +5648,7 @@ async def _ensure_daemon_running(
 
     client_host = "127.0.0.1"
     base_url = f"http://{client_host}:{ipc_port}"
-    client = IPCClient(api_key=api_key, base_url=base_url, timeout=10.0)
+    client = IPCClient(api_key=api_key, base_url=base_url, timeout=15.0)
 
     # Update splash if available
     if splash_manager:
@@ -5596,14 +5656,19 @@ async def _ensure_daemon_running(
 
     def _ipc_wait_budget() -> float:
         live_pid = _get_live_daemon_pid()
+        ipc_listening = is_daemon_ipc_listening(ipc_port)
         config_recent = False
         if daemon_config_path.exists():
             with contextlib.suppress(OSError):
                 config_recent = (
                     time.time() - daemon_config_path.stat().st_mtime
                 ) < 180.0
-        if live_pid or daemon_config_exists or config_recent:
+        if live_pid:
             return 90.0
+        if daemon_config_exists and (ipc_listening or config_recent):
+            return 90.0
+        if daemon_config_exists:
+            return 15.0
         return 2.0
 
     # When daemon config file doesn't exist, try default daemon port (64124) as fallback
@@ -5728,8 +5793,17 @@ async def _ensure_daemon_running(
                         daemon_config_path,
                         port,
                     )
+            except asyncio.TimeoutError:
+                logger.info(
+                    "Timed out checking daemon status on port %d (daemon may be busy during startup)",
+                    port,
+                )
             except Exception as e:
-                logger.info("Error checking daemon status on port %d: %s", port, e)
+                logger.info(
+                    "Error checking daemon status on port %d: %s",
+                    port,
+                    e or type(e).__name__,
+                )
 
             logger.info(
                 "Daemon health check returned False (base_url=%s). "
@@ -5813,9 +5887,10 @@ async def _ensure_daemon_running(
         daemon_config_path,
     )
 
-    # Never spawn a second daemon while config or PID indicates one is bootstrapping.
+    # Never spawn a second daemon while a live process or listening IPC indicates bootstrapping.
     live_pid = _get_live_daemon_pid()
-    if live_pid or daemon_config_exists:
+    ipc_listening = is_daemon_ipc_listening(ipc_port)
+    if live_pid or (daemon_config_exists and ipc_listening):
         wait_label = (
             f"process (PID {live_pid})"
             if live_pid
@@ -5840,10 +5915,18 @@ async def _ensure_daemon_running(
             return (True, client)
         logger.error(
             "Daemon appears to be running but IPC never became healthy. "
-            "Restart the daemon manually: btbt daemon start --no-splash"
+            "Restart the daemon manually: btbt daemon start --foreground --no-splash"
         )
         await client.close()
         return (False, None)
+
+    if daemon_config_exists and not ipc_listening:
+        logger.warning(
+            "Daemon config at %s references port %d but nothing is listening and no live "
+            "daemon process was found. Treating config as stale and starting a new daemon.",
+            daemon_config_path,
+            ipc_port,
+        )
 
     # CRITICAL: If initial health check failed, daemon is not running
     # We do NOT check PID files or process status - ONLY IPC health checks
@@ -6005,6 +6088,8 @@ async def _ensure_daemon_running(
 
     except Exception as e:
         logger.exception("Failed to start daemon")
+        with contextlib.suppress(Exception):
+            await client.close()
         return (False, None)
 
 

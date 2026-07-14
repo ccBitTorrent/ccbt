@@ -1665,6 +1665,14 @@ class DHTDiscoverySetup:
                     exc_info=True,
                 )
 
+        if peer_manager_for_restart is not None:
+            reprocess = getattr(
+                peer_manager_for_restart, "_reprocess_stored_bitfields", None
+            )
+            if callable(reprocess):
+                with contextlib.suppress(Exception):
+                    await reprocess()
+
         num_pieces = int(getattr(piece_manager, "num_pieces", 0) or 0)
         pieces_count = len(getattr(piece_manager, "pieces", []))
         metadata_incomplete = bool(
@@ -1723,12 +1731,26 @@ class DHTDiscoverySetup:
                         fetch_metadata_from_peers,
                     )
 
-                    # Note: Increase metadata fetching timeout to 60 seconds
-                    # Magnet links may need more time to fetch metadata, especially for less popular torrents
+                    pm = getattr(self.session.download_manager, "peer_manager", None)
+                    active_peers = 0
+                    if pm is not None and hasattr(pm, "get_active_peers"):
+                        with contextlib.suppress(Exception):
+                            active_peers = len(pm.get_active_peers())
+                    metadata_incomplete = bool(
+                        getattr(
+                            getattr(
+                                self.session.download_manager, "piece_manager", None
+                            ),
+                            "_metadata_incomplete",
+                            True,
+                        )
+                    )
+                    cold_start = metadata_incomplete and active_peers == 0
+
                     metadata = await fetch_metadata_from_peers(
                         self.session.info.info_hash,
                         peer_list,
-                        timeout=60.0,
+                        cold_start=cold_start,
                     )
 
                     if metadata:

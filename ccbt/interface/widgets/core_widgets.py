@@ -85,8 +85,19 @@ except ImportError:
 
 
 def _get_rate(stats: dict[str, Any], key: str) -> float:
-    """Read canonical rate field."""
-    return float(stats.get(key, 0.0))
+    """Read canonical rate field with common daemon/dashboard aliases."""
+    aliases: tuple[str, ...] = ()
+    if key == "download_rate":
+        aliases = ("total_download_rate", "total_download_speed")
+    elif key == "upload_rate":
+        aliases = ("total_upload_rate", "total_upload_speed")
+    raw = stats.get(key)
+    if raw is None or (isinstance(raw, (int, float)) and float(raw) == 0.0):
+        for alt in aliases:
+            alt_val = stats.get(alt)
+            if isinstance(alt_val, (int, float)) and float(alt_val) != 0.0:
+                return float(alt_val)
+    return float(raw or 0.0)
 
 
 class Overview(Static):  # type: ignore[misc]

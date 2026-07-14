@@ -2970,7 +2970,10 @@ class IPCClient:
         try:
             # Use a shorter timeout for the status check to avoid long waits
             # The caller will handle retries with exponential backoff
-            status = await asyncio.wait_for(self.get_status(), timeout=3.0)
+            status_timeout = 3.0
+            if self.timeout is not None and self.timeout.total is not None:
+                status_timeout = min(float(self.timeout.total), 15.0)
+            status = await asyncio.wait_for(self.get_status(), timeout=status_timeout)
             if status is None:
                 return False
             return status.status in ("running", "starting", "shutting_down")

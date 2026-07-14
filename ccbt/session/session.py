@@ -36,7 +36,14 @@ if TYPE_CHECKING:
     from ccbt.utils.di import DIContainer
 
 from ccbt.config.config import get_config, get_max_peers_per_torrent_provenance
-from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
+from ccbt.core.magnet import (
+    build_minimal_torrent_data,
+    collect_announce_urls_from_torrent_data,
+    enrich_magnet_uri_with_trackers,
+    merge_tracker_urls_into_torrent_data,
+    parse_magnet,
+    resolve_trackers_from_sources,
+)
 from ccbt.core.torrent import TorrentParser as _TorrentParser
 from ccbt.discovery.flooding import ControlledFlooding
 from ccbt.discovery.lpd import LocalPeerDiscovery
@@ -158,17 +165,14 @@ class AsyncTorrentSession:
         self.logger = get_logger(__name__)
         self.extension_manager = getattr(session_manager, "extension_manager", None)
 
-        # Core components
-        self.download_manager = AsyncDownloadManager(torrent_data, str(output_dir))
-
-        # Create a proper piece manager for checkpoint operations
-        from ccbt.piece.async_piece_manager import AsyncPieceManager
-
+        # Core components — download_manager owns the canonical piece_manager.
         self._normalized_td = self._normalize_torrent_data(torrent_data)
-        self.piece_manager = AsyncPieceManager(self._normalized_td)
-
-        # Set the piece manager on the download manager for compatibility
-        self.download_manager.piece_manager = self.piece_manager
+        self.download_manager = AsyncDownloadManager(torrent_data, str(output_dir))
+        if self.download_manager.piece_manager is None:
+            init_err = getattr(self.download_manager, "_init_error", None)
+            msg = f"Download manager piece manager failed to initialize: {init_err}"
+            raise RuntimeError(msg)
+        self.piece_manager = self.download_manager.piece_manager
         self.file_selection_manager: Optional[FileSelectionManager] = None
         self.ensure_file_selection_manager()
 
@@ -194,15 +198,22 @@ class AsyncTorrentSession:
         self._tracker_immediate_connection_cooldown_reason: Optional[str] = None
         self._tracker_immediate_connection_cooldown_by_tracker: dict[str, float] = {}
         _disc = getattr(self.config, "discovery", None)
-        _burst_total = 24
-        _burst_per_src = 24
+        _mpt = int(getattr(self.config.network, "max_peers_per_torrent", 50) or 50)
+        _burst_total = _mpt
+        _burst_per_src = _mpt
         if _disc is not None:
             _burst_total = int(
-                getattr(_disc, "tracker_immediate_connect_burst_total", 16) or 16
+                getattr(_disc, "tracker_immediate_connect_burst_total", _burst_total)
+                or _burst_total
             )
             _burst_per_src = int(
-                getattr(_disc, "tracker_immediate_connect_burst_per_source", 16) or 16
+                getattr(
+                    _disc, "tracker_immediate_connect_burst_per_source", _burst_per_src
+                )
+                or _burst_per_src
             )
+        _burst_total = min(_mpt, _burst_total)
+        _burst_per_src = min(_mpt, _burst_per_src)
         self._tracker_immediate_connect_burst_per_source = max(
             1, min(512, _burst_per_src)
         )
@@ -247,6 +258,7 @@ class AsyncTorrentSession:
         self._tracker_discovery_last_pm_queue_depth: Optional[int] = None
         self._tracker_reentrant_non_progress_cycles: int = 0
         self._ingress_hold_drop_last_log_at: float = 0.0
+        self._tracker_ingress_hold_buffer: dict[tuple[str, int], dict[str, Any]] = {}
         self._dht_candidate_cache: dict[str, dict[str, Any]] = {}
         self._dht_candidate_cache_ttl_s: float = 180.0
         self._dht_candidate_promotion_cap: int = 12
@@ -2231,6 +2243,42 @@ class AsyncTorrentSession:
                         self.logger.info("Found checkpoint for %s", self.info.name)
                         self.resume_from_checkpoint = True
                         self.logger.info("Resuming from checkpoint")
+                        merged_trackers = resolve_trackers_from_sources(
+                            magnet_trackers=(
+                                list(parse_magnet(self.magnet_uri).trackers)
+                                if self.magnet_uri and "tr=" in self.magnet_uri
+                                else []
+                            ),
+                            checkpoint_announce_urls=list(
+                                getattr(checkpoint, "announce_urls", None) or []
+                            ),
+                            checkpoint_magnet_uri=getattr(
+                                checkpoint, "magnet_uri", None
+                            ),
+                            torrent_data=self._normalized_td,
+                            supplement_defaults=True,
+                        )
+                        if merge_tracker_urls_into_torrent_data(
+                            self._normalized_td,
+                            merged_trackers,
+                        ):
+                            total_trackers = len(
+                                collect_announce_urls_from_torrent_data(
+                                    self._normalized_td
+                                )
+                            )
+                            self.logger.info(
+                                "Merged tracker list for %s (%d URL(s) total)",
+                                self.info.name,
+                                total_trackers,
+                            )
+                        if self.magnet_uri:
+                            self.magnet_uri = enrich_magnet_uri_with_trackers(
+                                self.magnet_uri,
+                                merged_trackers,
+                            )
+                            if isinstance(self.torrent_data, dict):
+                                self.torrent_data["magnet_uri"] = self.magnet_uri
                 except Exception as e:
                     self.logger.warning("Failed to load checkpoint: %s", e)
                     checkpoint = None
@@ -3118,9 +3166,17 @@ class AsyncTorrentSession:
 
         piece_manager = getattr(self, "piece_manager", None)
         if piece_manager is not None:
+            piece_manager._stopping = True
             selector_task = getattr(piece_manager, "_piece_selector_task", None)
             if selector_task is not None and not selector_task.done():
                 selector_task.cancel()
+
+        pex_manager = getattr(self, "pex_manager", None)
+        if pex_manager is not None:
+            for task_attr in ("_pex_task", "_cleanup_task"):
+                task = getattr(pex_manager, task_attr, None)
+                if task is not None and not task.done():
+                    task.cancel()
 
     async def pause(self) -> None:
         """Pause the torrent session by stopping background work and saving a checkpoint.
@@ -3337,6 +3393,93 @@ class AsyncTorrentSession:
         self._peer_discovery_metrics["pending_depth"] = int(depth)
         return int(depth)
 
+    def _ingress_hold_buffer_max(self) -> int:
+        return int(
+            getattr(
+                self.config.discovery,
+                "tracker_ingress_hold_buffer_max",
+                500,
+            )
+            or 500
+        )
+
+    def _buffer_tracker_ingress_hold_peers(
+        self,
+        peers: list[dict[str, Any]],
+        *,
+        tracker_url: str,
+        ingress_source: str,
+    ) -> int:
+        """Buffer peers while ingress hold is active instead of dropping them."""
+        max_buf = self._ingress_hold_buffer_max()
+        if max_buf <= 0:
+            return 0
+        buffered = 0
+        for peer in peers:
+            ip = peer.get("ip")
+            port_raw = peer.get("port")
+            if not ip or port_raw is None:
+                continue
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError):
+                continue
+            if len(self._tracker_ingress_hold_buffer) >= max_buf:
+                break
+            key = (str(ip), port)
+            if key in self._tracker_ingress_hold_buffer:
+                continue
+            merged_peer = dict(peer)
+            merged_peer["ip"] = str(ip)
+            merged_peer["port"] = port
+            merged_peer.setdefault(
+                "peer_source", str(peer.get("peer_source", "tracker") or "tracker")
+            )
+            merged_peer["_discovery_sources"] = [
+                merged_peer["peer_source"],
+                ingress_source,
+            ]
+            merged_peer["_discovery_trackers"] = [tracker_url]
+            self._tracker_ingress_hold_buffer[key] = merged_peer
+            buffered += 1
+        if buffered:
+            self._peer_discovery_metrics["ingress_hold_deferred_total"] = (
+                int(
+                    self._peer_discovery_metrics.get("ingress_hold_deferred_total", 0)
+                    or 0
+                )
+                + buffered
+            )
+        return buffered
+
+    async def _flush_tracker_ingress_hold_buffer(self) -> int:
+        """Re-ingest buffered peers when pending queue depth falls below hold threshold."""
+        if not self._tracker_ingress_hold_buffer:
+            return 0
+        hold_th = self._effective_tracker_ingress_hold_pending_threshold()
+        flush_threshold = 0 if hold_th <= 0 else int(hold_th * 0.75)
+        depth = await self._refresh_outbound_pending_peer_queue_metric()
+        if depth >= flush_threshold:
+            return 0
+        peer_list = list(self._tracker_ingress_hold_buffer.values())
+        self._tracker_ingress_hold_buffer.clear()
+        merged = 0
+        for peer in peer_list:
+            merged += await self._ingest_tracker_discovery_peers(
+                [peer],
+                tracker_url=str(peer.get("_discovery_trackers", ["hold_buffer"])[0]),
+                ingress_source="hold_buffer_flush",
+            )
+        if merged:
+            self._peer_discovery_metrics["ingress_hold_flushed_total"] = (
+                int(
+                    self._peer_discovery_metrics.get("ingress_hold_flushed_total", 0)
+                    or 0
+                )
+                + merged
+            )
+        return merged
+
     async def _defer_immediate_tracker_peers_to_pending(
         self,
         peers: list[dict[str, Any]],
@@ -3514,6 +3657,15 @@ class AsyncTorrentSession:
                     depth_hold = 0
             if depth_hold >= hold_th:
                 hold_new_keys = True
+                if pm_hold is not None:
+                    snapshot = getattr(pm_hold, "_snapshot_connection_counts", None)
+                    if callable(snapshot):
+                        _, active_n, requestable_n = snapshot()
+                        max_peers = int(
+                            getattr(pm_hold, "max_peers_per_torrent", 50) or 50
+                        )
+                        if requestable_n == 0 and active_n < max_peers:
+                            hold_new_keys = False
 
         merged = 0
         hold_drops = 0
@@ -3532,37 +3684,40 @@ class AsyncTorrentSession:
                 source_hint = str(peer.get("peer_source", "tracker") or "tracker")
                 if existing is None:
                     if hold_new_keys:
-                        self._peer_discovery_metrics["ingress_budget_drop_total"] = (
-                            int(
-                                self._peer_discovery_metrics.get(
-                                    "ingress_budget_drop_total", 0
-                                )
-                                or 0
-                            )
-                            + 1
+                        hold_peer = dict(peer)
+                        hold_peer["ip"] = str(ip)
+                        hold_peer["port"] = port
+                        hold_peer.setdefault("peer_source", source_hint)
+                        buffered = self._buffer_tracker_ingress_hold_peers(
+                            [hold_peer],
+                            tracker_url=tracker_url,
+                            ingress_source=ingress_source,
                         )
-                        self._peer_discovery_metrics[
-                            "deferred_peer_candidates_total"
-                        ] = (
-                            int(
-                                self._peer_discovery_metrics.get(
-                                    "deferred_peer_candidates_total", 0
+                        if buffered <= 0:
+                            self._peer_discovery_metrics[
+                                "ingress_budget_drop_total"
+                            ] = (
+                                int(
+                                    self._peer_discovery_metrics.get(
+                                        "ingress_budget_drop_total", 0
+                                    )
+                                    or 0
                                 )
-                                or 0
-                            )
-                            + 1
-                        )
-                        pm_m = getattr(self.download_manager, "peer_manager", None)
-                        dref = getattr(pm_m, "_peer_discovery_metrics_ref", None)
-                        if isinstance(dref, dict):
-                            dref["ingress_budget_drop_total"] = (
-                                int(dref.get("ingress_budget_drop_total", 0) or 0) + 1
-                            )
-                            dref["deferred_peer_candidates_total"] = (
-                                int(dref.get("deferred_peer_candidates_total", 0) or 0)
                                 + 1
                             )
-                        hold_drops += 1
+                            hold_drops += 1
+                        else:
+                            self._peer_discovery_metrics[
+                                "ingress_hold_deferred_total"
+                            ] = (
+                                int(
+                                    self._peer_discovery_metrics.get(
+                                        "ingress_hold_deferred_total", 0
+                                    )
+                                    or 0
+                                )
+                                + 1
+                            )
                         continue
                     merged_peer = dict(peer)
                     merged_peer["ip"] = str(ip)
@@ -3616,6 +3771,8 @@ class AsyncTorrentSession:
             )
 
         await self._refresh_outbound_pending_peer_queue_metric()
+        with contextlib.suppress(Exception):
+            await self._flush_tracker_ingress_hold_buffer()
         if hold_drops > 0:
             now_m = time.monotonic()
             if now_m - self._ingress_hold_drop_last_log_at >= 30.0:
@@ -4201,18 +4358,28 @@ class AsyncTorrentSession:
 
                     pm = self.download_manager.peer_manager
                     pm_any: Any = pm
+                    if hasattr(pm, "get_active_peers"):
+                        active_connected = len(pm.get_active_peers())
+                    else:
+                        active_connected = len(
+                            [
+                                c
+                                for c in pm.connections.values()
+                                if hasattr(c, "is_active") and c.is_active()
+                            ]
+                        )
                     peer_connection_capacity = max(
                         0,
-                        configured_max_peers - len(pm.connections),
+                        configured_max_peers - active_connected,
                     )
                     self.logger.debug(
                         "⚡ IMMEDIATE CONNECTION capacity for %s: "
                         "deduped_peers=%d peer_connection_capacity=%d "
-                        "(connected=%d max=%d)",
+                        "(active=%d max=%d)",
                         self.info.name,
                         len(deduped_tracker_peers),
                         peer_connection_capacity,
-                        len(pm.connections),
+                        active_connected,
                         configured_max_peers,
                     )
                     if peer_connection_capacity <= 0:
@@ -4244,6 +4411,60 @@ class AsyncTorrentSession:
                                     reason="tracker_immediate_per_torrent_saturated",
                                 )
                         return
+
+                    # Magnet cold start: schedule metadata fetch before bulk peer connect.
+                    if self._metadata_is_incomplete():
+                        now_meta = time.time()
+                        severe_metadata_starvation = False
+                        with contextlib.suppress(Exception):
+                            swarm_state_for_metadata = (
+                                await self._get_swarm_recovery_state()
+                            )
+                            severe_metadata_starvation = bool(
+                                swarm_state_for_metadata["metadata_incomplete"]
+                                and int(swarm_state_for_metadata["requestable_peers"])
+                                == 0
+                                and int(swarm_state_for_metadata["productive_peers"])
+                                == 0
+                                and int(
+                                    swarm_state_for_metadata["peers_with_piece_info"]
+                                )
+                                == 0
+                            )
+                        if not self._tracker_metadata_fallback_in_progress and (
+                            severe_metadata_starvation
+                            or now_meta - self._last_tracker_metadata_fallback_at
+                            >= 15.0
+                        ):
+                            from ccbt.piece.async_metadata_exchange import (
+                                rank_peers_for_metadata_fetch,
+                            )
+
+                            peer_subset = rank_peers_for_metadata_fetch(
+                                deduped_tracker_peers
+                            )[: min(50, len(deduped_tracker_peers))]
+                            self._last_tracker_metadata_fallback_at = now_meta
+                            self._tracker_metadata_fallback_in_progress = True
+
+                            async def tracker_metadata_fallback_early() -> None:
+                                try:
+                                    self.logger.info(
+                                        "🧲 TRACKER METADATA FALLBACK: Starting standalone metadata fetch against %d tracker peer(s) for %s",
+                                        len(peer_subset),
+                                        self.info.name,
+                                    )
+                                    await self.handle_magnet_metadata_exchange(
+                                        peer_subset,
+                                        metadata_source="tracker_immediate",
+                                    )
+                                finally:
+                                    self._tracker_metadata_fallback_in_progress = False
+
+                            metadata_task = asyncio.create_task(
+                                tracker_metadata_fallback_early()
+                            )
+                            self.add_metadata_task(metadata_task)
+                            metadata_task.add_done_callback(self.remove_metadata_task)
 
                     bounded_peer_list: list[dict[str, Any]] = []
                     source_counts: dict[str, int] = {}
@@ -4345,15 +4566,19 @@ class AsyncTorrentSession:
                                 pm = getattr(
                                     self.download_manager, "peer_manager", None
                                 )
-                                if pm is not None and bool(
-                                    getattr(
-                                        pm,
-                                        "_batch_owner_active",
+                                if (
+                                    pm is not None
+                                    and not severe_metadata_starvation
+                                    and bool(
                                         getattr(
                                             pm,
-                                            "_connection_batches_in_progress",
-                                            False,
-                                        ),
+                                            "_batch_owner_active",
+                                            getattr(
+                                                pm,
+                                                "_connection_batches_in_progress",
+                                                False,
+                                            ),
+                                        )
                                     )
                                 ):
                                     conns = getattr(pm, "connections", None)
@@ -4369,9 +4594,13 @@ class AsyncTorrentSession:
                                     >= fallback_cooldown
                                 )
                             ):
-                                peer_subset = unique_peer_list[
-                                    : min(50, len(unique_peer_list))
-                                ]
+                                from ccbt.piece.async_metadata_exchange import (
+                                    rank_peers_for_metadata_fetch,
+                                )
+
+                                peer_subset = rank_peers_for_metadata_fetch(
+                                    deduped_tracker_peers
+                                )[: min(50, len(deduped_tracker_peers))]
                                 self._last_tracker_metadata_fallback_at = now
                                 self._tracker_metadata_fallback_in_progress = True
 
@@ -4482,24 +4711,38 @@ class AsyncTorrentSession:
                             )
 
                     if overflow_peers:
-                        enq_over = await pm_any.enqueue_peer_dicts_pending(
-                            overflow_peers,
-                            reason=f"tracker_immediate_overflow:{pressure_mode}",
+                        hold_th = (
+                            self._effective_tracker_ingress_hold_pending_threshold()
                         )
-                        if enq_over:
-                            request_resume = getattr(
-                                pm_any,
-                                "request_pending_resume",
-                                None,
+                        pending_depth = (
+                            await self._refresh_outbound_pending_peer_queue_metric()
+                        )
+                        if hold_th > 0 and pending_depth >= hold_th:
+                            buffered = self._buffer_tracker_ingress_hold_peers(
+                                overflow_peers,
+                                tracker_url=tracker_url,
+                                ingress_source="tracker_immediate_overflow",
                             )
-                            if callable(request_resume):
-                                request_resume(reason="tracker_immediate_overflow")
                             self.logger.debug(
-                                "⚡ IMMEDIATE CONNECTION: enqueued %d overflow "
-                                "peer(s) pending for %s",
-                                enq_over,
+                                "⚡ IMMEDIATE CONNECTION: buffered %d overflow peer(s) "
+                                "(pending=%d hold_th=%d) for %s",
+                                buffered,
+                                pending_depth,
+                                hold_th,
                                 self.info.name,
                             )
+                        else:
+                            enq_over = await pm_any.enqueue_peer_dicts_pending(
+                                overflow_peers,
+                                reason=f"tracker_immediate_overflow:{pressure_mode}",
+                            )
+                            if enq_over:
+                                self.logger.debug(
+                                    "⚡ IMMEDIATE CONNECTION: enqueued %d overflow "
+                                    "peer(s) pending for %s",
+                                    enq_over,
+                                    self.info.name,
+                                )
                 else:
                     self.logger.warning(
                         "⚡ IMMEDIATE CONNECTION: peer_manager still not ready after 5 seconds, peers will be connected via announce loop",
@@ -6729,6 +6972,8 @@ class AsyncTorrentSession:
 
         try:
             await update_from_metadata(self.torrent_data)
+            self.piece_manager = self.download_manager.piece_manager
+            self.ctx.piece_manager = self.piece_manager
             self._piece_map_revalidated_after_metadata = True
             self.logger.info(
                 "SESSION_METADATA_REVALIDATE: Piece maps rebuilt after metadata availability for %s",
@@ -6981,6 +7226,7 @@ class AsyncSessionManager:
         self.on_xet_folder_removed: Callable[[str], None] | None = None
 
         self.logger = logging.getLogger(__name__)
+        self.checkpoint_manager = CheckpointManager(self.config.disk)
 
         # Per-torrent rate limits are stored for reporting and propagated to peer managers when available.
         self._per_torrent_limits: dict[bytes, dict[str, int]] = {}
@@ -7652,7 +7898,23 @@ class AsyncSessionManager:
                         bind_port=dht_port,
                     )
                     if self.dht_client:
-                        await self.dht_client.start()
+                        try:
+                            await self.dht_client.start()
+                        except RuntimeError as bind_err:
+                            if "already in use" not in str(
+                                bind_err
+                            ).lower() and "10048" not in str(bind_err):
+                                raise
+                            self.logger.warning(
+                                "DHT UDP port %d is busy; retrying with ephemeral port",
+                                dht_port,
+                            )
+                            self.dht_client = AsyncDHTClient(
+                                bind_ip=bind_ip,
+                                bind_port=0,
+                            )
+                            await self.dht_client.start()
+                            dht_port = int(self.dht_client.bind_port)
                         self.logger.info("DHT client started on port %d", dht_port)
                         # Emit COMPONENT_STARTED event
                         try:
@@ -7918,6 +8180,12 @@ class AsyncSessionManager:
                     asyncio.gather(*quiesce_tasks, return_exceptions=True),
                     timeout=5.0,
                 )
+
+        if self.udp_tracker_client is not None:
+            with contextlib.suppress(Exception):
+                abort = getattr(self.udp_tracker_client, "abort_during_shutdown", None)
+                if callable(abort):
+                    abort()
 
     async def stop_inbound_listeners(self) -> None:
         """Stop accepting new inbound peer connections immediately.
@@ -8342,6 +8610,26 @@ class AsyncSessionManager:
             canonical_ih.hex(),
         )
 
+        initial_trackers = list(magnet_info.trackers or [])
+        if resume and self.config.disk.checkpoint_enabled:
+            try:
+                checkpoint = await self.checkpoint_manager.load_checkpoint(canonical_ih)
+                if checkpoint:
+                    initial_trackers = resolve_trackers_from_sources(
+                        magnet_trackers=initial_trackers,
+                        checkpoint_announce_urls=list(
+                            getattr(checkpoint, "announce_urls", None) or []
+                        ),
+                        checkpoint_magnet_uri=getattr(checkpoint, "magnet_uri", None),
+                        supplement_defaults=True,
+                    )
+            except Exception as exc:
+                self.logger.debug(
+                    "Checkpoint tracker preload failed for %s: %s",
+                    canonical_ih.hex()[:12],
+                    exc,
+                )
+
         async with self.lock:
             if canonical_ih in self.torrents:
                 error_msg = f"Torrent already exists: {canonical_ih.hex()}"
@@ -8351,9 +8639,11 @@ class AsyncSessionManager:
             torrent_data = build_minimal_torrent_data(
                 canonical_ih,
                 magnet_info.display_name or "Unknown",
-                magnet_info.trackers or [],
+                initial_trackers,
                 magnet_info.web_seeds or [],
             )
+            announce_urls = collect_announce_urls_from_torrent_data(torrent_data)
+            magnet_uri = enrich_magnet_uri_with_trackers(magnet_uri, announce_urls)
             torrent_data["magnet_uri"] = magnet_uri
             torrent_data["magnet_info"] = magnet_info
 
@@ -8441,8 +8731,8 @@ class AsyncSessionManager:
 
         """
         try:
-            # Wait a short delay to ensure torrent is fully initialized
-            await asyncio.sleep(2.0)
+            # Defer auto-scrape so cold-start UDP announces are not racing scrape connects.
+            await asyncio.sleep(45.0)
             if self.is_shutting_down():
                 return
 
@@ -8653,20 +8943,59 @@ class AsyncSessionManager:
                 self.logger.debug("Torrent not found: %s", info_hash_hex)
                 return []
 
-            # Get peers from peer manager
-            if hasattr(session, "peer_manager") and session.peer_manager:
-                return [
-                    {
-                        "ip": peer.ip,
-                        "port": peer.port,
-                        "client": getattr(peer, "client", "Unknown"),
-                        "uploaded": getattr(peer, "uploaded", 0),
-                        "downloaded": getattr(peer, "downloaded", 0),
-                        "left": getattr(peer, "left", 0),
-                        "state": getattr(peer, "state", "unknown"),
-                    }
-                    for peer in session.peer_manager.get_peers()  # type: ignore[union-attr]
-                ]
+            peer_manager = AsyncSessionManager._resolve_torrent_peer_manager(session)
+            if peer_manager is not None:
+                peers: list[dict[str, Any]] = []
+                get_active = getattr(peer_manager, "get_active_peers", None)
+                if callable(get_active):
+                    for conn in get_active():
+                        peer_info = getattr(conn, "peer_info", None)
+                        if peer_info is None:
+                            continue
+                        stats = getattr(conn, "stats", None)
+                        state = getattr(conn, "state", None)
+                        peers.append(
+                            {
+                                "ip": peer_info.ip,
+                                "port": peer_info.port,
+                                "client": getattr(peer_info, "client", "Unknown"),
+                                "uploaded": getattr(stats, "bytes_uploaded", 0)
+                                if stats
+                                else 0,
+                                "downloaded": getattr(stats, "bytes_downloaded", 0)
+                                if stats
+                                else 0,
+                                "left": getattr(peer_info, "left", 0),
+                                "state": getattr(state, "value", state) or "unknown",
+                                "download_rate": float(
+                                    getattr(stats, "download_rate", 0.0) or 0.0
+                                )
+                                if stats
+                                else 0.0,
+                                "upload_rate": float(
+                                    getattr(stats, "upload_rate", 0.0) or 0.0
+                                )
+                                if stats
+                                else 0.0,
+                                "choked": bool(getattr(conn, "peer_choking", False)),
+                            }
+                        )
+                if peers:
+                    return peers
+                get_peers = getattr(peer_manager, "get_peers", None)
+                if callable(get_peers):
+                    return [
+                        {
+                            "ip": peer.ip,
+                            "port": peer.port,
+                            "client": getattr(peer, "client", "Unknown"),
+                            "uploaded": getattr(peer, "uploaded", 0),
+                            "downloaded": getattr(peer, "downloaded", 0),
+                            "left": getattr(peer, "left", 0),
+                            "state": getattr(peer, "state", "unknown"),
+                        }
+                        for peer in get_peers()
+                    ]
 
         return []
 
@@ -10403,16 +10732,108 @@ class AsyncSessionManager:
             else:
                 cached_peer_count = len(peer_state) if peer_state else 0
 
+        live_down, live_up = AsyncSessionManager.live_transfer_rates(
+            torrent,
+            status_payload if isinstance(status_payload, dict) else None,
+        )
+
         return {
             "status": status,
             "progress": progress,
-            "download_rate": float(getattr(torrent, "download_rate", 0.0) or 0.0),
-            "upload_rate": float(getattr(torrent, "upload_rate", 0.0) or 0.0),
+            "download_rate": float(live_down),
+            "upload_rate": float(live_up),
             "downloaded": int(getattr(torrent, "downloaded_bytes", 0) or 0),
             "uploaded": int(getattr(torrent, "uploaded_bytes", 0) or 0),
             "left": int(getattr(torrent, "left_bytes", 0) or 0),
             "connected_peers": cached_peer_count,
         }
+
+    @staticmethod
+    def _resolve_torrent_peer_manager(torrent: Any) -> Any:
+        """Return the live peer manager (download_manager.peer_manager when present)."""
+        download_manager = getattr(torrent, "download_manager", None)
+        if download_manager is not None:
+            peer_manager = getattr(download_manager, "peer_manager", None)
+            if peer_manager is not None:
+                return peer_manager
+        return getattr(torrent, "peer_manager", None)
+
+    @staticmethod
+    def _sum_peer_transfer_rates(peer_manager: Any) -> tuple[float, float]:
+        """Sum per-connection transfer rates from active/connected peers."""
+        if peer_manager is None:
+            return 0.0, 0.0
+        get_peers = getattr(peer_manager, "get_active_peers", None)
+        if not callable(get_peers):
+            get_peers = getattr(peer_manager, "get_connected_peers", None)
+        if not callable(get_peers):
+            return 0.0, 0.0
+        total_down = 0.0
+        total_up = 0.0
+        with contextlib.suppress(Exception):
+            for conn in get_peers():
+                stats = getattr(conn, "stats", None)
+                if stats is None:
+                    continue
+                total_down += float(getattr(stats, "download_rate", 0.0) or 0.0)
+                total_up += float(getattr(stats, "upload_rate", 0.0) or 0.0)
+        return total_down, total_up
+
+    @staticmethod
+    def _live_torrent_progress(torrent: Any, cached_progress: float) -> float:
+        """Prefer piece_manager progress over stale cached status."""
+        piece_manager = getattr(torrent, "piece_manager", None)
+        if piece_manager is None:
+            return cached_progress
+        get_progress = getattr(piece_manager, "get_download_progress", None)
+        if not callable(get_progress):
+            return cached_progress
+        with contextlib.suppress(Exception):
+            live_progress = float(get_progress())
+            if live_progress > 0.0 or cached_progress <= 0.0:
+                return live_progress
+        return cached_progress
+
+    @staticmethod
+    def _live_torrent_byte_counters(
+        torrent: Any,
+        status_payload: dict[str, Any],
+    ) -> dict[str, int]:
+        """Derive byte counters from piece_manager when cache is empty or stale."""
+        downloaded = int(status_payload.get("downloaded", 0) or 0)
+        uploaded = int(status_payload.get("uploaded", 0) or 0)
+        left = int(status_payload.get("left", 0) or 0)
+        piece_manager = getattr(torrent, "piece_manager", None)
+        if piece_manager is None:
+            return {"downloaded": downloaded, "uploaded": uploaded, "left": left}
+        num_pieces = int(getattr(piece_manager, "num_pieces", 0) or 0)
+        if num_pieces <= 0:
+            return {"downloaded": downloaded, "uploaded": uploaded, "left": left}
+        piece_length = int(getattr(piece_manager, "piece_length", 16384) or 16384)
+        verified_pieces = getattr(piece_manager, "verified_pieces", set())
+        verified_count = len(verified_pieces) if verified_pieces else 0
+        live_downloaded = verified_count * piece_length
+        pieces_list = getattr(piece_manager, "pieces", None)
+        if (
+            verified_count == num_pieces
+            and isinstance(pieces_list, (list, tuple))
+            and pieces_list
+        ):
+            last_idx = num_pieces - 1
+            if last_idx < len(pieces_list):
+                last_piece_len = int(
+                    getattr(pieces_list[last_idx], "length", piece_length)
+                    or piece_length
+                )
+                live_downloaded = (num_pieces - 1) * piece_length + last_piece_len
+        downloaded = max(downloaded, live_downloaded)
+        info_obj = getattr(torrent, "info", None)
+        total_size = int(status_payload.get("total_size", 0) or 0)
+        if total_size <= 0 and info_obj is not None:
+            total_size = int(getattr(info_obj, "total_size", 0) or 0)
+        if total_size > 0:
+            left = max(0, total_size - downloaded)
+        return {"downloaded": downloaded, "uploaded": uploaded, "left": left}
 
     @staticmethod
     def _sanitize_torrent_progress(
@@ -10434,6 +10855,45 @@ class AsyncSessionManager:
         ):
             return 0.0
         return max(0.0, min(1.0, float(progress)))
+
+    @staticmethod
+    def live_transfer_rates(
+        torrent: Any,
+        status_payload: Optional[dict[str, Any]],
+    ) -> tuple[float, float]:
+        """Read download/upload rates from cache, falling back to live peer stats."""
+        download_rate = 0.0
+        upload_rate = 0.0
+        if isinstance(status_payload, dict):
+            download_rate = float(status_payload.get("download_rate", 0.0) or 0.0)
+            upload_rate = float(status_payload.get("upload_rate", 0.0) or 0.0)
+        if download_rate == 0.0 and upload_rate == 0.0:
+            download_manager = getattr(torrent, "download_manager", None)
+            calculate_rates = (
+                getattr(download_manager, "_calculate_rates", None)
+                if download_manager is not None
+                else None
+            )
+            if callable(calculate_rates):
+                with contextlib.suppress(Exception):
+                    live_down, live_up = calculate_rates()
+                    download_rate = float(live_down or 0.0)
+                    upload_rate = float(live_up or 0.0)
+        if download_rate == 0.0 and upload_rate == 0.0:
+            peer_manager = AsyncSessionManager._resolve_torrent_peer_manager(torrent)
+            live_down, live_up = AsyncSessionManager._sum_peer_transfer_rates(
+                peer_manager,
+            )
+            download_rate = float(live_down or 0.0)
+            upload_rate = float(live_up or 0.0)
+        if (
+            download_rate == 0.0
+            and upload_rate == 0.0
+            and hasattr(torrent, "_status_metric")
+        ):
+            download_rate = float(torrent._status_metric("download_rate", 0.0))
+            upload_rate = float(torrent._status_metric("upload_rate", 0.0))
+        return download_rate, upload_rate
 
     @staticmethod
     def _resolve_torrent_stat_fields_fast(torrent: Any) -> dict[str, Any]:
@@ -10468,7 +10928,12 @@ class AsyncSessionManager:
             with contextlib.suppress(Exception):
                 metadata_incomplete = bool(torrent._metadata_is_incomplete())
 
-        downloaded = int(getattr(torrent, "downloaded_bytes", 0) or 0)
+        progress = AsyncSessionManager._live_torrent_progress(torrent, progress)
+        byte_counters = AsyncSessionManager._live_torrent_byte_counters(
+            torrent,
+            status_payload,
+        )
+        downloaded = byte_counters["downloaded"]
         progress = AsyncSessionManager._sanitize_torrent_progress(
             progress,
             status=str(status),
@@ -10482,32 +10947,50 @@ class AsyncSessionManager:
             raw_peer_count = status_payload.get("connected_peers")
             if isinstance(raw_peer_count, (int, float)):
                 cached_peer_count = int(raw_peer_count)
+        peer_manager = AsyncSessionManager._resolve_torrent_peer_manager(torrent)
+        if cached_peer_count is None and peer_manager is not None:
+            get_active = getattr(peer_manager, "get_active_peers", None)
+            if callable(get_active):
+                with contextlib.suppress(Exception):
+                    cached_peer_count = len(get_active())
+            if cached_peer_count is None:
+                connections = getattr(peer_manager, "connections", None)
+                if isinstance(connections, dict):
+                    cached_peer_count = len(connections)
         if cached_peer_count is None:
-            peer_manager = getattr(torrent, "peer_manager", None)
-            connections = getattr(peer_manager, "connections", None)
-            if isinstance(connections, dict):
-                cached_peer_count = len(connections)
+            peer_state = getattr(torrent, "peers", None)
+            if isinstance(peer_state, dict):
+                raw_peer_count = peer_state.get("count", 0)
+                cached_peer_count = (
+                    int(raw_peer_count)
+                    if isinstance(raw_peer_count, (int, float))
+                    else 0
+                )
             else:
-                peer_state = getattr(torrent, "peers", None)
-                if isinstance(peer_state, dict):
-                    raw_peer_count = peer_state.get("count", 0)
-                    cached_peer_count = (
-                        int(raw_peer_count)
-                        if isinstance(raw_peer_count, (int, float))
-                        else 0
-                    )
-                else:
-                    cached_peer_count = len(peer_state) if peer_state else 0
+                cached_peer_count = len(peer_state) if peer_state else 0
+
+        download_rate, upload_rate = AsyncSessionManager.live_transfer_rates(
+            torrent,
+            status_payload,
+        )
 
         return {
             "status": status,
             "progress": progress,
-            "download_rate": float(getattr(torrent, "download_rate", 0.0) or 0.0),
-            "upload_rate": float(getattr(torrent, "upload_rate", 0.0) or 0.0),
-            "downloaded": int(getattr(torrent, "downloaded_bytes", 0) or 0),
-            "uploaded": int(getattr(torrent, "uploaded_bytes", 0) or 0),
-            "left": int(getattr(torrent, "left_bytes", 0) or 0),
+            "download_rate": download_rate,
+            "upload_rate": upload_rate,
+            "downloaded": byte_counters["downloaded"],
+            "uploaded": byte_counters["uploaded"],
+            "left": byte_counters["left"],
             "connected_peers": cached_peer_count,
+            "output_dir": str(getattr(torrent, "output_dir", "") or ""),
+            "torrent_file_path": getattr(torrent, "torrent_file_path", None),
+            "magnet_uri": getattr(torrent, "magnet_uri", None),
+            "added_time": float(
+                getattr(info_obj, "added_time", time.time())
+                if info_obj
+                else time.time()
+            ),
         }
 
     @staticmethod

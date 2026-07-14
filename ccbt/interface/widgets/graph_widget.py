@@ -85,18 +85,42 @@ logger = logging.getLogger(__name__)
 def _sparkline_display_values(
     values: list[float],
     *,
-    min_points: int = 10,
+    min_points: int = 2,
 ) -> list[float]:
-    """Return sparkline data with enough variation to render in the terminal."""
+    """Normalize samples to 0..1 so Textual Sparkline shows shape, not solid blocks."""
     if not values:
-        return [0.1 + (i % 2) * 0.1 for i in range(min_points)]
-    if min(values) == max(values):
-        if values[0] == 0.0:
-            count = max(len(values), min_points)
-            return [0.1 + (i % 2) * 0.1 for i in range(count)]
-        epsilon = max(abs(values[0]) * 0.01, 0.01)
-        return [values[0] + (epsilon if i % 2 else 0.0) for i in range(len(values))]
-    return values
+        return [0.0] * min_points
+    series = list(values)
+    if len(series) < min_points:
+        series = [0.0] * (min_points - len(series)) + series
+    min_v = min(series)
+    max_v = max(series)
+    if max_v <= min_v:
+        if max_v == 0.0:
+            return [0.0] * len(series)
+        return [0.2] * len(series)
+    span = max_v - min_v
+    return [(v - min_v) / span for v in series]
+
+
+def _format_kib_rate_label(kib_per_sec: float) -> str:
+    """Format KiB/s for graph axis labels."""
+    if kib_per_sec >= 1024.0:
+        return f"{kib_per_sec / 1024.0:.2f} MiB/s"
+    if kib_per_sec >= 0.01:
+        return f"{kib_per_sec:.2f} KiB/s"
+    if kib_per_sec > 0.0:
+        return f"{kib_per_sec:.3f} KiB/s"
+    return "0.00 KiB/s"
+
+
+def _smooth_append(history: list[float], value: float, *, alpha: float = 0.35) -> None:
+    """Append an EMA-smoothed sample to rolling history."""
+    if history:
+        smoothed = (alpha * value) + ((1.0 - alpha) * history[-1])
+    else:
+        smoothed = value
+    history.append(smoothed)
 
 
 class BaseGraphWidget(Container):  # type: ignore[misc]
@@ -174,13 +198,11 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
             # Note: Initialize with varying data pattern so Sparkline renders a visible line
             # A flat line (all same value) may not be visible - use a simple wave pattern
             if self._sparkline:
-                # Create a simple visible pattern: [0.1, 0.2, 0.1, 0.2, ...] repeated
-                initial_data = [0.1 + (i % 2) * 0.1 for i in range(20)]
-                self._sparkline.data = initial_data  # type: ignore[attr-defined]
+                self._sparkline.data = [0.0] * 20  # type: ignore[attr-defined]
                 self._sparkline.display = True  # type: ignore[attr-defined]
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
-                logger.debug("BaseGraphWidget: Initialized sparkline with %d varying data points", len(initial_data))
+                logger.debug("BaseGraphWidget: Initialized sparkline with empty baseline")
         except Exception as e:
             logger.debug("Error mounting graph widget: %s", e)
 
@@ -350,6 +372,8 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         self._timestamps: list[float] = []  # Store timestamps for time-based display
         self._download_sparkline: Optional[Sparkline] = None
         self._upload_sparkline: Optional[Sparkline] = None
+        self._download_label: Optional[Static] = None
+        self._upload_label: Optional[Static] = None
         self._update_task: Optional[Any] = None
         # Event timeline tracking for annotations
         self._event_timeline: list[dict[str, Any]] = []  # List of {timestamp, type, label, info_hash}
@@ -429,34 +453,29 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         try:
             self._download_sparkline = self.query_one("#download-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._upload_sparkline = self.query_one("#upload-sparkline", Sparkline)  # type: ignore[attr-defined]
+            self._download_label = self.query_one("#download-label", Static)  # type: ignore[attr-defined]
+            self._upload_label = self.query_one("#upload-label", Static)  # type: ignore[attr-defined]
             self._event_annotations_widget = self.query_one("#event-annotations", Static)  # type: ignore[attr-defined]
 
-            # Note: Initialize with VARYING data pattern so Sparklines render a visible line
-            # A flat line (all same value) may not be visible - use a simple wave pattern
-            # Create a visible pattern: [0.1, 0.2, 0.1, 0.2, ...] repeated for 20 points
-            initial_data = [0.1 + (i % 2) * 0.1 for i in range(20)]
+            initial_data = [0.0] * 20
             if self._download_sparkline:
                 self._download_sparkline.data = initial_data  # type: ignore[attr-defined]
                 self._download_sparkline.display = True  # type: ignore[attr-defined]
-                # CRITICAL: Ensure widget is visible and has proper size
                 if hasattr(self._download_sparkline, "styles"):
                     self._download_sparkline.styles.min_height = 10  # type: ignore[attr-defined]
                 self._download_sparkline.refresh()  # type: ignore[attr-defined]
-                logger.debug("UploadDownloadGraphWidget: Initialized download sparkline with %d varying data points", len(initial_data))
             if self._upload_sparkline:
                 self._upload_sparkline.data = initial_data  # type: ignore[attr-defined]
                 self._upload_sparkline.display = True  # type: ignore[attr-defined]
-                # CRITICAL: Ensure widget is visible and has proper size
                 if hasattr(self._upload_sparkline, "styles"):
                     self._upload_sparkline.styles.min_height = 10  # type: ignore[attr-defined]
                 self._upload_sparkline.refresh()  # type: ignore[attr-defined]
-                logger.debug("UploadDownloadGraphWidget: Initialized upload sparkline with %d varying data points", len(initial_data))
 
-            # F2.5.1: bind via App message pump (child on_mount data_bind fails on Textual 8).
             from ccbt.interface.reactive_bridge import request_lazy_bind
 
             request_lazy_bind(self)
             self.call_after_refresh(self._hydrate_from_app_reactives)  # type: ignore[attr-defined]
+            self._start_updates()
         except Exception as e:
             logger.error("Error mounting upload/download graph: %s", e, exc_info=True)
 
@@ -488,13 +507,9 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         """Populate download/upload histories from a rate-samples list (F2.5.1)."""
         if not samples:
             if not self._download_history:
-                self._download_history = [
-                    0.1 + (i % 2) * 0.1 for i in range(min(20, self._max_samples))
-                ]
+                self._download_history = [0.0] * min(20, self._max_samples)
             if not self._upload_history:
-                self._upload_history = [
-                    0.1 + (i % 2) * 0.1 for i in range(min(20, self._max_samples))
-                ]
+                self._upload_history = [0.0] * min(20, self._max_samples)
             self._update_display()
             return
 
@@ -523,14 +538,12 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         if download_rates:
             self._download_history = download_rates[-self._max_samples :]
         elif not self._download_history:
-            num_points = min(20, self._max_samples)
-            self._download_history = [0.1 + (i % 2) * 0.1 for i in range(num_points)]
+            self._download_history = [0.0] * min(20, self._max_samples)
 
         if upload_rates:
             self._upload_history = upload_rates[-self._max_samples :]
         elif not self._upload_history:
-            num_points = min(20, self._max_samples)
-            self._upload_history = [0.1 + (i % 2) * 0.1 for i in range(num_points)]
+            self._upload_history = [0.0] * min(20, self._max_samples)
 
         self._timestamps = timestamps[-self._max_samples :] if timestamps else []
         self._update_display()
@@ -655,17 +668,14 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 # Sparklines can render zero data, but need at least some variation to be visible
                 if self._download_history and len(self._download_history) > 0:
                     display_data = _sparkline_display_values(self._download_history)
-
                     self._download_sparkline.data = display_data  # type: ignore[attr-defined]
-                    logger.debug(
-                        "UploadDownloadGraphWidget: Updated download sparkline with %d data points",
-                        len(display_data),
-                    )
                 else:
-                    # No history yet - use placeholder pattern with variation
-                    placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
-                    self._download_sparkline.data = placeholder  # type: ignore[attr-defined]
-                    logger.debug("UploadDownloadGraphWidget: Updated download sparkline with placeholder pattern (no data yet)")
+                    self._download_sparkline.data = [0.0] * 20  # type: ignore[attr-defined]
+                if self._download_label is not None:
+                    current = self._download_history[-1] if self._download_history else 0.0
+                    self._download_label.update(  # type: ignore[attr-defined]
+                        f"Download: {_format_kib_rate_label(current)}"
+                    )
                 # Note: Ensure widget is visible and refresh
                 self._download_sparkline.display = True  # type: ignore[attr-defined]
                 # Force repaint by calling refresh
@@ -682,17 +692,14 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 # Note: Always set data - use real data even if all zeros
                 if self._upload_history and len(self._upload_history) > 0:
                     display_data = _sparkline_display_values(self._upload_history)
-
                     self._upload_sparkline.data = display_data  # type: ignore[attr-defined]
-                    logger.debug(
-                        "UploadDownloadGraphWidget: Updated upload sparkline with %d data points",
-                        len(display_data),
-                    )
                 else:
-                    # No history yet - use placeholder pattern with variation
-                    placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
-                    self._upload_sparkline.data = placeholder  # type: ignore[attr-defined]
-                    logger.debug("UploadDownloadGraphWidget: Updated upload sparkline with placeholder pattern (no data yet)")
+                    self._upload_sparkline.data = [0.0] * 20  # type: ignore[attr-defined]
+                if self._upload_label is not None:
+                    current = self._upload_history[-1] if self._upload_history else 0.0
+                    self._upload_label.update(  # type: ignore[attr-defined]
+                        f"Upload: {_format_kib_rate_label(current)}"
+                    )
                 # Note: Ensure widget is visible and refresh
                 self._upload_sparkline.display = True  # type: ignore[attr-defined]
                 # Force repaint by calling refresh
@@ -788,10 +795,12 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
     def update_from_stats(self, stats: dict[str, Any]) -> None:  # pragma: no cover
         """Update graph with statistics (append rolling history from global_stats)."""
         try:
-            download_rate = float(stats.get("download_rate", 0.0)) / 1024.0
-            upload_rate = float(stats.get("upload_rate", 0.0)) / 1024.0
-            self._download_history.append(download_rate)
-            self._upload_history.append(upload_rate)
+            from ccbt.interface.widgets.core_widgets import _get_rate
+
+            download_rate = _get_rate(stats, "download_rate") / 1024.0
+            upload_rate = _get_rate(stats, "upload_rate") / 1024.0
+            _smooth_append(self._download_history, download_rate)
+            _smooth_append(self._upload_history, upload_rate)
             self._download_history = self._download_history[-self._max_samples :]
             self._upload_history = self._upload_history[-self._max_samples :]
             self._update_display()
@@ -1302,7 +1311,7 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._overhead_sparkline = self.query_one("#overhead-sparkline", Sparkline)  # type: ignore[attr-defined]
 
             # Initialize with a visible placeholder pattern (flat zeros do not render)
-            placeholder = [0.1 + (i % 2) * 0.1 for i in range(10)]
+            placeholder = [0.0] * 10
             if self._utp_sparkline:
                 self._utp_sparkline.data = placeholder  # type: ignore[attr-defined]
             if self._overhead_sparkline:
@@ -2517,7 +2526,7 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
             self._disk_sparkline = self.query_one("#disk-sparkline", Sparkline)  # type: ignore[attr-defined]
 
             # Initialize with a visible placeholder pattern (flat zeros do not render)
-            placeholder = [0.1 + (i % 2) * 0.1 for i in range(10)]
+            placeholder = [0.0] * 10
             if self._cpu_sparkline:
                 self._cpu_sparkline.data = placeholder  # type: ignore[attr-defined]
             if self._memory_sparkline:

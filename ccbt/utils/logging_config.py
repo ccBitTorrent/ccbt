@@ -389,7 +389,8 @@ def setup_logging(
                 """Create an emit function that flushes Rich Console after each log."""
 
                 def emit_with_flush(record: logging.LogRecord) -> None:
-                    original(record)
+                    with contextlib.suppress(OSError, ValueError, RuntimeError):
+                        original(record)
                     try:
                         # Force Rich Console to flush
                         console_file = getattr(console, "_file", None)
@@ -415,7 +416,8 @@ def setup_logging(
                 """Create an emit function that flushes stream after each log."""
 
                 def emit_with_flush(record: logging.LogRecord) -> None:
-                    original(record)
+                    with contextlib.suppress(OSError, ValueError, RuntimeError):
+                        original(record)
                     with contextlib.suppress(Exception):
                         stream.flush()  # Ignore flush errors
 
@@ -443,7 +445,8 @@ def setup_logging(
                     """Create an emit function that flushes after each log."""
 
                     def emit_with_flush(record: logging.LogRecord) -> None:
-                        original(record)
+                        with contextlib.suppress(OSError, ValueError, RuntimeError):
+                            original(record)
                         with contextlib.suppress(Exception):
                             stream.flush()  # Ignore flush errors
 

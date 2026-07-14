@@ -2193,13 +2193,13 @@ class AsyncTrackerClient:
         tracker_urls = scheduled_urls
 
         # Log tracker types for debugging
-        udp_count = sum(1 for url in tracker_urls if url.startswith("udp://"))
-        http_count = len(tracker_urls) - udp_count
+        udp_urls = [url for url in tracker_urls if url.startswith("udp://")]
+        http_urls = [url for url in tracker_urls if not url.startswith("udp://")]
         self.logger.debug(
-            "Announcing to %d tracker(s) concurrently (%d UDP, %d HTTP/HTTPS)",
+            "Announcing to %d tracker(s) (%d UDP sequential, %d HTTP/HTTPS concurrent)",
             len(tracker_urls),
-            udp_count,
-            http_count,
+            len(udp_urls),
+            len(http_urls),
         )
 
         # Create announce tasks for all trackers
@@ -2211,24 +2211,39 @@ class AsyncTrackerClient:
         ):
             shared_torrent_data["peer_id"] = self._generate_peer_id()
         failure_tracker_marks: dict[int, bool] = {}
-        for url in tracker_urls:
-            # Create a copy of torrent data with this tracker URL
+
+        async def _announce_single(
+            torrent_copy: dict[str, Any],
+        ) -> Union[TrackerResponse, None]:
+            return await self._announce_to_tracker(
+                torrent_copy,
+                port,
+                uploaded,
+                downloaded,
+                left,
+                event,
+                _tracker_failure_marks=failure_tracker_marks,
+            )
+
+        async def _announce_udp_sequential() -> list[Union[TrackerResponse, None]]:
+            udp_results: list[Union[TrackerResponse, None]] = []
+            for url in udp_urls:
+                torrent_copy = shared_torrent_data.copy()
+                torrent_copy["announce"] = url
+                udp_results.append(await _announce_single(torrent_copy))
+            return udp_results
+
+        for url in http_urls:
             torrent_copy = shared_torrent_data.copy()
             torrent_copy["announce"] = url
-
-            task = asyncio.create_task(
-                self._announce_to_tracker(
-                    torrent_copy,
-                    port,
-                    uploaded,
-                    downloaded,
-                    left,
-                    event,
-                    _tracker_failure_marks=failure_tracker_marks,
-                ),
-            )
+            task = asyncio.create_task(_announce_single(torrent_copy))
             tasks.append(task)
             url_to_task[task] = url
+
+        if udp_urls:
+            udp_task = asyncio.create_task(_announce_udp_sequential())
+            tasks.append(udp_task)
+            url_to_task[udp_task] = "udp://sequential-batch"
 
         # Wait for all announces to complete
         self.logger.debug(
@@ -2261,8 +2276,16 @@ class AsyncTrackerClient:
         invalid_payload_count = 0
         skipped_count = 0
 
+        normalized_results: list[tuple[str, Any]] = []
         for task, result in zip(tasks, results):
             url = url_to_task.get(task, "unknown")
+            if isinstance(result, list):
+                for index, item in enumerate(result):
+                    normalized_results.append((f"{url}#{index}", item))
+            else:
+                normalized_results.append((url, result))
+
+        for url, result in normalized_results:
             tracker_type = "UDP" if url.startswith("udp://") else "HTTP/HTTPS"
 
             # Note: Enhanced logging to diagnose why responses aren't being processed
@@ -2571,13 +2594,22 @@ class AsyncTrackerClient:
         self, torrent_data: dict[str, Any], udp_tracker_url: str
     ) -> Union[str, None]:
         """Find an explicit HTTP(S) fallback tracker from torrent metadata."""
+        udp_parsed = urllib.parse.urlparse(udp_tracker_url)
+        udp_host = (udp_parsed.hostname or "").lower()
+
+        candidates: list[str] = []
         announce_list = torrent_data.get("announce_list", [])
-        for tier in announce_list:
-            if not isinstance(tier, list):
-                continue
-            for candidate in tier:
-                if not isinstance(candidate, str):
-                    continue
+        if isinstance(announce_list, list):
+            for item in announce_list:
+                if isinstance(item, list):
+                    candidates.extend(
+                        candidate for candidate in item if isinstance(candidate, str)
+                    )
+                elif isinstance(item, str):
+                    candidates.append(item)
+
+        def _first_http_match(prefer_same_host: bool) -> Union[str, None]:
+            for candidate in candidates:
                 try:
                     normalized_candidate = self._normalize_tracker_url(candidate)
                 except Exception:
@@ -2589,8 +2621,22 @@ class AsyncTrackerClient:
                     continue
                 if normalized_candidate == udp_tracker_url:
                     continue
-                if normalized_candidate.startswith(("http://", "https://")):
-                    return normalized_candidate
+                if not normalized_candidate.startswith(("http://", "https://")):
+                    continue
+                candidate_host = (
+                    urllib.parse.urlparse(normalized_candidate).hostname or ""
+                ).lower()
+                if prefer_same_host and candidate_host != udp_host:
+                    continue
+                return normalized_candidate
+            return None
+
+        same_host = _first_http_match(prefer_same_host=True)
+        if same_host is not None:
+            return same_host
+        cross_host = _first_http_match(prefer_same_host=False)
+        if cross_host is not None:
+            return cross_host
 
         announce_url = torrent_data.get("announce")
         if isinstance(announce_url, str):
@@ -2774,6 +2820,15 @@ class AsyncTrackerClient:
             msg = f"Unsupported tracker URL scheme: {parsed.scheme} in {url}"
             raise TrackerError(msg)
 
+        if parsed.scheme in ("http", "https"):
+            effective_port = self._http_tracker_port(url)
+            if effective_port == 1337:
+                msg = (
+                    f"HTTP(S) tracker URL uses UDP-only port 1337: {url}. "
+                    "Use udp:// for BEP 15 announces instead."
+                )
+                raise TrackerError(msg)
+
         if parsed.username is not None or parsed.password is not None:
             msg = f"Tracker URL contains credentials and is rejected: {url}"
             raise TrackerError(msg)
@@ -2811,6 +2866,49 @@ class AsyncTrackerClient:
                 )
 
         return url
+
+    @staticmethod
+    def _http_tracker_port(url: str) -> Optional[int]:
+        """Return the effective TCP port for an HTTP(S) tracker URL."""
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        if parsed.port is not None:
+            return parsed.port
+        return 443 if parsed.scheme == "https" else 80
+
+    def _is_acceptable_tracker_redirect(self, original_url: str, location: str) -> bool:
+        """Return True when a tracker redirect target is safe to follow once."""
+        if not location or not location.strip():
+            return False
+        try:
+            joined = urllib.parse.urljoin(original_url, location.strip())
+            target = self._normalize_tracker_url(joined)
+        except TrackerError:
+            return False
+        parsed = urllib.parse.urlparse(target)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        port = self._http_tracker_port(target)
+        if port is None:
+            return False
+        # Public trackers often redirect HTTPS to UDP ports over HTTP (e.g. opentrackr
+        # 443 -> http://host:1337). That endpoint speaks BEP 15 UDP, not HTTP.
+        return not (parsed.scheme == "http" and port in {1337, 6969, 451})
+
+    async def _read_tracker_http_response(
+        self, url: str, tracker_host: str
+    ) -> tuple[int, bytes, str]:
+        """Perform one HTTP(S) tracker GET without implicit redirect following."""
+        if self.session is None:
+            msg = "HTTP session not initialized"
+            raise RuntimeError(msg)
+
+        async with self.session.get(url, allow_redirects=False) as response:
+            if tracker_host and tracker_url_implies_tls(url):
+                self._verify_tracker_certificate_pin(tracker_host, response)
+            body = await response.read()
+            return response.status, body, response.headers.get("Location", "")
 
     def _parse_tracker_crypto_flags(self, tracker_url: str) -> dict[str, str]:
         """Parse tracker crypto flags from HTTP(S)-only announce URLs."""
@@ -2958,38 +3056,51 @@ class AsyncTrackerClient:
         dns_start = time.time()
 
         try:
-            async with self.session.get(url) as response:
-                # Track DNS resolution time (approximate)
-                dns_time = time.time() - dns_start
-                request_time = time.time() - request_start
+            status, response_data, location = await self._read_tracker_http_response(
+                url, tracker_host
+            )
 
-                # Track connection reuse (check if connection was reused)
-                connection_reused = getattr(response, "_connection", None) is not None
-
-                # Update metrics
-                metrics = self._ensure_session_metric_bucket(tracker_host)
-                metrics["request_count"] += 1
-                metrics["total_request_time"] += request_time
-                metrics["total_dns_time"] += dns_time
-                if connection_reused:
-                    metrics["connection_reuse_count"] += 1
-
-                # Handle proxy authentication challenge
-                if response.status == 407:
-                    # Proxy Authentication Required
-                    self.logger.warning("Proxy authentication required for %s", url)
-                    msg = f"Proxy authentication failed: {response.reason}"
-                    raise TrackerError(msg)
-
-                if response.status != 200:
+            if status in (301, 302, 303, 307, 308):
+                if self._is_acceptable_tracker_redirect(url, location):
+                    redirect_url = urllib.parse.urljoin(url, location.strip())
+                    self.logger.debug(
+                        "Following single safe tracker redirect: %s -> %s",
+                        url[:120],
+                        redirect_url[:120],
+                    )
+                    parsed_url = urllib.parse.urlparse(redirect_url)
+                    redirect_host = parsed_url.hostname or tracker_host
+                    status, response_data, _ = await self._read_tracker_http_response(
+                        redirect_url, redirect_host
+                    )
+                    url = redirect_url
+                    tracker_host = redirect_host
+                else:
+                    metrics = self._ensure_session_metric_bucket(tracker_host)
                     metrics["error_count"] += 1
-                    msg = f"HTTP {response.status}: {response.reason}"
+                    msg = f"HTTP tracker redirect rejected ({status} -> {location}): {url}"
                     raise TrackerError(msg)
 
-                if tracker_host and tracker_url_implies_tls(url):
-                    self._verify_tracker_certificate_pin(tracker_host, response)
+            request_time = time.time() - request_start
+            dns_time = time.time() - dns_start
 
-                return await response.read()
+            metrics = self._ensure_session_metric_bucket(tracker_host)
+            metrics["request_count"] += 1
+            metrics["total_request_time"] += request_time
+            metrics["total_dns_time"] += dns_time
+
+            if status == 407:
+                self.logger.warning("Proxy authentication required for %s", url)
+                metrics["error_count"] += 1
+                msg = "Proxy authentication failed"
+                raise TrackerError(msg)
+
+            if status != 200:
+                metrics["error_count"] += 1
+                msg = f"HTTP {status}"
+                raise TrackerError(msg)
+
+            return response_data
 
         except ssl.SSLError as e:
             self._increment_session_metric(tracker_host, "error_count")
@@ -3880,25 +3991,15 @@ class TrackerHealthManager:
 
         # Known working trackers (fallback pool)
         self._known_good_trackers = {
-            # Primary reliable trackers
-            "https://tracker.opentrackr.org:443/announce",
-            "https://tracker.torrent.eu.org:443/announce",
-            "https://tracker.openbittorrent.com:443/announce",
-            "http://tracker.opentrackr.org:1337/announce",
-            "http://tracker.openbittorrent.com:80/announce",
-            # Additional popular trackers for better coverage
+            # Primary reliable trackers (HTTP/HTTPS first; UDP opentrackr often blocked)
+            "http://tracker.dler.org:6969/announce",
+            "http://tracker.renfei.net:8080/announce",
+            "https://tracker.nekomi.cn/announce",
+            "http://bt2.archive.org:6969/announce",
+            "https://tr.nyacat.pw/announce",
             "udp://tracker.opentrackr.org:1337/announce",
-            "udp://tracker.torrent.eu.org:451/announce",
-            "udp://tracker.openbittorrent.com:6969/announce",
             "udp://tracker.internetwarriors.net:1337/announce",
-            "udp://tracker.leechers-paradise.org:6969/announce",
-            "udp://tracker.coppersurfer.tk:6969/announce",
-            "udp://tracker.pirateparty.gr:6969/announce",
             "udp://tracker.zer0day.to:1337/announce",
-            "udp://public.popcorn-tracker.org:6969/announce",
-            # More HTTP trackers
-            "http://tracker.torrent.eu.org:451/announce",
-            "http://tracker.internetwarriors.net:1337/announce",
         }
 
         # Background cleanup task

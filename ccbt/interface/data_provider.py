@@ -120,6 +120,135 @@ def _guess_media_metadata(path: str) -> tuple[Optional[str], bool]:
     return mime_type, is_media
 
 
+def _peer_quality_fallback_from_torrents(
+    torrents: list[dict[str, Any]],
+    peer_rows: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Build peer-quality distribution from torrent summaries when metrics API is empty."""
+    all_peers: dict[str, dict[str, Any]] = {}
+    per_torrent_summaries: list[dict[str, Any]] = []
+    quality_tiers = {"excellent": 0, "good": 0, "fair": 0, "poor": 0}
+
+    if peer_rows:
+        for peer in peer_rows:
+            peer_key = peer.get("peer_key") or f"{peer.get('ip', 'unknown')}:{peer.get('port', 0)}"
+            all_peers[peer_key] = dict(peer)
+            score = float(peer.get("quality_score", 0.35))
+            if score >= 0.7:
+                quality_tiers["excellent"] += 1
+            elif score >= 0.5:
+                quality_tiers["good"] += 1
+            elif score >= 0.3:
+                quality_tiers["fair"] += 1
+            else:
+                quality_tiers["poor"] += 1
+
+    for torrent in torrents:
+        info_hash_hex = str(torrent.get("info_hash") or torrent.get("info_hash_hex") or "")
+        if not info_hash_hex:
+            continue
+        peer_count = _to_int(
+            torrent.get("connected_peers", torrent.get("num_peers", 0)),
+        )
+        per_torrent_summaries.append(
+            {
+                "info_hash": info_hash_hex,
+                "name": torrent.get("name") or info_hash_hex[:12],
+                "total_peers_ranked": peer_count,
+                "average_quality_score": 0.35 if peer_count > 0 else 0.0,
+                "high_quality_peers": 0,
+                "medium_quality_peers": peer_count,
+                "low_quality_peers": 0,
+            }
+        )
+        if peer_rows:
+            continue
+        for index in range(peer_count):
+            peer_key = f"{info_hash_hex[:8]}:peer-{index + 1}"
+            if peer_key in all_peers:
+                continue
+            all_peers[peer_key] = {
+                "peer_key": peer_key,
+                "ip": "unknown",
+                "port": 0,
+                "quality_score": 0.35,
+                "download_rate": float(torrent.get("download_rate", 0.0) or 0.0)
+                / max(peer_count, 1),
+                "upload_rate": float(torrent.get("upload_rate", 0.0) or 0.0)
+                / max(peer_count, 1),
+                "torrents": [info_hash_hex],
+            }
+            quality_tiers["fair"] += 1
+
+    total_peers = len(all_peers)
+    average_quality = (
+        sum(float(p.get("quality_score", 0.0)) for p in all_peers.values()) / total_peers
+        if total_peers > 0
+        else 0.0
+    )
+    top_peers_list = sorted(
+        all_peers.values(),
+        key=lambda p: float(p.get("quality_score", 0.0)),
+        reverse=True,
+    )[:10]
+    return {
+        "total_peers": total_peers,
+        "quality_tiers": quality_tiers,
+        "average_quality": average_quality,
+        "top_peers": top_peers_list,
+        "per_torrent": per_torrent_summaries,
+    }
+
+
+async def _apply_peer_quality_fallback(
+    client: Any,
+    torrents: list[dict[str, Any]],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """Use torrent peers IPC when dedicated peer-quality metrics are empty."""
+    if int(result.get("total_peers", 0) or 0) > 0:
+        return result
+    if not any(
+        _to_int(t.get("connected_peers", t.get("num_peers", 0))) > 0 for t in torrents
+    ):
+        return result
+
+    peer_rows: list[dict[str, Any]] = []
+    get_peers = getattr(client, "get_peers_for_torrent", None)
+    if not callable(get_peers):
+        return _peer_quality_fallback_from_torrents(torrents)
+
+    for torrent in torrents:
+        info_hash_hex = torrent.get("info_hash")
+        if not info_hash_hex:
+            continue
+        try:
+            peer_list = await get_peers(info_hash_hex)
+        except Exception as exc:
+            logger.debug(
+                "Peer quality fallback: peers fetch failed for %s: %s",
+                str(info_hash_hex)[:8],
+                exc,
+            )
+            continue
+        peers = getattr(peer_list, "peers", None) or []
+        for peer in peers:
+            down = float(getattr(peer, "download_rate", 0.0) or 0.0)
+            up = float(getattr(peer, "upload_rate", 0.0) or 0.0)
+            peer_rows.append(
+                {
+                    "peer_key": f"{peer.ip}:{peer.port}",
+                    "ip": peer.ip,
+                    "port": peer.port,
+                    "quality_score": min(1.0, 0.2 + (down + up) / (256 * 1024)),
+                    "download_rate": down,
+                    "upload_rate": up,
+                    "torrents": [info_hash_hex],
+                }
+            )
+    return _peer_quality_fallback_from_torrents(torrents, peer_rows or None)
+
+
 def _normalize_torrent_read_model(
     raw: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1755,13 +1884,14 @@ class DaemonDataProvider(DataProvider):
                 reverse=True,
             )[:10]
 
-            return {
+            result = {
                 "total_peers": len(all_peers),
                 "quality_tiers": quality_tiers,
                 "average_quality": average_quality,
                 "top_peers": top_peers_list,
                 "per_torrent": per_torrent_summaries,
             }
+            return await _apply_peer_quality_fallback(self._client, torrents, result)
 
         return await self._get_cached("peer_quality_distribution", _fetch, ttl=2.0)
 
@@ -2930,13 +3060,16 @@ class LocalDataProvider(DataProvider):
                 reverse=True,
             )[:10]
 
-            return {
+            result = {
                 "total_peers": len(all_peers),
                 "quality_tiers": quality_tiers,
                 "average_quality": average_quality,
                 "top_peers": top_peers_list,
                 "per_torrent": per_torrent_summaries,
             }
+            if result["total_peers"] == 0:
+                return _peer_quality_fallback_from_torrents(torrents)
+            return result
 
         return await self._get_cached("peer_quality_distribution", _fetch, ttl=2.0)
 

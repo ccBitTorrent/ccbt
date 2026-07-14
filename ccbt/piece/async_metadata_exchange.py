@@ -41,6 +41,7 @@ from typing import Any, Callable, Optional
 
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
+from ccbt.models import MessageType
 from ccbt.peer.peer import parse_plaintext_bittorrent_handshake
 from ccbt.protocols.bittorrent_v2 import (
     HANDSHAKE_V1_SIZE,
@@ -51,6 +52,70 @@ from ccbt.utils.exceptions import PeerConnectionError
 # Error message constants
 _ERROR_WRITER_NOT_INITIALIZED = "Writer is not initialized"
 _ERROR_READER_NOT_INITIALIZED = "Reader is not initialized"
+
+
+# Dedicated semaphore so metadata fetches do not compete with peer-manager connects.
+_METADATA_CONNECT_SEMAPHORE: Optional[asyncio.Semaphore] = None
+_METADATA_CONNECT_SEMAPHORE_LIMIT = 5
+
+
+def _metadata_connect_semaphore() -> asyncio.Semaphore:
+    global _METADATA_CONNECT_SEMAPHORE
+    if _METADATA_CONNECT_SEMAPHORE is None:
+        _METADATA_CONNECT_SEMAPHORE = asyncio.Semaphore(
+            _METADATA_CONNECT_SEMAPHORE_LIMIT
+        )
+    return _METADATA_CONNECT_SEMAPHORE
+
+
+@dataclass(frozen=True)
+class MetadataConnectPolicy:
+    """Connection policy for metadata fetch (magnet cold start vs steady state)."""
+
+    cold_start: bool = False
+    max_peers: int = 10
+    timeout: float = 30.0
+
+    @classmethod
+    def from_config(cls, *, cold_start: bool = False) -> MetadataConnectPolicy:
+        """Build metadata connect limits from network configuration."""
+        config = get_config()
+        net = getattr(config, "network", config)
+        if cold_start:
+            max_peers = int(
+                getattr(net, "metadata_exchange_cold_start_max_peers", 5) or 5
+            )
+            timeout = float(
+                getattr(net, "metadata_exchange_cold_start_timeout", 15.0) or 15.0
+            )
+        else:
+            max_peers = int(getattr(net, "metadata_exchange_max_peers", 10) or 10)
+            timeout = float(getattr(net, "metadata_exchange_timeout", 60.0) or 60.0)
+        return cls(cold_start=cold_start, max_peers=max_peers, timeout=timeout)
+
+
+def rank_peers_for_metadata_fetch(
+    peers: list[dict[str, Any]],
+    *,
+    failed_keys: Optional[set[tuple[str, int]]] = None,
+) -> list[dict[str, Any]]:
+    """Rank tracker peers for metadata fetch (non-6881 ports first, stable order)."""
+
+    def score(peer: dict[str, Any]) -> tuple[float, str, int]:
+        ip = str(peer.get("ip", ""))
+        try:
+            port = int(peer.get("port", 0))
+        except (TypeError, ValueError):
+            port = 0
+        key = (ip, port)
+        if failed_keys and key in failed_keys:
+            return (-1.0, ip, port)
+        port_bonus = 0.0 if port == 6881 else 0.25
+        source = str(peer.get("peer_source", "tracker") or "tracker")
+        source_bonus = 0.1 if source == "tracker" else 0.0
+        return (0.5 + port_bonus + source_bonus, ip, port)
+
+    return sorted(peers, key=score, reverse=True)
 
 
 class MetadataState(Enum):
@@ -586,11 +651,12 @@ class AsyncMetadataExchange:
                 connection_timeout,
             )
 
-            # Connect to peer
-            session.reader, session.writer = await asyncio.wait_for(
-                asyncio.open_connection(peer_info[0], peer_info[1]),
-                timeout=connection_timeout,
-            )  # pragma: no cover - Network connection requires real peer or complex async mocking
+            # Connect to peer (isolated from peer-manager connection semaphore)
+            async with _metadata_connect_semaphore():
+                session.reader, session.writer = await asyncio.wait_for(
+                    asyncio.open_connection(peer_info[0], peer_info[1]),
+                    timeout=connection_timeout,
+                )  # pragma: no cover - Network connection requires real peer or complex async mocking
             session.state = MetadataState.HANDSHAKE  # pragma: no cover - Same context
             self.logger.info(
                 "METADATA_EXCHANGE: Connected to %s:%d, state=HANDSHAKE",
@@ -760,6 +826,20 @@ class AsyncMetadataExchange:
                 failure_stage="extended_complete",
             )
             session.state = MetadataState.REQUESTING  # pragma: no cover - Same context
+
+            # Peers typically require INTERESTED + UNCHOKE before ut_metadata data.
+            await self._send_interested_for_metadata(session)
+            unchoke_timeout = min(15.0, max(5.0, extended_handshake_timeout))
+            unchoked = await self._wait_for_unchoke_for_metadata(
+                session,
+                timeout=unchoke_timeout,
+            )
+            if not unchoked:
+                self.logger.warning(
+                    "METADATA_EXCHANGE: No UNCHOKE from %s:%d before metadata request; proceeding anyway",
+                    peer_info[0],
+                    peer_info[1],
+                )
 
             # Start requesting metadata pieces
             await self._request_metadata_pieces(
@@ -1098,6 +1178,77 @@ class AsyncMetadataExchange:
                     exc_info=True,
                 )
                 continue  # pragma: no cover - Same context
+
+    async def _send_interested_for_metadata(
+        self,
+        session: PeerMetadataSession,
+    ) -> None:
+        """Send INTERESTED so peer may UNCHOKE before ut_metadata requests."""
+        if session.writer is None:
+            msg = _ERROR_WRITER_NOT_INITIALIZED
+            raise RuntimeError(msg)
+        session.writer.write(struct.pack("!IB", 1, MessageType.INTERESTED))
+        await session.writer.drain()
+        self.logger.debug(
+            "METADATA_EXCHANGE: Sent INTERESTED to %s:%d",
+            session.peer_info[0],
+            session.peer_info[1],
+        )
+
+    async def _wait_for_unchoke_for_metadata(
+        self,
+        session: PeerMetadataSession,
+        timeout: float = 15.0,
+    ) -> bool:
+        """Wait for UNCHOKE after INTERESTED before requesting ut_metadata pieces."""
+        if session.reader is None:
+            return False
+        start = time.time()
+        while time.time() - start < timeout:
+            remaining = max(0.5, timeout - (time.time() - start))
+            try:
+                length_data = await asyncio.wait_for(
+                    session.reader.readexactly(4),
+                    timeout=min(2.0, remaining),
+                )
+                length = struct.unpack("!I", length_data)[0]
+                if length == 0:
+                    continue
+                payload = await asyncio.wait_for(
+                    session.reader.readexactly(length),
+                    timeout=min(2.0, remaining),
+                )
+                msg_id = payload[0]
+                if msg_id == MessageType.UNCHOKE:
+                    self.logger.info(
+                        "METADATA_EXCHANGE: Received UNCHOKE from %s:%d",
+                        session.peer_info[0],
+                        session.peer_info[1],
+                    )
+                    return True
+                if msg_id == MessageType.CHOKE:
+                    self.logger.debug(
+                        "METADATA_EXCHANGE: Received CHOKE from %s:%d (waiting for UNCHOKE)",
+                        session.peer_info[0],
+                        session.peer_info[1],
+                    )
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                self.logger.debug(
+                    "METADATA_EXCHANGE: Error waiting for UNCHOKE from %s:%d: %s",
+                    session.peer_info[0],
+                    session.peer_info[1],
+                    e,
+                )
+                return False
+        self.logger.debug(
+            "METADATA_EXCHANGE: Timed out waiting for UNCHOKE from %s:%d after %.1fs",
+            session.peer_info[0],
+            session.peer_info[1],
+            timeout,
+        )
+        return False
 
     async def _request_metadata_pieces(self, session: PeerMetadataSession) -> None:
         """Request metadata pieces from a peer."""
@@ -1524,26 +1675,40 @@ class AsyncMetadataExchange:
 async def fetch_metadata_from_peers(
     info_hash: bytes,
     peers: list[dict[str, Any]],
-    timeout: float = 30.0,
+    timeout: Optional[float] = None,
     peer_id: Optional[bytes] = None,
+    *,
+    cold_start: bool = False,
+    failed_peer_keys: Optional[set[tuple[str, int]]] = None,
 ) -> Optional[dict[bytes, Any]]:
     """High-performance parallel metadata fetch.
 
     Args:
         info_hash: SHA-1 hash of the info dictionary
         peers: List of peer dictionaries
-        timeout: Timeout in seconds
+        timeout: Timeout in seconds (None uses NetworkConfig policy)
         peer_id: Our peer ID (20 bytes)
+        cold_start: Use cold-start peer cap and shorter timeout for magnets
+        failed_peer_keys: Peer keys to deprioritize (ip, port)
 
     Returns:
         Parsed metadata dictionary or None if failed
 
     """
+    policy = MetadataConnectPolicy.from_config(cold_start=cold_start)
+    effective_timeout = float(timeout if timeout is not None else policy.timeout)
+    max_peers = policy.max_peers
+    ranked = rank_peers_for_metadata_fetch(peers, failed_keys=failed_peer_keys)
+
     exchange = AsyncMetadataExchange(info_hash, peer_id)
 
     try:
         await exchange.start()
-        return await exchange.fetch_metadata(peers, max_peers=10, timeout=timeout)
+        return await exchange.fetch_metadata(
+            ranked,
+            max_peers=max_peers,
+            timeout=effective_timeout,
+        )
     finally:
         await exchange.stop()
 

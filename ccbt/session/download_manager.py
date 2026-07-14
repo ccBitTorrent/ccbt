@@ -317,7 +317,12 @@ class AsyncDownloadManager:
         if peer_manager is not None:
             total_download_rate = 0.0
             total_upload_rate = 0.0
-            for connection in peer_manager.get_connected_peers():
+            get_peers = getattr(peer_manager, "get_active_peers", None)
+            if not callable(get_peers):
+                get_peers = getattr(peer_manager, "get_connected_peers", None)
+            if not callable(get_peers):
+                return (self._download_rate, self._upload_rate)
+            for connection in get_peers():
                 if hasattr(connection, "stats"):
                     stats = connection.stats
                     if hasattr(stats, "download_rate"):

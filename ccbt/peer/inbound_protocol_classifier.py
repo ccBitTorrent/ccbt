@@ -7,11 +7,11 @@ unrecognized envelope.
 
 from __future__ import annotations
 
-import struct
 from enum import Enum
 from typing import Final
 
 from ccbt.protocols.bittorrent_v2 import PROTOCOL_STRING, PROTOCOL_STRING_LEN
+from ccbt.security.mse_handshake import is_probable_mse_lead
 
 
 class InboundProtocolKind(Enum):
@@ -25,18 +25,9 @@ class InboundProtocolKind(Enum):
 _PLAINTEXT_PREFIX: Final[bytes] = bytes([PROTOCOL_STRING_LEN]) + PROTOCOL_STRING
 
 
-def _read_network_length(prefix: bytes) -> int:
-    """Read an unsigned network-order length from the first four prefix bytes."""
-    return struct.unpack("!I", prefix[:4])[0]
-
-
 def _is_mse_lead(prefix: bytes) -> bool:
     """Return True when prefix is consistent with a post-P3 MSE/PE lead."""
-    if len(prefix) < 4:
-        return False
-
-    message_length = _read_network_length(prefix)
-    return not (message_length < 96 or message_length > 700)
+    return is_probable_mse_lead(prefix)
 
 
 def classify_prefix(prefix: bytes) -> InboundProtocolKind:

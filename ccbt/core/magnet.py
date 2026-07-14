@@ -8,9 +8,22 @@ This module parses magnet links and provides helpers to construct
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+_HARDCODED_DEFAULT_TRACKERS: list[str] = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "http://tracker.dler.org:6969/announce",
+    "http://tracker.renfei.net:8080/announce",
+    "https://tracker.nekomi.cn/announce",
+    "http://bt2.archive.org:6969/announce",
+    "https://tr.nyacat.pw/announce",
+]
 
 
 @dataclass
@@ -243,109 +256,184 @@ def parse_magnet(uri: str) -> MagnetInfo:
     )
 
 
+def get_configured_default_trackers() -> list[str]:
+    """Return configured default trackers for magnet links without tr= parameters."""
+    from ccbt.config.config import get_config
+
+    try:
+        config = get_config()
+        discovery = getattr(config, "discovery", None)
+        configured = getattr(discovery, "default_trackers", None) if discovery else None
+        if configured:
+            return list(configured)
+    except Exception as exc:
+        logger.warning(
+            "Failed to get default trackers from config: %s, using hardcoded defaults",
+            exc,
+        )
+    return _HARDCODED_DEFAULT_TRACKERS.copy()
+
+
+def collect_announce_urls_from_torrent_data(torrent_data: dict[str, Any]) -> list[str]:
+    """Collect tracker announce URLs from torrent_data (flat or tiered announce_list)."""
+    announce_urls: list[str] = []
+    seen: set[str] = set()
+
+    def add_url(url: Any) -> None:
+        if isinstance(url, str) and url.strip() and url not in seen:
+            seen.add(url)
+            announce_urls.append(url)
+
+    announce = torrent_data.get("announce")
+    if isinstance(announce, str):
+        add_url(announce)
+
+    announce_list = torrent_data.get("announce_list")
+    if isinstance(announce_list, list):
+        for tier in announce_list:
+            if isinstance(tier, str):
+                add_url(tier)
+            elif isinstance(tier, list):
+                for url in tier:
+                    add_url(url)
+    return announce_urls
+
+
+def dedupe_tracker_urls(urls: list[str]) -> list[str]:
+    """Return tracker URLs in stable order with duplicates removed."""
+    seen: set[str] = set()
+    unique: list[str] = []
+    for raw in urls:
+        if not isinstance(raw, str):
+            continue
+        url = raw.strip()
+        if not url or not url.startswith(("http://", "https://", "udp://")):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        unique.append(url)
+    return unique
+
+
+def merge_tracker_url_lists(*url_lists: list[str]) -> list[str]:
+    """Merge multiple tracker URL lists preserving order and deduplicating."""
+    merged: list[str] = []
+    for urls in url_lists:
+        merged.extend(urls)
+    return dedupe_tracker_urls(merged)
+
+
+def resolve_trackers_from_sources(
+    *,
+    magnet_trackers: Optional[list[str]] = None,
+    checkpoint_announce_urls: Optional[list[str]] = None,
+    checkpoint_magnet_uri: Optional[str] = None,
+    torrent_data: Optional[dict[str, Any]] = None,
+    supplement_defaults: bool = True,
+) -> list[str]:
+    """Merge tracker URLs from magnet, checkpoint, torrent_data, and configured defaults."""
+    sources: list[list[str]] = []
+    if magnet_trackers:
+        sources.append(list(magnet_trackers))
+    if checkpoint_announce_urls:
+        sources.append(list(checkpoint_announce_urls))
+    if checkpoint_magnet_uri and "tr=" in checkpoint_magnet_uri:
+        with contextlib.suppress(ValueError):
+            sources.append(list(parse_magnet(checkpoint_magnet_uri).trackers))
+    if torrent_data:
+        sources.append(collect_announce_urls_from_torrent_data(torrent_data))
+
+    merged = merge_tracker_url_lists(*sources) if sources else []
+    has_http = any(url.startswith(("http://", "https://")) for url in merged)
+    if supplement_defaults and (not merged or not has_http or len(merged) < 3):
+        merged = merge_tracker_url_lists(merged, get_configured_default_trackers())
+    return merged
+
+
+def enrich_magnet_uri_with_trackers(
+    magnet_uri: str,
+    trackers: list[str],
+) -> str:
+    """Return magnet URI with merged tracker parameters."""
+    if not trackers:
+        return magnet_uri
+    try:
+        info = parse_magnet(magnet_uri)
+        merged = merge_tracker_url_lists(list(info.trackers or []), trackers)
+        if merged == list(info.trackers or []) and "tr=" in magnet_uri:
+            return magnet_uri
+        return generate_magnet_link(
+            info.info_hash,
+            display_name=info.display_name,
+            trackers=merged,
+            web_seeds=info.web_seeds or None,
+        )
+    except ValueError:
+        return magnet_uri
+
+
+def merge_tracker_urls_into_torrent_data(
+    torrent_data: dict[str, Any],
+    tracker_urls: list[str],
+) -> bool:
+    """Merge tracker URLs into torrent_data, deduplicating against existing entries.
+
+    Returns:
+        True when tracker URLs were added to torrent_data.
+    """
+    if not tracker_urls:
+        return False
+
+    existing = collect_announce_urls_from_torrent_data(torrent_data)
+    merged = merge_tracker_url_lists(existing, tracker_urls)
+    if merged == existing:
+        return False
+
+    torrent_data["announce_list"] = merged
+    torrent_data["announce"] = merged[0]
+    return True
+
+
 def build_minimal_torrent_data(
     info_hash: bytes,
     name: Optional[str],
     trackers: list[str],
     web_seeds: Optional[list[str]] = None,
     swarm_id: Optional[str] = None,
+    *,
+    add_default_trackers: bool = True,
 ) -> dict[str, Any]:
     """Create a minimal `torrent_data` placeholder using known info.
 
     This structure is suitable for tracker/DHT peer discovery and metadata
     fetching, but lacks `info` details and piece layout until metadata is fetched.
 
-    Note: If no trackers are provided, add default public trackers to enable
-    peer discovery. This is essential for magnet links that only have web seeds (ws=)
-    but no trackers (tr=).
+    When ``add_default_trackers`` is True and no trackers are supplied, configured
+    public trackers are injected so info-hash-only magnets can discover peers.
 
     Note: Store web seeds (ws= parameters) from magnet links so they can be
     used by the WebSeedExtension for downloading pieces via HTTP range requests.
     """
-    # Note: Add default trackers if none provided
-    # This enables peer discovery for magnet links without tr= parameters
-    # However, respect explicit empty list when passed (for testing/edge cases)
-    # The function signature requires a list, so we can't distinguish None from []
-    # For backward compatibility: if empty list is passed, we respect it (no defaults)
-    # When called from parse_magnet with no tr= params, trackers will be [] and we add defaults
-    # But for explicit test calls with [], we respect the empty list
-    #
-    # SOLUTION: Add a parameter to control default tracker addition, or check caller context
-    # For now, we'll add a simple check: if trackers is empty AND we're in a context where
-    # defaults are needed (from parse_magnet), add them. Otherwise respect empty list.
-    #
-    # ACTUALLY: The simplest fix is to add an optional parameter `add_default_trackers=True`
-    # But that's a breaking change. Instead, we'll check if called from parse_magnet context.
-    # However, inspect is fragile. Better approach: respect empty list when explicitly passed.
-    #
-    # FINAL DECISION: Remove automatic default addition. Callers should explicitly add defaults
-    # if needed. This respects the test expectation and makes behavior predictable.
-    #
-    # But wait - the comment says this was a CRITICAL FIX for peer discovery. So maybe we need
-    # to keep it but make it conditional. Let's add a parameter with default True for backward compat.
-    #
-    # Actually, let's just respect empty lists for now and see if anything breaks.
-    # The test explicitly expects empty string when [] is passed.
-
-    # Only add defaults if trackers is empty AND we want to enable peer discovery
-    # For now, we'll skip adding defaults to respect explicit empty list (matches test)
-    # TODO: Consider adding a parameter `add_default_trackers: bool = True` for future
-    if False:  # Disabled to respect explicit empty list
-        import logging
-
-        from ccbt.config.config import get_config
-
-        logger = logging.getLogger(__name__)
-        logger.info(
-            "Magnet link has no trackers (tr= parameters), adding default public trackers from configuration for peer discovery"
-        )
-        # Get default trackers from configuration
-        try:
-            config = get_config()
-            if hasattr(config, "discovery") and hasattr(
-                config.discovery, "default_trackers"
-            ):
-                trackers = (
-                    config.discovery.default_trackers.copy()
-                    if config.discovery.default_trackers
-                    else []
+    trackers = dedupe_tracker_urls(list(trackers or []))
+    if add_default_trackers:
+        default_trackers = get_configured_default_trackers()
+        if default_trackers:
+            before_count = len(trackers)
+            trackers = merge_tracker_url_lists(trackers, default_trackers)
+            if before_count == 0:
+                logger.info(
+                    "Magnet link has no trackers (tr= parameters), adding %d default "
+                    "tracker(s) from configuration for peer discovery",
+                    len(trackers),
                 )
-                if trackers:
-                    logger.info(
-                        "Using %d default tracker(s) from configuration",
-                        len(trackers),
-                    )
-                else:
-                    logger.warning(
-                        "No default trackers configured, magnet link will rely on DHT only"
-                    )
-            else:
-                # Fallback to hardcoded defaults if config not available
-                logger.warning("Config not available, using hardcoded default trackers")
-                trackers = [
-                    "https://tracker.opentrackr.org:443/announce",
-                    "https://tracker.torrent.eu.org:443/announce",
-                    "https://tracker.openbittorrent.com:443/announce",
-                    "http://tracker.opentrackr.org:1337/announce",
-                    "http://tracker.openbittorrent.com:80/announce",
-                    "udp://tracker.opentrackr.org:1337/announce",
-                    "udp://tracker.openbittorrent.com:80/announce",
-                ]
-        except Exception as e:
-            # Fallback to hardcoded defaults on any error
-            logger.warning(
-                "Failed to get default trackers from config: %s, using hardcoded defaults",
-                e,
-            )
-            trackers = [
-                "https://tracker.opentrackr.org:443/announce",
-                "https://tracker.torrent.eu.org:443/announce",
-                "https://tracker.openbittorrent.com:443/announce",
-                "http://tracker.opentrackr.org:1337/announce",
-                "http://tracker.openbittorrent.com:80/announce",
-                "udp://tracker.opentrackr.org:1337/announce",
-                "udp://tracker.openbittorrent.com:80/announce",
-            ]
+            elif len(trackers) > before_count:
+                logger.info(
+                    "Supplemented magnet trackers with %d configured default tracker(s) "
+                    "(%d total)",
+                    len(trackers) - before_count,
+                    len(trackers),
+                )
 
     result = {
         "announce": trackers[0] if trackers else "",
@@ -365,9 +453,6 @@ def build_minimal_torrent_data(
     # These will be used by WebSeedExtension to download pieces via HTTP range requests
     if web_seeds:
         result["web_seeds"] = web_seeds
-        import logging
-
-        logger = logging.getLogger(__name__)
         logger.info(
             "Magnet link contains %d web seed(s) (ws= parameters), will be used for HTTP downloads",
             len(web_seeds),

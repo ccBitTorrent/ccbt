@@ -267,6 +267,19 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
             # Create task immediately - this returns immediately and doesn't block
             asyncio.create_task(submit_async())
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:  # pragma: no cover
+        """Submit when Enter is pressed in the torrent path field."""
+        if event.input.id != "torrent-input":
+            return
+
+        async def submit_async() -> None:
+            try:
+                await self.action_submit()
+            except Exception as e:
+                logger.error("Error in async input submit: %s", e, exc_info=True)
+
+        asyncio.create_task(submit_async())
+
 
 class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     """Advanced torrent addition screen with multi-step form.

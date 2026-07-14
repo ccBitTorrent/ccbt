@@ -86,9 +86,13 @@ class SSLContextBuilder:
                 self.logger.exception(msg)
                 raise
 
-        # Set protocol version
-        protocol = self._get_protocol_version(ssl_config.ssl_protocol_version)
-        context.minimum_version = protocol
+        # Public HTTPS trackers require TLS 1.2 compatibility; peer TLS may use a
+        # stricter minimum from config, but tracker announces stay at TLS 1.2+.
+        configured = self._get_protocol_version(ssl_config.ssl_protocol_version)
+        if configured.value > ssl.TLSVersion.TLSv1_2.value:
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+        else:
+            context.minimum_version = configured
 
         # Configure cipher suites if specified
         if ssl_config.ssl_cipher_suites:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import struct
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -1280,4 +1280,40 @@ async def test_receive_extended_handshake_skips_non_extension_message():
 
     assert session.ut_metadata_id == 7
     assert session.metadata_size == 8192
+
+
+@pytest.mark.asyncio
+async def test_send_interested_for_metadata_writes_message():
+    """Metadata path should send INTERESTED before ut_metadata requests."""
+    info_hash = hashlib.sha1(b"interested-metadata").digest()
+    exchange = AsyncMetadataExchange(info_hash)
+    session = PeerMetadataSession(peer_info=("10.0.0.1", 6881))
+    session.writer = MagicMock()
+    session.writer.drain = AsyncMock()
+
+    await exchange._send_interested_for_metadata(session)
+
+    session.writer.write.assert_called_once()
+    written = session.writer.write.call_args[0][0]
+    assert struct.unpack("!IB", written) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_unchoke_for_metadata_returns_true_on_unchoke():
+    """Metadata path should wait for UNCHOKE after INTERESTED."""
+    info_hash = hashlib.sha1(b"unchoke-metadata").digest()
+    exchange = AsyncMetadataExchange(info_hash)
+    session = PeerMetadataSession(peer_info=("10.0.0.2", 6881))
+    unchoke_msg = struct.pack("!IB", 1, 1)
+    session.reader = AsyncMock()
+    session.reader.readexactly = AsyncMock(
+        side_effect=[
+            struct.pack("!I", 1),
+            unchoke_msg[4:],
+        ]
+    )
+
+    result = await exchange._wait_for_unchoke_for_metadata(session, timeout=1.0)
+
+    assert result is True
 

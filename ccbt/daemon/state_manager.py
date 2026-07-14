@@ -248,6 +248,11 @@ class StateManager:
             # Extract per-torrent options and rate limits from session
             per_torrent_options = None
             rate_limits = None
+            num_peers = status.get("connected_peers", 0)
+            torrent_file_path = status.get("torrent_file_path")
+            magnet_uri = status.get("magnet_uri")
+            output_dir = status.get("output_dir", ".")
+            added_at = status.get("added_time", time.time())
 
             try:
                 info_hash_bytes = bytes.fromhex(info_hash_hex)
@@ -257,16 +262,34 @@ class StateManager:
                 if lock_acquired:
                     try:
                         torrent_session = session_manager.torrents.get(info_hash_bytes)
-                        if (
-                            torrent_session
-                            and hasattr(torrent_session, "options")
-                            and torrent_session.options
-                        ):
-                            per_torrent_options = dict(torrent_session.options)
+                        if torrent_session:
+                            if not torrent_file_path:
+                                torrent_file_path = getattr(
+                                    torrent_session, "torrent_file_path", None
+                                )
+                            if not magnet_uri:
+                                magnet_uri = getattr(
+                                    torrent_session, "magnet_uri", None
+                                )
+                            session_output_dir = getattr(
+                                torrent_session, "output_dir", None
+                            )
+                            if session_output_dir:
+                                output_dir = str(session_output_dir)
+                            info_obj = getattr(torrent_session, "info", None)
+                            if info_obj is not None:
+                                added_at = float(
+                                    getattr(info_obj, "added_time", added_at)
+                                    or added_at
+                                )
+                            if (
+                                hasattr(torrent_session, "options")
+                                and torrent_session.options
+                            ):
+                                per_torrent_options = dict(torrent_session.options)
                     finally:
                         session_manager.release_manager_lock()
 
-                # Get rate limits from session manager
                 limits = session_manager.get_per_torrent_limits(info_hash_bytes)
                 if limits:
                     rate_limits = {
@@ -280,15 +303,13 @@ class StateManager:
                     e,
                 )
 
-            # Canonical internal keys are `connected_peers` / `active_peers`.
-            num_peers = status.get("connected_peers", 0)
             torrents[info_hash_hex] = TorrentState(
                 info_hash=info_hash_hex,
                 name=status.get("name", "Unknown"),
                 status=status.get("status", "unknown"),
                 progress=status.get("progress", 0.0),
-                output_dir=status.get("output_dir", "."),
-                added_at=status.get("added_time", time.time()),
+                output_dir=output_dir,
+                added_at=added_at,
                 paused=status.get("status") == "paused",
                 download_rate=status.get("download_rate", 0.0),
                 upload_rate=status.get("upload_rate", 0.0),
@@ -296,8 +317,8 @@ class StateManager:
                 total_size=status.get("total_size", 0),
                 downloaded=status.get("downloaded", 0),
                 uploaded=status.get("uploaded", 0),
-                torrent_file_path=status.get("torrent_file_path"),
-                magnet_uri=status.get("magnet_uri"),
+                torrent_file_path=torrent_file_path,
+                magnet_uri=magnet_uri,
                 per_torrent_options=per_torrent_options,
                 rate_limits=rate_limits,
             )
