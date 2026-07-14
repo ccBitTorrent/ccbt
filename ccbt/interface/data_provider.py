@@ -7,6 +7,7 @@ from either a daemon IPC connection or a local session manager.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import mimetypes
 import time
@@ -134,8 +135,13 @@ def _normalize_torrent_read_model(
     active_peers = _to_int(
         raw.get("active_peers", raw.get("num_seeds", raw.get("seeds", 0))),
     )
+    info_hash_raw = raw.get("info_hash") or raw.get("info_hash_hex") or ""
+    if isinstance(info_hash_raw, bytes):
+        info_hash_str = info_hash_raw.hex()
+    else:
+        info_hash_str = str(info_hash_raw or "")
     normalized = {
-        "info_hash": raw.get("info_hash", ""),
+        "info_hash": info_hash_str,
         "name": raw.get("name", "Unknown"),
         "status": raw.get("status", "unknown"),
         "progress": _to_float(raw.get("progress", 0.0)),
@@ -744,6 +750,7 @@ class DaemonDataProvider(DataProvider):
         self._cache: dict[str, tuple[Any, float]] = {}
         self._cache_ttl = 1.0  # 1.0 second TTL - balanced for responsiveness and reduced redundant requests
         self._cache_lock = asyncio.Lock()
+        self._cache_inflight: dict[str, asyncio.Task[Any]] = {}
         self._cache_invalidation_keys: set[str] = set()
         self._cache_invalidate_all: bool = False
         self._cache_invalidation_task: Optional[asyncio.Task[None]] = None
@@ -761,20 +768,17 @@ class DaemonDataProvider(DataProvider):
     ) -> Any:  # pragma: no cover
         """Get cached value or fetch if expired.
 
-        Args:
-            key: Cache key
-            fetch_func: Async function to fetch data if cache miss
-            ttl: Time to live in seconds (defaults to self._cache_ttl)
-
-        Returns:
-            Cached or freshly fetched data
+        Coalesces concurrent fetches for the same key and never holds the cache
+        lock across IPC/network I/O (avoids blocking all provider reads).
         """
         if ttl is None:
             ttl = self._cache_ttl
+        now = time.time()
+        inflight: Optional[asyncio.Task[Any]] = None
         async with self._cache_lock:
             if key in self._cache:
                 value, timestamp = self._cache[key]
-                age = time.time() - timestamp
+                age = now - timestamp
                 if ttl > 0 and age < ttl:
                     logger.debug(
                         "Cache hit for key=%s (age=%.3fs, ttl=%.3fs)",
@@ -783,18 +787,49 @@ class DaemonDataProvider(DataProvider):
                         ttl,
                     )
                     return value
-                logger.debug(
-                    "Cache miss due expiry for key=%s (age=%.3fs, ttl=%.3fs)",
-                    key,
-                    age,
-                    ttl,
-                )
-            # Cache miss or expired, fetch new data
+            inflight = self._cache_inflight.get(key)
+
+        if inflight is not None:
+            return await inflight
+
+        async def _run_fetch() -> Any:
             logger.debug("Fetching fresh value for cache key=%s", key)
             value = await fetch_func()
-            self._cache[key] = (value, time.time())
+            async with self._cache_lock:
+                self._cache[key] = (value, time.time())
+                self._cache_inflight.pop(key, None)
             logger.debug("Cache updated for key=%s", key)
             return value
+
+        task = asyncio.create_task(_run_fetch())
+        async with self._cache_lock:
+            existing = self._cache_inflight.get(key)
+            if existing is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                return await existing
+            self._cache_inflight[key] = task
+        try:
+            return await task
+        except Exception:
+            async with self._cache_lock:
+                if self._cache_inflight.get(key) is task:
+                    self._cache_inflight.pop(key, None)
+            raise
+
+    def seed_cache(
+        self,
+        key: str,
+        value: Any,
+        *,
+        ttl: Optional[float] = None,
+    ) -> None:
+        """Pre-populate cache (e.g. rate samples from ui/snapshot)."""
+        if ttl is None:
+            ttl = self._cache_ttl
+        self._cache[key] = (value, time.time())
+        logger.debug("Cache seeded for key=%s (ttl=%.3fs)", key, ttl or 0.0)
 
     async def _flush_cache_invalidations(self) -> None:
         """Flush queued cache invalidations under a single lock."""
@@ -1016,7 +1051,7 @@ class DaemonDataProvider(DataProvider):
                     _normalize_torrent_read_model(t) for t in out["torrents"]
                 ]
             return out
-        return await self._get_cached("ui_snapshot", _fetch, ttl=0.0)
+        return await self._get_cached("ui_snapshot", _fetch, ttl=0.5)
 
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get torrent status from daemon."""
@@ -1068,7 +1103,7 @@ class DaemonDataProvider(DataProvider):
             return result
         except Exception as e:
             logger.error("DaemonDataProvider.list_torrents: Error in list_torrents: %s", e, exc_info=True)
-            return []  # Return empty list on error to prevent UI breakage
+            raise
 
     async def list_xet_folders(self) -> list[dict[str, Any]]:
         """List active XET workspaces from the daemon runtime."""
@@ -1287,6 +1322,21 @@ class DaemonDataProvider(DataProvider):
                     logger.warning("DaemonDataProvider: Timeout fetching rate samples after %d attempts", max_retries)
                     return []
                 except Exception as e:
+                    import aiohttp
+
+                    if isinstance(
+                        e,
+                        (
+                            aiohttp.ClientConnectorError,
+                            aiohttp.ServerTimeoutError,
+                            aiohttp.ClientOSError,
+                        ),
+                    ):
+                        logger.debug(
+                            "DaemonDataProvider: IPC unreachable fetching rate samples: %s",
+                            e,
+                        )
+                        return []
                     if attempt < max_retries - 1:
                         logger.debug("DaemonDataProvider: Error fetching rate samples (attempt %d/%d): %s, retrying...",
                                    attempt + 1, max_retries, e)
@@ -1299,7 +1349,7 @@ class DaemonDataProvider(DataProvider):
             return []
 
         cache_key = f"rate_samples_{seconds}"
-        return await self._get_cached(cache_key, _fetch, ttl=1.0)
+        return await self._get_cached(cache_key, _fetch, ttl=3.0)
 
     async def get_disk_io_metrics(self) -> dict[str, Any]:
         """Get disk I/O metrics from daemon."""

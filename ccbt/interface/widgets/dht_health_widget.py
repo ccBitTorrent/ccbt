@@ -96,7 +96,7 @@ class DHTHealthWidget(Static):  # type: ignore[misc]
 
     def watch_dht_health_summary(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: render DHT summary from the bound dict (F2.6.3)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self.update(self._render_summary(value))
 
     def _render_summary(self, summary: dict[str, Any]) -> Panel:

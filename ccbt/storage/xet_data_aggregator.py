@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
     from ccbt.storage.xet_deduplication import XetDeduplication
 
+from ccbt.utils.compat import to_thread_compat
+
 logger = logging.getLogger(__name__)
 
 
@@ -188,9 +190,7 @@ class XetDataAggregator:
             if not chunk_path or not chunk_path.exists():
                 return None
 
-            # Read chunk data in executor to avoid blocking
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, chunk_path.read_bytes)
+            return await to_thread_compat(chunk_path.read_bytes)
         except Exception as e:
             self.logger.debug("Failed to read chunk %s: %s", chunk_hash.hex()[:16], e)
             return None

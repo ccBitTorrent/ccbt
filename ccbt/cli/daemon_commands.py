@@ -13,7 +13,6 @@ import warnings
 from typing import Any, Optional
 
 import click
-from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from ccbt.config.config import get_config, init_config
@@ -22,10 +21,73 @@ from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
 from ccbt.daemon.utils import generate_api_key
 from ccbt.i18n import _
 from ccbt.models import DaemonConfig
+from ccbt.utils.console_utils import create_console
 from ccbt.utils.logging_config import get_logger, log_info_normal
 
 logger = get_logger(__name__)
-console = Console()
+console = create_console()
+
+
+async def _probe_daemon_ipc(daemon_config: DaemonConfig) -> bool:
+    """Return True when daemon IPC responds to a health check."""
+    client = IPCClient(api_key=daemon_config.api_key)
+    try:
+        return await client.is_daemon_running()
+    finally:
+        await client.close()
+
+
+def _ensure_can_start_daemon(daemon_manager: DaemonManager, cfg: Any) -> None:
+    """Allow start when PID file is stale; block duplicate live instances."""
+    if daemon_manager.ensure_single_instance():
+        return
+
+    pid = daemon_manager.get_pid()
+    if pid is None:
+        return
+
+    import os
+
+    try:
+        os.kill(pid, 0)
+        process_alive = True
+    except (OSError, ProcessLookupError):
+        process_alive = False
+
+    if not process_alive:
+        console.print(
+            _(
+                "[yellow]WARN[/yellow] Removing stale daemon PID file (PID {pid} not running)"
+            ).format(pid=pid)
+        )
+        daemon_manager.remove_pid()
+        return
+
+    ipc_alive = False
+    if cfg.daemon and cfg.daemon.api_key:
+        try:
+            ipc_alive = asyncio.run(_probe_daemon_ipc(cfg.daemon))
+        except Exception:
+            ipc_alive = False
+
+    if ipc_alive:
+        console.print(
+            _("[red]FAILED[/red] Daemon is already running with PID {pid}").format(
+                pid=pid
+            ),
+            style="red",
+        )
+        raise click.Abort
+
+    console.print(
+        _(
+            "[yellow]WARN[/yellow] Daemon process (PID {pid}) exists but IPC is not "
+            "responding yet. Wait a few seconds and try 'btbt daemon status', or "
+            "stop the existing daemon with 'btbt daemon exit'."
+        ).format(pid=pid)
+    )
+    raise click.Abort
+
 
 # Note: Suppress Windows ProactorEventLoop cleanup warnings
 # This is a known Python bug (https://bugs.python.org/issue39232) where
@@ -189,7 +251,7 @@ def start(
         cfg.daemon = DaemonConfig(api_key=api_key)
         daemon_config_created = True
         if verbosity.is_verbose():
-            console.print(_("[green]✓[/green] Generated new API key for daemon"))
+            console.print(_("[green]OK[/green] Generated new API key for daemon"))
         # LOGGING OPTIMIZATION: Use verbosity-aware logging - important operation
         log_info_normal(logger, verbosity, _("Generated new API key for daemon"))
     elif regenerate_api_key or not cfg.daemon.api_key:
@@ -198,7 +260,7 @@ def start(
         cfg.daemon.api_key = api_key
         daemon_config_created = True
         if verbosity.is_verbose():
-            console.print(_("[green]✓[/green] Generated new API key for daemon"))
+            console.print(_("[green]OK[/green] Generated new API key for daemon"))
         # LOGGING OPTIMIZATION: Use verbosity-aware logging - important operation
         log_info_normal(logger, verbosity, _("Generated new API key for daemon"))
 
@@ -245,7 +307,7 @@ def start(
 
                 if verbosity.is_verbose():
                     console.print(
-                        _("[green]✓[/green] Updated config file: {file}").format(
+                        _("[green]OK[/green] Updated config file: {file}").format(
                             file=config_manager.config_file
                         )
                     )
@@ -259,7 +321,7 @@ def start(
             if verbosity.is_verbose():
                 console.print(
                     _(
-                        "[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+                        "[yellow]WARN[/yellow] Could not save daemon config to config file: {e}"
                     ).format(e=e)
                 )
             logger.warning(_("Could not save daemon config to config file: %s"), e)
@@ -268,13 +330,7 @@ def start(
     if verbosity.is_verbose():
         console.print(_("[cyan]Checking for existing daemon instance...[/cyan]"))
     daemon_manager = DaemonManager()
-    if not daemon_manager.ensure_single_instance():
-        pid = daemon_manager.get_pid()
-        console.print(
-            _("[red]✗[/red] Daemon is already running with PID {pid}").format(pid=pid),
-            style="red",
-        )
-        raise click.Abort
+    _ensure_can_start_daemon(daemon_manager, cfg)
 
     if foreground:
         # Run in foreground
@@ -464,7 +520,7 @@ def start(
                 # Process died immediately
                 console.print(
                     _(
-                        "[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting"
+                        "[red]FAILED[/red] Daemon process (PID {pid}) exited immediately after starting"
                     ).format(pid=pid)
                 )
                 console.print(
@@ -539,7 +595,7 @@ def start(
                     time.sleep(0.5)
                     console.print(
                         _(
-                            "[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)"
+                            "[green]OK[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)"
                         ).format(pid=pid, elapsed=elapsed)
                     )
                     # Clear splash screen only after daemon initialization is fully complete
@@ -549,7 +605,7 @@ def start(
                 else:
                     console.print(
                         _(
-                            "[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet"
+                            "[yellow]WARN[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet"
                         ).format(pid=pid)
                     )
                     console.print(
@@ -557,7 +613,7 @@ def start(
                     )
             else:
                 console.print(
-                    _("[green]✓[/green] Daemon process started (PID {pid})").format(
+                    _("[green]OK[/green] Daemon process started (PID {pid})").format(
                         pid=pid
                     )
                 )
@@ -566,7 +622,9 @@ def start(
                 )
 
         except RuntimeError as e:
-            console.print(_("[red]✗[/red] Failed to start daemon: {e}").format(e=e))
+            console.print(
+                _("[red]FAILED[/red] Failed to start daemon: {e}").format(e=e)
+            )
             # Point user to log file and foreground for debugging
             log_file = daemon_manager.state_dir / "daemon_startup.log"
             if log_file.exists():
@@ -796,7 +854,7 @@ def _wait_for_daemon_with_progress(
                     if verbosity and verbosity.is_verbose():
                         console.print(
                             _(
-                                "[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
+                                "[red]FAILED[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
                             ).format(pid=initial_pid, elapsed=elapsed)
                         )
                         console.print(
@@ -807,7 +865,7 @@ def _wait_for_daemon_with_progress(
                     else:
                         console.print(
                             _(
-                                "[red]✗[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
+                                "[red]FAILED[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
                             ).format(pid=initial_pid, elapsed=elapsed)
                         )
                         console.print(
@@ -870,7 +928,7 @@ def _wait_for_daemon_with_progress(
         if verbosity and verbosity.is_verbose():
             console.print(
                 _(
-                    "[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})"
+                    "[yellow]WARN[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})"
                 ).format(timeout=timeout, last_status=last_status)
             )
             console.print(

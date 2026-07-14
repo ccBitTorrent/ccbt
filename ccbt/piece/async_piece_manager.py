@@ -1593,9 +1593,20 @@ class AsyncPieceManager:
 
     def get_download_progress(self) -> float:
         """Get download progress as a fraction (0.0 to 1.0)."""
-        # Note: If num_pieces is 0, return 1.0 (100% complete) - no pieces means nothing to download
-        # This handles edge case of empty torrents (0-byte files)
         if self.num_pieces == 0:
+            # Magnet/metadata-pending sessions have zero pieces until geometry is known.
+            if getattr(self, "_metadata_incomplete", False):
+                return 0.0
+            if getattr(self, "download_complete", False):
+                return 1.0
+            torrent_data = getattr(self, "torrent_data", None)
+            if isinstance(torrent_data, dict):
+                if torrent_data.get("_metadata_incomplete"):
+                    return 0.0
+                file_info = torrent_data.get("file_info")
+                if file_info is None:
+                    return 0.0
+            # Known empty torrent (0-byte files, complete geometry).
             return 1.0
 
         # Note: Ensure verified_pieces is a set and we're counting correctly

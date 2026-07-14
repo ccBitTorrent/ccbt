@@ -6,9 +6,15 @@ Implements the Preferences tab with nested sub-tabs for configuration options.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
+from ccbt.interface.content_load import (
+    SyncContentLoadGuard,
+    clear_container_children,
+    mount_or_update_static,
+    query_child_by_id,
+)
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -76,6 +82,25 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
         self._sub_tabs: Optional[Tabs] = None
         self._content_area: Optional[Container] = None
         self._active_sub_tab_id: Optional[str] = None
+        self._sub_tab_load_guard = SyncContentLoadGuard()
+
+    _SUB_TAB_WIDGET_IDS: ClassVar[dict[str, str]] = {
+        "sub-tab-general": "global-config-wrapper",
+        "sub-tab-network": "network-config-wrapper",
+        "sub-tab-bandwidth": "bandwidth-config-wrapper",
+        "sub-tab-storage": "storage-config-wrapper",
+        "sub-tab-security": "security-config-wrapper",
+        "sub-tab-advanced": "advanced-config-wrapper",
+    }
+
+    _SUB_TAB_PLACEHOLDER_IDS: ClassVar[dict[str, str]] = {
+        "sub-tab-general": "general-config-placeholder",
+        "sub-tab-network": "network-config-placeholder",
+        "sub-tab-bandwidth": "bandwidth-config-placeholder",
+        "sub-tab-storage": "storage-config-placeholder",
+        "sub-tab-security": "security-config-placeholder",
+        "sub-tab-advanced": "advanced-config-placeholder",
+    }
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the preferences tab with nested sub-tabs."""
@@ -110,16 +135,22 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
         Args:
             sub_tab_id: ID of the sub-tab to load
         """
+        self._sub_tab_load_guard.run(self._load_sub_tab_content_impl, sub_tab_id)
+
+    def _load_sub_tab_content_impl(self, sub_tab_id: str) -> None:  # pragma: no cover
+        """Load content for a specific sub-tab (serialized; do not call directly)."""
         if not self._content_area:
             return
-        if sub_tab_id == self._active_sub_tab_id:
+
+        widget_id = self._SUB_TAB_WIDGET_IDS.get(sub_tab_id, f"{sub_tab_id}-content")
+        placeholder_id = self._SUB_TAB_PLACEHOLDER_IDS.get(sub_tab_id, f"{sub_tab_id}-content")
+        if sub_tab_id == self._active_sub_tab_id and (
+            query_child_by_id(self._content_area, widget_id) is not None
+            or query_child_by_id(self._content_area, placeholder_id) is not None
+        ):
             return
 
-        # Clear existing content
-        try:
-            self._content_area.remove_children()  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        clear_container_children(self._content_area)
 
         # Get data provider and command executor from parent (TerminalDashboard or MainTabsContainer)
         data_provider = None
@@ -166,8 +197,12 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                 )
                 self._content_area.mount(wrapper)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("General configuration - Data provider/Executor not available"), id="general-config-placeholder")
-                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._content_area,
+                    "general-config-placeholder",
+                    _("General configuration - Data provider/Executor not available"),
+                    Static,
+                )
             self._active_sub_tab_id = sub_tab_id
         elif sub_tab_id == "sub-tab-network":
             if data_provider and command_executor:
@@ -180,8 +215,12 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                 )
                 self._content_area.mount(wrapper)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Network configuration - Data provider/Executor not available"), id="network-config-placeholder")
-                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._content_area,
+                    "network-config-placeholder",
+                    _("Network configuration - Data provider/Executor not available"),
+                    Static,
+                )
             self._active_sub_tab_id = sub_tab_id
         elif sub_tab_id == "sub-tab-bandwidth":
             if data_provider and command_executor:
@@ -194,8 +233,12 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                 )
                 self._content_area.mount(wrapper)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Bandwidth configuration - Data provider/Executor not available"), id="bandwidth-config-placeholder")
-                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._content_area,
+                    "bandwidth-config-placeholder",
+                    _("Bandwidth configuration - Data provider/Executor not available"),
+                    Static,
+                )
             self._active_sub_tab_id = sub_tab_id
         elif sub_tab_id == "sub-tab-storage":
             if data_provider and command_executor:
@@ -208,8 +251,12 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                 )
                 self._content_area.mount(wrapper)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Storage configuration - Data provider/Executor not available"), id="storage-config-placeholder")
-                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._content_area,
+                    "storage-config-placeholder",
+                    _("Storage configuration - Data provider/Executor not available"),
+                    Static,
+                )
             self._active_sub_tab_id = sub_tab_id
         elif sub_tab_id == "sub-tab-security":
             if data_provider and command_executor:
@@ -222,8 +269,12 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                 )
                 self._content_area.mount(wrapper)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Security configuration - Data provider/Executor not available"), id="security-config-placeholder")
-                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._content_area,
+                    "security-config-placeholder",
+                    _("Security configuration - Data provider/Executor not available"),
+                    Static,
+                )
             self._active_sub_tab_id = sub_tab_id
         elif sub_tab_id == "sub-tab-advanced":
             if data_provider and command_executor:
@@ -236,8 +287,12 @@ class PreferencesTabContent(Container):  # type: ignore[misc]
                 )
                 self._content_area.mount(wrapper)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Advanced configuration - Data provider/Executor not available"), id="advanced-config-placeholder")
-                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._content_area,
+                    "advanced-config-placeholder",
+                    _("Advanced configuration - Data provider/Executor not available"),
+                    Static,
+                )
             self._active_sub_tab_id = sub_tab_id
         else:
             placeholder = Static(_("{sub_tab} configuration - Coming soon").format(sub_tab=sub_tab_id), id=f"{sub_tab_id}-content")

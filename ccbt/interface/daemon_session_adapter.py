@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import sys
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 if TYPE_CHECKING:
@@ -318,6 +320,11 @@ class DaemonInterfaceAdapter:
 
         max_retries = 3
         retry_delay = 1.0
+        use_websocket = (
+            sys.platform != "win32"
+            or os.environ.get("CCBT_DASHBOARD_WEBSOCKET", "").lower()
+            in ("1", "true", "yes")
+        )
 
         for attempt in range(max_retries):
             try:
@@ -335,6 +342,17 @@ class DaemonInterfaceAdapter:
                         f"Daemon is not running or not accessible after {max_retries} attempts"
                     )
                     raise RuntimeError(message)
+
+                if not use_websocket:
+                    self.logger.info(
+                        "Using HTTP polling for dashboard updates on Windows "
+                        "(set CCBT_DASHBOARD_WEBSOCKET=1 to enable WebSocket)"
+                    )
+                    # Hydration is handled by the dashboard poll loop; avoid a
+                    # blocking list+stats IPC round-trip during Textual mount.
+                    self._start_loop = asyncio.get_running_loop()
+                    self.logger.info("Daemon interface adapter started (polling mode)")
+                    return
 
                 # Connect WebSocket for real-time updates
                 if await self._client.connect_websocket():
@@ -820,7 +838,10 @@ class DaemonInterfaceAdapter:
     async def _resync_from_snapshot(self) -> None:
         """Resync adapter caches from daemon UI snapshot (after subscribe or reconnect)."""
         try:
-            response = await self._client.get_ui_snapshot()
+            response = await asyncio.wait_for(
+                self._client.get_ui_snapshot(),
+                timeout=20.0,
+            )
             gs = _normalize_global_stats_read_model(
                 response.global_stats if isinstance(response.global_stats, dict) else {},
             )
@@ -860,7 +881,6 @@ class DaemonInterfaceAdapter:
     async def _refresh_cache(self) -> None:
         """Refresh cached status from daemon."""
         try:
-            # CRITICAL: Use executor adapter for all operations (consistent with CLI)
             torrent_list = await self._executor_adapter.list_torrents()
 
             async with self._cache_lock:
@@ -883,6 +903,15 @@ class DaemonInterfaceAdapter:
                 self._cached_status = _normalize_global_stats_read_model(stats)
         except Exception as e:
             self.logger.debug("Error refreshing cache: %s", e)
+
+    async def _refresh_global_stats_cache(self) -> None:
+        """Refresh only the global stats cache (lighter than full cache refresh)."""
+        try:
+            stats = await self._executor_adapter.get_global_stats()
+            async with self._cache_lock:
+                self._cached_status = _normalize_global_stats_read_model(stats)
+        except Exception as e:
+            self.logger.debug("Error refreshing global stats cache: %s", e)
 
     # AsyncSessionManager interface methods
 
@@ -1010,7 +1039,7 @@ class DaemonInterfaceAdapter:
 
     async def get_global_stats(self) -> dict[str, Any]:
         """Aggregate global statistics across all torrents."""
-        await self._refresh_cache()
+        await self._refresh_global_stats_cache()
         async with self._cache_lock:
             return dict(self._cached_status)
 

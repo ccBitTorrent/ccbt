@@ -77,9 +77,8 @@ class XetDeduplication:
         # Note: Add retry logic for Windows file locking issues
         # On Windows, the database file might be locked from a previous run
         # Retry with exponential backoff to handle transient file locking
-        import sys
 
-        max_retries = 3 if sys.platform == "win32" else 1
+        max_retries = 3
         retry_delay = 0.1
 
         for attempt in range(max_retries):
@@ -327,34 +326,32 @@ class XetDeduplication:
             Path to stored chunk (may be existing or new)
 
         """
-        existing = await self.check_chunk_exists(chunk_hash)
-        if existing:
-            async with self._db_lock:
+        async with self._db_lock:
+            existing = await to_thread_compat(
+                self._check_chunk_exists_sync,
+                chunk_hash,
+            )
+            if existing:
                 await to_thread_compat(
                     self._increment_chunk_ref_sync,
                     chunk_hash,
                 )
-            self.logger.debug(
-                "Chunk %s already exists, incremented ref count",
-                chunk_hash.hex()[:16],
-            )
-            if file_path is not None and file_offset is not None:
-                await self.add_file_chunk_reference(
-                    file_path, chunk_hash, file_offset, len(chunk_data)
+                storage_file = existing
+                self.logger.debug(
+                    "Chunk %s already exists, incremented ref count",
+                    chunk_hash.hex()[:16],
                 )
-            return existing
-
-        async with self._db_lock:
-            storage_file = await to_thread_compat(
-                self._store_new_chunk_sync,
-                chunk_hash,
-                chunk_data,
-            )
-        self.logger.debug(
-            "Stored new chunk %s (%d bytes)",
-            chunk_hash.hex()[:16],
-            len(chunk_data),
-        )
+            else:
+                storage_file = await to_thread_compat(
+                    self._store_new_chunk_sync,
+                    chunk_hash,
+                    chunk_data,
+                )
+                self.logger.debug(
+                    "Stored new chunk %s (%d bytes)",
+                    chunk_hash.hex()[:16],
+                    len(chunk_data),
+                )
         if file_path is not None and file_offset is not None:
             await self.add_file_chunk_reference(
                 file_path, chunk_hash, file_offset, len(chunk_data)

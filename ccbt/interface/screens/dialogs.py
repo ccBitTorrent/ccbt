@@ -158,7 +158,7 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
                 pass
 
     async def action_submit(self) -> None:  # pragma: no cover
-        """Submit and add torrent."""
+        """Submit and add torrent (non-blocking — avoids freezing the modal)."""
         try:
             input_widget = self.query_one("#torrent-input", Input)  # type: ignore[attr-defined]
             path = input_widget.value.strip()  # type: ignore[attr-defined]
@@ -166,93 +166,81 @@ class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
             if not path:
                 return
 
-            # Note: Use command executor for daemon compatibility
-            # Check if dashboard has command executor (daemon mode) or use session directly (local mode)
+            from rich.text import Text
+
+            try:
+                label = self.query_one("#label", Static)  # type: ignore[attr-defined]
+                label.update(Text(_("Adding torrent..."), style="yellow"))  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            import asyncio
+
+            asyncio.create_task(self._submit_add(path))
+        except Exception as e:
+            logger.debug("Error in quick add: %s", e)
+
+    async def _submit_add(self, path: str) -> None:  # pragma: no cover
+        """Background add with timeout so a dead daemon cannot hang the UI."""
+        from rich.text import Text
+
+        timeout_seconds = 120.0 if path.startswith("magnet:") else 60.0
+        try:
             if hasattr(self.dashboard, "_command_executor") and self.dashboard._command_executor:
-                # Daemon mode: use command executor
-                try:
-                    result = await self.dashboard._command_executor.execute_command(
+                result = await asyncio.wait_for(
+                    self.dashboard._command_executor.execute_command(
                         "torrent.add",
                         path_or_magnet=path,
                         output_dir=None,
                         resume=False,
-                    )
-                    if result and result.success:
-                        info_hash_hex = result.data.get("info_hash", "") if result.data else ""
-                        if info_hash_hex:
-                            logger.debug("QuickAddTorrentScreen: Torrent added successfully, info_hash: %s", info_hash_hex)
-                            # Note: Dismiss with info_hash and trigger immediate UI refresh
-                            try:
-                                self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
-                                # Trigger immediate UI refresh after dismiss
-                                # The WebSocket event should also trigger refresh, but this ensures it happens
-                                if hasattr(self.dashboard, "_schedule_poll"):
-                                    self.dashboard._schedule_poll()  # type: ignore[attr-defined]
-                                # Also invalidate cache to force refresh
-                                if hasattr(self.dashboard, "_data_provider") and self.dashboard._data_provider:
-                                    if hasattr(self.dashboard._data_provider, "invalidate_cache"):
-                                        self.dashboard._data_provider.invalidate_cache("torrent_list")
-                                        self.dashboard._data_provider.invalidate_cache("global_stats")
-                            except Exception as dismiss_error:
-                                logger.error("Error dismissing QuickAddTorrentScreen: %s", dismiss_error, exc_info=True)
-                                # Fallback: try to close the screen directly
-                                try:
-                                    if hasattr(self, "app") and self.app:  # type: ignore[attr-defined]
-                                        await self.app.pop_screen()  # type: ignore[attr-defined]
-                                except Exception:
-                                    pass
-                        else:
-                            # Show error - no info hash returned
-                            from rich.text import Text
-                            error_msg = "Error: Torrent added but no info hash returned"
-                            try:
-                                label = self.query_one("#label", Static)  # type: ignore[attr-defined]
-                                label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
-                            except Exception:
-                                pass
-                    else:
-                        # Show error from executor
-                        from rich.text import Text
-                        error_msg = f"Error: {result.error if result else 'Failed to add torrent'}"
-                        try:
-                            label = self.query_one("#label", Static)  # type: ignore[attr-defined]
-                            label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
-                        except Exception:
-                            pass
-                except Exception as e:
-                    # Show error
-                    from rich.text import Text
-                    error_msg = f"Error: {e!s}"
-                    try:
-                        label = self.query_one("#label", Static)  # type: ignore[attr-defined]
-                        label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
-            else:
-                # Local mode: use session directly
-                try:
-                    info_hash_hex = await self.session.add_torrent(path, resume=False)
+                    ),
+                    timeout=timeout_seconds,
+                )
+                if result and result.success:
+                    info_hash_hex = result.data.get("info_hash", "") if result.data else ""
                     if info_hash_hex:
-                        self.dismiss(info_hash_hex)
-                except Exception as e:
-                    # Show error
-                    from rich.text import Text
-                    error_msg = f"Error: {e!s}"
-                    try:
-                        label = self.query_one("#label", Static)  # type: ignore[attr-defined]
-                        label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
-                    except Exception:
-                        pass
+                        logger.debug(
+                            "QuickAddTorrentScreen: Torrent added successfully, info_hash: %s",
+                            info_hash_hex,
+                        )
+                        dp = getattr(self.dashboard, "_data_provider", None)
+                        if dp is not None and hasattr(dp, "invalidate_cache"):
+                            dp.invalidate_cache("torrent_list")
+                            dp.invalidate_cache("global_stats")
+                            dp.invalidate_cache("ui_snapshot")
+                        if hasattr(self.dashboard, "_schedule_poll"):
+                            self.dashboard._schedule_poll()  # type: ignore[attr-defined]
+                        if hasattr(self.dashboard, "refresh_ui_bindings"):
+                            self.dashboard.call_later(self.dashboard.refresh_ui_bindings)  # type: ignore[attr-defined]
+                        self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
+                        return
+                    error_msg = "Error: Torrent added but no info hash returned"
+                else:
+                    error_msg = f"Error: {result.error if result else 'Failed to add torrent'}"
+            elif hasattr(self, "session") and self.session is not None:
+                info_hash_hex = await asyncio.wait_for(
+                    self.session.add_torrent(path, resume=False),
+                    timeout=timeout_seconds,
+                )
+                if info_hash_hex:
+                    self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
+                    return
+                error_msg = "Error: Failed to add torrent"
+            else:
+                error_msg = "Error: No command executor or session available"
+        except asyncio.TimeoutError:
+            error_msg = (
+                f"Error: Timed out after {timeout_seconds:.0f}s. "
+                "Is the daemon running? Try: uv run btbt daemon status"
+            )
         except Exception as e:
-            logger.debug("Error in quick add: %s", e)
-            # Show error
-            from rich.text import Text
             error_msg = f"Error: {e!s}"
-            try:
-                label = self.query_one("#label", Static)  # type: ignore[attr-defined]
-                label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
-            except Exception:
-                pass
+
+        try:
+            label = self.query_one("#label", Static)  # type: ignore[attr-defined]
+            label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
         """Handle button presses.

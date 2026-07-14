@@ -70,6 +70,7 @@ jobs:
           mkdir -p site/reports
 
       - name: Check for port conflicts
+        shell: bash
         run: |
           echo "Checking for port conflicts..."
           if command -v lsof &> /dev/null; then

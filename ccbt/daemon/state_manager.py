@@ -231,9 +231,16 @@ class StateManager:
             DaemonState instance
 
         """
-        # Get session status
-        status_dict = await session_manager.get_status()
-        global_stats = await session_manager.get_global_stats()
+        # Get session status (lightweight during shutdown to avoid lock contention).
+        shutting_down = getattr(session_manager, "is_shutting_down", lambda: False)()
+        if shutting_down:
+            status_dict = await session_manager.get_status_summaries_light()
+            global_stats = session_manager.derive_global_stats_from_summaries(
+                status_dict,
+            )
+        else:
+            status_dict = await session_manager.get_status_summaries_light()
+            global_stats = await session_manager.get_global_stats()
 
         # Build torrent states
         torrents = {}
@@ -244,14 +251,20 @@ class StateManager:
 
             try:
                 info_hash_bytes = bytes.fromhex(info_hash_hex)
-                async with session_manager.lock:
-                    torrent_session = session_manager.torrents.get(info_hash_bytes)
-                    if (
-                        torrent_session
-                        and hasattr(torrent_session, "options")
-                        and torrent_session.options
-                    ):
-                        per_torrent_options = dict(torrent_session.options)
+                lock_acquired = await session_manager.acquire_lock_timed(
+                    1.0 if shutting_down else 2.0,
+                )
+                if lock_acquired:
+                    try:
+                        torrent_session = session_manager.torrents.get(info_hash_bytes)
+                        if (
+                            torrent_session
+                            and hasattr(torrent_session, "options")
+                            and torrent_session.options
+                        ):
+                            per_torrent_options = dict(torrent_session.options)
+                    finally:
+                        session_manager.release_manager_lock()
 
                 # Get rate limits from session manager
                 limits = session_manager.get_per_torrent_limits(info_hash_bytes)

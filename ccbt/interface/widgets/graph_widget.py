@@ -6,6 +6,7 @@ Provides a base class for all graph types with common functionality.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import math
 from typing import TYPE_CHECKING, Any, Optional
@@ -79,6 +80,23 @@ from ccbt.interface.widgets.piece_availability_bar import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _sparkline_display_values(
+    values: list[float],
+    *,
+    min_points: int = 10,
+) -> list[float]:
+    """Return sparkline data with enough variation to render in the terminal."""
+    if not values:
+        return [0.1 + (i % 2) * 0.1 for i in range(min_points)]
+    if min(values) == max(values):
+        if values[0] == 0.0:
+            count = max(len(values), min_points)
+            return [0.1 + (i % 2) * 0.1 for i in range(count)]
+        epsilon = max(abs(values[0]) * 0.01, 0.01)
+        return [values[0] + (epsilon if i % 2 else 0.0) for i in range(len(values))]
+    return values
 
 
 class BaseGraphWidget(Container):  # type: ignore[misc]
@@ -190,7 +208,7 @@ class BaseGraphWidget(Container):  # type: ignore[misc]
         """Update the graph display."""
         if self._sparkline and self._data_history:
             try:
-                self._sparkline.data = self._data_history  # type: ignore[attr-defined]
+                self._sparkline.data = _sparkline_display_values(self._data_history)  # type: ignore[attr-defined]
                 # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._sparkline, "refresh"):
                     self._sparkline.refresh()  # type: ignore[attr-defined]
@@ -434,18 +452,27 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 self._upload_sparkline.refresh()  # type: ignore[attr-defined]
                 logger.debug("UploadDownloadGraphWidget: Initialized upload sparkline with %d varying data points", len(initial_data))
 
-            # F2.5.1: bind to App reactives (replaces set_interval self-poll via _start_updates).
-            try:
-                from ccbt.interface.terminal_dashboard import TerminalDashboard
+            # F2.5.1: bind via App message pump (child on_mount data_bind fails on Textual 8).
+            from ccbt.interface.reactive_bridge import request_lazy_bind
 
-                self.data_bind(
-                    global_stats=TerminalDashboard.global_stats,
-                    rate_samples=TerminalDashboard.rate_samples,
-                )
-            except Exception as exc:  # pragma: no cover - defensive for non-mounted contexts
-                logger.debug("UploadDownloadGraphWidget data_bind skipped: %s", exc)
+            request_lazy_bind(self)
+            self.call_after_refresh(self._hydrate_from_app_reactives)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error mounting upload/download graph: %s", e, exc_info=True)
+
+    def _hydrate_from_app_reactives(self) -> None:
+        """Push App global_stats / rate_samples into sparklines after mount."""
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        stats = getattr(app, "global_stats", None)
+        if isinstance(stats, dict):
+            self.watch_global_stats(stats)
+        samples = getattr(app, "rate_samples", None)
+        if isinstance(samples, list):
+            self.watch_rate_samples(samples)
+        with contextlib.suppress(Exception):
+            self._update_display()
 
     def watch_global_stats(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: append rates from bound global_stats (F2.5.1)."""
@@ -461,9 +488,13 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         """Populate download/upload histories from a rate-samples list (F2.5.1)."""
         if not samples:
             if not self._download_history:
-                self._download_history = [0.0] * min(10, self._max_samples)
+                self._download_history = [
+                    0.1 + (i % 2) * 0.1 for i in range(min(20, self._max_samples))
+                ]
             if not self._upload_history:
-                self._upload_history = [0.0] * min(10, self._max_samples)
+                self._upload_history = [
+                    0.1 + (i % 2) * 0.1 for i in range(min(20, self._max_samples))
+                ]
             self._update_display()
             return
 
@@ -533,6 +564,12 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
 
                 # Create task in the correct event loop
                 task = loop.create_task(self._update_from_provider())
+
+                def _consume_task_result(done_task: asyncio.Task[Any]) -> None:
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        done_task.result()
+
+                task.add_done_callback(_consume_task_result)
                 logger.debug("UploadDownloadGraphWidget: Created async update task: %s", task)
             except Exception as e:
                 logger.error("Error scheduling graph update: %s", e, exc_info=True)
@@ -568,11 +605,26 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._data_provider.get_rate_samples(seconds=120),
                     timeout=10.0  # 10 second timeout for UI responsiveness (increased from 5.0)
                 )
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, TimeoutError):
                 logger.debug("UploadDownloadGraphWidget: Metrics fetch timed out, using cached/existing data")
                 # Keep existing display, don't update - prevents UI hang
                 return
             except Exception as e:
+                import aiohttp
+
+                if isinstance(
+                    e,
+                    (
+                        aiohttp.ClientConnectorError,
+                        aiohttp.ServerTimeoutError,
+                        aiohttp.ClientOSError,
+                    ),
+                ):
+                    logger.debug(
+                        "UploadDownloadGraphWidget: IPC unreachable (will retry): %s",
+                        e,
+                    )
+                    return
                 logger.debug("UploadDownloadGraphWidget: Error fetching rate samples (will retry next cycle): %s", e)
                 # Keep existing display, don't update
                 return
@@ -602,20 +654,13 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                 # Note: Always set data - use real data even if all zeros
                 # Sparklines can render zero data, but need at least some variation to be visible
                 if self._download_history and len(self._download_history) > 0:
-                    # Ensure data has some variation - if all zeros, add slight variation for visibility
-                    data_min = min(self._download_history) if self._download_history else 0.0
-                    data_max = max(self._download_history) if self._download_history else 0.0
-                    if data_min == data_max == 0.0:
-                        # All zeros - add tiny variation so line is visible
-                        display_data = [0.0] * len(self._download_history)
-                    else:
-                        display_data = self._download_history
+                    display_data = _sparkline_display_values(self._download_history)
 
                     self._download_sparkline.data = display_data  # type: ignore[attr-defined]
-                    logger.debug("UploadDownloadGraphWidget: Updated download sparkline with %d data points (range: %.2f - %.2f KiB/s)",
-                              len(display_data),
-                              data_min,
-                              data_max)
+                    logger.debug(
+                        "UploadDownloadGraphWidget: Updated download sparkline with %d data points",
+                        len(display_data),
+                    )
                 else:
                     # No history yet - use placeholder pattern with variation
                     placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
@@ -636,20 +681,13 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             if self._upload_sparkline:
                 # Note: Always set data - use real data even if all zeros
                 if self._upload_history and len(self._upload_history) > 0:
-                    # Ensure data has some variation - if all zeros, add slight variation for visibility
-                    data_min = min(self._upload_history) if self._upload_history else 0.0
-                    data_max = max(self._upload_history) if self._upload_history else 0.0
-                    if data_min == data_max == 0.0:
-                        # All zeros - add tiny variation so line is visible
-                        display_data = [0.0] * len(self._upload_history)
-                    else:
-                        display_data = self._upload_history
+                    display_data = _sparkline_display_values(self._upload_history)
 
                     self._upload_sparkline.data = display_data  # type: ignore[attr-defined]
-                    logger.debug("UploadDownloadGraphWidget: Updated upload sparkline with %d data points (range: %.2f - %.2f KiB/s)",
-                              len(display_data),
-                              data_min,
-                              data_max)
+                    logger.debug(
+                        "UploadDownloadGraphWidget: Updated upload sparkline with %d data points",
+                        len(display_data),
+                    )
                 else:
                     # No history yet - use placeholder pattern with variation
                     placeholder = [0.1 + (i % 2) * 0.1 for i in range(20)]
@@ -1035,18 +1073,24 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             if self._cache_sparkline:
                 self._cache_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
 
-            try:
-                from ccbt.interface.terminal_dashboard import TerminalDashboard
+            from ccbt.interface.reactive_bridge import request_lazy_bind
 
-                self.data_bind(disk_io_metrics=TerminalDashboard.disk_io_metrics)
-            except Exception as exc:  # pragma: no cover
-                logger.debug("DiskGraphWidget data_bind skipped: %s", exc)
+            request_lazy_bind(self)
+            self.call_after_refresh(self._hydrate_from_app_reactives)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting disk graph: %s", e)
 
+    def _hydrate_from_app_reactives(self) -> None:
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        metrics = getattr(app, "disk_io_metrics", None)
+        if isinstance(metrics, dict):
+            self.watch_disk_io_metrics(metrics)
+
     def watch_disk_io_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: append disk metrics from bound dict (F2.6.6)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self._apply_disk_io_metrics(value)
 
     def _apply_disk_io_metrics(self, metrics: dict[str, Any]) -> None:  # pragma: no cover
@@ -1149,10 +1193,9 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         """Update the graph display."""
         try:
             if self._read_sparkline:
-                if self._read_history:
-                    self._read_sparkline.data = self._read_history  # type: ignore[attr-defined]
-                else:
-                    self._read_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._read_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._read_history or [],
+                )
                 # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._read_sparkline, "refresh"):
                     self._read_sparkline.refresh()  # type: ignore[attr-defined]
@@ -1160,10 +1203,9 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             logger.error("Error updating read sparkline: %s", e, exc_info=True)
         try:
             if self._write_sparkline:
-                if self._write_history:
-                    self._write_sparkline.data = self._write_history  # type: ignore[attr-defined]
-                else:
-                    self._write_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._write_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._write_history or [],
+                )
                 # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._write_sparkline, "refresh"):
                     self._write_sparkline.refresh()  # type: ignore[attr-defined]
@@ -1171,10 +1213,9 @@ class DiskGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             logger.error("Error updating write sparkline: %s", e, exc_info=True)
         try:
             if self._cache_sparkline:
-                if self._cache_hit_history:
-                    self._cache_sparkline.data = self._cache_hit_history  # type: ignore[attr-defined]
-                else:
-                    self._cache_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._cache_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._cache_hit_history or [],
+                )
                 # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._cache_sparkline, "refresh"):
                     self._cache_sparkline.refresh()  # type: ignore[attr-defined]
@@ -1260,24 +1301,33 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._utp_sparkline = self.query_one("#utp-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._overhead_sparkline = self.query_one("#overhead-sparkline", Sparkline)  # type: ignore[attr-defined]
 
-            # Initialize with zero data so graphs render immediately
+            # Initialize with a visible placeholder pattern (flat zeros do not render)
+            placeholder = [0.1 + (i % 2) * 0.1 for i in range(10)]
             if self._utp_sparkline:
-                self._utp_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._utp_sparkline.data = placeholder  # type: ignore[attr-defined]
             if self._overhead_sparkline:
-                self._overhead_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._overhead_sparkline.data = placeholder  # type: ignore[attr-defined]
 
-            try:
-                from ccbt.interface.terminal_dashboard import TerminalDashboard
+            from ccbt.interface.reactive_bridge import request_lazy_bind
 
-                self.data_bind(network_quality=TerminalDashboard.network_quality)
-            except Exception as exc:  # pragma: no cover
-                logger.debug("NetworkGraphWidget data_bind skipped: %s", exc)
+            request_lazy_bind(self)
+            self.call_after_refresh(self._hydrate_from_app_reactives)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting network graph: %s", e)
 
+    def _hydrate_from_app_reactives(self) -> None:
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        metrics = getattr(app, "network_quality", None)
+        if isinstance(metrics, dict):
+            self.watch_network_quality(metrics)
+        with contextlib.suppress(Exception):
+            self._update_display()
+
     def watch_network_quality(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: append network timing from bound dict (F2.6.7)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self._apply_network_quality(value)
 
     def _apply_network_quality(self, metrics: dict[str, Any]) -> None:  # pragma: no cover
@@ -1380,10 +1430,9 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         """Update the graph display."""
         try:
             if self._utp_sparkline:
-                if self._utp_delay_history:
-                    self._utp_sparkline.data = self._utp_delay_history  # type: ignore[attr-defined]
-                else:
-                    self._utp_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._utp_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._utp_delay_history or [],
+                )
                 # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._utp_sparkline, "refresh"):
                     self._utp_sparkline.refresh()  # type: ignore[attr-defined]
@@ -1391,10 +1440,9 @@ class NetworkGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             logger.error("Error updating uTP sparkline: %s", e, exc_info=True)
         try:
             if self._overhead_sparkline:
-                if self._overhead_history:
-                    self._overhead_sparkline.data = self._overhead_history  # type: ignore[attr-defined]
-                else:
-                    self._overhead_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._overhead_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._overhead_history or [],
+                )
                 # Note: Force refresh to ensure Sparkline repaints
                 if hasattr(self._overhead_sparkline, "refresh"):
                     self._overhead_sparkline.refresh()  # type: ignore[attr-defined]
@@ -2228,6 +2276,14 @@ class PerformanceGraphWidget(Container):  # type: ignore[misc]
                         )
                         container.mount(self._upload_download_widget)  # type: ignore[attr-defined]
                         self._upload_download_widget.display = True  # type: ignore[attr-defined]
+                        from ccbt.interface.reactive_bridge import request_lazy_bind
+
+                        request_lazy_bind(self._upload_download_widget)
+                        app = getattr(self, "app", None)
+                        if app is not None and hasattr(
+                            self._upload_download_widget, "_hydrate_from_app_reactives"
+                        ):
+                            self._upload_download_widget._hydrate_from_app_reactives()  # type: ignore[attr-defined]
                         # Ensure container is visible
                         container.display = True  # type: ignore[attr-defined]
                         # Register nested widget for event-driven updates
@@ -2460,26 +2516,33 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
             self._memory_sparkline = self.query_one("#memory-sparkline", Sparkline)  # type: ignore[attr-defined]
             self._disk_sparkline = self.query_one("#disk-sparkline", Sparkline)  # type: ignore[attr-defined]
 
-            # Initialize with zero data so graphs render immediately
+            # Initialize with a visible placeholder pattern (flat zeros do not render)
+            placeholder = [0.1 + (i % 2) * 0.1 for i in range(10)]
             if self._cpu_sparkline:
-                self._cpu_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._cpu_sparkline.data = placeholder  # type: ignore[attr-defined]
             if self._memory_sparkline:
-                self._memory_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._memory_sparkline.data = placeholder  # type: ignore[attr-defined]
             if self._disk_sparkline:
-                self._disk_sparkline.data = [0.0] * 10  # type: ignore[attr-defined]
+                self._disk_sparkline.data = placeholder  # type: ignore[attr-defined]
 
-            try:
-                from ccbt.interface.terminal_dashboard import TerminalDashboard
+            from ccbt.interface.reactive_bridge import request_lazy_bind
 
-                self.data_bind(system_metrics=TerminalDashboard.system_metrics)
-            except Exception as exc:  # pragma: no cover
-                logger.debug("SystemResourcesGraphWidget data_bind skipped: %s", exc)
+            request_lazy_bind(self)
+            self.call_after_refresh(self._hydrate_from_app_reactives)  # type: ignore[attr-defined]
         except Exception as e:
             logger.debug("Error mounting system resources graph: %s", e)
 
+    def _hydrate_from_app_reactives(self) -> None:
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        metrics = getattr(app, "system_metrics", None)
+        if isinstance(metrics, dict):
+            self.watch_system_metrics(metrics)
+
     def watch_system_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: append system metrics from bound dict (F2.6.8)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self._apply_system_metrics(value)
 
     def _apply_system_metrics(self, metrics: dict[str, Any]) -> None:  # pragma: no cover
@@ -2499,21 +2562,27 @@ class SystemResourcesGraphWidget(Container):  # type: ignore[misc]
         """Update the system resources sparkline display."""
         try:
             if self._cpu_sparkline:
-                self._cpu_sparkline.data = self._cpu_history or [0.0] * 10  # type: ignore[attr-defined]
+                self._cpu_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._cpu_history or [],
+                )
                 if hasattr(self._cpu_sparkline, "refresh"):
                     self._cpu_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error updating CPU sparkline: %s", e, exc_info=True)
         try:
             if self._memory_sparkline:
-                self._memory_sparkline.data = self._memory_history or [0.0] * 10  # type: ignore[attr-defined]
+                self._memory_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._memory_history or [],
+                )
                 if hasattr(self._memory_sparkline, "refresh"):
                     self._memory_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error updating memory sparkline: %s", e, exc_info=True)
         try:
             if self._disk_sparkline:
-                self._disk_sparkline.data = self._disk_history or [0.0] * 10  # type: ignore[attr-defined]
+                self._disk_sparkline.data = _sparkline_display_values(  # type: ignore[attr-defined]
+                    self._disk_history or [],
+                )
                 if hasattr(self._disk_sparkline, "refresh"):
                     self._disk_sparkline.refresh()  # type: ignore[attr-defined]
         except Exception as e:
@@ -3000,7 +3069,7 @@ class PeerQualitySummaryWidget(Container):  # type: ignore[misc]
 
     def watch_peer_quality_distribution(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: render summary from bound distribution (F2.6.9)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self._apply_peer_quality_distribution(value)
 
     def _apply_peer_quality_distribution(self, distribution: dict[str, Any]) -> None:

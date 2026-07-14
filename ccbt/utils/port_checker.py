@@ -69,6 +69,27 @@ def is_port_available(
         return (False, f"Error checking port availability: {e}")
 
 
+def is_port_listening(
+    host: str,
+    port: int,
+    *,
+    timeout: float = 0.5,
+) -> bool:
+    """Return True when a TCP listener accepts connections on host:port."""
+    connect_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect((connect_host, port))
+    except OSError:
+        return False
+    else:
+        return True
+    finally:
+        with contextlib.suppress(OSError):
+            sock.close()
+
+
 def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
     """Get resolution steps for port conflicts.
 

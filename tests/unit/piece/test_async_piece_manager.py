@@ -1344,6 +1344,18 @@ class TestAsyncPieceManagerEdgeCases:
         piece_manager._retry_requested_pieces.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_get_download_progress_zero_pieces_metadata_pending(self):
+        """Metadata-pending magnets must not report 100% progress."""
+        torrent_data = {
+            "info_hash": b"\x00" * 20,
+            "file_info": {"total_length": 0, "type": "single"},
+            "pieces_info": {"num_pieces": 0, "piece_length": 16384, "piece_hashes": []},
+            "_metadata_incomplete": True,
+        }
+        manager = AsyncPieceManager(torrent_data)
+        assert manager.get_download_progress() == 0.0
+
+    @pytest.mark.asyncio
     async def test_get_download_progress_zero_pieces(self):
         """Test download progress with zero pieces."""
         torrent_data = {

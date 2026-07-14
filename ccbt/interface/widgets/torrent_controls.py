@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.i18n import _
+from ccbt.interface.content_load import schedule_widget_worker
 
 if TYPE_CHECKING:
     from ccbt.interface.commands.executor import CommandExecutor
@@ -236,7 +237,11 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Reactive watcher: repopulate the selector from the bound list (F2.3.4)."""
         if self._torrent_selector and self._data_provider:
-            asyncio.create_task(self._refresh_torrent_list(torrents_override=value))
+            schedule_widget_worker(
+                self,
+                self._refresh_torrent_list(torrents_override=value),
+                group="TorrentControls_torrents",
+            )
 
     def _retry_selector_query(self) -> None:  # pragma: no cover
         """Retry querying the selector after widget is fully mounted."""
@@ -256,8 +261,11 @@ class TorrentControlsWidget(Container):  # type: ignore[misc]
                         logger.debug(
                             "TorrentControlsWidget retry data_bind skipped: %s", exc
                         )
-                    # Trigger initial refresh
-                    asyncio.create_task(self._refresh_torrent_list())
+                    schedule_widget_worker(
+                        self,
+                        self._refresh_torrent_list(),
+                        group="TorrentControls_mount",
+                    )
         except Exception as e:
             logger.error(
                 "TorrentControlsWidget: Error retrying selector query: %s",

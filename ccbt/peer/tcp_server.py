@@ -1575,15 +1575,11 @@ class IncomingPeerServer:
         else:
             peer_ip, peer_port = "unknown", 0
 
-        self.logger.debug("Incoming connection from %s:%d", peer_ip, peer_port)
-
         if self._should_abort_inbound_registration_wait():
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+            await self._close_writer_safely(writer)
             return
+
+        self.logger.debug("Incoming connection from %s:%d", peer_ip, peer_port)
 
         try:
             replayable_reader = _ReplayableStreamReader(reader)

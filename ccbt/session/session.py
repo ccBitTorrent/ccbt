@@ -27,6 +27,8 @@ from typing import (
     cast,
 )
 
+from ccbt.utils.shutdown import is_shutting_down
+
 if TYPE_CHECKING:
     from ccbt.discovery.dht import AsyncDHTClient
     from ccbt.discovery.pex import AsyncPexManager
@@ -3014,10 +3016,11 @@ class AsyncTorrentSession:
                     "Some background tasks did not cancel within timeout during torrent session stop"
                 )
 
-        # Save final checkpoint before stopping with full state
+        # Save final checkpoint before stopping with full state (skip during daemon shutdown).
         if (
             self.config.disk.checkpoint_enabled
             and not self.download_manager.download_complete
+            and not is_shutting_down()
         ):
             try:
                 # Use checkpoint controller to save full state including new fields
@@ -3039,19 +3042,27 @@ class AsyncTorrentSession:
         await self.piece_manager.stop()
 
         # Best-effort stopped announces (BEP) before closing the tracker HTTP session
-        try:
-            await self._announce_stopped_best_effort()
-        except Exception:
-            self.logger.debug(
-                "Stopped announce phase error for %s",
-                self.info.name,
-                exc_info=True,
-            )
+        if not is_shutting_down():
+            try:
+                await asyncio.wait_for(
+                    self._announce_stopped_best_effort(), timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                self.logger.debug(
+                    "Stopped announce timed out for %s during shutdown",
+                    self.info.name,
+                )
+            except Exception:
+                self.logger.debug(
+                    "Stopped announce phase error for %s",
+                    self.info.name,
+                    exc_info=True,
+                )
 
         # Note: Ensure tracker is properly stopped and session is closed
         # This prevents "Unclosed client session" warnings
         try:
-            await self.tracker.stop()
+            await asyncio.wait_for(self.tracker.stop(), timeout=5.0)
         except Exception as e:
             self.logger.warning("Error stopping tracker: %s", e)
             # Try to force close session if stop() failed
@@ -3086,6 +3097,30 @@ class AsyncTorrentSession:
             task = getattr(self, task_attr, None)
             if task is not None and not task.done():
                 task.cancel()
+
+        download_manager = getattr(self, "download_manager", None)
+        peer_manager = (
+            getattr(download_manager, "peer_manager", None)
+            if download_manager is not None
+            else None
+        )
+        if peer_manager is not None:
+            peer_manager._running = False
+            for task_attr in (
+                "_reconnection_task",
+                "_choking_task",
+                "_stats_task",
+                "_peer_evaluation_task",
+            ):
+                task = getattr(peer_manager, task_attr, None)
+                if task is not None and not task.done():
+                    task.cancel()
+
+        piece_manager = getattr(self, "piece_manager", None)
+        if piece_manager is not None:
+            selector_task = getattr(piece_manager, "_piece_selector_task", None)
+            if selector_task is not None and not selector_task.done():
+                selector_task.cancel()
 
     async def pause(self) -> None:
         """Pause the torrent session by stopping background work and saving a checkpoint.
@@ -6906,6 +6941,7 @@ class AsyncSessionManager:
         self.key_manager = key_manager
         self.torrents: dict[bytes, AsyncTorrentSession] = {}
         self.lock = asyncio.Lock()
+        self._ipc_summaries_cache: dict[str, Any] = {}
         # Backward-compatibility flag used by sync wrapper tests.
         self._session_started = False
         self._manager_shutting_down = False
@@ -7856,6 +7892,43 @@ class AsyncSessionManager:
                     if asyncio.iscoroutine(maybe_coro):
                         with contextlib.suppress(RuntimeError):
                             asyncio.get_running_loop().create_task(maybe_coro)
+
+    async def begin_shutdown_quiesce_async(self) -> None:
+        """Await early quiesce for every torrent session (daemon shutdown path)."""
+        self._manager_shutting_down = True
+        torrent_items: list[tuple[bytes, Any]] = []
+        if await self._acquire_lock(2.0):
+            try:
+                torrent_items = list(self.torrents.items())
+            finally:
+                self._release_lock()
+        else:
+            torrent_items = list(self.torrents.items())
+
+        quiesce_tasks: list[asyncio.Task[Any]] = []
+        for _info_hash, session in torrent_items:
+            with contextlib.suppress(Exception):
+                if hasattr(session, "begin_shutdown_quiesce"):
+                    maybe_coro = session.begin_shutdown_quiesce()
+                    if asyncio.iscoroutine(maybe_coro):
+                        quiesce_tasks.append(asyncio.create_task(maybe_coro))
+        if quiesce_tasks:
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(
+                    asyncio.gather(*quiesce_tasks, return_exceptions=True),
+                    timeout=5.0,
+                )
+
+    async def stop_inbound_listeners(self) -> None:
+        """Stop accepting new inbound peer connections immediately.
+
+        Called early during daemon shutdown so the listen socket closes before
+        long-running checkpoint/state-save work keeps the event loop busy.
+        """
+        if self.tcp_server:
+            with contextlib.suppress(Exception):
+                await self.tcp_server.stop()
+                self.logger.info("Inbound TCP listener stopped during shutdown quiesce")
 
     async def stop(self) -> None:
         """Stop the async session manager and all components."""
@@ -10278,6 +10351,377 @@ class AsyncSessionManager:
         """
         return self.metrics
 
+    @staticmethod
+    async def _resolve_torrent_stat_fields(torrent: Any) -> dict[str, Any]:
+        """Collect per-torrent stats without holding the session manager lock."""
+        info_obj = getattr(torrent, "info", None)
+        status = getattr(info_obj, "status", None) if info_obj else None
+        cached_status = getattr(torrent, "_cached_status", None)
+        status_payload: Optional[dict[str, Any]] = (
+            cached_status if isinstance(cached_status, dict) else None
+        )
+        if status is None and status_payload is not None:
+            status = status_payload.get("status", "unknown")
+        if status is None:
+            status = "unknown"
+
+        if not isinstance(cached_status, dict):
+            get_status_fn = getattr(torrent, "get_status", None)
+            if callable(get_status_fn):
+                try:
+                    maybe_status = get_status_fn()
+                    if asyncio.iscoroutine(maybe_status):
+                        maybe_status = await asyncio.wait_for(maybe_status, timeout=2.0)
+                    if isinstance(maybe_status, dict):
+                        status_payload = maybe_status
+                        if status == "unknown":
+                            status = maybe_status.get("status", "unknown")
+                except (asyncio.TimeoutError, Exception):
+                    status_payload = None
+
+        progress = (
+            float(status_payload.get("progress", 0.0) or 0.0)
+            if isinstance(status_payload, dict)
+            else float(getattr(info_obj, "progress", 0.0) or 0.0)
+            if info_obj
+            else 0.0
+        )
+        cached_peer_count: Optional[int] = None
+        if isinstance(status_payload, dict):
+            raw_peer_count = status_payload.get("connected_peers", None)
+            if isinstance(raw_peer_count, (int, float)):
+                cached_peer_count = int(raw_peer_count)
+        if cached_peer_count is None:
+            peer_state = getattr(torrent, "peers", None)
+            if isinstance(peer_state, dict):
+                raw_peer_count = peer_state.get("count", 0)
+                cached_peer_count = (
+                    int(raw_peer_count)
+                    if isinstance(raw_peer_count, (int, float))
+                    else 0
+                )
+            else:
+                cached_peer_count = len(peer_state) if peer_state else 0
+
+        return {
+            "status": status,
+            "progress": progress,
+            "download_rate": float(getattr(torrent, "download_rate", 0.0) or 0.0),
+            "upload_rate": float(getattr(torrent, "upload_rate", 0.0) or 0.0),
+            "downloaded": int(getattr(torrent, "downloaded_bytes", 0) or 0),
+            "uploaded": int(getattr(torrent, "uploaded_bytes", 0) or 0),
+            "left": int(getattr(torrent, "left_bytes", 0) or 0),
+            "connected_peers": cached_peer_count,
+        }
+
+    @staticmethod
+    def _sanitize_torrent_progress(
+        progress: float,
+        *,
+        status: str,
+        downloaded: int,
+        pieces_total: int = 0,
+        metadata_incomplete: bool = False,
+    ) -> float:
+        """Clamp impossible 100% progress for metadata-pending or untouched torrents."""
+        if metadata_incomplete and progress >= 1.0:
+            return 0.0
+        if (
+            status in ("downloading", "checking", "starting", "unknown")
+            and progress >= 1.0
+            and downloaded == 0
+            and pieces_total == 0
+        ):
+            return 0.0
+        return max(0.0, min(1.0, float(progress)))
+
+    @staticmethod
+    def _resolve_torrent_stat_fields_fast(torrent: Any) -> dict[str, Any]:
+        """Collect per-torrent stats without awaiting session status aggregation.
+
+        Used by IPC/dashboard endpoints so health checks and hydration never
+        block on ``session.get_status()`` while the daemon is busy.
+        """
+        info_obj = getattr(torrent, "info", None)
+        cached_status = getattr(torrent, "_cached_status", None)
+        status_payload: dict[str, Any] = (
+            cached_status if isinstance(cached_status, dict) else {}
+        )
+        status = getattr(info_obj, "status", None) if info_obj else None
+        if status is None:
+            status = status_payload.get("status", "unknown")
+
+        progress = float(
+            status_payload.get("progress", 0.0) or 0.0
+            if status_payload
+            else getattr(info_obj, "progress", 0.0) or 0.0
+            if info_obj
+            else 0.0
+        )
+
+        piece_manager = getattr(torrent, "piece_manager", None)
+        pieces_total = int(getattr(piece_manager, "num_pieces", 0) or 0)
+        metadata_incomplete = bool(
+            getattr(piece_manager, "_metadata_incomplete", False)
+        )
+        if not metadata_incomplete and hasattr(torrent, "_metadata_is_incomplete"):
+            with contextlib.suppress(Exception):
+                metadata_incomplete = bool(torrent._metadata_is_incomplete())
+
+        downloaded = int(getattr(torrent, "downloaded_bytes", 0) or 0)
+        progress = AsyncSessionManager._sanitize_torrent_progress(
+            progress,
+            status=str(status),
+            downloaded=downloaded,
+            pieces_total=pieces_total,
+            metadata_incomplete=metadata_incomplete,
+        )
+
+        cached_peer_count: Optional[int] = None
+        if status_payload:
+            raw_peer_count = status_payload.get("connected_peers")
+            if isinstance(raw_peer_count, (int, float)):
+                cached_peer_count = int(raw_peer_count)
+        if cached_peer_count is None:
+            peer_manager = getattr(torrent, "peer_manager", None)
+            connections = getattr(peer_manager, "connections", None)
+            if isinstance(connections, dict):
+                cached_peer_count = len(connections)
+            else:
+                peer_state = getattr(torrent, "peers", None)
+                if isinstance(peer_state, dict):
+                    raw_peer_count = peer_state.get("count", 0)
+                    cached_peer_count = (
+                        int(raw_peer_count)
+                        if isinstance(raw_peer_count, (int, float))
+                        else 0
+                    )
+                else:
+                    cached_peer_count = len(peer_state) if peer_state else 0
+
+        return {
+            "status": status,
+            "progress": progress,
+            "download_rate": float(getattr(torrent, "download_rate", 0.0) or 0.0),
+            "upload_rate": float(getattr(torrent, "upload_rate", 0.0) or 0.0),
+            "downloaded": int(getattr(torrent, "downloaded_bytes", 0) or 0),
+            "uploaded": int(getattr(torrent, "uploaded_bytes", 0) or 0),
+            "left": int(getattr(torrent, "left_bytes", 0) or 0),
+            "connected_peers": cached_peer_count,
+        }
+
+    @staticmethod
+    def derive_global_stats_from_summaries(
+        summaries: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Aggregate global stats from lightweight per-torrent summaries."""
+        num_active = 0
+        num_paused = 0
+        num_seeding = 0
+        total_download_rate = 0.0
+        total_upload_rate = 0.0
+        total_progress = 0.0
+        total_downloaded = 0
+        total_uploaded = 0
+        total_left = 0
+        connected_peers = 0
+
+        for summary in summaries.values():
+            if not isinstance(summary, dict):
+                continue
+            status = str(summary.get("status", "unknown"))
+            if status == "paused":
+                num_paused += 1
+            elif status == "seeding":
+                num_seeding += 1
+            elif status in ("downloading", "starting"):
+                num_active += 1
+
+            total_download_rate += float(summary.get("download_rate", 0.0) or 0.0)
+            total_upload_rate += float(summary.get("upload_rate", 0.0) or 0.0)
+            total_progress += float(summary.get("progress", 0.0) or 0.0)
+            total_downloaded += int(summary.get("downloaded", 0) or 0)
+            total_uploaded += int(summary.get("uploaded", 0) or 0)
+            total_left += int(summary.get("left", 0) or 0)
+            connected_peers += int(summary.get("connected_peers", 0) or 0)
+
+        num_torrents = len(summaries)
+        average_progress = total_progress / num_torrents if num_torrents > 0 else 0.0
+        return {
+            "num_torrents": num_torrents,
+            "num_active": num_active,
+            "num_paused": num_paused,
+            "num_seeding": num_seeding,
+            "download_rate": total_download_rate,
+            "upload_rate": total_upload_rate,
+            "average_progress": average_progress,
+            "total_downloaded": total_downloaded,
+            "total_uploaded": total_uploaded,
+            "total_left": total_left,
+            "connected_peers": connected_peers,
+        }
+
+    async def _build_torrent_status_summary(self, session: Any) -> dict[str, Any]:
+        """Build a lightweight torrent status dict without full status aggregation."""
+        fields = self._resolve_torrent_stat_fields_fast(session)
+        info_obj = getattr(session, "info", None)
+        cached_status = getattr(session, "_cached_status", None)
+        status_payload = cached_status if isinstance(cached_status, dict) else {}
+
+        name = getattr(info_obj, "name", "Unknown") if info_obj else "Unknown"
+        info_hash_hex = info_obj.info_hash.hex() if info_obj else ""
+
+        def _payload_int(key: str, default: int = 0) -> int:
+            raw = status_payload.get(key, default)
+            return int(raw) if isinstance(raw, (int, float)) else default
+
+        def _payload_float(key: str, default: float = 0.0) -> float:
+            raw = status_payload.get(key, default)
+            return float(raw) if isinstance(raw, (int, float)) else default
+
+        return {
+            "info_hash": info_hash_hex,
+            "name": name,
+            "status": fields["status"],
+            "progress": fields["progress"],
+            "download_rate": fields["download_rate"],
+            "upload_rate": fields["upload_rate"],
+            "connected_peers": fields["connected_peers"],
+            "active_peers": _payload_int("active_peers"),
+            "downloaded": fields["downloaded"],
+            "uploaded": fields["uploaded"],
+            "left": fields["left"],
+            "total_size": _payload_int(
+                "total_size",
+                int(getattr(info_obj, "total_size", 0) or 0) if info_obj else 0,
+            ),
+            "pieces_completed": _payload_int("pieces_completed"),
+            "pieces_total": _payload_int(
+                "pieces_total",
+                int(getattr(info_obj, "num_pieces", 0) or 0) if info_obj else 0,
+            ),
+            "is_private": bool(
+                status_payload.get(
+                    "is_private",
+                    getattr(session, "is_private", False),
+                )
+            ),
+            "output_dir": status_payload.get("output_dir")
+            or getattr(info_obj, "output_dir", None),
+            "tracker_status": status_payload.get("tracker_status")
+            or getattr(session, "_tracker_connection_status", None),
+            "last_tracker_error": status_payload.get("last_tracker_error")
+            or getattr(session, "_last_tracker_error", None),
+            "last_error": status_payload.get("last_error")
+            or getattr(session, "_last_error", None),
+            "productive_peers": _payload_int("productive_peers"),
+            "requestable_peers": _payload_int("requestable_peers"),
+            "handshake_complete_peers": _payload_int("handshake_complete_peers"),
+            "extension_capable_peers": _payload_int("extension_capable_peers"),
+            "metadata_capable_peers": _payload_int("metadata_capable_peers"),
+            "hash_verification_failures": _payload_int("hash_verification_failures"),
+            "added_time": _payload_float(
+                "added_time",
+                float(getattr(info_obj, "added_time", time.time()) or time.time())
+                if info_obj
+                else time.time(),
+            ),
+            "download_complete": bool(
+                status_payload.get("download_complete", fields["progress"] >= 1.0)
+            ),
+        }
+
+    async def acquire_lock_timed(self, timeout: float = 2.0) -> bool:
+        """Acquire ``self.lock`` with a timeout (public API for IPC/state save)."""
+        return await self._acquire_lock(timeout)
+
+    def release_manager_lock(self) -> None:
+        """Release ``self.lock`` when held by the current task."""
+        self._release_lock()
+
+    async def _acquire_lock(self, timeout: float = 2.0) -> bool:
+        """Acquire ``self.lock`` with a timeout so IPC handlers never hang forever."""
+        try:
+            await asyncio.wait_for(self.lock.acquire(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "Session manager lock acquire timed out after %.1fs",
+                timeout,
+            )
+            return False
+
+    def _release_lock(self) -> None:
+        """Release ``self.lock`` when held by the current task."""
+        if self.lock.locked():
+            self.lock.release()
+
+    async def get_torrent_count_fast(self, timeout: float = 1.0) -> int:
+        """Return torrent count without blocking IPC when the manager lock is busy."""
+        if await self._acquire_lock(timeout):
+            try:
+                return len(self.torrents)
+            finally:
+                self._release_lock()
+        return len(self._ipc_summaries_cache)
+
+    async def get_status_summaries_light(self) -> dict[str, Any]:
+        """Minimal per-torrent summaries for IPC first-paint (no heavy fields)."""
+        sessions: list[tuple[bytes, AsyncTorrentSession]] = []
+        if await self._acquire_lock(2.0):
+            try:
+                sessions = list(self.torrents.items())
+            finally:
+                self._release_lock()
+        elif self._ipc_summaries_cache:
+            return dict(self._ipc_summaries_cache)
+
+        status_dict: dict[str, Any] = {}
+        for info_hash, session in sessions:
+            fields = self._resolve_torrent_stat_fields_fast(session)
+            info_obj = getattr(session, "info", None)
+            status_dict[info_hash.hex()] = {
+                "info_hash": info_hash.hex(),
+                "name": getattr(info_obj, "name", "Unknown") if info_obj else "Unknown",
+                **fields,
+            }
+        if status_dict:
+            self._ipc_summaries_cache = dict(status_dict)
+        return status_dict
+
+    async def get_status_summaries(self) -> dict[str, Any]:
+        """Get lightweight status for all torrents (IPC/dashboard safe)."""
+        sessions: list[tuple[bytes, Any]] = []
+        if await self._acquire_lock(2.0):
+            try:
+                sessions = list(self.torrents.items())
+            finally:
+                self._release_lock()
+        elif self._ipc_summaries_cache:
+            return dict(self._ipc_summaries_cache)
+        else:
+            return {}
+
+        status_dict: dict[str, Any] = {}
+        for info_hash, session in sessions:
+            try:
+                status_dict[info_hash.hex()] = await self._build_torrent_status_summary(
+                    session
+                )
+            except Exception as exc:
+                self.logger.debug(
+                    "Error building lightweight status for torrent %s: %s",
+                    info_hash.hex(),
+                    exc,
+                )
+                status_dict[info_hash.hex()] = {
+                    "info_hash": info_hash.hex(),
+                    "name": "Unknown",
+                    "status": "error",
+                    "error": str(exc),
+                }
+        return status_dict
+
     async def get_global_stats(self) -> dict[str, Any]:
         """Get global statistics across all torrents.
 
@@ -10294,44 +10738,28 @@ class AsyncSessionManager:
             - total_uploaded: Total bytes uploaded
 
         """
-        async with self.lock:
-            num_torrents = len(self.torrents)
-            num_active = 0
-            num_paused = 0
-            num_seeding = 0
-            total_download_rate = 0.0
-            total_upload_rate = 0.0
-            total_progress = 0.0
-            total_downloaded = 0
-            total_uploaded = 0
-            total_left = 0
-            connected_peers = 0
+        sessions: list[AsyncTorrentSession] = []
+        if await self._acquire_lock(2.0):
+            try:
+                sessions = list(self.torrents.values())
+            finally:
+                self._release_lock()
 
-            for torrent in self.torrents.values():
-                info_obj = getattr(torrent, "info", None)
-                status = getattr(info_obj, "status", None)
-                status_payload: Optional[dict[str, Any]] = None
-                if status is None:
-                    cached_status = getattr(torrent, "_cached_status", None)
-                    if isinstance(cached_status, dict):
-                        status = cached_status.get("status", "unknown")
-                        status_payload = cached_status
-                    else:
-                        get_status_fn = getattr(torrent, "get_status", None)
-                        if callable(get_status_fn):
-                            try:
-                                maybe_status = get_status_fn()
-                                if asyncio.iscoroutine(maybe_status):
-                                    maybe_status = await maybe_status
-                                if isinstance(maybe_status, dict):
-                                    status = maybe_status.get("status", "unknown")
-                                    status_payload = maybe_status
-                                else:
-                                    status = "unknown"
-                            except Exception:
-                                status = "unknown"
-                        else:
-                            status = "unknown"
+        num_active = 0
+        num_paused = 0
+        num_seeding = 0
+        total_download_rate = 0.0
+        total_upload_rate = 0.0
+        total_progress = 0.0
+        total_downloaded = 0
+        total_uploaded = 0
+        total_left = 0
+        connected_peers = 0
+
+        if sessions:
+            for torrent in sessions:
+                fields = self._resolve_torrent_stat_fields_fast(torrent)
+                status = fields["status"]
                 if status == "paused":
                     num_paused += 1
                 elif status == "seeding":
@@ -10339,63 +10767,51 @@ class AsyncSessionManager:
                 elif status in ("downloading", "starting"):
                     num_active += 1
 
-                total_download_rate += float(
-                    getattr(torrent, "download_rate", 0.0) or 0.0
-                )
-                total_upload_rate += float(getattr(torrent, "upload_rate", 0.0) or 0.0)
-                cached_status = status_payload
-                if cached_status is None:
-                    cached_status = getattr(torrent, "_cached_status", None)
-                if not isinstance(cached_status, dict):
-                    get_status_fn = getattr(torrent, "get_status", None)
-                    if callable(get_status_fn):
-                        try:
-                            maybe_status = get_status_fn()
-                            if asyncio.iscoroutine(maybe_status):
-                                maybe_status = await maybe_status
-                            if isinstance(maybe_status, dict):
-                                cached_status = maybe_status
-                        except Exception:
-                            cached_status = None
-                progress = (
-                    cached_status.get("progress", 0.0)
-                    if isinstance(cached_status, dict)
-                    else 0.0
-                )
-                total_progress += progress
-                total_downloaded += int(getattr(torrent, "downloaded_bytes", 0) or 0)
-                total_uploaded += int(getattr(torrent, "uploaded_bytes", 0) or 0)
-                total_left += int(getattr(torrent, "left_bytes", 0) or 0)
-                if isinstance(cached_status, dict):
-                    cached_peer_count = cached_status.get("connected_peers", None)
-                else:
-                    cached_peer_count = None
-                if cached_peer_count is None:
-                    peer_state = getattr(torrent, "peers", None)
-                    if isinstance(peer_state, dict):
-                        cached_peer_count = peer_state.get("count", 0)
-                    else:
-                        cached_peer_count = len(peer_state) if peer_state else 0
-                if isinstance(cached_peer_count, (int, float)):
-                    connected_peers += int(cached_peer_count)
+                total_download_rate += fields["download_rate"]
+                total_upload_rate += fields["upload_rate"]
+                total_progress += fields["progress"]
+                total_downloaded += fields["downloaded"]
+                total_uploaded += fields["uploaded"]
+                total_left += fields["left"]
+                connected_peers += fields["connected_peers"]
+            num_torrents = len(sessions)
+        elif self._ipc_summaries_cache:
+            for summary in self._ipc_summaries_cache.values():
+                if not isinstance(summary, dict):
+                    continue
+                status = str(summary.get("status", "unknown"))
+                if status == "paused":
+                    num_paused += 1
+                elif status == "seeding":
+                    num_seeding += 1
+                elif status in ("downloading", "starting"):
+                    num_active += 1
+                total_download_rate += float(summary.get("download_rate", 0.0) or 0.0)
+                total_upload_rate += float(summary.get("upload_rate", 0.0) or 0.0)
+                total_progress += float(summary.get("progress", 0.0) or 0.0)
+                total_downloaded += int(summary.get("downloaded", 0) or 0)
+                total_uploaded += int(summary.get("uploaded", 0) or 0)
+                total_left += int(summary.get("left", 0) or 0)
+                connected_peers += int(summary.get("connected_peers", 0) or 0)
+            num_torrents = len(self._ipc_summaries_cache)
+        else:
+            num_torrents = 0
 
-            average_progress = (
-                total_progress / num_torrents if num_torrents > 0 else 0.0
-            )
+        average_progress = total_progress / num_torrents if num_torrents > 0 else 0.0
 
-            return {
-                "num_torrents": num_torrents,
-                "num_active": num_active,
-                "num_paused": num_paused,
-                "num_seeding": num_seeding,
-                "download_rate": total_download_rate,
-                "upload_rate": total_upload_rate,
-                "average_progress": average_progress,
-                "total_downloaded": total_downloaded,
-                "total_uploaded": total_uploaded,
-                "total_left": total_left,
-                "connected_peers": connected_peers,
-            }
+        return {
+            "num_torrents": num_torrents,
+            "num_active": num_active,
+            "num_paused": num_paused,
+            "num_seeding": num_seeding,
+            "download_rate": total_download_rate,
+            "upload_rate": total_upload_rate,
+            "average_progress": average_progress,
+            "total_downloaded": total_downloaded,
+            "total_uploaded": total_uploaded,
+            "total_left": total_left,
+            "connected_peers": connected_peers,
+        }
 
     async def get_inbound_unknown_info_hash_metrics(self) -> dict[str, int]:
         """Merge unknown inbound info-hash observation counts from all TCP listeners.

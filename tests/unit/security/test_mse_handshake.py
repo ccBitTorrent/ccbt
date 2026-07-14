@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,6 +27,8 @@ from ccbt.security.mse_handshake import (
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
+
+_MSE_INTEGRATION_TIMEOUT = 30.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 5.0
 
 
 class TestMSEHandshakeInit:
@@ -580,7 +583,7 @@ class TestMSEHandshakeFullFlow:
         ) -> None:
             handshake = MSEHandshake(prefer_rc4=True)
             result = await handshake.respond_as_receiver(
-                reader, writer, info_hash, timeout=5.0
+                reader, writer, info_hash, timeout=_MSE_INTEGRATION_TIMEOUT
             )
             await responder_results.put(result)
             writer.close()
@@ -598,10 +601,10 @@ class TestMSEHandshakeFullFlow:
                     initiator_reader,
                     initiator_writer,
                     info_hash,
-                    timeout=5.0,
+                    timeout=_MSE_INTEGRATION_TIMEOUT,
                 )
                 receiver_result = await asyncio.wait_for(
-                    responder_results.get(), timeout=5.0
+                    responder_results.get(), timeout=_MSE_INTEGRATION_TIMEOUT
                 )
             finally:
                 initiator_writer.close()
