@@ -13,13 +13,230 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Iterable, Optional
 
 from ccbt.session.tasks import TaskSupervisor
 
 if TYPE_CHECKING:
     from ccbt.session.models import SessionContext
     from ccbt.session.types import DHTClientProtocol
+
+
+@dataclass
+class EndpointCandidate:
+    """Freshness and delivery state for one discovered peer endpoint."""
+
+    peer: dict[str, Any]
+    first_seen: float
+    last_seen: float
+    sources: set[str] = field(default_factory=set)
+    attempts: int = 0
+    last_attempt: Optional[float] = None
+    next_retry_at: float = 0.0
+    accepted_at: Optional[float] = None
+    state: str = "pending"
+
+
+class EndpointCandidateStore:
+    """Bounded, TTL-aware endpoint store used at discovery delivery boundaries."""
+
+    _SOURCE_PRIORITY: ClassVar[dict[str, float]] = {
+        "tracker": 1.0,
+        "incoming": 0.8,
+        "pex": 0.7,
+        "dht": 0.6,
+        "unknown": 0.5,
+    }
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = 300.0,
+        accepted_refresh_seconds: float = 60.0,
+        retry_base_seconds: float = 1.0,
+        max_candidates: int = 2000,
+    ) -> None:
+        """Initialize candidate retention, retry, and capacity bounds."""
+        self.ttl_seconds = max(1.0, ttl_seconds)
+        self.accepted_refresh_seconds = max(0.0, accepted_refresh_seconds)
+        self.retry_base_seconds = max(0.0, retry_base_seconds)
+        self.max_candidates = max(1, max_candidates)
+        self._records: dict[tuple[str, int], EndpointCandidate] = {}
+
+    @staticmethod
+    def _normalize(peer: Any, source: str) -> Optional[dict[str, Any]]:
+        if isinstance(peer, dict):
+            raw = dict(peer)
+            ip = raw.get("ip")
+            port = raw.get("port")
+        elif isinstance(peer, (tuple, list)) and len(peer) >= 2:
+            ip, port = peer[0], peer[1]
+            raw = {}
+        else:
+            return None
+        try:
+            port_int = int(port)
+        except (TypeError, ValueError):
+            return None
+        if not ip or port_int <= 0 or port_int > 65535:
+            return None
+        raw["ip"] = str(ip)
+        raw["port"] = port_int
+        raw.setdefault("peer_source", source)
+        return raw
+
+    @staticmethod
+    def _key(peer: dict[str, Any]) -> tuple[str, int]:
+        return str(peer["ip"]), int(peer["port"])
+
+    def _prune(self, now: float) -> None:
+        expired = [
+            key
+            for key, record in self._records.items()
+            if now - record.last_seen > self.ttl_seconds
+        ]
+        for key in expired:
+            self._records.pop(key, None)
+        if len(self._records) <= self.max_candidates:
+            return
+        ranked = sorted(
+            self._records.items(),
+            key=lambda item: (
+                item[1].state == "accepted",
+                item[1].last_seen,
+                self._priority(item[1]),
+            ),
+        )
+        for key, _ in ranked[: len(self._records) - self.max_candidates]:
+            self._records.pop(key, None)
+
+    def _priority(self, record: EndpointCandidate) -> float:
+        explicit = float(record.peer.get("_replacement_priority", 0.0) or 0.0)
+        source = max(
+            (self._SOURCE_PRIORITY.get(item, 0.5) for item in record.sources),
+            default=0.5,
+        )
+        return explicit + source
+
+    def observe(
+        self,
+        peers: Iterable[Any],
+        *,
+        source: str,
+        now: Optional[float] = None,
+    ) -> int:
+        """Merge sightings while retaining source provenance and freshness."""
+        seen_at = time.monotonic() if now is None else now
+        self._prune(seen_at)
+        added = 0
+        for candidate in peers:
+            peer = self._normalize(candidate, source)
+            if peer is None:
+                continue
+            key = self._key(peer)
+            actual_source = str(peer.get("peer_source", source) or source)
+            record = self._records.get(key)
+            if record is None:
+                record = EndpointCandidate(
+                    peer=peer,
+                    first_seen=seen_at,
+                    last_seen=seen_at,
+                    sources={actual_source, source},
+                )
+                self._records[key] = record
+                added += 1
+            else:
+                record.last_seen = seen_at
+                record.sources.update({actual_source, source})
+                record.peer.update(peer)
+                if (
+                    record.state == "accepted"
+                    and record.accepted_at is not None
+                    and seen_at - record.accepted_at >= self.accepted_refresh_seconds
+                ):
+                    record.state = "pending"
+                    record.next_retry_at = seen_at
+        self._prune(seen_at)
+        return added
+
+    def take_ready(
+        self,
+        *,
+        limit: Optional[int] = None,
+        now: Optional[float] = None,
+    ) -> list[dict[str, Any]]:
+        """Claim fresh candidates by value and freshness, never stale FIFO order."""
+        claimed_at = time.monotonic() if now is None else now
+        self._prune(claimed_at)
+        ready = [
+            record
+            for record in self._records.values()
+            if record.state == "pending" and record.next_retry_at <= claimed_at
+        ]
+        ready.sort(
+            key=lambda record: (self._priority(record), record.last_seen),
+            reverse=True,
+        )
+        if limit is not None:
+            ready = ready[: max(0, limit)]
+        result: list[dict[str, Any]] = []
+        for record in ready:
+            record.state = "attempting"
+            record.attempts += 1
+            record.last_attempt = claimed_at
+            peer = dict(record.peer)
+            peer["_candidate_first_seen"] = record.first_seen
+            peer["_candidate_last_seen"] = record.last_seen
+            peer["_candidate_sources"] = sorted(record.sources)
+            peer["_candidate_attempts"] = record.attempts
+            result.append(peer)
+        return result
+
+    def mark_accepted(
+        self, peers: Iterable[Any], *, now: Optional[float] = None
+    ) -> None:
+        """Mark candidates complete only after downstream acceptance."""
+        accepted_at = time.monotonic() if now is None else now
+        for candidate in peers:
+            peer = self._normalize(candidate, "unknown")
+            if peer is None:
+                continue
+            record = self._records.get(self._key(peer))
+            if record is not None:
+                record.state = "accepted"
+                record.accepted_at = accepted_at
+                record.next_retry_at = 0.0
+
+    def mark_retry(self, peers: Iterable[Any], *, now: Optional[float] = None) -> None:
+        """Release failed delivery claims with bounded exponential retry delay."""
+        failed_at = time.monotonic() if now is None else now
+        for candidate in peers:
+            peer = self._normalize(candidate, "unknown")
+            if peer is None:
+                continue
+            record = self._records.get(self._key(peer))
+            if record is None:
+                continue
+            delay = min(
+                30.0,
+                self.retry_base_seconds * (2 ** max(0, record.attempts - 1)),
+            )
+            record.state = "pending"
+            record.next_retry_at = failed_at + delay
+
+    def snapshot(self, *, now: Optional[float] = None) -> list[dict[str, Any]]:
+        """Return fresh, non-accepted candidates without changing delivery state."""
+        snapshot_at = time.monotonic() if now is None else now
+        self._prune(snapshot_at)
+        records = [
+            record for record in self._records.values() if record.state != "accepted"
+        ]
+        records.sort(
+            key=lambda record: (self._priority(record), record.last_seen),
+            reverse=True,
+        )
+        return [dict(record.peer) for record in records]
 
 
 class DiscoveryController:
@@ -31,27 +248,55 @@ class DiscoveryController:
         """Initialize the discovery controller with session context and optional task supervisor."""
         self._ctx = ctx
         self._tasks = tasks or TaskSupervisor()
-        self._recent_peers: set[tuple[str, int]] = set()
         self._recent_lock = asyncio.Lock()
+        self._candidates = EndpointCandidateStore()
         self._quality_filter_debug_log_cooldown_ms = 3000
         self._quality_filter_last_debug_log: float = 0.0
 
     def register_dht_callback(
         self,
         dht_client: DHTClientProtocol,
-        on_peers_async: Callable[[list[tuple[str, int]]], Awaitable[None]],
+        on_peers_async: Callable[[list[tuple[str, int]]], Awaitable[Any]],
         *,
         info_hash: bytes,
     ) -> None:
         """Register a DHT callback that deduplicates and forwards to async handler."""
 
-        async def process_with_dedup(peers: list[tuple[str, int]]) -> None:
+        async def retry_delivery(peers: list[tuple[str, int]]) -> None:
+            for delay in (1.0, 2.0, 4.0, 8.0, 16.0):
+                await asyncio.sleep(delay)
+                try:
+                    if await process_with_dedup(
+                        peers,
+                        schedule_retry=False,
+                        observe_sighting=False,
+                    ):
+                        return
+                except Exception:
+                    logger = getattr(self._ctx, "logger", None)
+                    if logger:
+                        logger.debug(
+                            "DHT candidate delivery retry failed; retaining candidate",
+                            exc_info=True,
+                        )
+                    continue
+
+        async def process_with_dedup(
+            peers: list[tuple[str, int]],
+            *,
+            schedule_retry: bool = True,
+            observe_sighting: bool = True,
+        ) -> bool:
             if not peers:
-                return
+                return True
 
             # Filter peers by quality before deduplication
             # Note: When peer count is very low, skip quality filtering to maximize connections
-            filtered_peers = await self._filter_peers_by_quality(peers)
+            filtered_peers = (
+                await self._filter_peers_by_quality(peers)
+                if observe_sighting
+                else peers
+            )
 
             # Note: If quality filtering removed too many peers and we have very few connections,
             # relax filtering or skip it entirely
@@ -93,12 +338,10 @@ class DiscoveryController:
                     filtered_peers = peers  # Use all peers when count is low
 
             async with self._recent_lock:
-                new_peers = [p for p in filtered_peers if p not in self._recent_peers]
-                for p in new_peers:
-                    self._recent_peers.add(p)
-                # prune if too large
-                if len(self._recent_peers) > 2000:
-                    self._recent_peers = set(list(self._recent_peers)[1000:])
+                if observe_sighting:
+                    self._candidates.observe(filtered_peers, source="dht")
+                ready = self._candidates.take_ready()
+            new_peers = [(str(p["ip"]), int(p["port"])) for p in ready]
 
             if new_peers:
                 logger = getattr(self._ctx, "logger", None)
@@ -111,16 +354,42 @@ class DiscoveryController:
                         len(filtered_peers) - len(new_peers),
                         len(filtered_peers),
                     )
-                await on_peers_async(new_peers)
-            else:
-                logger = getattr(self._ctx, "logger", None)
-                if logger:
-                    logger.debug(
-                        "DHT discovery controller: no new peers after filtering/deduplication (input: %d, filtered: %d, deduplicated: %d)",
-                        len(peers),
-                        len(peers) - len(filtered_peers),
-                        len(filtered_peers) - len(new_peers) if filtered_peers else 0,
+                try:
+                    delivery = await on_peers_async(new_peers)
+                except Exception:
+                    async with self._recent_lock:
+                        self._candidates.mark_retry(new_peers)
+                    if schedule_retry:
+                        self._tasks.create_task(
+                            retry_delivery(new_peers),
+                            name="dht_candidate_delivery_retry",
+                        )
+                    raise
+                status = getattr(delivery, "status", None)
+                accepted = delivery is not False and status not in {
+                    "noop_empty",
+                    "noop_shutdown",
+                }
+                async with self._recent_lock:
+                    if accepted:
+                        self._candidates.mark_accepted(new_peers)
+                    else:
+                        self._candidates.mark_retry(new_peers)
+                if not accepted and schedule_retry:
+                    self._tasks.create_task(
+                        retry_delivery(new_peers),
+                        name="dht_candidate_delivery_retry",
                     )
+                return accepted
+            logger = getattr(self._ctx, "logger", None)
+            if logger:
+                logger.debug(
+                    "DHT discovery controller: no new peers after filtering/deduplication (input: %d, filtered: %d, deduplicated: %d)",
+                    len(peers),
+                    len(peers) - len(filtered_peers),
+                    len(filtered_peers) - len(new_peers) if filtered_peers else 0,
+                )
+            return True
 
         def callback_wrapper(peers: list[tuple[str, int]]) -> None:
             """Create async task for peer processing from synchronous callback."""

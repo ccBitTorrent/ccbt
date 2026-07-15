@@ -19,6 +19,7 @@ from ccbt.peer.async_peer_connection import (
     AsyncPeerConnectionManager,
     ConnectionState,
     MsePlainFallbackRetrySlot,
+    PeerConnectionError,
     RequestInfo,
     _bitfield_completion,
     _connect_batch_max_duration_s,
@@ -521,6 +522,11 @@ async def test_connect_to_peers_outer_timeout_covers_tcp_and_handshake(
     )
     monkeypatch.setattr(peer_manager, "_estimate_tcp_connect_budget_s", lambda: 0.05)
     monkeypatch.setattr(peer_manager, "get_active_peers", lambda: [])
+    monkeypatch.setattr(
+        peer_manager,
+        "_cap_connect_task_timeout_s",
+        lambda _timeout: 0.4,
+    )
     expected_timeout = peer_manager._connect_task_timeout_s()
 
     # _connect_to_peer is patched to avoid inner transport logic; it must exceed the
@@ -1137,6 +1143,88 @@ async def test_request_piece(peer_manager, peer_info):
         assert call_args[1].piece_index == 0
         assert call_args[1].begin == 0
         assert call_args[1].length == 16384
+
+
+@pytest.mark.asyncio
+async def test_request_piece_acknowledges_only_exact_wire_request(
+    peer_manager,
+    peer_info,
+):
+    """A queued request sent for another caller must not acknowledge this block."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info,
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_choking = False
+    connection.max_pipeline_depth = 1
+    connection.writer = MagicMock()
+    connection.writer.drain = AsyncMock()
+    older_request = RequestInfo(1, 0, 16384, time.time())
+    connection._priority_queue = [(-999.0, time.time(), older_request)]
+
+    with patch.object(
+        peer_manager,
+        "_send_message",
+        new_callable=AsyncMock,
+    ) as mock_send:
+        sent = await peer_manager.request_piece(connection, 2, 0, 16384)
+
+    assert sent is False
+    assert mock_send.await_args.args[1].piece_index == 1
+    assert (1, 0, 16384) in connection.outstanding_requests
+    assert (2, 0, 16384) not in connection.outstanding_requests
+    assert connection._priority_queue == []
+
+
+@pytest.mark.asyncio
+async def test_request_piece_rolls_back_outstanding_when_send_fails(
+    peer_manager,
+    peer_info,
+):
+    """Failed writes must not leave phantom outstanding requests."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info,
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_choking = False
+    connection.writer = MagicMock()
+    connection.writer.drain = AsyncMock()
+
+    with (
+        patch.object(
+            peer_manager,
+            "_send_message",
+            new_callable=AsyncMock,
+            side_effect=ConnectionError("write failed"),
+        ),
+        pytest.raises(ConnectionError, match="write failed"),
+    ):
+        await peer_manager.request_piece(connection, 2, 0, 16384)
+
+    assert connection.outstanding_requests == {}
+
+
+@pytest.mark.asyncio
+async def test_pool_acquire_failure_does_not_open_unleased_tcp(
+    peer_manager,
+    peer_info,
+):
+    """Pool admission failure must end the attempt without direct TCP fallback."""
+    peer_manager.connection_pool.acquire = AsyncMock(return_value=None)
+
+    with (
+        patch.object(
+            peer_manager,
+            "_open_tcp_with_semaphore",
+            new_callable=AsyncMock,
+        ) as open_tcp,
+        pytest.raises(PeerConnectionError, match="Failed to establish TCP connection"),
+    ):
+        await peer_manager._connect_to_peer(peer_info)
+
+    open_tcp.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1905,8 +1993,9 @@ async def test_monitor_unchoke_timeout_triggers_hard_recovery(
     connection.am_interested = True
     peer_manager.connections[str(peer_info)] = connection
 
-    # Second active peer so the unchoke monitor uses the normal 30s threshold (not the
-    # solo-peer 180s anti-collapse window).
+    # Fill the local peer budget and provide a replacement candidate so capacity-aware
+    # retention uses the normal hard timeout rather than the sparse-swarm grace window.
+    peer_manager.max_peers_per_torrent = 2
     decoy = PeerInfo(ip="127.0.0.2", port=6882)
     decoy_conn = AsyncPeerConnection(
         peer_info=decoy,
@@ -1915,6 +2004,9 @@ async def test_monitor_unchoke_timeout_triggers_hard_recovery(
     decoy_conn.state = ConnectionState.ACTIVE
     decoy_conn.peer_choking = False
     peer_manager.connections[str(decoy)] = decoy_conn
+    peer_manager._pending_peer_queue = [
+        PeerInfo(ip="127.0.0.3", port=6883, peer_source="tracker")
+    ]
 
     disconnect_mock = AsyncMock()
     record_failure_mock = AsyncMock()
@@ -3115,6 +3207,10 @@ async def test_monitor_unchoke_timeout_defers_seed_anchor_before_recovery(
     decoy_conn.state = ConnectionState.ACTIVE
     decoy_conn.peer_choking = False
     peer_manager.connections[str(decoy)] = decoy_conn
+    peer_manager.max_peers_per_torrent = 2
+    peer_manager._pending_peer_queue = [
+        PeerInfo(ip="127.0.0.3", port=6883, peer_source="tracker")
+    ]
 
     disconnect_mock = AsyncMock()
     record_failure_mock = AsyncMock()

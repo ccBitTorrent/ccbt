@@ -14,6 +14,43 @@ from ccbt.utils.events import EventBus, PeerCountLowEvent
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
 
+def test_usable_but_undersized_swarm_requires_fast_recovery(tmp_path) -> None:
+    """One slow supplier must not suppress DHT solely because payload is flowing."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    session = AsyncTorrentSession(
+        {
+            "name": "undersized-swarm",
+            "info_hash": b"\x14" * 20,
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 16384,
+                "piece_hashes": [b"x" * 20],
+                "total_length": 16384,
+            },
+            "file_info": {"total_length": 16384},
+        },
+        str(tmp_path),
+    )
+    session.config.discovery.min_peers_before_dht = 10
+    state = {
+        "metadata_incomplete": False,
+        "active_peers": 1,
+        "productive_peers": 1,
+        "requestable_peers": 1,
+        "peers_with_piece_info": 1,
+        "active_block_requests": 128,
+        "download_rate": 256 * 1024,
+        "has_usable_download_path": True,
+        "degraded_swarm": False,
+    }
+
+    assert session._swarm_requires_fast_recovery(state) is True
+
+    state["active_peers"] = 10
+    assert session._swarm_requires_fast_recovery(state) is False
+
+
 @pytest.mark.asyncio
 async def test_peer_count_low_event_exposes_legacy_and_canonical_keys() -> None:
     """peer_count_low events should publish both active peer count key variants."""
@@ -1384,10 +1421,10 @@ async def test_get_swarm_recovery_state_prefers_transport_live_over_summary_acti
 
 
 @pytest.mark.asyncio
-async def test_peer_count_low_skips_dht_when_usability_improves_without_active_growth(
+async def test_peer_count_low_runs_dht_when_requestable_target_remains_unmet(
     tmp_path,
 ) -> None:
-    """Usability improvement (not active-count growth) should still take skip path."""
+    """One usable peer must not suppress DHT below the requestable target."""
     from ccbt.session.session import AsyncTorrentSession
 
     td = {
@@ -1436,6 +1473,15 @@ async def test_peer_count_low_skips_dht_when_usability_improves_without_active_g
                 "active_block_requests": 0,
                 "has_usable_download_path": True,
             },
+            {
+                "metadata_incomplete": False,
+                "active_peers": 2,
+                "productive_peers": 1,
+                "requestable_peers": 1,
+                "peers_with_piece_info": 0,
+                "active_block_requests": 0,
+                "has_usable_download_path": True,
+            },
         ]
     )
     session.download_manager = SimpleNamespace(
@@ -1466,8 +1512,8 @@ async def test_peer_count_low_skips_dht_when_usability_improves_without_active_g
     )
 
     cycle = session._peer_discovery_metrics["last_peer_count_low_recovery_cycle"]
-    assert cycle["decision"] == "skip_dht_after_tracker_success"
-    dht_client.get_peers.assert_not_awaited()
+    assert cycle["decision"] != "skip_dht_after_tracker_success"
+    dht_client.get_peers.assert_awaited_once()
 
 
 @pytest.mark.asyncio

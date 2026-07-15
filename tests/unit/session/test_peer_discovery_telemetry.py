@@ -12,6 +12,8 @@ from ccbt.session.peer_discovery_telemetry import (
     record_batch_and_deferral_transition,
     record_connect_submit_peer_manager,
     record_connect_submit_session,
+    record_event_loop_lag,
+    record_swarm_role_snapshot,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
@@ -70,3 +72,61 @@ def test_observe_pending_peer_queue_emits_slo_primitives() -> None:
     assert "pending_connect_queue_depth_gauge" in metrics
     assert "pending_age_p95_s" in metrics
     assert "pending_drain_rate_per_10s" in metrics
+
+
+def test_swarm_role_snapshot_distinguishes_busy_from_unavailable() -> None:
+    """A full unchoked pipeline remains a supplier while not immediately ready."""
+    pipeline_depth = 4
+
+    class Connection:
+        def __init__(self, *, choked: bool, outstanding: int) -> None:
+            self.peer_choking = choked
+            self.outstanding_requests = {
+                index: object() for index in range(outstanding)
+            }
+            self.max_pipeline_depth = pipeline_depth
+
+        def is_active(self) -> bool:
+            return True
+
+        def can_request(self) -> bool:
+            return (
+                not self.peer_choking
+                and len(self.outstanding_requests) < pipeline_depth
+            )
+
+    metrics: dict = {}
+    manager = SimpleNamespace(
+        connections={
+            "busy": Connection(choked=False, outstanding=4),
+            "ready": Connection(choked=False, outstanding=1),
+            "choked": Connection(choked=True, outstanding=0),
+        },
+        _connection_has_piece_info=lambda _connection: True,
+    )
+    attach_peer_discovery_metrics_ref(manager, metrics)
+
+    roles = record_swarm_role_snapshot(manager)
+
+    assert roles == {
+        "total": 3,
+        "active": 3,
+        "choked": 1,
+        "unchoked_supplier": 2,
+        "request_ready": 1,
+        "pipeline_busy": 1,
+    }
+    assert metrics["swarm_role_snapshot"] == roles
+
+
+def test_event_loop_lag_samples_are_bounded() -> None:
+    """Lag telemetry stores non-negative rolling samples."""
+    metrics: dict = {}
+    manager = SimpleNamespace()
+    attach_peer_discovery_metrics_ref(manager, metrics)
+
+    record_event_loop_lag(manager, -1.0)
+    record_event_loop_lag(manager, 0.25)
+
+    assert metrics["event_loop_lag_samples_s"] == [0.0, 0.25]
+    assert metrics["event_loop_lag_p95_s"] == pytest.approx(0.25)

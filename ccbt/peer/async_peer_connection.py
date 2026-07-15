@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import inspect
 import logging
 import math
 import random
@@ -17,7 +18,7 @@ import warnings
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from heapq import heappop, heappush
+from heapq import heapify, heappop, heappush
 from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Iterable, Optional, Union
 
@@ -26,6 +27,11 @@ from ccbt.core.bencode import BencodeDecoder, BencodeEncodeError, BencodeEncoder
 from ccbt.extensions.fast import FastExtension, FastMessageType
 from ccbt.models import ConnectSubmitResult, MessageType, SwarmTimeoutSignals
 from ccbt.monitoring import get_metrics_collector
+from ccbt.peer.connection_pool import (
+    PeerConnectionPool,
+    PooledConnection,
+    get_process_live_socket_limiter,
+)
 from ccbt.peer.peer import (
     AsyncMessageDecoder,
     BitfieldMessage,
@@ -73,8 +79,13 @@ from ccbt.security.swarm_auth_policy import (
     evaluate_inbound_admission,
     evaluate_outbound_admission,
 )
+from ccbt.session.peer_discovery_telemetry import (
+    record_event_loop_lag,
+    record_swarm_role_snapshot,
+)
 from ccbt.utils.compat import sha1_compat
 from ccbt.utils.shutdown import is_shutting_down
+from ccbt.utils.version import get_version
 
 # Error message constants
 _ERROR_READER_NOT_INITIALIZED = "Reader is not initialized"
@@ -163,6 +174,24 @@ class ConnectionState(Enum):
     ERROR = "error"
 
 
+class ConnectAttemptDisposition(Enum):
+    """Terminal disposition for one identity-preserving outbound attempt."""
+
+    CONNECTED = "connected"
+    FAILED_RETRYABLE = "failed_retryable"
+    CAPACITY_DEFERRED = "capacity_deferred"
+    DUPLICATE = "duplicate"
+    CANCELLED_BY_BATCH = "cancelled_by_batch"
+
+
+@dataclass(frozen=True)
+class ConnectAttemptOutcome:
+    """Result associated with the exact peer whose task produced it."""
+
+    disposition: ConnectAttemptDisposition
+    error: Optional[BaseException] = None
+
+
 class PeerConnectionError(Exception):
     """Exception raised when peer connection fails."""
 
@@ -248,6 +277,10 @@ class AsyncPeerConnection:
         default_factory=dict,
     )
     request_queue: deque = field(default_factory=deque)
+    _request_queue_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        repr=False,
+    )
     max_pipeline_depth: int = 16
     pipeline_timeout_heavy_cancel_streak: int = 0
     _priority_queue: list[tuple[float, float, RequestInfo]] | None = (
@@ -694,7 +727,7 @@ class AsyncPeerConnection:
             except asyncio.CancelledError:
                 return
             except Exception:
-                self.logger.exception(
+                logging.getLogger(__name__).exception(
                     "Background task failed: %s", done_task.get_name()
                 )
 
@@ -984,12 +1017,8 @@ def _min_successful_for_early_batch_exit(
     active_peer_count: int,
     early_exit_min_active_peers: int,
 ) -> int:
-    """Successes required before cancelling remaining in-flight connect tasks.
-
-    Returns ``batch_size + 1`` when early exit is disabled (sparse/cold swarm).
-    """
-    if active_peer_count < early_exit_min_active_peers:
-        return batch_size + 1
+    """Successes required before detaching the remaining durable attempts."""
+    _ = active_peer_count, early_exit_min_active_peers
     return max(3, batch_size // 4)
 
 
@@ -1059,8 +1088,6 @@ class AsyncPeerConnectionManager:
 
         """
         # Init: initialize logger first before any property setters that might use it
-        import logging
-
         self.logger = logging.getLogger(__name__)
 
         self.torrent_data = torrent_data
@@ -1082,15 +1109,16 @@ class AsyncPeerConnectionManager:
             peer_id = get_full_peer_id()
         self.our_peer_id = peer_id
 
-        # Connection pool for connection reuse
-        from ccbt.peer.connection_pool import PeerConnectionPool
-
         pool_max = int(self.config.network.connection_pool_max_connections)
+        max_live_sockets = int(
+            getattr(self.config.network, "max_live_sockets", pool_max)
+        )
         self.connection_pool = PeerConnectionPool(
             max_connections=pool_max,
             max_idle_time=self.config.network.connection_pool_max_idle_time,
             health_check_interval=self.config.network.connection_pool_health_check_interval,
             config=self.config.network,
+            live_socket_limiter=get_process_live_socket_limiter(max_live_sockets),
         )
 
         # Per-peer upload rate limit from config (KiB/s, 0 = unlimited)
@@ -1353,6 +1381,7 @@ class AsyncPeerConnectionManager:
         self._peer_evaluation_task: Optional[asyncio.Task] = None
         self._message_loop_tasks: set[asyncio.Task[None]] = set()
         self._detached_connect_tasks: set[asyncio.Task[Any]] = set()
+        self._detached_connect_finalizer_tasks: set[asyncio.Task[None]] = set()
         self._connection_reservations: set[str] = set()
 
         # Running state flag for idempotency
@@ -2376,6 +2405,17 @@ class AsyncPeerConnectionManager:
         if self._pending_resume_in_progress:
             return
         _, active_count, requestable_count = self._snapshot_connection_counts()
+        if active_count == 0 and self._connect_batch_active_count > 0:
+            if self._maybe_reset_stale_batch_owner():
+                self.request_pending_resume(reason="stale_batch_owner_reset")
+            else:
+                self.logger.debug(
+                    "Deferring zero-peer pending drain (%s): %d connect batch "
+                    "owner(s) are already active",
+                    reason,
+                    self._connect_batch_active_count,
+                )
+            return
         pause_min = _productive_swarm_pause_min_requestable(
             self.max_peers_per_torrent,
             configured_min=int(
@@ -3610,7 +3650,7 @@ class AsyncPeerConnectionManager:
 
     async def _release_cancelled_connect_tasks(
         self,
-        tasks: list[asyncio.Task[None]],
+        tasks: list[asyncio.Task[Any]],
         batch_peers: list[PeerInfo],
         *,
         reason: str,
@@ -4624,7 +4664,9 @@ class AsyncPeerConnectionManager:
         self._register_managed_task(task, self._message_loop_tasks, "peer message loop")
 
     def _register_detached_connect_task(
-        self, task: asyncio.Task[Any], peer_info: PeerInfo
+        self,
+        task: asyncio.Task[tuple[int, ConnectAttemptOutcome]],
+        peer_info: PeerInfo,
     ) -> None:
         """Retain and observe a connect task allowed to finish after batch timeout."""
         if task in self._detached_connect_tasks:
@@ -4634,7 +4676,7 @@ class AsyncPeerConnectionManager:
         def _on_done(done_task: asyncio.Task[Any]) -> None:
             self._detached_connect_tasks.discard(done_task)
             try:
-                done_task.result()
+                _, outcome = done_task.result()
             except asyncio.CancelledError:
                 return
             except Exception as error:
@@ -4649,8 +4691,88 @@ class AsyncPeerConnectionManager:
                         "Detached connect to %s failed",
                         peer_info,
                     )
+                outcome = ConnectAttemptOutcome(
+                    ConnectAttemptDisposition.FAILED_RETRYABLE,
+                    error,
+                )
+            finalize_task = asyncio.create_task(
+                self._finalize_detached_connect_outcome(peer_info, outcome),
+                name=f"detached_connect_finalize:{peer_info.ip}:{peer_info.port}",
+            )
+            self._register_managed_task(
+                finalize_task,
+                self._detached_connect_finalizer_tasks,
+                "detached connect finalizer",
+            )
 
         task.add_done_callback(_on_done)
+
+    async def _finalize_detached_connect_outcome(
+        self,
+        peer_info: PeerInfo,
+        outcome: ConnectAttemptOutcome,
+    ) -> None:
+        """Apply the same durable disposition rules to detached task results."""
+        if outcome.disposition is ConnectAttemptDisposition.CONNECTED:
+            await self._discard_pending_peer(peer_info)
+            return
+        if outcome.disposition is ConnectAttemptDisposition.DUPLICATE:
+            return
+        if outcome.disposition is ConnectAttemptDisposition.FAILED_RETRYABLE:
+            await self._remember_retryable_connect_failure(peer_info, outcome.error)
+            return
+        if self._running:
+            queued = await self._queue_pending_peers(
+                [peer_info],
+                reason=f"detached_{outcome.disposition.value}",
+            )
+            if queued:
+                self._schedule_pending_resume_retry(
+                    delay_s=2.0,
+                    reason=f"detached_{outcome.disposition.value}",
+                )
+
+    async def _discard_pending_peer(self, peer_info: PeerInfo) -> None:
+        """Remove a peer whose detached attempt ultimately connected."""
+        peer_key = self._get_peer_key(peer_info)
+        async with self._pending_peer_queue_lock:
+            if peer_key not in self._pending_peer_keys:
+                return
+            self._pending_peer_queue = [
+                queued
+                for queued in self._pending_peer_queue
+                if self._get_peer_key(queued) != peer_key
+            ]
+            self._pending_peer_keys.discard(peer_key)
+            self._pending_peer_enqueued_at.pop(peer_key, None)
+
+    async def _remember_retryable_connect_failure(
+        self,
+        peer_info: PeerInfo,
+        error: Optional[BaseException],
+    ) -> None:
+        """Store a minimal durable retry record for out-of-band failures."""
+        failure = error or PeerConnectionError(f"Connection to {peer_info} failed")
+        reason, is_temporary, timeout_class, is_transient = (
+            self._classify_connection_failure_detailed(failure)
+        )
+        if not is_temporary:
+            return
+        peer_key = self._get_peer_key(peer_info)
+        async with self._failed_peer_lock:
+            existing = self._failed_peers.get(peer_key, {})
+            self._failed_peers[peer_key] = {
+                **existing,
+                "timestamp": time.time(),
+                "count": int(existing.get("count", 0) or 0) + 1,
+                "reason": reason,
+                "is_terminal": False,
+                "is_transient": is_transient,
+                "timeout_class": timeout_class,
+                "family": self._get_ip_family(peer_info),
+                "peer_source": getattr(peer_info, "peer_source", "unknown"),
+                "is_seeder": bool(getattr(peer_info, "is_seeder", False)),
+            }
 
     async def _reserve_connection_slot(self, peer_info: PeerInfo) -> bool:
         """Atomically reserve per-torrent connection capacity for one peer."""
@@ -4747,6 +4869,28 @@ class AsyncPeerConnectionManager:
             # Mark as running after all tasks are started
             self._running = True
             _warn_deprecated_legacy_tracker_source_connect_priority(self.config)
+            network = self.config.network
+            self.logger.info(
+                "Peer runtime contract: version=%s pipeline=%d adaptive=%s "
+                "pipeline_bounds=%d..%d request_timeout=%.1fs block_size_kib=%d "
+                "global_peers=%d torrent_peers=%d connect_attempts=%d",
+                get_version(),
+                int(network.pipeline_depth),
+                bool(getattr(network, "pipeline_adaptive_depth", True)),
+                int(getattr(network, "pipeline_min_depth", 4)),
+                int(getattr(network, "pipeline_max_depth", 128)),
+                float(getattr(network, "request_timeout", 60.0)),
+                int(getattr(network, "block_size_kib", 16)),
+                int(network.max_global_peers),
+                int(self.max_peers_per_torrent),
+                int(
+                    getattr(
+                        network,
+                        "max_concurrent_connection_attempts",
+                        20,
+                    )
+                ),
+            )
 
             self.logger.debug(
                 "Async peer connection manager started (connection_pool=%s, "
@@ -5616,6 +5760,7 @@ class AsyncPeerConnectionManager:
             for task in self._detached_connect_tasks
             if isinstance(task, asyncio.Task)
         )
+        tracked_tasks.update(self._detached_connect_finalizer_tasks)
 
         if self._choking_task and not self._choking_task.done():
             tasks_to_cancel.append(self._choking_task)
@@ -5666,6 +5811,7 @@ class AsyncPeerConnectionManager:
         self._piece_selection_trigger_tasks.clear()
         self._unchoke_monitor_tasks.clear()
         self._detached_connect_tasks.clear()
+        self._detached_connect_finalizer_tasks.clear()
         self._connection_reservations.clear()
         if hasattr(self, "_background_tasks"):
             self._background_tasks.clear()
@@ -5928,7 +6074,7 @@ class AsyncPeerConnectionManager:
                     _mc,
                 )
 
-            if self._connect_batch_active_count >= max_parallel:
+            if self._connect_batch_active_count >= max_parallel_batches:
                 # Pending queue skips duplicate keys vs existing pending/connected (_queue_pending_peers).
                 enqueued = await self.enqueue_peer_dicts_pending(
                     peer_list,
@@ -5943,17 +6089,6 @@ class AsyncPeerConnectionManager:
 
                 observe_pending_peer_queue(self)
                 record_connect_submit_peer_manager(self, "queued_reentrant")
-                _, active_for_drain, _ = self._snapshot_connection_counts()
-                hold_th = int(
-                    getattr(
-                        self.config.discovery,
-                        "tracker_ingress_hold_pending_queue_threshold",
-                        200,
-                    )
-                    or 200
-                )
-                if active_for_drain == 0 and depth > hold_th:
-                    self.request_pending_resume(reason="zero_active_reentrant_drain")
                 self.logger.info(
                     "pd_connect_submit status=queued_reentrant upstream=%s queue_depth_after=%s enqueued=%s",
                     submit_upstream,
@@ -7040,7 +7175,10 @@ class AsyncPeerConnectionManager:
                         # This dramatically speeds up batch processing - connections happen concurrently
                         # Connection batch: wrap each connection with timeout to prevent hanging
                         # Individual connections can hang during TCP connect or handshake, blocking the batch
-                        tasks = []
+                        tasks: list[
+                            asyncio.Task[tuple[int, ConnectAttemptOutcome]]
+                        ] = []
+                        task_peers: list[PeerInfo] = []
                         # Track peers whose attempts were cancelled by batch control logic.
                         # These peers should be retried from the pending queue.
                         aborted_batch_peers: list[PeerInfo] = []
@@ -7111,10 +7249,16 @@ class AsyncPeerConnectionManager:
                                 peer: PeerInfo,
                                 timeout: float = connection_timeout,
                                 peer_key: str = peer_key,
-                            ) -> None:
+                            ) -> ConnectAttemptOutcome:
                                 """Connect to peer with timeout protection."""
                                 reserved = await self._reserve_connection_slot(peer)
                                 if not reserved:
+                                    async with self.connection_lock:
+                                        duplicate = (
+                                            peer_key in self.connections
+                                            or peer_key
+                                            in self._connection_reservations
+                                        )
                                     self.logger.debug(
                                         "Skipping connect to %s: duplicate or per-torrent capacity reserved",
                                         peer,
@@ -7124,18 +7268,44 @@ class AsyncPeerConnectionManager:
                                         self._on_inflight_peer_discarded(
                                             reason="connection_slot_unavailable"
                                         )
-                                    return
+                                    disposition = (
+                                        ConnectAttemptDisposition.DUPLICATE
+                                        if duplicate
+                                        else ConnectAttemptDisposition.CAPACITY_DEFERRED
+                                    )
+                                    return ConnectAttemptOutcome(disposition)
                                 try:
                                     await asyncio.wait_for(
                                         self._connect_to_peer(peer),
                                         timeout=timeout,
                                     )
+                                    connection = self.connections.get(peer_key)
+                                    if (
+                                        connection is not None
+                                        and connection.state
+                                        not in {
+                                            ConnectionState.DISCONNECTED,
+                                            ConnectionState.ERROR,
+                                        }
+                                    ):
+                                        return ConnectAttemptOutcome(
+                                            ConnectAttemptDisposition.CONNECTED
+                                        )
+                                    return ConnectAttemptOutcome(
+                                        ConnectAttemptDisposition.FAILED_RETRYABLE,
+                                        PeerConnectionError(
+                                            f"Connection to {peer} did not reach an admitted state"
+                                        ),
+                                    )
                                 except asyncio.CancelledError:
-                                    from ccbt.utils.shutdown import is_shutting_down
-
                                     if is_shutting_down():
                                         raise
-                                    return
+                                    return ConnectAttemptOutcome(
+                                        ConnectAttemptDisposition.CANCELLED_BY_BATCH,
+                                        asyncio.CancelledError(
+                                            f"Connection to {peer} cancelled by batch control"
+                                        ),
+                                    )
                                 except asyncio.TimeoutError:
                                     self._connection_timeout_log_counter += 1
                                     timeout_log_count = (
@@ -7171,7 +7341,10 @@ class AsyncPeerConnectionManager:
                                     if conn_to_remove is not None:
                                         await self._disconnect_peer(conn_to_remove)
                                     msg = f"Connection to {peer} timed out after {timeout}s"
-                                    raise asyncio.TimeoutError(msg) from None
+                                    return ConnectAttemptOutcome(
+                                        ConnectAttemptDisposition.FAILED_RETRYABLE,
+                                        asyncio.TimeoutError(msg),
+                                    )
                                 finally:
                                     async with self.connection_lock:
                                         self._inflight_peer_connects.discard(peer_key)
@@ -7180,9 +7353,36 @@ class AsyncPeerConnectionManager:
                                         )
                                     await self._release_connection_slot(peer)
 
+                            async def indexed_connect(
+                                index: int,
+                                peer: PeerInfo,
+                                connector: Callable[
+                                    [PeerInfo], Awaitable[ConnectAttemptOutcome]
+                                ],
+                            ) -> tuple[int, ConnectAttemptOutcome]:
+                                try:
+                                    outcome = await connector(peer)
+                                except asyncio.CancelledError as error:
+                                    outcome = ConnectAttemptOutcome(
+                                        ConnectAttemptDisposition.CANCELLED_BY_BATCH,
+                                        error,
+                                    )
+                                except Exception as error:
+                                    outcome = ConnectAttemptOutcome(
+                                        ConnectAttemptDisposition.FAILED_RETRYABLE,
+                                        error,
+                                    )
+                                return index, outcome
+
                             # Create task immediately - no delays within batch for maximum speed
+                            task_index = len(task_peers)
+                            task_peers.append(peer_info)
                             task = asyncio.create_task(
-                                connect_with_timeout(peer_info),
+                                indexed_connect(
+                                    task_index,
+                                    peer_info,
+                                    connect_with_timeout,
+                                ),
                                 name=f"connect_peer:{peer_info.ip}:{peer_info.port}",
                             )  # pragma: no cover - Same context
                             tasks.append(task)  # pragma: no cover - Same context
@@ -7203,7 +7403,7 @@ class AsyncPeerConnectionManager:
                         )
                         min_successful_for_early_exit = (
                             _min_successful_for_early_batch_exit(
-                                len(batch),
+                                len(task_peers),
                                 active_peer_count=active_peer_count,
                                 early_exit_min_active_peers=early_exit_min_active,
                             )
@@ -7280,7 +7480,7 @@ class AsyncPeerConnectionManager:
                             successful_in_batch = 0
                             min_successful_for_early_exit = (
                                 _min_successful_for_early_batch_exit(
-                                    len(batch),
+                                    len(task_peers),
                                     active_peer_count=active_peer_count,
                                     early_exit_min_active_peers=early_exit_min_active,
                                 )
@@ -7288,7 +7488,11 @@ class AsyncPeerConnectionManager:
 
                             # Connection batch: process with timeout and early exit if enough connections succeed
                             async def _process_completed_batch(
-                                task_list: list[asyncio.Task[None]],
+                                task_list: list[
+                                    asyncio.Task[
+                                        tuple[int, ConnectAttemptOutcome]
+                                    ]
+                                ],
                                 batch_peer_list: list[PeerInfo],
                                 results_list: list[Any],
                                 batch_counts: dict[str, int],
@@ -7301,10 +7505,6 @@ class AsyncPeerConnectionManager:
                                 batch_counts["batch_successful"] = (
                                     batch_successful_counter
                                 )
-                                task_to_index = {
-                                    task: index for index, task in enumerate(task_list)
-                                }
-                                assigned_indexes: set[int] = set()
                                 for completed_future in asyncio.as_completed(task_list):
                                     if not self._running:
                                         self.logger.debug(
@@ -7321,30 +7521,17 @@ class AsyncPeerConnectionManager:
                                         return
 
                                     try:
-                                        result = await completed_future
-                                        task_index = task_to_index.get(completed_future)
-                                        if task_index is None:
-                                            # Python may return wrapper futures from as_completed;
-                                            # map them back to a pending slot by done state.
-                                            for idx, task in enumerate(task_list):
-                                                if (
-                                                    idx not in assigned_indexes
-                                                    and results_list[idx] is None
-                                                    and task.done()
-                                                ):
-                                                    task_index = idx
-                                                    break
-                                        if (
-                                            task_index is None
-                                            or results_list[task_index] is not None
-                                        ):
+                                        task_index, outcome = await completed_future
+                                        if results_list[task_index] is not None:
                                             continue
-                                        assigned_indexes.add(task_index)
-                                        results_list[task_index] = result
+                                        results_list[task_index] = outcome
                                         completed += 1
 
                                         # Track successful connections for early exit
-                                        if not isinstance(result, Exception):
+                                        if (
+                                            outcome.disposition
+                                            is ConnectAttemptDisposition.CONNECTED
+                                        ):
                                             successful += 1
                                             batch_counts["batch_successful"] = (
                                                 batch_counts["batch_successful"] + 1
@@ -7371,6 +7558,10 @@ class AsyncPeerConnectionManager:
                                                     self._register_detached_connect_task(
                                                         remaining_task,
                                                         batch_peer_list[batch_idx],
+                                                    )
+                                                    await self._queue_pending_peers(
+                                                        [batch_peer_list[batch_idx]],
+                                                        reason="early_batch_detached",
                                                     )
                                                     detached_remaining += 1
                                             self.logger.debug(
@@ -7401,56 +7592,12 @@ class AsyncPeerConnectionManager:
                                                 successful,
                                             )
                                     except asyncio.CancelledError:
-                                        # Record per-peer task cancellation; re-raise when the
-                                        # batch processor itself was cancelled (batch timeout).
-                                        task_index = task_to_index.get(completed_future)
-                                        if (
-                                            task_index is not None
-                                            and results_list[task_index] is None
-                                        ):
-                                            results_list[task_index] = (
-                                                asyncio.CancelledError(
-                                                    f"Connection to {batch_peer_list[task_index]} was cancelled"
-                                                )
-                                            )
-                                            completed += 1
-                                            self.logger.debug(
-                                                "Connection task to %s was cancelled (task %d/%d)",
-                                                batch_peer_list[task_index],
-                                                task_index + 1,
-                                                len(task_list),
-                                            )
-                                            continue
                                         raise
                                     except Exception as exc:
-                                        # Find which task failed
-                                        task_index = task_to_index.get(completed_future)
-                                        if (
-                                            task_index is not None
-                                            and results_list[task_index] is not None
-                                        ):
-                                            continue
-                                        if task_index is not None:
-                                            assigned_indexes.add(task_index)
-                                            if isinstance(exc, asyncio.TimeoutError):
-                                                _register_aborted_batch_peer(
-                                                    batch_peer_list[task_index]
-                                                )
-                                            results_list[task_index] = exc
-                                            completed += 1
-                                        else:
-                                            # Fallback: assign to first unfinished slot for safety
-                                            for (
-                                                fallback_index,
-                                                result_value,
-                                            ) in enumerate(results_list):
-                                                if result_value is None:
-                                                    _register_aborted_batch_peer(
-                                                        batch_peer_list[fallback_index]
-                                                    )
-                                                    results_list[fallback_index] = exc
-                                                    completed += 1
-                                                    break
+                                        self.logger.exception(
+                                            "Indexed connect result processing failed",
+                                            exc_info=exc,
+                                        )
                                 batch_counts["completed"] = completed
                                 batch_counts["successful"] = successful
                                 batch_counts["batch_successful"] = batch_counts[
@@ -7472,7 +7619,7 @@ class AsyncPeerConnectionManager:
                                 await asyncio.wait_for(
                                     _process_completed_batch(
                                         tasks,
-                                        batch,
+                                        task_peers,
                                         results,
                                         batch_counts=batch_counts,
                                         min_successful_for_early_exit=min_successful_for_early_exit,
@@ -7506,20 +7653,26 @@ class AsyncPeerConnectionManager:
                                         if not task.done():
                                             results[i] = _BATCH_CONNECT_DETACHED
                                             self._register_detached_connect_task(
-                                                task, batch[i]
+                                                task, task_peers[i]
                                             )
                                             detached_count += 1
                                             continue
                                         if task.cancelled():
-                                            results[i] = asyncio.CancelledError(
-                                                f"Connection to {batch[i]} cancelled before batch timeout"
+                                            results[i] = ConnectAttemptOutcome(
+                                                ConnectAttemptDisposition.CANCELLED_BY_BATCH,
+                                                asyncio.CancelledError(
+                                                    f"Connection to {task_peers[i]} cancelled before batch timeout"
+                                                ),
                                             )
                                             continue
                                         task_exc = task.exception()
                                         if task_exc is not None:
-                                            results[i] = task_exc
+                                            results[i] = ConnectAttemptOutcome(
+                                                ConnectAttemptDisposition.FAILED_RETRYABLE,
+                                                task_exc,
+                                            )
                                         else:
-                                            results[i] = _BATCH_CONNECT_SUCCEEDED
+                                            _, results[i] = task.result()
                                     self.logger.info(
                                         "Connection batch timeout after %.1fs (%d/%d completed, %d successful) - "
                                         "detaching %d in-flight connect(s) (MSE/handshake continues in background)",
@@ -7549,63 +7702,98 @@ class AsyncPeerConnectionManager:
                                         if result is None:
                                             if tasks[i].done():
                                                 try:
-                                                    await tasks[i]
+                                                    _, outcome = await tasks[i]
                                                 except asyncio.CancelledError:
-                                                    results[i] = asyncio.CancelledError(
-                                                        f"Connection to {batch[i]} cancelled due to batch timeout"
+                                                    results[i] = ConnectAttemptOutcome(
+                                                        ConnectAttemptDisposition.CANCELLED_BY_BATCH,
+                                                        asyncio.CancelledError(
+                                                            f"Connection to {task_peers[i]} cancelled due to batch timeout"
+                                                        ),
                                                     )
                                                     _register_aborted_batch_peer(
-                                                        batch[i]
+                                                        task_peers[i]
                                                     )
                                                 except Exception:
-                                                    results[i] = TimeoutError(
-                                                        f"Connection to {batch[i]} did not complete before batch cleanup"
+                                                    results[i] = ConnectAttemptOutcome(
+                                                        ConnectAttemptDisposition.FAILED_RETRYABLE,
+                                                        TimeoutError(
+                                                            f"Connection to {task_peers[i]} did not complete before batch cleanup"
+                                                        ),
                                                     )
                                                     _register_aborted_batch_peer(
-                                                        batch[i]
+                                                        task_peers[i]
                                                     )
                                                 else:
-                                                    results[i] = TimeoutError(
-                                                        f"Connection to {batch[i]} did not complete before batch cleanup"
-                                                    )
-                                                    _register_aborted_batch_peer(
-                                                        batch[i]
-                                                    )
+                                                    results[i] = outcome
                                             else:
-                                                results[i] = TimeoutError(
-                                                    f"Batch timeout after {batch_timeout}s"
+                                                results[i] = ConnectAttemptOutcome(
+                                                    ConnectAttemptDisposition.CANCELLED_BY_BATCH,
+                                                    TimeoutError(
+                                                        f"Batch timeout after {batch_timeout}s"
+                                                    ),
                                                 )
-                                                _register_aborted_batch_peer(batch[i])
+                                                _register_aborted_batch_peer(task_peers[i])
                                             completed_count += 1
                                     await self._release_cancelled_connect_tasks(
                                         tasks,
-                                        batch,
+                                        task_peers,
                                         reason="batch_timeout_cancelled",
                                     )
 
                         # Process results in order
-                        for i, conn_result in enumerate(results):
-                            peer_info = batch[i]
+                        for i, raw_result in enumerate(results):
+                            peer_info = task_peers[i]
                             peer_key = str(peer_info)
+                            conn_result = raw_result
 
                             # Connection batch: skip if result is None (task not completed yet)
                             # This can happen if batch timeout occurred before all tasks completed
                             if conn_result is _BATCH_CONNECT_DETACHED:
                                 connection_stats["total_attempts"] += 1
                                 continue
-                            if conn_result is _BATCH_CONNECT_SUCCEEDED:
-                                connection_stats["total_attempts"] += 1
-                                connection_stats["successful"] += 1
-                                batch_successful += 1
-                                continue
                             if conn_result is None:
                                 if i < len(tasks) and not tasks[i].done():
                                     connection_stats["total_attempts"] += 1
                                     continue
-                                conn_result = TimeoutError(  # noqa: PLW2901
+                                conn_result = TimeoutError(
                                     f"Connection to {peer_info} did not complete before batch timeout"
                                 )
                                 completed_count += 1
+
+                            if isinstance(conn_result, ConnectAttemptOutcome):
+                                disposition = conn_result.disposition
+                                if disposition is ConnectAttemptDisposition.DUPLICATE:
+                                    continue
+                                if disposition in {
+                                    ConnectAttemptDisposition.CAPACITY_DEFERRED,
+                                    ConnectAttemptDisposition.CANCELLED_BY_BATCH,
+                                }:
+                                    await self._queue_pending_peers(
+                                        [peer_info],
+                                        reason=disposition.value,
+                                    )
+                                    self._schedule_pending_resume_retry(
+                                        delay_s=1.0,
+                                        reason=disposition.value,
+                                    )
+                                    if (
+                                        disposition
+                                        is ConnectAttemptDisposition.CANCELLED_BY_BATCH
+                                    ):
+                                        _register_aborted_batch_peer(peer_info)
+                                    continue
+                                if (
+                                    disposition
+                                    is ConnectAttemptDisposition.FAILED_RETRYABLE
+                                ):
+                                    conn_result = (
+                                        conn_result.error
+                                        or PeerConnectionError(
+                                            f"Connection to {peer_info} failed"
+                                        )
+                                    )
+                                else:
+                                    conn_result = None
 
                             connection_stats["total_attempts"] += 1
 
@@ -9273,11 +9461,7 @@ class AsyncPeerConnectionManager:
                         # Validation: PooledConnection is not an AsyncPeerConnection
                         # We need to create an AsyncPeerConnection from the pooled connection
                         # Extract reader/writer from PooledConnection and create proper AsyncPeerConnection
-                        from ccbt.peer.connection_pool import (
-                            PooledConnection as PooledConnectionType,
-                        )
-
-                        if isinstance(conn_obj, PooledConnectionType):
+                        if isinstance(conn_obj, PooledConnection):
                             # Validation: pooled connection must have valid reader/writer
                             if conn_obj.reader is None or conn_obj.writer is None:
                                 self.logger.warning(
@@ -9414,6 +9598,13 @@ class AsyncPeerConnectionManager:
                     connection = None
             else:
                 connection = None
+
+            if connection is None:
+                msg = (
+                    f"Failed to establish TCP connection to "
+                    f"{peer_info.ip}:{peer_info.port}"
+                )
+                raise PeerConnectionError(msg)
 
             # LOGGING OPTIMIZATION: Changed to DEBUG - use -vv to see peer connection details
             self.logger.debug("Connecting to peer %s", peer_info)
@@ -14099,12 +14290,29 @@ class AsyncPeerConnectionManager:
                     swarm_has_requestable = any(
                         c.can_request() for c in self.connections.values()
                     )
+                target_requestable = int(
+                    getattr(
+                        getattr(self.config, "discovery", None),
+                        "target_requestable_peers",
+                        12,
+                    )
+                    or 12
+                )
+                choked_reserve_floor = min(
+                    self.max_peers_per_torrent,
+                    max(8, target_requestable),
+                )
+                pending_replacements = len(self._pending_peer_queue)
+                replacement_pressure = (
+                    active_for_solo >= choked_reserve_floor
+                    and pending_replacements > 0
+                ) or active_for_solo >= self.max_peers_per_torrent
                 _bdl = int(getattr(connection.stats, "bytes_downloaded", 0) or 0)
                 _out = len(getattr(connection, "outstanding_requests", {}) or {})
-                if active_for_solo <= 1:
+                if active_for_solo < choked_reserve_floor:
                     # Avoid disconnecting the only active peer after the short unchoke
-                    # window: that collapses the whole download when discovery is weak
-                    # (DHT empty, tracker churn), as seen in production logs.
+                    # window. Choked peers are useful optimistic-unchoke and PEX reserve
+                    # capacity while the swarm is still below its supplier target.
                     effective_timeout = _apply_peer_choked_solo_grace(
                         effective_timeout,
                         solo_grace=solo_grace,
@@ -14112,7 +14320,7 @@ class AsyncPeerConnectionManager:
                         bytes_downloaded=_bdl,
                         outstanding_count=_out,
                     )
-                elif not swarm_has_requestable:
+                elif not swarm_has_requestable or not replacement_pressure:
                     # Multiple peers can all be post-handshake but still choked (tit-for-tat).
                     # The previous logic only extended the grace period when <=1 "active"
                     # peer existed, so with 2+ choked leechers we disconnected everyone after
@@ -16150,12 +16358,6 @@ class AsyncPeerConnectionManager:
                     "Error releasing pooled connection for %s: %s", peer_key, e
                 )
 
-        # Return connection to pool if it exists there (legacy path)
-
-        peer_id = f"{connection.peer_info.ip}:{connection.peer_info.port}"
-
-        await self.connection_pool.release(peer_id, connection)
-
         if self.piece_manager and hasattr(self.piece_manager, "_remove_peer"):
             with contextlib.suppress(Exception):
                 await self.piece_manager._remove_peer(connection)  # noqa: SLF001
@@ -17341,11 +17543,17 @@ class AsyncPeerConnectionManager:
         try:  # pragma: no cover - Background loop step requires time-based execution, complex to test reliably
             if not self._running or is_shutting_down():
                 return False
+            sleep_started = time.monotonic()
             await asyncio.sleep(
                 5.0
             )  # pragma: no cover - Time-dependent sleep in background loop
+            record_event_loop_lag(
+                self,
+                max(0.0, time.monotonic() - sleep_started - 5.0),
+            )
 
             await self._update_peer_stats()  # pragma: no cover - Same context
+            record_swarm_role_snapshot(self)
 
             # Note: Log comprehensive connection diagnostics every 30 seconds
 
@@ -19332,6 +19540,36 @@ class AsyncPeerConnectionManager:
 
         return ranked_peers
 
+    async def _release_request_claim(
+        self,
+        connection: AsyncPeerConnection,
+        request_key: tuple[int, int, int],
+        *,
+        reason: str,
+        age: float,
+        timeout: float,
+    ) -> bool:
+        """Atomically remove a transport request and its piece-manager claim."""
+        request_info = connection.outstanding_requests.get(request_key)
+        if request_info is None:
+            return False
+        if self.piece_manager is not None and hasattr(
+            self.piece_manager, "handle_request_cancelled"
+        ):
+            cleanup_result = self.piece_manager.handle_request_cancelled(
+                request_info.piece_index,
+                request_info.begin,
+                request_info.length,
+                str(connection.peer_info),
+                reason=reason,
+                age=age,
+                timeout=timeout,
+            )
+            if inspect.isawaitable(cleanup_result):
+                await cleanup_result
+        connection.outstanding_requests.pop(request_key, None)
+        return True
+
     async def _maybe_cancel_sparse_stale_outstanding(
         self,
         connection: AsyncPeerConnection,
@@ -19394,8 +19632,13 @@ class AsyncPeerConnectionManager:
                     request_info.length,
                 )
                 await self._send_message(connection, cancel_msg)
-                if request_key in connection.outstanding_requests:
-                    del connection.outstanding_requests[request_key]
+                if await self._release_request_claim(
+                    connection,
+                    request_key,
+                    reason="sparse_stale_pipeline",
+                    age=current_time - request_info.timestamp,
+                    timeout=sparse_s,
+                ):
                     cancelled_count += 1
                     connection.stats.blocks_failed += 1
             except Exception as e:
@@ -19407,8 +19650,13 @@ class AsyncPeerConnectionManager:
                     connection.peer_info,
                     e,
                 )
-                if request_key in connection.outstanding_requests:
-                    del connection.outstanding_requests[request_key]
+                if await self._release_request_claim(
+                    connection,
+                    request_key,
+                    reason="sparse_stale_pipeline",
+                    age=current_time - request_info.timestamp,
+                    timeout=sparse_s,
+                ):
                     cancelled_count += 1
                     connection.stats.blocks_failed += 1
 
@@ -19566,9 +19814,13 @@ class AsyncPeerConnectionManager:
 
                 # Remove from outstanding requests
 
-                if request_key in connection.outstanding_requests:
-                    del connection.outstanding_requests[request_key]
-
+                if await self._release_request_claim(
+                    connection,
+                    request_key,
+                    reason="transport_timeout",
+                    age=request_age,
+                    timeout=request_timeout,
+                ):
                     cancelled_count += 1
 
                     # Track failed request
@@ -19586,19 +19838,6 @@ class AsyncPeerConnectionManager:
                         len(connection.outstanding_requests),
                         connection.max_pipeline_depth,
                     )
-                    if self.piece_manager is not None and hasattr(
-                        self.piece_manager, "handle_request_cancelled"
-                    ):
-                        await self.piece_manager.handle_request_cancelled(
-                            request_info.piece_index,
-                            request_info.begin,
-                            request_info.length,
-                            str(connection.peer_info),
-                            reason="transport_timeout",
-                            age=request_age,
-                            timeout=request_timeout,
-                        )
-
             except Exception as e:
                 # Log error but continue cleaning up other requests
 
@@ -19613,9 +19852,13 @@ class AsyncPeerConnectionManager:
 
                 # Still remove from outstanding requests even if cancel message failed
 
-                if request_key in connection.outstanding_requests:
-                    del connection.outstanding_requests[request_key]
-
+                if await self._release_request_claim(
+                    connection,
+                    request_key,
+                    reason="transport_timeout",
+                    age=request_age,
+                    timeout=request_timeout,
+                ):
                     cancelled_count += 1
 
         if cancelled_count > 0:
@@ -20108,43 +20351,45 @@ class AsyncPeerConnectionManager:
 
         request_info.bandwidth_estimate = bandwidth_estimate
 
-        # Use priority queue if prioritization is enabled
-
-        enable_prioritization = getattr(
-            self.config.network, "pipeline_enable_prioritization", True
-        )
-
-        if enable_prioritization:
-            # Initialize priority queue if not exists
-
-            if connection._priority_queue is None:  # noqa: SLF001 - Internal queue state
-                connection._priority_queue = []  # noqa: SLF001 - Internal queue state
-
-            # Add to priority queue (negative priority for max-heap via min-heap)
-
-            heappush(
-                connection._priority_queue,  # noqa: SLF001 - Internal queue state
-                (-priority, time.time(), request_info),
+        request_key = (piece_index, begin, length)
+        async with connection._request_queue_lock:  # noqa: SLF001
+            # Use priority queue if prioritization is enabled
+            enable_prioritization = getattr(
+                self.config.network, "pipeline_enable_prioritization", True
             )
+            if enable_prioritization:
+                if connection._priority_queue is None:  # noqa: SLF001
+                    connection._priority_queue = []  # noqa: SLF001
+                heappush(
+                    connection._priority_queue,  # noqa: SLF001
+                    (-priority, time.time(), request_info),
+                )
+            else:
+                connection.request_queue.append(request_info)
 
-        else:
-            # Use regular queue
+            sent_request_keys = await self._process_request_queue(connection)
+            caller_request_sent = request_key in sent_request_keys
+            if not caller_request_sent:
+                if enable_prioritization and connection._priority_queue:  # noqa: SLF001
+                    connection._priority_queue = [  # noqa: SLF001
+                        queued
+                        for queued in connection._priority_queue  # noqa: SLF001
+                        if queued[2] is not request_info
+                    ]
+                    heapify(connection._priority_queue)  # noqa: SLF001
+                else:
+                    with contextlib.suppress(ValueError):
+                        connection.request_queue.remove(request_info)
 
-            connection.request_queue.append(request_info)
-
-        # Process queued requests with coalescing
-
-        requests_sent = await self._process_request_queue(connection)
-
-        if requests_sent > 0:
+        if caller_request_sent:
             self.logger.debug(
-                "Sent %d REQUEST message(s) to %s for piece %d:%d:%d (priority=%.2f, outstanding=%d/%d)",
-                requests_sent,
+                "Sent REQUEST message to %s for piece %d:%d:%d (priority=%.2f, batch_sent=%d, outstanding=%d/%d)",
                 connection.peer_info,
                 piece_index,
                 begin,
                 length,
                 priority,
+                len(sent_request_keys),
                 len(connection.outstanding_requests),
                 connection.max_pipeline_depth,
             )
@@ -20160,7 +20405,10 @@ class AsyncPeerConnectionManager:
         )  # pragma: no cover - Same context
         return False
 
-    async def _process_request_queue(self, connection: AsyncPeerConnection) -> int:
+    async def _process_request_queue(
+        self,
+        connection: AsyncPeerConnection,
+    ) -> set[tuple[int, int, int]]:
         """Process queued requests with prioritization and coalescing.
 
         Args:
@@ -20169,7 +20417,7 @@ class AsyncPeerConnectionManager:
 
 
         Returns:
-            Number of requests actually sent
+            Exact keys of requests successfully sent
 
 
 
@@ -20203,7 +20451,7 @@ class AsyncPeerConnectionManager:
                 requests_to_send.append(connection.request_queue.popleft())
 
         if not requests_to_send:
-            return 0
+            return set()
 
         # Coalesce requests if enabled
 
@@ -20211,7 +20459,7 @@ class AsyncPeerConnectionManager:
 
         # Send coalesced requests
 
-        requests_sent = 0
+        sent_request_keys: set[tuple[int, int, int]] = set()
 
         for request_info in coalesced_requests:
             request_key = (
@@ -20233,9 +20481,13 @@ class AsyncPeerConnectionManager:
                 request_info.length,
             )
 
-            await self._send_message(connection, message)
+            try:
+                await self._send_message(connection, message)
+            except BaseException:
+                connection.outstanding_requests.pop(request_key, None)
+                raise
 
-            requests_sent += 1
+            sent_request_keys.add(request_key)
 
             self.logger.debug(
                 "Requested block %s:%s:%s from %s",
@@ -20260,7 +20512,7 @@ class AsyncPeerConnectionManager:
                         request_info.length,
                     )
 
-        return requests_sent
+        return sent_request_keys
 
     async def broadcast_have(self, piece_index: int) -> None:
         """Broadcast HAVE message to all connected peers.

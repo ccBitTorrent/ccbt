@@ -70,6 +70,7 @@ from ccbt.session.announce import (
 )
 from ccbt.session.checkpoint_operations import CheckpointOperations
 from ccbt.session.checkpointing import CheckpointController
+from ccbt.session.discovery import EndpointCandidateStore
 from ccbt.session.download_manager import AsyncDownloadManager
 from ccbt.session.lifecycle import LifecycleController
 from ccbt.session.magnet_handling import MagnetHandler
@@ -259,6 +260,12 @@ class AsyncTorrentSession:
         self._tracker_reentrant_non_progress_cycles: int = 0
         self._ingress_hold_drop_last_log_at: float = 0.0
         self._tracker_ingress_hold_buffer: dict[tuple[str, int], dict[str, Any]] = {}
+        self._startup_candidate_store = EndpointCandidateStore(
+            ttl_seconds=60.0,
+            accepted_refresh_seconds=60.0,
+            retry_base_seconds=0.5,
+            max_candidates=2000,
+        )
         self._dht_candidate_cache: dict[str, dict[str, Any]] = {}
         self._dht_candidate_cache_ttl_s: float = 180.0
         self._dht_candidate_promotion_cap: int = 12
@@ -543,8 +550,6 @@ class AsyncTorrentSession:
                 exclude_none=True
             )
             # Type cast: model_dump() returns dict[str, Any], but type checker may not recognize it
-            from typing import cast
-
             self.options.update(cast("dict[str, Any]", defaults_dict))  # type: ignore[arg-type]
 
         # Create session context for controllers (composition root)
@@ -1145,9 +1150,11 @@ class AsyncTorrentSession:
         if not fail_fast_triggered:
             return False
         if fail_fast_reason in {
+            "critical_low_peer_deficit",
             "zero_peers",
             "piece_info_stall",
             "metadata_incomplete",
+            "requestable_peer_deficit",
         }:
             return True
         return fail_fast_reason.startswith("low_peer_threshold_timeout")
@@ -1328,6 +1335,17 @@ class AsyncTorrentSession:
                 self.config.discovery,
                 "min_peers_before_dht",
                 10,
+            )
+            target_requestable_peers = max(
+                1,
+                int(
+                    getattr(
+                        self.config.discovery,
+                        "target_requestable_peers",
+                        12,
+                    )
+                    or 12
+                ),
             )
             enable_fail_fast = getattr(
                 self.config.network,
@@ -1558,11 +1576,7 @@ class AsyncTorrentSession:
                         True,
                     )
                 )
-                skip_ok = (
-                    current_requestable > 0
-                    or current_productive > 0
-                    or current_piece_info > 0
-                )
+                skip_ok = current_requestable >= target_requestable_peers
                 if strict_skip:
                     skip_ok = skip_ok and usable_path
                 had_usable_before = (
@@ -1648,6 +1662,28 @@ class AsyncTorrentSession:
                     fail_fast_reason = "metadata_incomplete"
                     self.logger.debug(
                         "🧲 DHT FALLBACK: Metadata is still incomplete with only %d active peer(s). Allowing immediate DHT discovery.",
+                        active_peer_count,
+                    )
+                elif active_peer_count <= low_peer_threshold:
+                    fail_fast_triggered = True
+                    fail_fast_reason = "critical_low_peer_deficit"
+                    self.logger.warning(
+                        "🚨 CRITICAL LOW-PEER DHT: Only %d active peer(s) remain "
+                        "(critical threshold=%d, DHT target=%d). Running tracker "
+                        "handoff and DHT recovery without the long low-peer grace.",
+                        active_peer_count,
+                        low_peer_threshold,
+                        min_peers_before_dht,
+                    )
+                elif requestable_peers < target_requestable_peers:
+                    fail_fast_triggered = True
+                    fail_fast_reason = "requestable_peer_deficit"
+                    self.logger.warning(
+                        "🚨 REQUESTABLE-PEER DHT: Only %d requestable peer(s) "
+                        "available (target=%d, active=%d). Running DHT recovery "
+                        "without the low-peer grace.",
+                        requestable_peers,
+                        target_requestable_peers,
                         active_peer_count,
                     )
                 elif not fail_fast_triggered:
@@ -2417,6 +2453,7 @@ class AsyncTorrentSession:
                         ),
                         logger=self.logger,
                         max_peers_per_torrent=max_peers,
+                        on_ready=self._drain_queued_peers,
                     )
 
                     # Note: Set default bitfield handler if no callback was set
@@ -2490,11 +2527,10 @@ class AsyncTorrentSession:
 
                     # Bind piece manager callbacks using PeerEventsBinder
                     if self.piece_manager:
+                        piece_manager = self.piece_manager
                         # Type cast: AsyncPieceManager implements PieceManagerProtocol
-                        from typing import cast
-
                         binder.bind_piece_manager(
-                            cast("PieceManagerProtocol", self.piece_manager),
+                            cast("PieceManagerProtocol", piece_manager),
                             on_piece_verified=_wrap_piece_verified,
                             on_download_complete=_wrap_download_complete,
                         )
@@ -2553,13 +2589,13 @@ class AsyncTorrentSession:
                     if hasattr(self.download_manager, "start_download"):
                         await self.download_manager.start_download([])
                     else:
-                        await self.piece_manager.start_download(peer_manager)
+                        await piece_manager.start_download(peer_manager)
                     if self.info.status == "starting":
                         self.info.status = "downloading"
                     self.logger.info(
                         "Piece manager download started (is_downloading=%s, num_pieces=%d, waiting for peers)",
-                        self.piece_manager.is_downloading,
-                        self.piece_manager.num_pieces,
+                        piece_manager.is_downloading,
+                        piece_manager.num_pieces,
                     )
                 except Exception:
                     self.logger.exception("Failed to initialize peer manager early")
@@ -2595,8 +2631,6 @@ class AsyncTorrentSession:
                     not hasattr(self.piece_manager, "on_piece_verified")
                     or self.piece_manager.on_piece_verified is None
                 ):
-                    from typing import cast
-
                     binder.bind_piece_manager(
                         cast("PieceManagerProtocol", self.piece_manager),
                         on_piece_verified=_wrap_piece_verified,
@@ -3087,7 +3121,8 @@ class AsyncTorrentSession:
             await self.pex_manager.stop()
 
         await self.download_manager.stop()
-        await self.piece_manager.stop()
+        if self.piece_manager is not None:
+            await self.piece_manager.stop()
 
         # Best-effort stopped announces (BEP) before closing the tracker HTTP session
         if not is_shutting_down():
@@ -6024,8 +6059,9 @@ class AsyncTorrentSession:
             List of queued peers. Returns empty list if not initialized.
 
         """
-        if not hasattr(self, "_queued_peers"):
-            return []
+        store = getattr(self, "_startup_candidate_store", None)
+        if store is not None:
+            return store.snapshot()
         return list(getattr(self, "_queued_peers", []))
 
     def add_queued_peer(self, peer: Any) -> None:
@@ -6035,14 +6071,71 @@ class AsyncTorrentSession:
             peer: Peer to add to queue.
 
         """
+        store = getattr(self, "_startup_candidate_store", None)
+        if store is not None:
+            source = (
+                str(peer.get("peer_source", "unknown") or "unknown")
+                if isinstance(peer, dict)
+                else "unknown"
+            )
+            store.observe([peer], source=source)
+            return
         if not hasattr(self, "_queued_peers"):
             self._queued_peers: list[Any] = []
         self._queued_peers.append(peer)
 
     def clear_queued_peers(self) -> None:
         """Clear queued peers."""
+        store = getattr(self, "_startup_candidate_store", None)
+        if store is not None:
+            self._startup_candidate_store = EndpointCandidateStore(
+                ttl_seconds=60.0,
+                accepted_refresh_seconds=60.0,
+                retry_base_seconds=0.5,
+                max_candidates=2000,
+            )
         if hasattr(self, "_queued_peers"):
             self._queued_peers.clear()
+
+    async def _drain_queued_peers(self) -> int:
+        """Submit startup candidates as soon as the peer manager becomes ready."""
+        store = getattr(self, "_startup_candidate_store", None)
+        if store is None:
+            return 0
+        peers = store.take_ready()
+        if not peers:
+            return 0
+        helper = PeerConnectionHelper(self)
+        try:
+            submit = await helper.connect_peers_to_download(peers)
+        except Exception:
+            store.mark_retry(peers)
+            self._schedule_queued_peer_retry()
+            self.logger.warning(
+                "Startup candidate drain failed for %s; candidates remain retryable",
+                self.info.name,
+                exc_info=True,
+            )
+            return 0
+        status = getattr(submit, "status", None)
+        if status in {"owner_started", "queued_reentrant"}:
+            store.mark_accepted(peers)
+            return len(peers)
+        store.mark_retry(peers)
+        self._schedule_queued_peer_retry()
+        return 0
+
+    def _schedule_queued_peer_retry(self) -> None:
+        """Retry a failed readiness drain without waiting for another discovery batch."""
+
+        async def retry() -> None:
+            await asyncio.sleep(1.0)
+            await self._drain_queued_peers()
+
+        self._task_supervisor.create_task(
+            retry(),
+            name=f"startup_candidate_retry_{self.info.info_hash.hex()[:8]}",
+        )
 
     def collect_trackers(self, td: dict[str, Any]) -> list[str]:
         """Collect and deduplicate tracker URLs from torrent_data (public API).
@@ -6995,6 +7088,12 @@ class AsyncTorrentSession:
         """Return whether recovery paths should bypass tracker-first delays."""
         if bool(state.get("metadata_incomplete", False)):
             return True
+        active_peers = int(state.get("active_peers", 0) or 0)
+        min_peers_before_dht = int(
+            getattr(self.config.discovery, "min_peers_before_dht", 10) or 10
+        )
+        if active_peers < max(1, min_peers_before_dht):
+            return True
         if (
             int(state.get("requestable_peers", 0) or 0) == 0
             and int(state.get("productive_peers", 0) or 0) == 0
@@ -7004,7 +7103,7 @@ class AsyncTorrentSession:
             return True
         if not bool(state.get("has_usable_download_path", False)):
             return True
-        return int(state.get("active_peers", 0) or 0) == 0
+        return active_peers == 0
 
     def swarm_requires_fast_recovery(self, state: dict[str, Any]) -> bool:
         """Public wrapper for fast-recovery classification."""
@@ -9067,11 +9166,6 @@ class AsyncSessionManager:
                     )
 
                     if has_all_attrs:
-                        from typing import cast
-
-                        from ccbt.session.announce import AnnounceController
-                        from ccbt.session.models import SessionContext
-
                         ctx = SessionContext(
                             config=session.config,
                             torrent_data=normalized_td,

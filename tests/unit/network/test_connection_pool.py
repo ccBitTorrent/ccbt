@@ -9,7 +9,11 @@ import pytest_asyncio
 pytestmark = [pytest.mark.unit, pytest.mark.network, pytest.mark.connection]
 
 from ccbt.models import PeerInfo
-from ccbt.peer.connection_pool import ConnectionMetrics, PeerConnectionPool
+from ccbt.peer.connection_pool import (
+    ConnectionMetrics,
+    LiveSocketLimiter,
+    PeerConnectionPool,
+)
 
 
 @pytest.fixture
@@ -79,7 +83,7 @@ async def test_acquire_connection_failure(connection_pool, peer_info):
 
 @pytest.mark.asyncio
 async def test_release_connection(connection_pool, peer_info):
-    """Test releasing a connection."""
+    """Released protocol streams are removed rather than reused."""
     # Create a mock connection
     mock_connection = {"peer_info": peer_info, "created_at": time.time()}
     connection_pool.pool[str(peer_info)] = mock_connection
@@ -88,8 +92,7 @@ async def test_release_connection(connection_pool, peer_info):
     # Release connection
     await connection_pool.release(str(peer_info), mock_connection)
 
-    # Connection should still be in pool (not recycled)
-    assert str(peer_info) in connection_pool.pool
+    assert str(peer_info) not in connection_pool.pool
 
 
 @pytest.mark.asyncio
@@ -106,6 +109,20 @@ async def test_release_without_owned_permit_does_not_overrelease(
     connection_pool.metrics[str(peer_info)] = ConnectionMetrics()
     await connection_pool.release(str(peer_info), mock_connection)
     assert connection_pool.semaphore._value == initial_slots  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_live_socket_lease_release_is_idempotent() -> None:
+    """A lease restores process-wide capacity exactly once."""
+    limiter = LiveSocketLimiter(1)
+    lease = await limiter.acquire("peer", timeout=0.1)
+    assert lease is not None
+    assert limiter.live_count == 1
+
+    assert await limiter.release(lease) is True
+    assert await limiter.release(lease) is False
+    assert limiter.live_count == 0
+    assert limiter.semaphore._value == 1  # noqa: SLF001
 
 
 @pytest.mark.asyncio

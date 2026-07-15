@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import time
 from collections import Counter, defaultdict, deque
@@ -17,6 +18,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from ccbt.config.config import get_config
+from ccbt.core.bencode import BencodeEncoder
 from ccbt.models import (
     DownloadStats,
     FileCheckpoint,
@@ -26,6 +28,7 @@ from ccbt.models import (
 from ccbt.models import PieceState as PieceStateModel
 from ccbt.monitoring import get_metrics_collector
 from ccbt.piece.hash_v2 import HashAlgorithm, verify_piece
+from ccbt.utils.events import Event, emit_event
 from ccbt.utils.shutdown import is_shutting_down
 
 if (
@@ -602,7 +605,8 @@ class AsyncPieceManager:
         self._piece_selector_task: Optional[asyncio.Task] = None
         self._background_tasks: set[asyncio.Task] = set()
         self._piece_selection_trigger_tasks: set[asyncio.Task] = set()
-        self._pipeline_refill_tasks: dict[int, asyncio.Task[None]] = {}
+        self._request_pump_task: Optional[asyncio.Task[None]] = None
+        self._request_pump_piece_hints: set[int] = set()
 
         self.logger = logging.getLogger(__name__)
 
@@ -1403,33 +1407,41 @@ class AsyncPieceManager:
         task.add_done_callback(_on_piece_selection_task_done)
 
     def _schedule_pipeline_refill(self, piece_index: int) -> None:
-        """Refill a partially downloaded piece after a block frees a peer slot."""
+        """Wake the single capacity-driven request pump."""
         if self._stopping or not self.is_downloading or self._peer_manager is None:
             return
-        existing = self._pipeline_refill_tasks.get(piece_index)
-        if existing is not None and not existing.done():
+        self._request_pump_piece_hints.add(piece_index)
+        if self._request_pump_task is not None and not self._request_pump_task.done():
             return
 
         task = asyncio.create_task(
-            self._refill_downloading_piece(piece_index),
-            name=f"piece_pipeline_refill:{piece_index}",
+            self._run_request_pump(),
+            name="piece_request_pump",
         )
-        self._pipeline_refill_tasks[piece_index] = task
+        self._request_pump_task = task
         self._background_tasks.add(task)
 
-        def _on_refill_done(done_task: asyncio.Task[None]) -> None:
+        def _on_request_pump_done(done_task: asyncio.Task[None]) -> None:
             self._background_tasks.discard(done_task)
-            if self._pipeline_refill_tasks.get(piece_index) is done_task:
-                self._pipeline_refill_tasks.pop(piece_index, None)
+            if self._request_pump_task is done_task:
+                self._request_pump_task = None
             with contextlib.suppress(asyncio.CancelledError):
                 try:
                     done_task.result()
                 except Exception:
-                    self.logger.exception(
-                        "Pipeline refill failed for piece %d", piece_index
-                    )
+                    self.logger.exception("Capacity-driven request pump failed")
 
-        task.add_done_callback(_on_refill_done)
+        task.add_done_callback(_on_request_pump_done)
+
+    async def _run_request_pump(self) -> None:
+        """Refill hinted pieces serially from current peer capacity."""
+        await asyncio.sleep(0)
+        while self._request_pump_piece_hints and not self._stopping:
+            piece_indices = sorted(self._request_pump_piece_hints)
+            self._request_pump_piece_hints.clear()
+            for piece_index in piece_indices:
+                await self._refill_downloading_piece(piece_index)
+            await asyncio.sleep(0)
 
     async def _refill_downloading_piece(self, piece_index: int) -> None:
         """Dispatch unrequested blocks for an existing DOWNLOADING piece."""
@@ -1968,6 +1980,14 @@ class AsyncPieceManager:
         request_success_rate = (
             (successful_requests / total_requests) if total_requests > 0 else 0.0
         )
+        live_active_block_requests = sum(
+            len(requests)
+            for requests_by_peer in self._active_block_requests.values()
+            for requests in requests_by_peer.values()
+        )
+        self._piece_selection_metrics["active_block_requests"] = (
+            live_active_block_requests
+        )
 
         return {
             "duplicate_requests_prevented": self._piece_selection_metrics[
@@ -2046,9 +2066,7 @@ class AsyncPieceManager:
                 "selection_no_progress_streak"
             ],
             "average_pipeline_utilization": avg_utilization,
-            "active_block_requests": self._piece_selection_metrics[
-                "active_block_requests"
-            ],
+            "active_block_requests": live_active_block_requests,
             "total_piece_requests": total_requests,
             "successful_piece_requests": successful_requests,
             "failed_piece_requests": self._piece_selection_metrics[
@@ -3549,18 +3567,6 @@ class AsyncPieceManager:
         return 0.9
 
     @staticmethod
-    def _sparse_swarm_effective_pipeline_cap(
-        connection: Any, *, active_peer_count: int
-    ) -> Optional[int]:
-        """Optional lower pipeline ceiling when at most two active peers (liveness tradeoff)."""
-        if active_peer_count > 2:
-            return None
-        mp = int(getattr(connection, "max_pipeline_depth", 10) or 10)
-        if mp <= 32:
-            return None
-        return max(24, (mp * 2) // 5)
-
-    @staticmethod
     def _swarm_throttle_factor(active_peer_count: int) -> float:
         """Pipeline depth multiplier for small swarms (1.0 = no reduction)."""
         if active_peer_count <= 3:
@@ -3606,14 +3612,9 @@ class AsyncPieceManager:
         active_peer_count: int,
         throttle_requests: bool,
     ) -> int:
-        """Unified send/selection pipeline ceiling (sparse cap + optional throttle)."""
+        """Return one send/selection pipeline ceiling for the current swarm."""
         max_pipeline = int(getattr(connection, "max_pipeline_depth", 10) or 10)
         cap = max_pipeline
-        sparse_cap = cls._sparse_swarm_effective_pipeline_cap(
-            connection, active_peer_count=active_peer_count
-        )
-        if sparse_cap is not None:
-            cap = min(cap, sparse_cap)
         if throttle_requests and active_peer_count > 0:
             throttle_factor = cls._swarm_throttle_factor(active_peer_count)
             if throttle_factor < 1.0:
@@ -4460,7 +4461,28 @@ class AsyncPieceManager:
                 piece_stale_seconds,
                 stale_pipeline_relaxation_seconds,
             )
-        pipeline_utilization_limit = 1.0 if is_stale_for_pipeline_relaxation else 0.9
+        get_active_peers = getattr(peer_manager, "get_active_peers", None)
+        active_peers = (
+            list(get_active_peers())
+            if callable(get_active_peers)
+            else list(available_peers)
+        )
+        active_peer_count = len(active_peers)
+        requestable_peer_count = sum(
+            1 for peer in active_peers if peer.can_request()
+        )
+        pipeline_utilization_limit = (
+            1.0
+            if is_stale_for_pipeline_relaxation
+            else (
+                self._high_pipeline_utilization_filter_threshold(
+                    active_peer_count,
+                    requestable_peer_count,
+                )
+                if active_peer_count > 0
+                else 0.9
+            )
+        )
 
         capable_peers = []
         optimistic_candidate_count = sum(
@@ -5349,6 +5371,10 @@ class AsyncPieceManager:
             peer_key: Optional peer key that sent this block (for performance tracking)
 
         """
+        piece: Optional[PieceData] = None
+        piece_completed = False
+        should_refill_pipeline = False
+
         async with self.lock:
             # Note: Validate piece_index bounds before accessing
             if piece_index < 0 or piece_index >= len(self.pieces):
@@ -5402,190 +5428,143 @@ class AsyncPieceManager:
                         )
                     return
 
-            # Track download start time if this is the first block
+            # Keep the global critical section limited to the atomic piece and
+            # request-ledger transition. Awaited side effects run below.
             if piece.download_start_time == 0.0:
                 piece.download_start_time = time.time()
 
-            # Add block to piece
-            if piece.add_block(begin, data):
-                # Track successful request
-                self._piece_selection_metrics["successful_piece_requests"] += 1
+            if not piece.add_block(begin, data):
+                return
 
-                # Remove from active request tracking
-                block_length = len(data)
-                if piece_index in self._active_block_requests:
-                    if (
-                        peer_key
-                        and peer_key in self._active_block_requests[piece_index]
-                    ):
-                        # Find and remove matching request
-                        requests = self._active_block_requests[piece_index][peer_key]
-                        for i, (req_begin, req_length, _) in enumerate(requests):
-                            if req_begin == begin and req_length == block_length:
-                                requests.pop(i)
-                                self._piece_selection_metrics[
-                                    "active_block_requests"
-                                ] = max(
-                                    0,
-                                    self._piece_selection_metrics[
-                                        "active_block_requests"
-                                    ]
-                                    - 1,
-                                )
-                                break
-                        # Clean up empty peer entries
-                        if not requests:
-                            del self._active_block_requests[piece_index][peer_key]
-                    # Clean up empty piece entries
-                    if not self._active_block_requests[piece_index]:
-                        del self._active_block_requests[piece_index]
+            self._piece_selection_metrics["successful_piece_requests"] += 1
 
-                # Note: Track last activity time when receiving blocks
-                piece.last_activity_time = time.time()
-
-                # Track which peer provided this block
-                for block in piece.blocks:
-                    if block.begin == begin and block.received:
-                        # Store the peer that actually sent this block
-                        if peer_key:
-                            block.received_from = peer_key
-                            # Track peer contribution to this piece
-                            piece.peer_block_counts[peer_key] = (
-                                piece.peer_block_counts.get(peer_key, 0) + 1
+            block_length = len(data)
+            if piece_index in self._active_block_requests:
+                if peer_key and peer_key in self._active_block_requests[piece_index]:
+                    requests = self._active_block_requests[piece_index][peer_key]
+                    for i, (req_begin, req_length, _) in enumerate(requests):
+                        if req_begin == begin and req_length == block_length:
+                            requests.pop(i)
+                            self._piece_selection_metrics[
+                                "active_block_requests"
+                            ] = max(
+                                0,
+                                self._piece_selection_metrics["active_block_requests"]
+                                - 1,
                             )
-                            # Update primary peer if this peer has provided most blocks
-                            if piece.peer_block_counts[
-                                peer_key
-                            ] > piece.peer_block_counts.get(
-                                piece.primary_peer or "", 0
-                            ):
-                                piece.primary_peer = peer_key
-                        elif block.requested_from:
-                            # Fallback: use first peer from requested_from if peer_key not provided
-                            # This maintains backward compatibility for code paths that don't pass peer_key
-                            fallback_peer_key = next(iter(block.requested_from), None)
-                            if fallback_peer_key:
-                                block.received_from = fallback_peer_key
-                                piece.peer_block_counts[fallback_peer_key] = (
-                                    piece.peer_block_counts.get(fallback_peer_key, 0)
-                                    + 1
-                                )
-                                if piece.peer_block_counts[
-                                    fallback_peer_key
-                                ] > piece.peer_block_counts.get(
-                                    piece.primary_peer or "", 0
-                                ):
-                                    piece.primary_peer = fallback_peer_key
-                        break
+                            break
+                    if not requests:
+                        del self._active_block_requests[piece_index][peer_key]
+                if not self._active_block_requests[piece_index]:
+                    del self._active_block_requests[piece_index]
 
-                if piece.state == PieceState.COMPLETE:
-                    self.completed_pieces.add(piece_index)
-                    # Remove from requested pieces tracking since it's complete
-                    for pkey in list(self._requested_pieces_per_peer.keys()):
-                        self._requested_piece_map_discard(pkey, piece_index)
-                    self.logger.debug(
-                        "PIECE_MANAGER: Piece %d completed (all blocks received, state=COMPLETE)",
+            piece.last_activity_time = time.time()
+            received_block = next(
+                block
+                for block in piece.blocks
+                if block.begin == begin and block.received
+            )
+            contributing_peer = peer_key or next(
+                iter(received_block.requested_from), None
+            )
+            if contributing_peer:
+                received_block.received_from = contributing_peer
+                piece.peer_block_counts[contributing_peer] = (
+                    piece.peer_block_counts.get(contributing_peer, 0) + 1
+                )
+                if piece.peer_block_counts[
+                    contributing_peer
+                ] > piece.peer_block_counts.get(piece.primary_peer or "", 0):
+                    piece.primary_peer = contributing_peer
+
+            piece_completed = piece.state == PieceState.COMPLETE
+            if piece_completed:
+                self.completed_pieces.add(piece_index)
+                for pkey in list(self._requested_pieces_per_peer):
+                    self._requested_piece_map_discard(pkey, piece_index)
+            else:
+                should_refill_pipeline = True
+
+        if piece is None:  # pragma: no cover - guarded by bounds validation above
+            return
+
+        if piece_completed:
+            self.logger.debug(
+                "PIECE_MANAGER: Piece %d completed (all blocks received, state=COMPLETE)",
+                piece_index,
+            )
+        else:
+            missing_blocks = sum(1 for block in piece.blocks if not block.received)
+            self.logger.debug(
+                "PIECE_MANAGER: Piece %d block received (missing: %d/%d blocks, state=%s)",
+                piece_index,
+                missing_blocks,
+                len(piece.blocks),
+                piece.state.value,
+            )
+            if should_refill_pipeline:
+                self._schedule_pipeline_refill(piece_index)
+
+        if self.file_selection_manager:
+            files_in_piece = self.file_selection_manager.get_files_for_piece(
+                piece_index,
+            )
+            for file_index in files_in_piece:
+                file_segments = [
+                    (file_idx, file_offset, file_length)
+                    for file_idx, file_offset, file_length in self.file_selection_manager.mapper.piece_to_files.get(
                         piece_index,
+                        [],
                     )
-                else:
-                    # Log progress for incomplete pieces
-                    missing_blocks = sum(1 for b in piece.blocks if not b.received)
-                    total_blocks = len(piece.blocks)
-                    self.logger.debug(
-                        "PIECE_MANAGER: Piece %d block received (missing: %d/%d blocks, state=%s)",
-                        piece_index,
-                        missing_blocks,
-                        total_blocks,
-                        piece.state.value
-                        if hasattr(piece.state, "value")
-                        else str(piece.state),
-                    )
-                    self._schedule_pipeline_refill(piece_index)
-
-                # Update file progress if file selection manager exists
-                if self.file_selection_manager:
-                    files_in_piece = self.file_selection_manager.get_files_for_piece(
-                        piece_index,
-                    )
-                    for file_index in files_in_piece:
-                        # Calculate bytes for this file in this piece
-                        file_segments = [
-                            (f_idx, f_off, f_len)
-                            for f_idx, f_off, f_len in self.file_selection_manager.mapper.piece_to_files.get(
-                                piece_index,
-                                [],
-                            )
-                            if f_idx == file_index
-                        ]
-                        bytes_for_file = sum(length for _, _, length in file_segments)
-                        current_state = self.file_selection_manager.get_file_state(
-                            file_index,
-                        )
-                        if current_state:
-                            current_bytes = current_state.bytes_downloaded
-                            await self.file_selection_manager.update_file_progress(
-                                file_index,
-                                current_bytes + bytes_for_file,
-                            )
-
-                # Note: Always schedule hash verification when piece is completed
-                # Verification must happen regardless of whether on_piece_completed callback is set
-                # This ensures pieces are verified and written to disk even if callback is not configured
-                if piece.state == PieceState.COMPLETE:
-                    # Update peer performance metrics for completed piece
-                    await self._update_peer_performance_on_piece_complete(
-                        piece_index, piece
+                    if file_idx == file_index
+                ]
+                bytes_for_file = sum(length for _, _, length in file_segments)
+                current_state = self.file_selection_manager.get_file_state(file_index)
+                if current_state:
+                    await self.file_selection_manager.update_file_progress(
+                        file_index,
+                        current_state.bytes_downloaded + bytes_for_file,
                     )
 
-                    # Schedule hash verification for completed piece
-                    _task = asyncio.create_task(
-                        self._verify_piece_hash(piece_index, piece)
-                    )
-                    self._background_tasks.add(_task)
-                    _task.add_done_callback(self._background_tasks.discard)
-                    self.logger.debug(
-                        "Scheduled hash verification for piece %d (state=COMPLETE)",
-                        piece_index,
-                    )
+        if not piece_completed:
+            return
 
-                    # Emit piece completed event
-                    try:
-                        from ccbt.utils.events import Event, emit_event
+        await self._update_peer_performance_on_piece_complete(piece_index, piece)
 
-                        info_hash_hex = ""
-                        if (
-                            isinstance(self.torrent_data, dict)
-                            and "info" in self.torrent_data
-                        ):
-                            import hashlib
+        verification_task = asyncio.create_task(
+            self._verify_piece_hash(piece_index, piece)
+        )
+        self._background_tasks.add(verification_task)
+        verification_task.add_done_callback(self._background_tasks.discard)
+        self.logger.debug(
+            "Scheduled hash verification for piece %d (state=COMPLETE)",
+            piece_index,
+        )
 
-                            from ccbt.core.bencode import BencodeEncoder
+        try:
+            info_hash_hex = ""
+            if isinstance(self.torrent_data, dict) and "info" in self.torrent_data:
+                encoder = BencodeEncoder()
+                info_hash_bytes = hashlib.sha1(
+                    encoder.encode(self.torrent_data["info"])
+                ).digest()  # nosec B324
+                info_hash_hex = info_hash_bytes.hex()
 
-                            encoder = BencodeEncoder()
-                            info_dict = self.torrent_data["info"]
-                            info_hash_bytes = hashlib.sha1(
-                                encoder.encode(info_dict)
-                            ).digest()  # nosec B324
-                            info_hash_hex = info_hash_bytes.hex()
+            await emit_event(
+                Event(
+                    event_type="piece_completed",
+                    data={
+                        "info_hash": info_hash_hex,
+                        "piece_index": piece_index,
+                        "piece_size": piece.length,
+                    },
+                )
+            )
+        except Exception as error:
+            self.logger.debug("Failed to emit piece_completed event: %s", error)
 
-                        await emit_event(
-                            Event(
-                                event_type="piece_completed",
-                                data={
-                                    "info_hash": info_hash_hex,
-                                    "piece_index": piece_index,
-                                    "piece_size": piece.length
-                                    if piece.is_complete()
-                                    else 0,
-                                },
-                            )
-                        )
-                    except Exception as e:
-                        self.logger.debug("Failed to emit piece_completed event: %s", e)
-
-                    # Notify callback (after scheduling verification)
-                    if self.on_piece_completed:
-                        self.on_piece_completed(piece_index)
+        if self.on_piece_completed:
+            self.on_piece_completed(piece_index)
 
     async def handle_request_cancelled(
         self,

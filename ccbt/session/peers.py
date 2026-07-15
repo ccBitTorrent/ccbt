@@ -9,12 +9,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, cast
 
+from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
 from ccbt.session.peer_events import PeerEventsBinder
 
 if TYPE_CHECKING:
-    from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
     from ccbt.session.models import SessionContext
     from ccbt.session.types import PeerManagerProtocol
 
@@ -34,6 +34,7 @@ class PeerManagerInitializer:
         on_bitfield_received: Optional[Callable[..., None]] = None,
         logger: Optional[Any] = None,
         max_peers_per_torrent: Optional[int] = None,
+        on_ready: Optional[Callable[[], Awaitable[int]]] = None,
     ) -> Any:
         """Ensure a running peer manager exists and is bound to callbacks.
 
@@ -47,6 +48,7 @@ class PeerManagerInitializer:
             on_bitfield_received: Callback for bitfield received events
             logger: Logger instance
             max_peers_per_torrent: Optional max peers per torrent limit
+            on_ready: Optional callback used to drain startup peer candidates
 
         Returns:
             The initialized peer manager instance.
@@ -66,9 +68,6 @@ class PeerManagerInitializer:
                 msg = "torrent_data must be a dict for peer manager initialization"
                 raise TypeError(msg)
 
-            # Create new peer manager
-            from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
-
             piece_manager = getattr(download_manager, "piece_manager", None)
             our_peer_id = getattr(download_manager, "our_peer_id", None)
             session_manager = getattr(session_ctx, "session_manager", None)
@@ -84,9 +83,12 @@ class PeerManagerInitializer:
             pm.utp_socket_manager = getattr(session_manager, "utp_socket_manager", None)
 
             # Wire security/private flags if available
-            if hasattr(download_manager, "security_manager"):
+            if hasattr(download_manager, "security_manager") and hasattr(
+                pm, "set_security_manager"
+            ):
                 pm.set_security_manager(download_manager.security_manager)
-            pm.set_is_private(is_private)
+            if hasattr(pm, "set_is_private"):
+                pm.set_is_private(is_private)
 
             download_manager.peer_manager = pm
 
@@ -103,6 +105,15 @@ class PeerManagerInitializer:
         # Start the peer manager if a start method exists
         if hasattr(pm, "start"):
             await pm.start()  # type: ignore[misc]
+        if on_ready is not None:
+            try:
+                await on_ready()
+            except Exception:
+                if logger:
+                    logger.warning(
+                        "Failed to drain startup peer candidates after peer manager readiness",
+                        exc_info=True,
+                    )
 
         return pm
 
@@ -866,26 +877,40 @@ class PeerConnectionHelper:
                 "peer_manager not ready, queuing %d peer(s) for later connection",
                 len(peer_list),
             )
-            # Store peers for later connection (with timestamp for timeout)
-            if not hasattr(self.session, "_queued_peers"):
-                self.session._queued_peers = []  # noqa: SLF001
-            # Add timestamp to each peer for timeout checking
+            # Store peers for later connection in the session candidate store when available.
             current_time = time.time()
             for peer in peer_list:
                 peer.setdefault("_discovery_source", peer.get("peer_source", "unknown"))
                 peer["_queued_at"] = current_time
-            self.session._queued_peers.extend(peer_list)  # noqa: SLF001
+                add_queued_peer = getattr(self.session, "add_queued_peer", None)
+                if callable(add_queued_peer):
+                    add_queued_peer(peer)
+                else:
+                    if not hasattr(self.session, "_queued_peers"):
+                        self.session._queued_peers = []  # noqa: SLF001
+                    self.session._queued_peers.append(peer)  # noqa: SLF001
+            queued = getattr(self.session, "get_queued_peers", None)
+            queued_count = (
+                len(queued())
+                if callable(queued)
+                else len(self.session._queued_peers)  # noqa: SLF001
+            )
             self.session.logger.debug(
                 "Queued %d peer(s) for later connection (total queued: %d)",
                 len(peer_list),
-                len(self.session._queued_peers),  # noqa: SLF001
+                queued_count,
             )
             from ccbt.session.peer_discovery_telemetry import (
                 record_connect_submit_session,
             )
 
-            record_connect_submit_session(self.session, "noop_empty")
-            return ConnectSubmitResult(status="noop_empty")
+            record_connect_submit_session(self.session, "queued_reentrant")
+            return ConnectSubmitResult(
+                status="queued_reentrant",
+                upstream_peer_count=len(peer_list),
+                queued_peer_count=len(peer_list),
+                queue_depth_after=queued_count,
+            )
 
         # IMPROVEMENT: Peer quality-based prioritization
         # Rank peers by quality before connecting

@@ -22,6 +22,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.peer]
 _DEBUG_LOG_PATH = Path(tempfile.gettempdir()) / "ccbt-test-debug.log"
 
 from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
+from ccbt.peer.connection_pool import PooledConnection
 from ccbt.peer.peer import PeerInfo
 
 
@@ -479,10 +480,6 @@ class TestMSEEncryptionHandshake:
                     # Force UTP check to return False to ensure TCP path is used
                     manager._should_use_utp = lambda _: False
 
-                    # Mock connection pool to return None (no pooled connection)
-                    # This ensures we go through the TCP connection path
-                    manager.connection_pool.acquire = AsyncMock(return_value=None)
-
                     # Note: Define is_closing_false function before using it
                     def is_closing_false():
                         return False
@@ -592,6 +589,15 @@ class TestMSEEncryptionHandshake:
                         return False
 
                     mock_writer.is_closing = is_closing_false
+                    pooled_connection = PooledConnection(
+                        reader=mock_reader,
+                        writer=mock_writer,
+                        peer_info=peer_info,
+                        created_at=0.0,
+                    )
+                    manager.connection_pool.acquire = AsyncMock(
+                        return_value={"connection": pooled_connection}
+                    )
 
                     # Note: Patch isinstance to return True for our mocks
                     # This is necessary because the encryption code checks isinstance(reader, asyncio.StreamReader)

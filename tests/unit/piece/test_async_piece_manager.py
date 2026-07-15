@@ -661,6 +661,18 @@ class TestAsyncPieceManagerPieceSelector:
         assert metrics["no_progress_gate_reason"] == "test_reason"
         assert metrics["no_progress_gate_engaged_at"] == 1234.5
 
+    def test_active_request_metric_reconciles_to_live_ledger(self, piece_manager):
+        """Recovery telemetry must not inherit drift from cumulative mutations."""
+        piece_manager._piece_selection_metrics["active_block_requests"] = 1707
+        piece_manager._active_block_requests = {
+            0: {"127.0.0.1:6881": [(0, 16384, time.time())]}
+        }
+
+        metrics = piece_manager.get_piece_selection_metrics()
+
+        assert metrics["active_block_requests"] == 1
+        assert piece_manager._piece_selection_metrics["active_block_requests"] == 1
+
     @pytest.mark.asyncio
     async def test_piece_selector_no_progress_gate_counts_choked_with_piece_reason(
         self, piece_manager
@@ -1113,6 +1125,97 @@ class TestAsyncPieceManagerPieceSelector:
 
 class TestAsyncPieceManagerHandlePieceBlock:
     """Test handle_piece_block functionality."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_out_of_order_blocks_mutate_before_awaited_progress(
+        self,
+        piece_manager,
+    ):
+        """Concurrent blocks remain atomic while progress I/O runs outside the lock."""
+        piece_index = 0
+        piece = PieceData(piece_index, 32768)
+        piece_manager.pieces[piece_index] = piece
+
+        progress_entered = asyncio.Event()
+        release_progress = asyncio.Event()
+        file_selection_manager = MagicMock()
+        file_selection_manager.get_files_for_piece.return_value = [0]
+        file_selection_manager.get_file_state.return_value = SimpleNamespace(
+            bytes_downloaded=0
+        )
+        file_selection_manager.mapper.piece_to_files = {
+            piece_index: [(0, 0, piece.length)]
+        }
+
+        async def delayed_progress(_file_index: int, _bytes_downloaded: int) -> None:
+            progress_entered.set()
+            await release_progress.wait()
+
+        file_selection_manager.update_file_progress = AsyncMock(
+            side_effect=delayed_progress
+        )
+        piece_manager.file_selection_manager = file_selection_manager
+        performance_update = AsyncMock()
+        hash_verification = AsyncMock()
+        expected_block_count = 2
+        completed: list[int] = []
+        piece_manager.on_piece_completed = completed.append
+
+        with (
+            patch.object(
+                piece_manager,
+                "_update_peer_performance_on_piece_complete",
+                performance_update,
+            ),
+            patch.object(
+                piece_manager,
+                "_verify_piece_hash",
+                hash_verification,
+            ),
+            patch(
+                "ccbt.piece.async_piece_manager.emit_event",
+                new_callable=AsyncMock,
+            ),
+        ):
+            last_block = asyncio.create_task(
+                piece_manager.handle_piece_block(
+                    piece_index,
+                    16384,
+                    b"b" * 16384,
+                    "peer-b",
+                )
+            )
+            await asyncio.wait_for(progress_entered.wait(), timeout=1.0)
+
+            first_block = asyncio.create_task(
+                piece_manager.handle_piece_block(
+                    piece_index,
+                    0,
+                    b"a" * 16384,
+                    "peer-a",
+                )
+            )
+
+            async def wait_for_both_mutations() -> None:
+                while not piece.is_complete():
+                    await asyncio.sleep(0)
+
+            await asyncio.wait_for(wait_for_both_mutations(), timeout=1.0)
+
+            assert piece.is_complete()
+            assert piece.get_data() == (b"a" * 16384) + (b"b" * 16384)
+            assert piece_index in piece_manager.completed_pieces
+            assert completed == []
+
+            release_progress.set()
+            await asyncio.gather(last_block, first_block)
+
+        assert completed == [piece_index]
+        performance_update.assert_awaited_once()
+        assert (
+            file_selection_manager.update_file_progress.await_count
+            == expected_block_count
+        )
 
     @pytest.mark.asyncio
     async def test_handle_piece_block_completes_piece(self, piece_manager):
@@ -3833,23 +3936,23 @@ class TestAsyncPieceManagerPipelineThreshold:
             AsyncPieceManager._high_pipeline_utilization_filter_threshold(25, 1) == 0.9
         )
 
-    def test_sparse_swarm_pipeline_cap_only_when_few_actives_and_deep_config(
+    def test_sparse_swarm_keeps_full_adaptive_pipeline_when_unthrottled(
         self,
     ) -> None:
         conn = SimpleNamespace(max_pipeline_depth=96)
-        assert AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
-            conn, active_peer_count=1
-        ) == max(24, (96 * 2) // 5)
         assert (
-            AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
-                conn, active_peer_count=3
+            AsyncPieceManager._peer_effective_pipeline_cap(
+                conn,
+                active_peer_count=1,
+                throttle_requests=False,
             )
-            is None
+            == 96
         )
-        shallow = SimpleNamespace(max_pipeline_depth=16)
         assert (
-            AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
-                shallow, active_peer_count=1
+            AsyncPieceManager._peer_effective_pipeline_cap(
+                conn,
+                active_peer_count=5,
+                throttle_requests=True,
             )
-            is None
+            == 48
         )

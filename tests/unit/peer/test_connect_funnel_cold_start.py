@@ -325,7 +325,7 @@ async def test_resume_does_not_retrigger_on_cold_start_requeue(
 
     await pm._resume_pending_batches("payload_starvation")
 
-    pm.connect_to_peers.assert_awaited_once()
+    pm.connect_to_peers.assert_not_awaited()
     request_resume.assert_not_called()
 
 
@@ -363,7 +363,7 @@ async def test_schedule_pending_resume_bypasses_batch_owner_on_payload_starvatio
 async def test_pending_resume_bypasses_cold_start_single_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """At zero actives only one connect batch runs; pending resume bypasses the guard."""
+    """At zero actives only one connect batch owner may run."""
     pm = _minimal_peer_manager()
     pm.config.network.connect_to_peers_parallel_batches = 2
     pm._connect_batch_active_count = 0
@@ -387,17 +387,17 @@ async def test_pending_resume_bypasses_cold_start_single_owner(
     pm._connect_batch_active_count = 1
     enqueue.reset_mock()
     pending_owner = await pm.connect_to_peers(peer_dicts, _from_pending_queue=True)
-    assert pending_owner.status == "owner_started"
-    assert enqueue.await_count == 0
+    assert pending_owner.status == "queued_reentrant"
+    assert enqueue.await_count == 1
 
 
-def test_min_successful_for_early_batch_exit_disabled_when_sparse() -> None:
+def test_min_successful_for_early_batch_exit_detaches_durably_when_sparse() -> None:
     threshold = _min_successful_for_early_batch_exit(
         20,
         active_peer_count=5,
         early_exit_min_active_peers=10,
     )
-    assert threshold == 21
+    assert threshold == 5
 
 
 def test_min_successful_for_early_batch_exit_enabled_when_swarm_healthy() -> None:
@@ -541,10 +541,10 @@ def test_cap_connect_task_timeout_s_shortens_deep_pending_queue() -> None:
 
 
 @pytest.mark.asyncio
-async def test_zero_active_reentrant_triggers_pending_drain(
+async def test_zero_active_reentrant_waits_for_batch_owner_completion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tracker overflow while batches active schedules pending drain at zero actives."""
+    """Tracker overflow queues peers until the sole cold-start owner completes."""
     pm = _minimal_peer_manager()
     pm.config.network.connect_to_peers_parallel_batches = 1
     pm.config.discovery = SimpleNamespace(
@@ -566,10 +566,7 @@ async def test_zero_active_reentrant_triggers_pending_drain(
     result = await pm.connect_to_peers(peer_dicts)
 
     assert result.status == "queued_reentrant"
-    pm.request_pending_resume.assert_called_once()
-    assert pm.request_pending_resume.call_args.kwargs["reason"] == (
-        "zero_active_reentrant_drain"
-    )
+    pm.request_pending_resume.assert_not_called()
 
 
 def test_swarm_growth_target_scales_with_cap() -> None:

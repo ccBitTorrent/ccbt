@@ -802,6 +802,12 @@ class NetworkConfig(BaseModel):
         le=128,
         description="Request pipeline depth",
     )
+    request_timeout: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=600.0,
+        description="Base BitTorrent block request timeout in seconds",
+    )
     sparse_pipeline_stale_payload_cancel_s: float = Field(
         default=120.0,
         ge=0.0,
@@ -917,10 +923,10 @@ class NetworkConfig(BaseModel):
 
     # Connection settings
     connection_timeout: float = Field(
-        default=30.0,
+        default=12.0,
         ge=1.0,
         le=300.0,
-        description="Connection timeout in seconds",
+        description="Outbound TCP establishment timeout in seconds",
     )
     handshake_timeout: float = Field(
         default=10.0,
@@ -1778,7 +1784,13 @@ class NetworkConfig(BaseModel):
         default=200,
         ge=1,
         le=10000,
-        description="Maximum connections in connection pool",
+        description="Deprecated alias for the legacy peer connection pool limit",
+    )
+    max_live_sockets: int = Field(
+        default=200,
+        ge=1,
+        le=10000,
+        description="Process-wide maximum live inbound and outbound peer sockets",
     )
     connection_pool_max_idle_time: float = Field(
         default=300.0,
@@ -1787,8 +1799,8 @@ class NetworkConfig(BaseModel):
         description="Maximum idle time before connection is closed (seconds)",
     )
     connection_pool_warmup_enabled: bool = Field(
-        default=True,
-        description="Enable connection warmup to pre-establish connections",
+        default=False,
+        description="Deprecated; BitTorrent protocol streams are not reusable",
     )
     connection_pool_warmup_count: int = Field(
         default=10,

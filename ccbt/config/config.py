@@ -694,6 +694,7 @@ class ConfigManager:
             "CCBT_XET_MULTICAST_ADDRESS": "network.xet_multicast_address",
             "CCBT_XET_MULTICAST_PORT": "network.xet_multicast_port",
             "CCBT_PIPELINE_DEPTH": "network.pipeline_depth",
+            "CCBT_REQUEST_TIMEOUT": "network.request_timeout",
             "CCBT_SPARSE_PIPELINE_STALE_PAYLOAD_CANCEL_S": (
                 "network.sparse_pipeline_stale_payload_cancel_s"
             ),
@@ -878,6 +879,7 @@ class ConfigManager:
             "CCBT_DNS_CACHE_TTL": "network.dns_cache_ttl",
             # Connection pool
             "CCBT_CONNECTION_POOL_MAX_CONNECTIONS": "network.connection_pool_max_connections",
+            "CCBT_MAX_LIVE_SOCKETS": "network.max_live_sockets",
             "CCBT_CONNECTION_POOL_MAX_IDLE_TIME": "network.connection_pool_max_idle_time",
             "CCBT_CONNECTION_POOL_WARMUP_ENABLED": "network.connection_pool_warmup_enabled",
             "CCBT_CONNECTION_POOL_WARMUP_COUNT": "network.connection_pool_warmup_count",

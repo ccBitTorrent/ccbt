@@ -1390,7 +1390,7 @@ class DHTDiscoverySetup:
 
         """
 
-        async def on_dht_peers_discovered(peers: list[tuple[str, int]]) -> None:
+        async def on_dht_peers_discovered(peers: list[tuple[str, int]]) -> Any:
             """Handle DHT-discovered peers by adding them to the download.
 
             Args:
@@ -1401,14 +1401,14 @@ class DHTDiscoverySetup:
                 # Note: Add defensive checks for session readiness before processing peers
                 # Check if session is stopped/not ready
                 if not self.session.is_ready():
-                    return
+                    return False
                 if self.session.info.status == "stopped":
                     self.logger.debug(
                         "DHT callback received %d peer(s) for %s but session is stopped, ignoring",
                         len(peers),
                         self.session.info.name,
                     )
-                    return
+                    return False
 
                 # Note: Add detailed logging for DHT peer discovery
                 self.logger.debug(
@@ -1438,7 +1438,7 @@ class DHTDiscoverySetup:
                             "DHT peers discovered but download_manager still None after retry for %s, giving up",
                             self.session.info.name,
                         )
-                        return
+                        return False
 
                 # Convert DHT peers to peer list format
                 peer_list = [
@@ -1461,7 +1461,7 @@ class DHTDiscoverySetup:
                         "DHT peer list is empty after conversion for %s",
                         self.session.info.name,
                     )
-                    return
+                    return True
 
                 # Note: Log peer conversion details
                 self.logger.debug(
@@ -1488,11 +1488,11 @@ class DHTDiscoverySetup:
                         await self._start_download_with_dht_peers(
                             peer_list, metadata_fetched
                         )
-                    else:
-                        self.logger.debug(
-                            "Download start already in progress, skipping duplicate call from DHT callback for %d peers",
-                            len(peer_list),
-                        )
+                        return True
+                    self.logger.debug(
+                        "Download start already in progress, skipping duplicate call from DHT callback for %d peers",
+                        len(peer_list),
+                    )
                 else:
                     # Download already started, just add peers
                     self.logger.debug(
@@ -1538,15 +1538,14 @@ class DHTDiscoverySetup:
                                     len(peer_list),
                                 )
                                 # Use generic queue so PeerConnectionHelper drains them when ready
-                                await helper.connect_peers_to_download(peer_list)
-                                return
+                                return await helper.connect_peers_to_download(peer_list)
 
                         self.logger.debug(
                             "🔗 DHT CONNECTION: Attempting to connect %d DHT-discovered peer(s) for %s",
                             len(peer_list),
                             self.session.info.name,
                         )
-                        await helper.connect_peers_to_download(peer_list)
+                        submit = await helper.connect_peers_to_download(peer_list)
                         self.logger.debug(
                             "✅ DHT CONNECTION: Successfully initiated connection to %d DHT-discovered peers for %s",
                             len(peer_list),
@@ -1575,6 +1574,7 @@ class DHTDiscoverySetup:
                                 active_count,
                                 len(peer_list),
                             )
+                        return submit
                     except Exception as connection_error:
                         self.logger.warning(
                             "Failed to connect %d DHT-discovered peers for %s: %s",
@@ -1584,9 +1584,7 @@ class DHTDiscoverySetup:
                             exc_info=True,
                         )
                         # Queue to generic _queued_peers so they are drained when peer_manager is ready
-                        import time as _time
-
-                        now = _time.time()
+                        now = time.time()
                         for peer in peer_list:
                             peer_copy = dict(peer)
                             peer_copy["_queued_at"] = now
@@ -1596,6 +1594,7 @@ class DHTDiscoverySetup:
                             len(peer_list),
                             len(self.session.get_queued_peers()),
                         )
+                        return False
             except Exception:
                 self.logger.exception(
                     "Critical error in DHT peer discovery handler for %s",
@@ -1603,6 +1602,8 @@ class DHTDiscoverySetup:
                 )
                 # Note: Don't let errors stop peer discovery - log and continue
                 # The discovery loop will retry on next iteration
+                return False
+            return True
 
         return on_dht_peers_discovered
 
@@ -1990,48 +1991,13 @@ class DHTDiscoverySetup:
 
         """
 
-        # Track recently processed peers to avoid duplicate connection attempts
         async def on_dht_peers_discovered_with_dedup(
             peers: list[tuple[str, int]],
-        ) -> None:
-            """Process DHT-discovered peers with deduplication."""
+        ) -> Any:
+            """Forward peers; the discovery candidate store owns retryable deduplication."""
             if not peers:
-                return
-
-            # Filter out recently processed peers
-            async with self.session.get_recently_processed_peers_lock():
-                # Clean up old entries (older than 5 minutes)
-                # Keep set size manageable by removing entries periodically
-                self.session.cleanup_recently_processed_peers(keep_count=500)
-
-                # Filter out already processed peers
-                new_peers = [
-                    peer
-                    for peer in peers
-                    if not self.session.is_peer_recently_processed(peer)
-                ]
-
-                # Mark new peers as processed
-                for peer in new_peers:
-                    self.session.add_recently_processed_peer(peer)
-
-            if not new_peers:
-                self.logger.debug(
-                    "All %d DHT-discovered peers were already processed, skipping",
-                    len(peers),
-                )
-                return
-
-            if len(new_peers) < len(peers):
-                self.logger.debug(
-                    "Filtered %d duplicate peers from DHT discovery (%d new, %d total)",
-                    len(peers) - len(new_peers),
-                    len(new_peers),
-                    len(peers),
-                )
-
-            # Process the new peers
-            await on_dht_peers_discovered(new_peers)
+                return True
+            return await on_dht_peers_discovered(peers)
 
         return on_dht_peers_discovered_with_dedup
 
