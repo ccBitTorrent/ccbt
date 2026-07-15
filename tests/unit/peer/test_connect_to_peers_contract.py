@@ -150,6 +150,11 @@ async def test_connect_to_peers_parallel_batches_allow_concurrent_owners(
     )
     await manager.start()
     try:
+        monkeypatch.setattr(
+            manager,
+            "_snapshot_connection_counts",
+            lambda: (5, 5, 3),
+        )
         monkeypatch.setattr(asyncio, "open_connection", _first_hangs_then_fail)
         first = asyncio.create_task(
             manager.connect_to_peers(

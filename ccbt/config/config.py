@@ -757,6 +757,13 @@ class ConfigManager:
             "CCBT_PER_PEER_DOWN_KIB": "network.per_peer_down_kib",
             "CCBT_PER_PEER_UP_KIB": "network.per_peer_up_kib",
             "CCBT_MAX_UPLOAD_SLOTS": "network.max_upload_slots",
+            "CCBT_LOW_SWARM_MIN_UPLOAD_SLOTS": "network.low_swarm_min_upload_slots",
+            "CCBT_CONNECT_BATCH_EARLY_EXIT_MIN_ACTIVE_PEERS": (
+                "network.connect_batch_early_exit_min_active_peers"
+            ),
+            "CCBT_CONNECT_BATCH_ZERO_ACTIVE_MAX_DURATION_S": (
+                "network.connect_batch_zero_active_max_duration_s"
+            ),
             "CCBT_RECIPROCATION_CHOKED_PEER_SCORE_BOOST": (
                 "network.reciprocation_choked_peer_score_boost"
             ),

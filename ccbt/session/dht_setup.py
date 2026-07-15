@@ -1191,6 +1191,7 @@ class DHTDiscoverySetup:
         rt_nodes = getattr(getattr(dht_client, "routing_table", None), "nodes", None)
         rt_size = len(rt_nodes) if rt_nodes is not None else 0
         force_zero = bool(getattr(disc, "requestable_force_dht_when_zero", True))
+        redundancy_floor = min(target, max(3, target // 2)) if target > 0 else 3
 
         if force_zero and requestable_n == 0 and active_n >= 1:
             metrics.increment_counter("requestable_driven_zero_active_total")
@@ -1213,6 +1214,20 @@ class DHTDiscoverySetup:
                     await self._maybe_run_discovery_complements(
                         "requestable_driven_pressure"
                     )
+        elif requestable_n < redundancy_floor:
+            metrics.increment_counter("requestable_driven_redundancy_shortfall_total")
+            if rt_size < 1:
+                with contextlib.suppress(Exception):
+                    await self._ensure_bootstrap_ready(
+                        dht_client,
+                        reason=f"requestable_redundancy:{reason}",
+                        timeout=float(self._dht_bootstrap_timeout_s),
+                        min_nodes=1,
+                    )
+            with contextlib.suppress(Exception):
+                await self._maybe_run_discovery_complements(
+                    "requestable_driven_redundancy_shortfall"
+                )
 
         burst_cap = int(getattr(disc, "max_connect_burst_per_tick", 16) or 16)
         _ = burst_cap

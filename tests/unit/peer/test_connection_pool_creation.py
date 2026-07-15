@@ -346,9 +346,7 @@ class TestPeerConnectionPoolIntegration:
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
     @patch("ccbt.peer.connection_pool.get_config")
-    async def test_connection_reuse(
-        self, mock_get_config, mock_open_connection
-    ):
+    async def test_connection_reuse(self, mock_get_config, mock_open_connection):
         """Test that acquire() returns existing connections from pool when available."""
         # Start pool
         await self.pool.start()
@@ -374,6 +372,8 @@ class TestPeerConnectionPoolIntegration:
             assert connection1 is not None
             initial_call_count = mock_open_connection.call_count
 
+            await self.pool.release(str(self.peer_info), connection1)
+
             # Acquire again - pool should return the same connection if it's still valid
             # The pool stores one connection per peer_id, so this should return the existing one
             connection2 = await self.pool.acquire(self.peer_info)
@@ -383,6 +383,7 @@ class TestPeerConnectionPoolIntegration:
             # The key is that _create_peer_connection is working correctly
             assert connection1["connection"] is not None
             assert connection2["connection"] is not None
+            assert mock_open_connection.call_count == initial_call_count
 
         finally:
             await self.pool.stop()
@@ -390,9 +391,7 @@ class TestPeerConnectionPoolIntegration:
     @pytest.mark.asyncio
     @patch("asyncio.open_connection")
     @patch("ccbt.peer.connection_pool.get_config")
-    async def test_connection_validation(
-        self, mock_get_config, mock_open_connection
-    ):
+    async def test_connection_validation(self, mock_get_config, mock_open_connection):
         """Test that _is_connection_valid works with PooledConnection."""
         # Start pool
         await self.pool.start()
@@ -469,4 +468,3 @@ class TestPeerConnectionPoolIntegration:
 
         finally:
             await self.pool.stop()
-

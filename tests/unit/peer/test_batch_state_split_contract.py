@@ -60,7 +60,7 @@ def test_split_batch_owner_and_dht_deferral_flags_exist() -> None:
 
 @pytest.mark.asyncio
 async def test_reentrant_connect_acquires_lock_order_connect_then_pending() -> None:
-    """Reentrant submit lock order: connect lock before pending queue lock."""
+    """Reentrant submit lock order: pending snapshot lock before connect lock."""
 
     class _TracingLock:
         def __init__(self, inner: asyncio.Lock, name: str, trace: list[str]) -> None:
@@ -98,7 +98,7 @@ async def test_reentrant_connect_acquires_lock_order_connect_then_pending() -> N
         manager._dht_connect_deferral_active = True  # noqa: SLF001
         result = await manager.connect_to_peers([{"ip": "192.0.2.44", "port": 6881}])
         assert result.status == "queued_reentrant"
-        assert trace[:2] == ["connect", "pending"]
+        assert trace[:2] == ["pending", "connect"]
     finally:
         manager._batch_owner_active = False  # noqa: SLF001
         manager._dht_connect_deferral_active = False  # noqa: SLF001

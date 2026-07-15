@@ -1035,9 +1035,9 @@ class NetworkConfig(BaseModel):
         description="Maximum parallel peers for metadata exchange after cold start",
     )
     metadata_exchange_cold_start_max_peers: int = Field(
-        default=5,
+        default=18,
         ge=1,
-        le=20,
+        le=30,
         description="Parallel peers for metadata exchange during magnet cold start",
     )
     metadata_exchange_cold_start_timeout: float = Field(
@@ -1169,6 +1169,15 @@ class NetworkConfig(BaseModel):
             "before they are dropped during cold-start discovery bursts."
         ),
     )
+    pending_peer_queue_max_depth: int = Field(
+        default=600,
+        ge=100,
+        le=5000,
+        description=(
+            "Maximum peers retained in the outbound pending connect queue. "
+            "Overflow drops lowest-priority tail entries to prevent unbounded backlog."
+        ),
+    )
     mse_initiator_timeout_scale_zero_active: float = Field(
         default=1.0,
         ge=0.25,
@@ -1231,10 +1240,101 @@ class NetworkConfig(BaseModel):
 
     # Upload slots
     max_upload_slots: int = Field(
-        default=4,
+        default=8,
         ge=1,
         le=20,
         description="Maximum upload slots",
+    )
+    low_swarm_min_upload_slots: int = Field(
+        default=8,
+        ge=1,
+        le=20,
+        description=(
+            "Minimum upload slots when the swarm is small (<=10 actives) and "
+            "leech-heavy — improves reciprocation so remotes unchoke us"
+        ),
+    )
+    connect_batch_early_exit_min_active_peers: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description=(
+            "Do not early-cancel in-flight connect tasks until at least this many "
+            "post-handshake actives exist (prevents stopping at 5/5 during cold start)"
+        ),
+    )
+    connect_batch_zero_active_max_duration_s: float = Field(
+        default=60.0,
+        ge=30.0,
+        le=120.0,
+        description=(
+            "Wall-clock budget for a connect batch when active peers are zero "
+            "(restart collapse recovery — avoids aborting handshakes at 45s)"
+        ),
+    )
+    connect_batch_max_peers_per_owner: int = Field(
+        default=100,
+        ge=20,
+        le=500,
+        description=(
+            "Maximum peers one connect_to_peers batch owner processes before "
+            "queueing the remainder. Prevents megabatch churn from starving "
+            "handshakes that are close to completing."
+        ),
+    )
+    connect_batch_productive_pause_min_requestable: int = Field(
+        default=8,
+        ge=3,
+        le=50,
+        description=(
+            "Pause outbound connect megabatches once this many peers are "
+            "requestable, so piece pipelines get CPU instead of connect churn."
+        ),
+    )
+    connect_throttle_productive_window_s: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+        description=(
+            "Seconds after last piece payload during which outbound connect "
+            "parallelism is throttled to protect active download peers."
+        ),
+    )
+    connect_throttle_productive_max_concurrent: int = Field(
+        default=8,
+        ge=3,
+        le=50,
+        description=(
+            "Maximum parallel outbound TCP connects while a productive download "
+            "is in flight (pipeline-saturated but unchoked peers)."
+        ),
+    )
+    steady_connect_drain_interval_s: float = Field(
+        default=10.0,
+        ge=2.0,
+        le=60.0,
+        description=(
+            "Interval for background pending-queue resume while active peers "
+            "remain below the swarm growth target (max_peers_per_torrent / 4)."
+        ),
+    )
+    pending_stale_purge_age_s: float = Field(
+        default=120.0,
+        ge=30.0,
+        le=600.0,
+        description=(
+            "Drop pending-queue peers older than this after a zero-success "
+            "connect batch so dead addresses are not retried indefinitely."
+        ),
+    )
+    pending_requeue_skip_after_hard_disconnect_s: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description=(
+            "Do not re-queue peers for this many seconds after hard choke-timeout "
+            "disconnect or stale-unchoke failure."
+        ),
     )
 
     # Tit-for-tat / reciprocation (upload side encourages remote UNCHOKE)
@@ -1885,8 +1985,8 @@ class NetworkConfig(BaseModel):
         description="Enable request prioritization (rarest pieces first)",
     )
     pipeline_enable_coalescing: bool = Field(
-        default=True,
-        description="Enable request coalescing (combine adjacent requests)",
+        default=False,
+        description="Deprecated compatibility flag; wire block requests remain exact",
     )
     pipeline_coalesce_threshold_kib: int = Field(
         default=4,

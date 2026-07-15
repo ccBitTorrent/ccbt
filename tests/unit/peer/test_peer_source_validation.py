@@ -239,8 +239,12 @@ async def test_private_torrent_logs_warning(peer_manager):
         except PeerConnectionError:
             pass
 
-        # Verify warning was logged
-        mock_warning.assert_called_once()
-        assert "Rejecting peer" in str(mock_warning.call_args)
-        assert "dht" in str(mock_warning.call_args).lower()
+        # Verify rejection warning was logged (PeerConnectionError may add a second log).
+        rejection_calls = [
+            call
+            for call in mock_warning.call_args_list
+            if "Rejecting peer" in str(call)
+        ]
+        assert len(rejection_calls) == 1
+        assert "dht" in str(rejection_calls[0]).lower()
 

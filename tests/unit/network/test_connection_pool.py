@@ -93,6 +93,22 @@ async def test_release_connection(connection_pool, peer_info):
 
 
 @pytest.mark.asyncio
+async def test_release_without_owned_permit_does_not_overrelease(
+    connection_pool, peer_info
+):
+    """Unknown or externally injected entries must not inflate pool capacity."""
+    initial_slots = connection_pool.semaphore._value  # noqa: SLF001
+    await connection_pool.release(str(peer_info), MagicMock())
+    assert connection_pool.semaphore._value == initial_slots  # noqa: SLF001
+
+    mock_connection = {"peer_info": peer_info, "created_at": time.time()}
+    connection_pool.pool[str(peer_info)] = mock_connection
+    connection_pool.metrics[str(peer_info)] = ConnectionMetrics()
+    await connection_pool.release(str(peer_info), mock_connection)
+    assert connection_pool.semaphore._value == initial_slots  # noqa: SLF001
+
+
+@pytest.mark.asyncio
 async def test_connection_recycling(connection_pool, peer_info):
     """Test connection recycling after max usage."""
     # Create a mock connection
@@ -135,9 +151,7 @@ async def test_pool_stats(connection_pool, peer_info):
     mock_connection = {"peer_info": peer_info, "created_at": time.time()}
     connection_pool.pool[str(peer_info)] = mock_connection
     connection_pool.metrics[str(peer_info)] = ConnectionMetrics(
-        bytes_sent=1000,
-        bytes_received=2000,
-        errors=1
+        bytes_sent=1000, bytes_received=2000, errors=1
     )
 
     stats = connection_pool.get_pool_stats()
@@ -159,10 +173,7 @@ async def test_update_connection_metrics(connection_pool, peer_info):
 
     # Update metrics
     connection_pool.update_connection_metrics(
-        str(peer_info),
-        bytes_sent=100,
-        bytes_received=200,
-        errors=1
+        str(peer_info), bytes_sent=100, bytes_received=200, errors=1
     )
 
     assert metrics.bytes_sent == 100
@@ -209,7 +220,7 @@ async def test_health_check_removes_unhealthy_connections(connection_pool, peer_
     # Set metrics to indicate unhealthy state
     metrics = ConnectionMetrics(
         errors=20,  # Too many errors
-        is_healthy=False
+        is_healthy=False,
     )
     connection_pool.metrics[str(peer_info)] = metrics
 
@@ -229,7 +240,9 @@ async def test_cleanup_removes_stale_connections(connection_pool, peer_info):
     connection_pool.pool[str(peer_info)] = mock_connection
 
     # Set metrics to indicate stale state
-    metrics = ConnectionMetrics(last_used=time.time() - 400)  # Very old (beyond stale threshold)
+    metrics = ConnectionMetrics(
+        last_used=time.time() - 400
+    )  # Very old (beyond stale threshold)
     connection_pool.metrics[str(peer_info)] = metrics
 
     # Run cleanup

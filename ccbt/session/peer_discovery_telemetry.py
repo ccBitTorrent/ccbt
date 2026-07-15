@@ -230,6 +230,8 @@ _ALLOWED_RESUME_REASONS: frozenset[str] = frozenset(
         "inflight_drained",
         "status_loop_stall",
         "piece_selector_no_piece_info",
+        "zero_active_reentrant_drain",
+        "stale_batch_owner_reset",
     }
 )
 

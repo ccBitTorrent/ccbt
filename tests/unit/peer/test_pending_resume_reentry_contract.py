@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from ccbt.models import ConnectSubmitResult
 from ccbt.peer.async_peer_connection import AsyncPeerConnectionManager
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
@@ -288,30 +289,12 @@ async def test_resume_pending_batches_drains_bounded_slice_then_retriggers(
     await manager.start()
     try:
         manager.connections = {
-            "198.51.100.1:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.2:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.3:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.4:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.5:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.6:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.7:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.8:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
+            f"198.51.100.{i}:6881": SimpleNamespace(
+                is_active=lambda: True,
+                can_request=lambda: True,
+                connection_task=None,
+            )
+            for i in range(1, 9)
         }
         enq = await manager.enqueue_peer_dicts_pending(
             [
@@ -321,7 +304,9 @@ async def test_resume_pending_batches_drains_bounded_slice_then_retriggers(
             reason="bounded_resume_contract",
         )
         assert enq == 12
-        connect_mock = AsyncMock()
+        connect_mock = AsyncMock(
+            return_value=ConnectSubmitResult(status="owner_started"),
+        )
         monkeypatch.setattr(manager, "connect_to_peers", connect_mock)
         manager.request_pending_resume = MagicMock()  # type: ignore[method-assign]
 
@@ -352,30 +337,12 @@ async def test_resume_pending_batches_continues_until_queue_drained(
     await manager.start()
     try:
         manager.connections = {
-            "198.51.100.1:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.2:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.3:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.4:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.5:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.6:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.7:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
-            "198.51.100.8:6881": SimpleNamespace(
-                is_active=lambda: True, connection_task=None
-            ),
+            f"198.51.100.{i}:6881": SimpleNamespace(
+                is_active=lambda: True,
+                can_request=lambda: True,
+                connection_task=None,
+            )
+            for i in range(1, 9)
         }
         enq = await manager.enqueue_peer_dicts_pending(
             [
@@ -385,7 +352,9 @@ async def test_resume_pending_batches_continues_until_queue_drained(
             reason="bounded_resume_contract",
         )
         assert enq == 12
-        connect_mock = AsyncMock()
+        connect_mock = AsyncMock(
+            return_value=ConnectSubmitResult(status="owner_started"),
+        )
         monkeypatch.setattr(manager, "connect_to_peers", connect_mock)
         manager.request_pending_resume = MagicMock()  # type: ignore[method-assign]
 

@@ -20,6 +20,7 @@ from ccbt.peer.async_peer_connection import (
     ConnectionState,
     MsePlainFallbackRetrySlot,
     RequestInfo,
+    _bitfield_completion,
     _connect_batch_max_duration_s,
 )
 from ccbt.peer.peer import (
@@ -81,6 +82,7 @@ def mock_torrent_data():
     return {
         "info_hash": b"test_info_hash_20byt",  # Exactly 20 bytes
         "pieces_info": {"num_pieces": 100},
+        "file_info": {"total_length": 1},
     }
 
 
@@ -89,6 +91,8 @@ def mock_piece_manager():
     """Create mock piece manager."""
     manager = MagicMock()
     manager.verified_pieces = [0, 1, 2]
+    manager.num_pieces = 100
+    manager._metadata_incomplete = False
     manager.get_block = MagicMock(return_value=b"test_block_data")
     # Note: update_peer_availability is async, so it needs to be AsyncMock
     manager.update_peer_availability = AsyncMock(return_value=None)
@@ -1785,6 +1789,8 @@ async def test_low_download_diversity_hysteresis_delays_exit_from_full_unchoke(
     peer_manager.config.network.low_download_diversity_full_unchoke = True
     peer_manager.config.network.low_download_diversity_use_hysteresis = True
     peer_manager.config.network.low_download_diversity_exit_margin = 1
+    # Isolate hysteresis behavior from leech-heavy upload slot expansion.
+    peer_manager.config.network.leech_heavy_swarm_total_upload_bps_threshold = 0.0
 
     def _wired_peer(ip: str, port: int, *, peer_choking: bool) -> AsyncPeerConnection:
         c = AsyncPeerConnection(
@@ -3877,6 +3883,62 @@ def test_notify_requestable_peer_deficit_is_hysteresis_gated(peer_manager) -> No
     schedule_mock.assert_not_called()
 
 
+def test_notify_requestable_peer_deficit_preserves_supplier_redundancy(
+    peer_manager,
+) -> None:
+    """Recent payload must not stop growth with only two requestable suppliers."""
+    peer_manager._pending_peer_queue = [PeerInfo(ip="198.51.100.2", port=6881)]  # noqa: SLF001
+    peer_manager._running = True  # noqa: SLF001
+    peer_manager._requestable_deficit_notify_min_interval_s = 0.0  # noqa: SLF001
+    peer_manager._requestable_deficit_last_notified_at = 0.0  # noqa: SLF001
+    with (
+        patch.object(
+            peer_manager,
+            "_snapshot_connection_counts",
+            return_value=(3, 3, 2),
+        ),
+        patch.object(
+            peer_manager, "_has_recent_productive_download", return_value=True
+        ),
+        patch.object(peer_manager, "_schedule_pending_resume") as schedule_mock,
+    ):
+        peer_manager.notify_requestable_peer_deficit()
+
+    schedule_mock.assert_called_once_with(reason="requestable_peer_deficit")
+
+
+def test_packed_bitfield_completion_ignores_padding_bits() -> None:
+    """Seeder detection must count packed bits, including partial final bytes."""
+    assert _bitfield_completion(b"\xff\x80", 9) == 1.0
+    assert _bitfield_completion(b"\x80", 8) == pytest.approx(0.125)
+    assert _bitfield_completion(b"\xff", 9) == pytest.approx(8 / 9)
+
+
+def test_request_coalescing_preserves_exact_block_boundaries(peer_manager) -> None:
+    """Adjacent standard blocks remain separate BEP 3 requests."""
+    requests = [
+        RequestInfo(1, 0, 16384, 1.0),
+        RequestInfo(1, 16384, 16384, 2.0),
+    ]
+    assert peer_manager._coalesce_requests(requests) == requests
+
+
+def test_adaptive_pipeline_grows_for_high_latency_peer(peer_manager) -> None:
+    """High RTT requires more in-flight blocks instead of shrinking the pipeline."""
+    peer_manager.config.network.pipeline_depth = 16
+    peer_manager.config.network.pipeline_min_depth = 4
+    peer_manager.config.network.pipeline_max_depth = 128
+    peer_manager.config.network.block_size_kib = 16
+    connection = MagicMock()
+    connection.stats = SimpleNamespace(
+        average_block_latency=0.8,
+        request_latency=0.8,
+        download_rate=512 * 1024,
+    )
+
+    assert peer_manager._calculate_pipeline_depth(connection) > 16
+
+
 def test_order_peer_scores_tracker_before_dht_preserves_intra_bucket_order(
     peer_manager,
 ) -> None:
@@ -3914,21 +3976,26 @@ class TestConnectBatchMaxDuration:
     """_connect_batch_max_duration_s: patience when few actives, bounded on large swarms."""
 
     def test_few_active_peers_get_long_budget(self) -> None:
-        assert _connect_batch_max_duration_s(0) == 45.0
+        assert _connect_batch_max_duration_s(0) == 60.0
         assert _connect_batch_max_duration_s(1) == 45.0
         assert _connect_batch_max_duration_s(2) == 45.0
 
     def test_mid_swarm_uses_short_budget(self) -> None:
-        assert _connect_batch_max_duration_s(3) == 20.0
-        assert _connect_batch_max_duration_s(49) == 20.0
+        # Below swarm growth target (default 50 → 12), batches stay on the 45s budget.
+        assert _connect_batch_max_duration_s(3) == 45.0
+        assert _connect_batch_max_duration_s(11, max_peers_per_torrent=50) == 45.0
+        # At/above growth target with healthy requestable peers, mid-swarm uses 20s.
+        assert _connect_batch_max_duration_s(15, requestable_peer_count=3) == 20.0
+        assert _connect_batch_max_duration_s(49, requestable_peer_count=2) == 20.0
 
     def test_mid_swarm_short_when_no_extension_signals(self) -> None:
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=0,
                 pending_queue_depth=47,
                 inflight_peer_connects=2,
+                remote_choked_active_count=0,
             )
             == 20.0
         )
@@ -3936,25 +4003,27 @@ class TestConnectBatchMaxDuration:
     def test_mid_swarm_extends_when_requestable_zero_and_backlog(self) -> None:
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=0,
                 pending_queue_depth=48,
                 inflight_peer_connects=0,
+                remote_choked_active_count=1,
             )
             == 45.0
         )
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=0,
                 pending_queue_depth=0,
                 inflight_peer_connects=3,
+                remote_choked_active_count=2,
             )
             == 45.0
         )
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=1,
                 pending_queue_depth=100,
                 inflight_peer_connects=10,

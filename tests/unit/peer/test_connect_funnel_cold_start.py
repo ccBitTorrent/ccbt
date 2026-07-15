@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from typing import Any
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -15,8 +16,16 @@ from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
     ConnectionState,
+    _connect_batch_max_duration_s,
     _connect_batch_process_timeout_s,
+    _count_remote_choked_actives,
     _is_expected_outbound_connect_failure,
+    _mid_swarm_patience_extension_applies,
+    _min_successful_for_early_batch_exit,
+    _mse_handshake_retry_slack_s,
+    _should_detach_inflight_on_batch_timeout,
+    _productive_swarm_pause_min_requestable,
+    _swarm_growth_target,
 )
 from ccbt.peer.peer import PeerInfo
 from ccbt.utils.exceptions import PeerConnectionError
@@ -354,10 +363,10 @@ async def test_schedule_pending_resume_bypasses_batch_owner_on_payload_starvatio
 async def test_pending_resume_bypasses_cold_start_single_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pending resume may become batch owner while another cold-start batch is active."""
+    """At zero actives only one connect batch runs; pending resume bypasses the guard."""
     pm = _minimal_peer_manager()
     pm.config.network.connect_to_peers_parallel_batches = 2
-    pm._connect_batch_active_count = 1
+    pm._connect_batch_active_count = 0
     monkeypatch.setattr(pm, "_snapshot_connection_counts", lambda: (0, 0, 0))
     monkeypatch.setattr(pm, "_remember_discovered_peers_for_retry", AsyncMock())
     monkeypatch.setattr(pm, "_prune_probation_peers", AsyncMock())
@@ -369,7 +378,7 @@ async def test_pending_resume_bypasses_cold_start_single_owner(
     assert allowed.status == "owner_started"
     assert enqueue.await_count == 0
 
-    pm._connect_batch_active_count = 2
+    pm._connect_batch_active_count = 1
     enqueue.reset_mock()
     deferred = await pm.connect_to_peers(peer_dicts, _from_pending_queue=False)
     assert deferred.status == "queued_reentrant"
@@ -380,3 +389,235 @@ async def test_pending_resume_bypasses_cold_start_single_owner(
     pending_owner = await pm.connect_to_peers(peer_dicts, _from_pending_queue=True)
     assert pending_owner.status == "owner_started"
     assert enqueue.await_count == 0
+
+
+def test_min_successful_for_early_batch_exit_disabled_when_sparse() -> None:
+    threshold = _min_successful_for_early_batch_exit(
+        20,
+        active_peer_count=5,
+        early_exit_min_active_peers=10,
+    )
+    assert threshold == 21
+
+
+def test_min_successful_for_early_batch_exit_enabled_when_swarm_healthy() -> None:
+    threshold = _min_successful_for_early_batch_exit(
+        20,
+        active_peer_count=12,
+        early_exit_min_active_peers=10,
+    )
+    assert threshold == 5
+
+
+def test_connect_batch_max_duration_zero_active_uses_extended_budget() -> None:
+    assert _connect_batch_max_duration_s(0) == 60.0
+    assert _connect_batch_max_duration_s(0, zero_active_max_duration_s=75.0) == 75.0
+    assert _connect_batch_max_duration_s(1) == 45.0
+
+
+def test_connect_batch_process_timeout_zero_active_covers_handshakes() -> None:
+    timeout = _connect_batch_process_timeout_s(
+        30.0,
+        low_peer_recovery_mode=False,
+        active_peer_count=0,
+        max_batch_duration=60.0,
+    )
+    assert timeout >= 90.0
+
+
+def test_connect_batch_process_timeout_choked_swarm_covers_mse() -> None:
+    timeout = _connect_batch_process_timeout_s(
+        80.0,
+        low_peer_recovery_mode=True,
+        active_peer_count=1,
+        max_batch_duration=45.0,
+        requestable_peer_count=0,
+    )
+    assert timeout >= 90.0
+
+
+def test_mse_handshake_retry_slack_when_encryption_preferred() -> None:
+    security = SimpleNamespace(
+        enable_encryption=True,
+        encryption_mode="prefer",
+        encryption_allow_plain_fallback=True,
+    )
+    slack = _mse_handshake_retry_slack_s(
+        security, tcp_budget=20.0, handshake_budget=30.0
+    )
+    assert slack >= 50.0
+
+
+def test_should_detach_inflight_on_batch_timeout() -> None:
+    assert _should_detach_inflight_on_batch_timeout(
+        active_peer_count=0, requestable_peer_count=0
+    )
+    assert _should_detach_inflight_on_batch_timeout(
+        active_peer_count=1, requestable_peer_count=0
+    )
+    assert _should_detach_inflight_on_batch_timeout(
+        active_peer_count=3, requestable_peer_count=2
+    )
+
+
+def test_productive_swarm_pause_min_requestable_scales_with_cap() -> None:
+    assert _productive_swarm_pause_min_requestable(50) == 8
+    assert _productive_swarm_pause_min_requestable(50, configured_min=12) == 12
+    assert _productive_swarm_pause_min_requestable(16, configured_min=8) == 5
+
+
+@pytest.mark.asyncio
+async def test_bypass_pending_resume_on_restart_collapse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zero actives + deep pending queue drains even while batches are active."""
+    pm = _minimal_peer_manager()
+    pm.config.discovery = SimpleNamespace(
+        tracker_ingress_hold_pending_queue_threshold=200,
+    )
+    pm._connect_batch_active_count = 2
+    pm._pending_peer_queue = [
+        PeerInfo(ip=f"10.1.0.{i}", port=6880 + i) for i in range(250)
+    ]
+    pm._pending_peer_keys = {f"10.1.0.{i}:{6880 + i}" for i in range(250)}
+    monkeypatch.setattr(pm, "_metadata_is_incomplete", lambda: False)
+    monkeypatch.setattr(pm, "_snapshot_connection_counts", lambda: (0, 0, 0))
+    pm.connect_to_peers = AsyncMock(
+        return_value=SimpleNamespace(status="owner_started")
+    )
+
+    assert pm._should_bypass_batch_owner_for_pending_resume() is True
+    drain = AsyncMock()
+    monkeypatch.setattr(pm, "_connect_batch_from_pending", drain)
+    created: list[Any] = []
+
+    def _capture_task(coro: Any, **kwargs: Any) -> asyncio.Task[Any]:
+        created.append(coro)
+        return asyncio.get_event_loop().create_task(coro)
+
+    monkeypatch.setattr(asyncio, "create_task", _capture_task)
+    await pm._resume_pending_batches("restart_collapse")
+    for task in created:
+        await task
+    assert drain.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_maybe_reset_stale_batch_owner_clears_stuck_funnel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pm = _minimal_peer_manager()
+    pm._connect_batch_active_count = 1
+    pm._last_connect_batch_wall_start = time.time() - 60.0
+    pm._pending_peer_queue = [
+        PeerInfo(ip=f"10.3.0.{i}", port=6880 + i) for i in range(120)
+    ]
+    monkeypatch.setattr(pm, "_snapshot_connection_counts", lambda: (0, 0, 0))
+
+    assert pm._maybe_reset_stale_batch_owner() is True
+    assert pm._connect_batch_active_count == 0
+    assert pm._dht_connect_deferral_active is False
+
+
+def test_maybe_reset_stale_batch_owner_faster_when_queue_deep() -> None:
+    pm = _minimal_peer_manager()
+    pm._connect_batch_active_count = 1
+    pm._last_connect_batch_wall_start = time.time() - 25.0
+    pm._pending_peer_queue = [
+        PeerInfo(ip=f"10.5.0.{i}", port=6880 + i) for i in range(600)
+    ]
+    monkeypatch_stub = lambda: (0, 0, 0)  # noqa: E731
+    pm._snapshot_connection_counts = monkeypatch_stub  # type: ignore[method-assign]
+    assert pm._maybe_reset_stale_batch_owner() is True
+
+
+def test_cap_connect_task_timeout_s_shortens_deep_pending_queue() -> None:
+    pm = _minimal_peer_manager()
+    pm._pending_peer_queue = [
+        PeerInfo(ip=f"10.4.0.{i}", port=6880 + i) for i in range(250)
+    ]
+    capped = pm._cap_connect_task_timeout_s(130.0)
+    assert capped <= 42.0
+
+
+@pytest.mark.asyncio
+async def test_zero_active_reentrant_triggers_pending_drain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tracker overflow while batches active schedules pending drain at zero actives."""
+    pm = _minimal_peer_manager()
+    pm.config.network.connect_to_peers_parallel_batches = 1
+    pm.config.discovery = SimpleNamespace(
+        tracker_ingress_hold_pending_queue_threshold=200,
+    )
+    pm._connect_batch_active_count = 1
+    pm._pending_peer_queue = [
+        PeerInfo(ip=f"10.2.0.{i}", port=6880 + i) for i in range(210)
+    ]
+    monkeypatch.setattr(pm, "_snapshot_connection_counts", lambda: (0, 0, 0))
+    monkeypatch.setattr(pm, "request_pending_resume", MagicMock())
+    monkeypatch.setattr(
+        pm,
+        "enqueue_peer_dicts_pending",
+        AsyncMock(return_value=1),
+    )
+
+    peer_dicts = [{"ip": "10.2.0.99", "port": 6881, "peer_source": "tracker"}]
+    result = await pm.connect_to_peers(peer_dicts)
+
+    assert result.status == "queued_reentrant"
+    pm.request_pending_resume.assert_called_once()
+    assert pm.request_pending_resume.call_args.kwargs["reason"] == (
+        "zero_active_reentrant_drain"
+    )
+
+
+def test_swarm_growth_target_scales_with_cap() -> None:
+    assert _swarm_growth_target(50) == 12
+    assert _swarm_growth_target(16) == 4
+
+
+def test_count_remote_choked_actives_ignores_pipeline_saturated() -> None:
+    productive = MagicMock()
+    productive.is_active.return_value = True
+    productive.peer_choking = False
+
+    choked = MagicMock()
+    choked.is_active.return_value = True
+    choked.peer_choking = True
+
+    assert _count_remote_choked_actives([productive, choked]) == 1
+
+
+def test_mid_swarm_patience_not_for_pipeline_only_stall() -> None:
+    assert not _mid_swarm_patience_extension_applies(
+        15,
+        requestable_peer_count=0,
+        pending_queue_depth=500,
+        inflight_peer_connects=10,
+        remote_choked_active_count=0,
+        max_peers_per_torrent=50,
+    )
+
+
+def test_mid_swarm_patience_for_remote_choked_stall() -> None:
+    assert _mid_swarm_patience_extension_applies(
+        10,
+        requestable_peer_count=0,
+        pending_queue_depth=500,
+        inflight_peer_connects=10,
+        remote_choked_active_count=2,
+        max_peers_per_torrent=50,
+    )
+
+
+def test_connect_batch_max_duration_below_growth_target() -> None:
+    assert _connect_batch_max_duration_s(4, max_peers_per_torrent=50) == 45.0
+
+
+def test_should_skip_pending_requeue_after_hard_disconnect() -> None:
+    pm = _minimal_peer_manager()
+    peer = PeerInfo(ip="1.2.3.4", port=6881)
+    assert not pm._should_skip_pending_requeue(peer)
+    pm._mark_hard_disconnected_peer(peer)
+    assert pm._should_skip_pending_requeue(peer)

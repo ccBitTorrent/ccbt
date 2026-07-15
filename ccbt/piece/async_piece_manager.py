@@ -602,6 +602,7 @@ class AsyncPieceManager:
         self._piece_selector_task: Optional[asyncio.Task] = None
         self._background_tasks: set[asyncio.Task] = set()
         self._piece_selection_trigger_tasks: set[asyncio.Task] = set()
+        self._pipeline_refill_tasks: dict[int, asyncio.Task[None]] = {}
 
         self.logger = logging.getLogger(__name__)
 
@@ -1326,6 +1327,45 @@ class AsyncPieceManager:
 
         return restored_count, skipped_count, state_corrected_count
 
+    def _checkpoint_bytes_downloaded(self, checkpoint: TorrentCheckpoint) -> int:
+        if checkpoint.download_stats is None:
+            return 0
+        return int(getattr(checkpoint.download_stats, "bytes_downloaded", 0) or 0)
+
+    def _sanitize_checkpoint_progress_claims(
+        self, checkpoint: TorrentCheckpoint
+    ) -> bool:
+        """Clear false complete/verified claims when no payload was ever downloaded."""
+        total = int(checkpoint.total_pieces or 0)
+        if total <= 0:
+            return False
+        bytes_downloaded = self._checkpoint_bytes_downloaded(checkpoint)
+        verified_n = len(checkpoint.verified_pieces or [])
+        complete_states = 0
+        if checkpoint.piece_states:
+            complete_states = sum(
+                1
+                for state in checkpoint.piece_states.values()
+                if state in (PieceStateModel.COMPLETE, PieceStateModel.VERIFIED)
+            )
+        false_complete = bytes_downloaded == 0 and (
+            verified_n >= total or complete_states >= total
+        )
+        if not false_complete:
+            return False
+        self.logger.warning(
+            "Checkpoint claims %d verified / %d complete piece states with "
+            "0 bytes downloaded — resetting piece progress to MISSING",
+            verified_n,
+            complete_states,
+        )
+        checkpoint.verified_pieces = []
+        if checkpoint.piece_states:
+            checkpoint.piece_states = dict.fromkeys(
+                checkpoint.piece_states, PieceStateModel.MISSING
+            )
+        return True
+
     async def start(self) -> None:
         """Start background tasks."""
         self._stopping = False
@@ -1361,6 +1401,82 @@ class AsyncPieceManager:
                     )
 
         task.add_done_callback(_on_piece_selection_task_done)
+
+    def _schedule_pipeline_refill(self, piece_index: int) -> None:
+        """Refill a partially downloaded piece after a block frees a peer slot."""
+        if self._stopping or not self.is_downloading or self._peer_manager is None:
+            return
+        existing = self._pipeline_refill_tasks.get(piece_index)
+        if existing is not None and not existing.done():
+            return
+
+        task = asyncio.create_task(
+            self._refill_downloading_piece(piece_index),
+            name=f"piece_pipeline_refill:{piece_index}",
+        )
+        self._pipeline_refill_tasks[piece_index] = task
+        self._background_tasks.add(task)
+
+        def _on_refill_done(done_task: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(done_task)
+            if self._pipeline_refill_tasks.get(piece_index) is done_task:
+                self._pipeline_refill_tasks.pop(piece_index, None)
+            with contextlib.suppress(asyncio.CancelledError):
+                try:
+                    done_task.result()
+                except Exception:
+                    self.logger.exception(
+                        "Pipeline refill failed for piece %d", piece_index
+                    )
+
+        task.add_done_callback(_on_refill_done)
+
+    async def _refill_downloading_piece(self, piece_index: int) -> None:
+        """Dispatch unrequested blocks for an existing DOWNLOADING piece."""
+        await asyncio.sleep(0)
+        if self._peer_manager is None or not self.is_downloading or self._stopping:
+            return
+
+        async with self.lock:
+            if not 0 <= piece_index < len(self.pieces):
+                return
+            piece = self.pieces[piece_index]
+            if piece.state != PieceState.DOWNLOADING or piece.is_complete():
+                return
+            dispatchable_blocks = [
+                block
+                for block in piece.get_missing_blocks()
+                if not block.requested_from
+            ]
+
+        if not dispatchable_blocks:
+            return
+
+        available_peers = await self._get_peers_for_piece(
+            piece_index,
+            self._peer_manager,
+            allow_existing_piece_requests=True,
+        )
+        if not available_peers:
+            return
+
+        requests_sent = await self._request_blocks_normal(
+            piece_index,
+            dispatchable_blocks,
+            available_peers,
+            self._peer_manager,
+            allow_existing_piece_requests=True,
+        )
+        if requests_sent <= 0:
+            return
+
+        async with self.lock:
+            if not 0 <= piece_index < len(self.pieces):
+                return
+            piece = self.pieces[piece_index]
+            piece.request_count += 1
+            piece.requests_dispatched += requests_sent
+            piece.last_request_time = time.time()
 
     async def stop(self) -> None:
         """Stop background tasks."""
@@ -1518,6 +1634,7 @@ class AsyncPieceManager:
             if self._deferred_checkpoint is not None:
                 deferred_checkpoint = self._deferred_checkpoint
                 self._deferred_checkpoint = None
+                self._sanitize_checkpoint_progress_claims(deferred_checkpoint)
                 if self._checkpoint_geometry_matches_current_layout(
                     deferred_checkpoint
                 ):
@@ -1698,6 +1815,33 @@ class AsyncPieceManager:
             ]
 
         return missing
+
+    def sync_download_complete_if_verified(self) -> bool:
+        """Mark download complete when every piece is verified on disk."""
+        if self.download_complete or self.num_pieces <= 0:
+            return bool(self.download_complete)
+        if self.bytes_downloaded <= 0:
+            return False
+        if self.get_missing_pieces():
+            return False
+        if self.get_piece_indices_not_verified():
+            return False
+        verified_count = len(self.verified_pieces) if self.verified_pieces else 0
+        if verified_count < self.num_pieces and self.pieces:
+            verified_count = sum(
+                1 for piece in self.pieces if piece.state == PieceState.VERIFIED
+            )
+        if verified_count < self.num_pieces:
+            return False
+        self.download_complete = True
+        self.logger.info(
+            "PIECE_MANAGER: All %d pieces verified — marking download complete",
+            self.num_pieces,
+        )
+        if self.on_download_complete:
+            with contextlib.suppress(Exception):
+                self.on_download_complete()
+        return True
 
     def get_piece_indices_not_verified(self) -> list[int]:
         """Indices of pieces not yet hash-verified (still pending swarm or disk work).
@@ -2976,6 +3120,12 @@ class AsyncPieceManager:
             # Note: Log detailed information about why no peers are available
             # This helps diagnose why downloads aren't starting
             has_choked_peers_with_piece = False
+            tx_counts: dict[str, int] = {
+                "request_ready": 0,
+                "pipeline_blocked": 0,
+                "remote_choked": 0,
+                "remote_unchoked": 0,
+            }
             if peer_manager and hasattr(peer_manager, "get_active_peers"):
                 active_peers = peer_manager.get_active_peers()
                 # Note: Include peers with bitfields OR HAVE messages
@@ -3042,11 +3192,9 @@ class AsyncPieceManager:
                     )
                     if (
                         peer_manager is not None
-                        and (
-                            tx_counts["pipeline_blocked"] > 0
-                            or tx_counts["remote_choked"] > 0
-                        )
+                        and tx_counts["remote_choked"] > 0
                         and tx_counts["request_ready"] == 0
+                        and tx_counts["pipeline_blocked"] == 0
                     ):
                         deficit_fn = getattr(
                             peer_manager, "notify_requestable_peer_deficit", None
@@ -3071,7 +3219,21 @@ class AsyncPieceManager:
             # keep it in REQUESTED state so it can be retried when peers unchoke
             # Only set to MISSING if there are truly no peers (disconnected or no bitfield)
             async with self.lock:
-                if piece.state == PieceState.REQUESTED and has_choked_peers_with_piece:
+                pipeline_only_block = (
+                    tx_counts["pipeline_blocked"] > 0
+                    and tx_counts["request_ready"] == 0
+                    and int(getattr(piece, "requests_dispatched", 0) or 0) == 0
+                )
+                if piece.state == PieceState.REQUESTED and pipeline_only_block:
+                    self._reset_piece_to_missing(piece)
+                    self.logger.debug(
+                        "Resetting piece %d to MISSING: pipeline saturated on unchoked "
+                        "peer(s); will re-select when slots open",
+                        piece_index,
+                    )
+                elif (
+                    piece.state == PieceState.REQUESTED and has_choked_peers_with_piece
+                ):
                     # Keep in REQUESTED state - will be retried when peers unchoke
                     self.logger.debug(
                         "Keeping piece %d in REQUESTED state (choked peers have this piece, will retry when they unchoke)",
@@ -3401,7 +3563,7 @@ class AsyncPieceManager:
     @staticmethod
     def _swarm_throttle_factor(active_peer_count: int) -> float:
         """Pipeline depth multiplier for small swarms (1.0 = no reduction)."""
-        if active_peer_count <= 2:
+        if active_peer_count <= 3:
             return 1.0
         if active_peer_count <= 0:
             return 0.5
@@ -3418,8 +3580,9 @@ class AsyncPieceManager:
         """Whether to apply per-peer pipeline throttling for this swarm."""
         if active_peer_count <= 0:
             return False
-        # Tiny swarms need full pipeline depth; halving it causes deadlock at cap/2.
-        if active_peer_count <= 2:
+        # Sparse swarms need full supplier pipelines. A choked third transport must
+        # not halve the two productive peers' request windows.
+        if active_peer_count <= 3 or requestable_peer_count <= 3:
             return False
         single_supplier_with_data = (
             active_peer_count == 1 and peers_with_availability >= 1
@@ -3486,6 +3649,8 @@ class AsyncPieceManager:
         piece_index: int,
         peer_manager: Any,
         max_requesters: Optional[int] = None,
+        *,
+        allow_existing_piece_requests: bool = False,
     ) -> list[AsyncPeerConnection]:
         """Get peers that have the specified piece, prioritized by download speed.
 
@@ -3742,7 +3907,8 @@ class AsyncPieceManager:
             # Note: Check if piece is already being requested from this peer
             # This prevents duplicate requests to the same peer
             if (
-                peer_key in self._requested_pieces_per_peer
+                not allow_existing_piece_requests
+                and peer_key in self._requested_pieces_per_peer
                 and piece_index in self._requested_pieces_per_peer[peer_key]
             ):
                 # Already requesting this piece from this peer - skip
@@ -4239,6 +4405,8 @@ class AsyncPieceManager:
         missing_blocks: list[PieceBlock],
         available_peers: list[AsyncPeerConnection],
         peer_manager: Any,
+        *,
+        allow_existing_piece_requests: bool = False,
     ) -> int:
         """Request blocks in normal mode (no duplicates).
 
@@ -4313,7 +4481,8 @@ class AsyncPieceManager:
 
                 # Check if already requesting this piece from this peer
                 if (
-                    peer_key in self._requested_pieces_per_peer
+                    not allow_existing_piece_requests
+                    and peer_key in self._requested_pieces_per_peer
                     and piece_index in self._requested_pieces_per_peer[peer_key]
                 ):
                     # Already requesting - skip this peer
@@ -4394,9 +4563,24 @@ class AsyncPieceManager:
                     self._reset_piece_to_missing(piece)
             return 0
 
+        dispatchable_blocks = [
+            block
+            for block in missing_blocks
+            if not block.received and not block.requested_from
+        ]
+        raw_send_budget = sum(
+            max(0, int(peer.get_available_pipeline_slots())) for peer in capable_peers
+        )
+        if raw_send_budget <= 0 or not dispatchable_blocks:
+            self._piece_selection_metrics["pipeline_full_rejections"] += 1
+            return 0
+        dispatchable_blocks = dispatchable_blocks[:raw_send_budget]
+
         # IMPROVEMENT: Ensure minimum distribution to all capable peers
         # Calculate minimum blocks per peer (ensures diversity)
-        min_blocks_per_peer = max(1, len(missing_blocks) // max(len(capable_peers), 1))
+        min_blocks_per_peer = max(
+            1, len(dispatchable_blocks) // max(len(capable_peers), 1)
+        )
 
         # Use bandwidth-aware load balancing if available
         if hasattr(peer_manager, "_balance_requests_across_peers"):
@@ -4404,7 +4588,7 @@ class AsyncPieceManager:
             from ccbt.peer.async_peer_connection import RequestInfo
 
             requests: list[RequestInfo] = []
-            for block in missing_blocks:
+            for block in dispatchable_blocks:
                 request_info = RequestInfo(
                     piece_index, block.begin, block.length, time.time()
                 )
@@ -4581,9 +4765,9 @@ class AsyncPieceManager:
 
                     # Request all allocated blocks, respecting soft capacity limits and throttling
                     # If peer is near capacity, still send requests but prioritize others next time
-                    requests_to_send = peer_requests
+                    requests_to_send = list(peer_requests)[:available_capacity]
                     if not peer_has_confirmed_piece(peer_connection):
-                        requests_to_send = peer_requests[:1]
+                        requests_to_send = requests_to_send[:1]
                         self._piece_selection_metrics["unknown_peer_probes"] += 1
                         self.logger.debug(
                             "PIECE_MANAGER: Limiting piece %d to a single probe request for unknown peer %s",
@@ -4650,7 +4834,7 @@ class AsyncPieceManager:
                                     len(peer_connection.outstanding_requests),
                                     peer_connection.max_pipeline_depth,
                                 )
-                            continue
+                            break
 
                         # Note: When throttling, use effective_max_pipeline consistently with can_request()
                         if throttle_requests:
@@ -4673,7 +4857,7 @@ class AsyncPieceManager:
                                     effective_max_pipeline,
                                     len(peer_connection.outstanding_requests),
                                 )
-                                continue
+                                break
                         else:
                             # Check available pipeline slots before requesting (normal mode)
                             available_slots = (
@@ -4684,7 +4868,7 @@ class AsyncPieceManager:
                                     "Skipping request to peer %s: no pipeline slots available",
                                     peer_key,
                                 )
-                                continue
+                                break
 
                         try:
                             sent = await peer_manager.request_piece(
@@ -4763,8 +4947,8 @@ class AsyncPieceManager:
 
             # IMPROVEMENT: Ensure minimum distribution, then distribute remainder
             # Calculate minimum blocks per peer
-            min_blocks = max(1, len(missing_blocks) // max(len(capable_peers), 1))
-            remaining_blocks = missing_blocks.copy()
+            min_blocks = max(1, len(dispatchable_blocks) // max(len(capable_peers), 1))
+            remaining_blocks = dispatchable_blocks.copy()
 
             # First pass: ensure minimum allocation to all peers
             for _i, peer_connection in enumerate(capable_peers):
@@ -4818,7 +5002,7 @@ class AsyncPieceManager:
                                 len(peer_connection.outstanding_requests),
                                 peer_connection.max_pipeline_depth,
                             )
-                        continue
+                        break
 
                     # Check available pipeline slots
                     available_slots = peer_connection.get_available_pipeline_slots()
@@ -4827,7 +5011,7 @@ class AsyncPieceManager:
                             "Skipping block request to peer %s: no pipeline slots available",
                             peer_key,
                         )
-                        continue
+                        break
 
                     try:
                         sent = await peer_manager.request_piece(
@@ -4837,7 +5021,7 @@ class AsyncPieceManager:
                             block.length,
                         )
                         if not sent:
-                            continue
+                            break
                         self._requested_piece_map_add(peer_key, piece_index)
                         request_time = time.time()
                         if piece_index not in self._active_block_requests:
@@ -4930,7 +5114,7 @@ class AsyncPieceManager:
                                     len(peer_connection.outstanding_requests),
                                     peer_connection.max_pipeline_depth,
                                 )
-                            continue
+                            break
 
                         # Check available pipeline slots
                         available_slots = peer_connection.get_available_pipeline_slots()
@@ -5316,6 +5500,7 @@ class AsyncPieceManager:
                         if hasattr(piece.state, "value")
                         else str(piece.state),
                     )
+                    self._schedule_pipeline_refill(piece_index)
 
                 # Update file progress if file selection manager exists
                 if self.file_selection_manager:
@@ -5401,6 +5586,78 @@ class AsyncPieceManager:
                     # Notify callback (after scheduling verification)
                     if self.on_piece_completed:
                         self.on_piece_completed(piece_index)
+
+    async def handle_request_cancelled(
+        self,
+        piece_index: int,
+        begin: int,
+        length: int,
+        peer_key: str,
+        *,
+        reason: str,
+        age: float,
+        timeout: float,
+    ) -> None:
+        """Synchronize piece bookkeeping after the transport cancels a request."""
+        should_refill = False
+        async with self.lock:
+            if not 0 <= piece_index < len(self.pieces):
+                return
+            piece = self.pieces[piece_index]
+            for block in piece.blocks:
+                if block.begin == begin and block.length == length:
+                    block.requested_from.discard(peer_key)
+                    break
+
+            peer_requests = self._active_block_requests.get(piece_index, {}).get(
+                peer_key
+            )
+            if peer_requests is not None:
+                before = len(peer_requests)
+                peer_requests[:] = [
+                    request
+                    for request in peer_requests
+                    if not (request[0] == begin and request[1] == length)
+                ]
+                removed = before - len(peer_requests)
+                if removed:
+                    self._piece_selection_metrics["active_block_requests"] = max(
+                        0,
+                        self._piece_selection_metrics["active_block_requests"]
+                        - removed,
+                    )
+                if not peer_requests:
+                    del self._active_block_requests[piece_index][peer_key]
+                if not self._active_block_requests.get(piece_index):
+                    self._active_block_requests.pop(piece_index, None)
+
+            peer_still_has_requests = bool(
+                self._active_block_requests.get(piece_index, {}).get(peer_key)
+            )
+            if not peer_still_has_requests:
+                self._requested_piece_map_discard(peer_key, piece_index)
+            should_refill = (
+                piece.state
+                in {
+                    PieceState.REQUESTED,
+                    PieceState.DOWNLOADING,
+                }
+                and not piece.is_complete()
+            )
+
+        self.logger.debug(
+            "Request ledger synchronized for cancelled block %d:%d:%d from %s "
+            "(reason=%s, age=%.1fs, timeout=%.1fs)",
+            piece_index,
+            begin,
+            length,
+            peer_key,
+            reason,
+            age,
+            timeout,
+        )
+        if should_refill:
+            self._schedule_pipeline_refill(piece_index)
 
     async def _hash_worker(
         self,
@@ -7833,6 +8090,15 @@ class AsyncPieceManager:
                                 youngest_age,
                                 post_handshake_grace,
                             )
+                            req = getattr(pm, "request_pending_resume", None)
+                            if callable(req):
+                                with contextlib.suppress(Exception):
+                                    req(reason="piece_selector_no_piece_info")
+                            elif hasattr(pm, "_schedule_pending_resume"):
+                                with contextlib.suppress(Exception):
+                                    pm._schedule_pending_resume(  # noqa: SLF001
+                                        reason="piece_selector_no_piece_info"
+                                    )
                         elif all(
                             getattr(p, "peer_choking", True) for p in active_peers
                         ):
@@ -9468,9 +9734,9 @@ class AsyncPieceManager:
 
                     # Note: If no request_ready peer can take this piece, distinguish:
                     # - remote_choked (peer_choking) vs pipeline_saturated (unchoked but full pipeline).
-                    # Do not label pipeline-saturated peers as "choked" in logs.
+                    # Do not select pipeline-saturated peers — dispatch would fail immediately and
+                    # pollute REQUESTED state while the in-flight pipeline continues downloading.
                     if not can_be_requested:
-                        pipeline_sat_peer_objs: list[Any] = []
                         remote_choked_peer_objs: list[Any] = []
                         for peer in peers_with_bitfield:
                             if not self._peer_has_piece_index(
@@ -9479,28 +9745,8 @@ class AsyncPieceManager:
                                 continue
                             if getattr(peer, "peer_choking", True):
                                 remote_choked_peer_objs.append(peer)
-                            else:
-                                pipeline_sat_peer_objs.append(peer)
 
-                        if pipeline_sat_peer_objs:
-                            picked_sat = self._round_robin_pick_peer(
-                                pipeline_sat_peer_objs
-                            )
-                            if picked_sat is not None:
-                                can_be_requested = True
-                                available_peer = f"{picked_sat.peer_info.ip}:{picked_sat.peer_info.port}"
-                                is_pipeline_blocked_selection = True
-                                is_choked = False
-                                self.logger.debug(
-                                    "✅ Allowing piece %d selection from peer %s (pipeline_saturated: "
-                                    "remote unchoked but not request_ready yet; "
-                                    "peers_with_piece_not_request_ready=%d, request_ready_count=%d)",
-                                    piece_idx,
-                                    available_peer,
-                                    len(pipeline_sat_peer_objs),
-                                    len(unchoked_peers),
-                                )
-                        elif remote_choked_peer_objs:
+                        if remote_choked_peer_objs:
                             picked_choked = self._round_robin_pick_peer(
                                 remote_choked_peer_objs
                             )
@@ -11680,6 +11926,7 @@ class AsyncPieceManager:
             )  # pragma: no cover - State restoration
             self.bytes_downloaded = checkpoint.download_stats.bytes_downloaded
             self.endgame_mode = checkpoint.endgame_mode
+            self._sanitize_checkpoint_progress_claims(checkpoint)
 
             if self._metadata_incomplete:
                 self._deferred_checkpoint = checkpoint.model_copy(deep=True)
