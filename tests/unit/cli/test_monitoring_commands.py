@@ -18,7 +18,7 @@ class TestDashboardCommand:
     """Test dashboard CLI command."""
 
     @patch("ccbt.interface.terminal_dashboard.run_dashboard")
-    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._prepare_dashboard_session")
     @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
     @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
     def test_dashboard_basic(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
@@ -42,7 +42,7 @@ class TestDashboardCommand:
         mock_run_dashboard.assert_called_once()
 
     @patch("ccbt.interface.terminal_dashboard.run_dashboard")
-    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._prepare_dashboard_session")
     @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
     @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
     def test_dashboard_with_rules_success(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
@@ -73,7 +73,7 @@ class TestDashboardCommand:
             rules_path.unlink(missing_ok=True)
 
     @patch("ccbt.interface.terminal_dashboard.run_dashboard")
-    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._prepare_dashboard_session")
     @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
     @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
     def test_dashboard_with_rules_failure(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):
@@ -100,7 +100,7 @@ class TestDashboardCommand:
         mock_run_dashboard.assert_called_once()
 
     @patch("ccbt.interface.terminal_dashboard.run_dashboard")
-    @patch("ccbt.interface.terminal_dashboard._ensure_daemon_running")
+    @patch("ccbt.interface.terminal_dashboard._prepare_dashboard_session")
     @patch("ccbt.interface.terminal_dashboard._show_startup_splash")
     @patch("ccbt.interface.daemon_session_adapter.DaemonInterfaceAdapter")
     def test_dashboard_error(self, mock_adapter, mock_splash, mock_ensure_daemon, mock_run_dashboard):

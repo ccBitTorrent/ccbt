@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import sys
 from typing import Any, Optional
 
 import click
@@ -50,9 +49,8 @@ def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
     import click
 
     from ccbt.cli.verbosity import get_verbosity_from_ctx
-    from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
     from ccbt.interface.terminal_dashboard import (
-        _ensure_daemon_running,
+        _prepare_dashboard_session,
         _show_startup_splash,
         run_dashboard,
     )
@@ -74,12 +72,12 @@ def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
     )
     # ALWAYS use daemon - try to ensure it's running
     try:
-        success, ipc_client = asyncio.run(
-            _ensure_daemon_running(splash_manager=splash_manager)
+        import sys
+
+        success, session = asyncio.run(
+            _prepare_dashboard_session(splash_manager=splash_manager)
         )
-        if success and ipc_client:
-            # Create daemon interface adapter
-            session = DaemonInterfaceAdapter(ipc_client)
+        if success and session:
             if not splash_manager:  # Only print if splash not shown
                 console.print(_("[green]Connected to daemon[/green]"))
         else:
@@ -104,6 +102,11 @@ def dashboard(refresh: float, rules: Optional[str], no_splash: bool) -> None:
     if session is None:
         console.print(_("[red]Failed to create session[/red]"))
         raise click.ClickException(SESSION_CREATION_FAILED_MSG)
+
+    if sys.platform == "win32":
+        import time
+
+        time.sleep(0.5)
 
     try:
         # CRITICAL: Do NOT call session.start() here in a throwaway asyncio.run().

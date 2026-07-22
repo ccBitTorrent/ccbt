@@ -112,6 +112,8 @@ class ManagerBackgroundTasks:
 
     def _aggregate_torrent_stats(self) -> dict[str, Any]:
         """Aggregate statistics from all torrents."""
+        from ccbt.session.session import AsyncSessionManager
+
         total_downloaded = 0
         total_uploaded = 0
         total_left = 0
@@ -136,8 +138,12 @@ class ManagerBackgroundTasks:
                     cached_peer_count = len(peer_state) if peer_state else 0
             if isinstance(cached_peer_count, (int, float)):
                 total_peers += int(cached_peer_count)
-            total_download_rate += torrent.download_rate
-            total_upload_rate += torrent.upload_rate
+            live_down, live_up = AsyncSessionManager.live_transfer_rates(
+                torrent,
+                cached if isinstance(cached, dict) else None,
+            )
+            total_download_rate += float(live_down or 0.0)
+            total_upload_rate += float(live_up or 0.0)
 
         return {
             "total_torrents": len(self.manager.torrents),

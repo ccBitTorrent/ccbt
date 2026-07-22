@@ -15,6 +15,11 @@ from ccbt.storage.xet_deduplication import XetDeduplication
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
 
+def _chunk_hash(label: bytes) -> bytes:
+    """Build a deterministic 32-byte chunk hash for tests."""
+    return (label * 16)[:32]
+
+
 class TestXetDataAggregator:
     """Test XetDataAggregator class."""
 
@@ -75,8 +80,8 @@ class TestXetDataAggregator:
         chunk_data_list = [b"Chunk1", b"Chunk2", b"Chunk3"]
 
         # Store chunks
-        for chunk_data in chunk_data_list:
-            chunk_hash = bytes([len(chunk_hashes)] * 32)
+        for index, chunk_data in enumerate(chunk_data_list):
+            chunk_hash = _chunk_hash(f"c{index}".encode())
             chunk_hashes.append(chunk_hash)
             await dedup.store_chunk(chunk_hash, chunk_data)
 
@@ -154,8 +159,8 @@ class TestXetDataAggregator:
         chunk_data_list = [b"Read chunk 1", b"Read chunk 2", b"Read chunk 3"]
 
         # Store chunks
-        for chunk_data in chunk_data_list:
-            chunk_hash = bytes([len(chunk_hashes)] * 32)
+        for index, chunk_data in enumerate(chunk_data_list):
+            chunk_hash = _chunk_hash(f"r{index}".encode())
             chunk_hashes.append(chunk_hash)
             await dedup.store_chunk(chunk_hash, chunk_data)
 
@@ -209,7 +214,8 @@ class TestXetDataAggregator:
         """Test batch storing large number of chunks."""
         # Create 50 chunks
         chunks = [
-            (bytes([i] * 32), f"Chunk {i}".encode()) for i in range(50)
+            (_chunk_hash(f"b{i:02d}".encode()), f"Chunk {i}".encode())
+            for i in range(50)
         ]
 
         # Store in batch (should handle batching internally)

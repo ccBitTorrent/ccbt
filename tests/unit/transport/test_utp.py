@@ -223,7 +223,7 @@ class TestUTPConnection:
         mock_socket_manager = AsyncMock()
         mock_socket_manager.get_transport = Mock(return_value=mock_transport)
         mock_socket_manager.register_connection = Mock()
-        utp_connection.utp_socket_manager = mock_socket_manager
+        utp_connection.socket_manager = mock_socket_manager
 
         await utp_connection.initialize_transport()
         assert utp_connection.transport == mock_transport
@@ -606,7 +606,7 @@ class TestUTPConnection:
         # Mock socket manager
         mock_socket_manager = AsyncMock()
         mock_socket_manager.unregister_connection = Mock()
-        utp_connection.utp_socket_manager = mock_socket_manager
+        utp_connection.socket_manager = mock_socket_manager
 
         await utp_connection.close()
         assert utp_connection.state == UTPConnectionState.CLOSED
@@ -741,6 +741,7 @@ class TestUTPSocketManager:
                     assert manager1 is not manager2
 
                     await manager1.stop()
+                    await manager2.stop()
 
     @pytest.mark.asyncio
     async def test_register_connection(self, socket_manager, mock_config, remote_addr):
@@ -1450,7 +1451,7 @@ class TestUTPIntegration:
             # Mock socket manager to raise error
             mock_socket_manager = AsyncMock()
             mock_socket_manager.unregister_connection = Mock(side_effect=Exception("Error"))
-            conn.utp_socket_manager = mock_socket_manager
+            conn.socket_manager = mock_socket_manager
 
             await conn.close()
             assert conn.state == UTPConnectionState.CLOSED

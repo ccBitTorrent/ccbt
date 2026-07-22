@@ -89,7 +89,7 @@ class GlobalKPIsPanel(Static):  # type: ignore[misc]
 
     def watch_global_kpis(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: render KPIs from the bound dict (F2.6.2)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self.update(self._render_kpis(value))
 
     def _render_kpis(self, kpis: dict[str, Any]) -> Panel:

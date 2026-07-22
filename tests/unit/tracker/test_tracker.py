@@ -601,7 +601,7 @@ class TestAsyncTrackerClientTrackerResilience:
 
         client._handle_tracker_failure(
             tracker_url,
-            failure_reason="Invalid tracker payload (not bencode)",
+            failure_reason="Invalid tracker payload (json-like payload) for tracker response",
         )
         first_session = client.sessions[tracker_url]
         assert first_session.failure_streak == 1
@@ -609,11 +609,19 @@ class TestAsyncTrackerClientTrackerResilience:
 
         client._handle_tracker_failure(
             tracker_url,
-            failure_reason="Invalid tracker payload (not bencode)",
+            failure_reason="Invalid tracker payload (json-like payload) for tracker response",
         )
         second_session = client.sessions[tracker_url]
         assert second_session.failure_streak == 2
-        assert second_session.quarantine_until > time.time()
+        assert second_session.quarantine_until == 0.0
+
+        client._handle_tracker_failure(
+            tracker_url,
+            failure_reason="Invalid tracker payload (json-like payload) for tracker response",
+        )
+        third_session = client.sessions[tracker_url]
+        assert third_session.failure_streak == 3
+        assert third_session.quarantine_until > time.time()
 
     def test_tracker_session_quarantine_on_html_payload_on_first_failure(self) -> None:
         """HTML payloads should quarantine immediately because they are invalid tracker APIs."""

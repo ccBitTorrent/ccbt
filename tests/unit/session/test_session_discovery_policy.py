@@ -16,6 +16,10 @@ def _build_session() -> SimpleNamespace:
     """Build a lightweight session object with only required discovery-policy attributes."""
     return SimpleNamespace(
         logger=MagicMock(),
+        config=SimpleNamespace(
+            discovery=SimpleNamespace(max_tracker_urls_per_torrent=0),
+        ),
+        info=SimpleNamespace(name="test-torrent"),
         _emit_discovery_suppressed_metric=MagicMock(),
         _authenticated_discovery_mode=lambda: "trackers_only",
         _discovery_strict_mode_active=lambda: True,

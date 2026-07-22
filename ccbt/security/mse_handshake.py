@@ -39,6 +39,30 @@ class CipherType(IntEnum):
     CHACHA20 = 0x03
 
 
+def is_probable_mse_lead(prefix: bytes) -> bool:
+    """Return True when prefix bytes look like an MSE/PE length-prefixed lead."""
+    if len(prefix) < 4:
+        return False
+
+    length = struct.unpack("!I", prefix[:4])[0]
+    if prefix[0] == 19:
+        return False
+
+    if 96 <= length <= 700:
+        return True
+
+    if 2 <= length <= 4096 and len(prefix) >= 5:
+        frame_type = prefix[4]
+        if frame_type in (
+            int(MSEHandshakeType.SKEYE),
+            int(MSEHandshakeType.RKEYE),
+            int(MSEHandshakeType.CRYPTO),
+        ):
+            return True
+
+    return False
+
+
 class MSEHandshakeReadFailureReason(Enum):
     """Typed reasons for MSE handshake message read failures."""
 
@@ -1039,7 +1063,6 @@ class MSEHandshake:
             # Check if it looks like MSE message length (reasonable size)
             # MSE messages typically start with 4-byte length
             # BitTorrent handshake starts with 1-byte protocol length (19)
-            length = struct.unpack("!I", first_bytes)[0]
 
             # BitTorrent handshake format: [1 byte len][19 bytes protocol][8 bytes reserved][20 bytes info_hash][20 bytes peer_id]
             # First byte is always 19 (0x13) for "BitTorrent protocol"
@@ -1049,7 +1072,7 @@ class MSEHandshake:
 
             # Post-transcript lead lengths are raw DH payloads:
             # 96 (768-bit group), 128 (1024-bit group) plus optional pad.
-            if 96 <= length <= 700:
+            if is_probable_mse_lead(first_bytes):
                 return True, first_bytes
 
             # Doesn't match expected patterns - assume plain

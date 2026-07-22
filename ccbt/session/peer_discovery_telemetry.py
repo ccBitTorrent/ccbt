@@ -10,6 +10,8 @@ import contextlib
 import time
 from typing import Any, Mapping, Optional
 
+from ccbt.monitoring import get_metrics_collector
+
 
 def _percentile(values: list[float], q: float) -> float:
     if not values:
@@ -30,8 +32,6 @@ def _bump_connect_submit_counts(metrics: dict[str, Any], status: str) -> None:
 
 def _global_connect_submit_counter(status: str) -> None:
     with contextlib.suppress(Exception):
-        from ccbt.monitoring import get_metrics_collector
-
         coll = get_metrics_collector()
         coll.increment_counter(
             "peer_discovery_connect_submit_total",
@@ -80,8 +80,6 @@ def record_batch_and_deferral_transition(
         dkey = "to_active" if deferral_active else "to_idle"
         dbucket[dkey] = int(dbucket.get(dkey, 0) or 0) + 1
     with contextlib.suppress(Exception):
-        from ccbt.monitoring import get_metrics_collector
-
         coll = get_metrics_collector()
         if batch_owner_active is not None:
             coll.increment_counter(
@@ -105,8 +103,6 @@ def record_pending_resume_edge(peer_manager: Any, reason: str) -> None:
         t = d.setdefault("pending_resume_edge_trigger_total", {})
         t[edge] = int(t.get(edge, 0) or 0) + 1
     with contextlib.suppress(Exception):
-        from ccbt.monitoring import get_metrics_collector
-
         get_metrics_collector().increment_counter(
             "peer_discovery_pending_resume_edge_total",
             1,
@@ -122,8 +118,6 @@ def record_pending_resume_suppressed_inflight(peer_manager: Any) -> None:
             int(d.get("pending_resume_suppressed_inflight_only_total", 0) or 0) + 1
         )
     with contextlib.suppress(Exception):
-        from ccbt.monitoring import get_metrics_collector
-
         get_metrics_collector().increment_counter(
             "peer_discovery_pending_resume_suppressed_inflight_total", 1
         )
@@ -182,8 +176,6 @@ def observe_pending_peer_queue(peer_manager: Any) -> None:
     else:
         d["pending_ingress_drop_ratio"] = 0.0
     with contextlib.suppress(Exception):
-        from ccbt.monitoring import get_metrics_collector
-
         coll = get_metrics_collector()
         coll.set_gauge("peer_discovery_pending_queue_depth", float(depth))
         coll.set_gauge("peer_discovery_pending_queue_age_p95_s", d["pending_age_p95_s"])
@@ -230,6 +222,8 @@ _ALLOWED_RESUME_REASONS: frozenset[str] = frozenset(
         "inflight_drained",
         "status_loop_stall",
         "piece_selector_no_piece_info",
+        "zero_active_reentrant_drain",
+        "stale_batch_owner_reset",
     }
 )
 
@@ -267,10 +261,76 @@ def observe_udp_tracker_pending_window(pending_count: int) -> None:
     when sampled, throttled by the UDP client to ~4 Hz).
     """
     with contextlib.suppress(Exception):
-        from ccbt.monitoring import get_metrics_collector
-
         coll = get_metrics_collector()
         v = float(pending_count)
         coll.set_gauge("discovery_udp_tracker_pending_requests", v)
         coll.record_histogram("discovery_udp_tracker_pending_requests_sample", v)
         coll.increment_counter("discovery_udp_tracker_pending_gauge_updates_total", 1)
+
+
+def record_swarm_role_snapshot(peer_manager: Any) -> dict[str, int]:
+    """Publish distinct transport and payload-capacity roles for one torrent."""
+    connections = list(getattr(peer_manager, "connections", {}).values())
+    roles = {
+        "total": len(connections),
+        "active": 0,
+        "choked": 0,
+        "unchoked_supplier": 0,
+        "request_ready": 0,
+        "pipeline_busy": 0,
+    }
+    has_piece_info = getattr(peer_manager, "_connection_has_piece_info", None)
+    for connection in connections:
+        try:
+            active = bool(connection.is_active())
+        except Exception:
+            active = False
+        if not active:
+            continue
+        roles["active"] += 1
+        if bool(getattr(connection, "peer_choking", True)):
+            roles["choked"] += 1
+            continue
+        piece_info = True
+        if callable(has_piece_info):
+            with contextlib.suppress(Exception):
+                piece_info = bool(has_piece_info(connection))
+        if piece_info:
+            roles["unchoked_supplier"] += 1
+        try:
+            ready = bool(connection.can_request())
+        except Exception:
+            ready = False
+        if ready:
+            roles["request_ready"] += 1
+            continue
+        outstanding = len(getattr(connection, "outstanding_requests", {}) or {})
+        capacity = int(getattr(connection, "max_pipeline_depth", 0) or 0)
+        if piece_info and capacity > 0 and outstanding >= capacity:
+            roles["pipeline_busy"] += 1
+
+    metrics = _peer_metrics_dict(peer_manager)
+    if metrics is not None:
+        metrics["swarm_role_snapshot"] = dict(roles)
+    with contextlib.suppress(Exception):
+        collector = get_metrics_collector()
+        for role, value in roles.items():
+            collector.set_gauge(f"peer_swarm_{role}", float(value))
+    return roles
+
+
+def record_event_loop_lag(peer_manager: Any, lag_s: float) -> None:
+    """Record event-loop scheduling delay without emitting hot-path logs."""
+    lag = max(0.0, float(lag_s))
+    metrics = _peer_metrics_dict(peer_manager)
+    if metrics is not None:
+        samples = metrics.setdefault("event_loop_lag_samples_s", [])
+        if isinstance(samples, list):
+            if len(samples) >= 2000:
+                del samples[: len(samples) - 1999]
+            samples.append(lag)
+            metrics["event_loop_lag_p95_s"] = _percentile(
+                [float(value) for value in samples], 0.95
+            )
+    with contextlib.suppress(Exception):
+        get_metrics_collector().record_histogram("peer_event_loop_lag_s", lag)

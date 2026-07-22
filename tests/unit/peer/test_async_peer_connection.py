@@ -19,7 +19,9 @@ from ccbt.peer.async_peer_connection import (
     AsyncPeerConnectionManager,
     ConnectionState,
     MsePlainFallbackRetrySlot,
+    PeerConnectionError,
     RequestInfo,
+    _bitfield_completion,
     _connect_batch_max_duration_s,
 )
 from ccbt.peer.peer import (
@@ -40,12 +42,48 @@ from ccbt.utils.exceptions import MessageError
 from ccbt.utils.shutdown import clear_shutdown, set_shutdown
 
 
+async def _cancel_reconnection_task(manager: AsyncPeerConnectionManager) -> None:
+    """Stop background reconnection work started by the peer manager."""
+    task = manager._reconnection_task
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    manager._reconnection_task = None
+
+
+async def _cancel_stray_connect_tasks() -> None:
+    """Cancel leftover connect_peer tasks from connect_to_peers batch tests."""
+    pending = [
+        task
+        for task in asyncio.all_tasks()
+        if not task.done() and task.get_name().startswith("connect_peer:")
+    ]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+def _disable_pool_warmup_for_tests(
+    manager: AsyncPeerConnectionManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prevent connect_to_peers from opening real sockets during unit tests."""
+    manager.config.network.connection_pool_warmup_enabled = False
+    monkeypatch.setattr(
+        manager.connection_pool,
+        "warmup_connections",
+        AsyncMock(return_value=None),
+    )
+
+
 @pytest.fixture
 def mock_torrent_data():
     """Create mock torrent data."""
     return {
         "info_hash": b"test_info_hash_20byt",  # Exactly 20 bytes
         "pieces_info": {"num_pieces": 100},
+        "file_info": {"total_length": 1},
     }
 
 
@@ -54,6 +92,8 @@ def mock_piece_manager():
     """Create mock piece manager."""
     manager = MagicMock()
     manager.verified_pieces = [0, 1, 2]
+    manager.num_pieces = 100
+    manager._metadata_incomplete = False
     manager.get_block = MagicMock(return_value=b"test_block_data")
     # Note: update_peer_availability is async, so it needs to be AsyncMock
     manager.update_peer_availability = AsyncMock(return_value=None)
@@ -79,12 +119,9 @@ async def peer_manager(mock_torrent_data, mock_piece_manager):
     try:
         yield manager
     finally:
-        # Note: Ensure proper cleanup
-        try:
+        await _cancel_reconnection_task(manager)
+        with contextlib.suppress(Exception):
             await manager.stop()
-        except Exception:
-            # Ignore errors during cleanup
-            pass
         from ccbt.utils.network_optimizer import reset_network_optimizer
 
         reset_network_optimizer()
@@ -109,12 +146,12 @@ async def test_effective_bitfield_have_wait_timeout_metadata_multiplier(
     )
     manager.config.network.bitfield_have_wait_timeout_s = 100.0
     manager.config.network.bitfield_have_wait_metadata_incomplete_multiplier = 2.0
-    assert manager._effective_bitfield_have_wait_timeout_s() == 200.0
+    assert manager.effective_bitfield_have_wait_timeout_s() == 200.0
     manager.config.network.bitfield_have_wait_metadata_incomplete_multiplier = 1.0
-    assert manager._effective_bitfield_have_wait_timeout_s() == 100.0
+    assert manager.effective_bitfield_have_wait_timeout_s() == 100.0
     mock_piece_manager._metadata_incomplete = False
     mock_piece_manager.num_pieces = 100
-    assert manager._effective_bitfield_have_wait_timeout_s() == 100.0
+    assert manager.effective_bitfield_have_wait_timeout_s() == 100.0
     await manager.stop()
 
 
@@ -139,8 +176,11 @@ async def test_peer_manager_context_manager(mock_torrent_data, mock_piece_manage
 
 
 @pytest.mark.asyncio
-async def test_connect_to_peers_success(peer_manager, peer_info):
+async def test_connect_to_peers_success(peer_manager, peer_info, monkeypatch):
     """Test successful peer connection."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
 
     # Mock the connection process
@@ -250,9 +290,12 @@ async def test_connect_to_peers_success(peer_manager, peer_info):
 
 @pytest.mark.asyncio
 async def test_outbound_magnet_peer_sends_proactive_extension_handshake(
-    peer_manager, peer_info
+    peer_manager, peer_info, monkeypatch
 ):
     """Magnet peers should proactively send BEP 10 handshake after the base handshake."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_manager.piece_manager._metadata_incomplete = True
     peer_manager.piece_manager.num_pieces = 0
     peer_manager.torrent_data["file_info"] = None
@@ -463,10 +506,13 @@ async def test_connect_to_peers_connection_failure(peer_manager, peer_info):
 
 
 @pytest.mark.asyncio
-async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
+async def test_connect_to_peers_outer_timeout_covers_tcp_and_handshake(
     peer_manager, peer_info, monkeypatch
 ):
-    """Per-peer timeout in connect_to_peers should follow adaptive handshake timeout."""
+    """Per-peer timeout in connect_to_peers must cover TCP connect(s) plus handshake."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_list = [{"ip": peer_info.ip, "port": peer_info.port}]
     adaptive_timeout = 0.25
     monkeypatch.setattr(
@@ -474,11 +520,19 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
         "_calculate_adaptive_handshake_timeout",
         lambda: adaptive_timeout,
     )
+    monkeypatch.setattr(peer_manager, "_estimate_tcp_connect_budget_s", lambda: 0.05)
+    monkeypatch.setattr(peer_manager, "get_active_peers", lambda: [])
+    monkeypatch.setattr(
+        peer_manager,
+        "_cap_connect_task_timeout_s",
+        lambda _timeout: 0.4,
+    )
+    expected_timeout = peer_manager._connect_task_timeout_s()
 
     # _connect_to_peer is patched to avoid inner transport logic; it must exceed the
     # outer timeout so the wrapper path is exercised.
     async def slow_connect(_: PeerInfo) -> None:
-        await asyncio.sleep(adaptive_timeout * 4)
+        await asyncio.sleep(expected_timeout + 0.1)
 
     peer_manager._connect_to_peer = AsyncMock(side_effect=slow_connect)
 
@@ -495,18 +549,20 @@ async def test_connect_to_peers_outer_timeout_matches_adaptive_handshake(
     ):
         await peer_manager.connect_to_peers(peer_list)
 
-    # The per-peer connect wrapper must use the adaptive handshake timeout. Batch-level
-    # gather waits may record larger timeouts first; assert the adaptive value appears.
     assert captured_timeouts
-    assert adaptive_timeout in captured_timeouts
+    assert expected_timeout in captured_timeouts
+    assert expected_timeout > adaptive_timeout
     assert len(peer_manager.connections) == 0
 
 
 @pytest.mark.asyncio
 async def test_connect_to_peers_rejects_outbound_when_swarm_auth_denies(
-    peer_manager, peer_info
+    peer_manager, peer_info, monkeypatch
 ):
     """Outbound swarm-auth decision should abort connection attempts."""
+    peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_manager.torrent_data["info_hash"] = b"x" * 20
 
     mock_reader = AsyncMock()
@@ -700,6 +756,17 @@ async def test_connect_to_peers_uses_pipeline_with_low_active_peer_count(
     peer_manager._running = True
     peer_manager.max_peers_per_torrent = 10
     peer_manager.connections.clear()
+    peer_manager.config.network.connection_pool_warmup_enabled = False
+    monkeypatch.setattr(
+        peer_manager.connection_pool,
+        "warmup_connections",
+        AsyncMock(return_value=None),
+    )
+    if peer_manager._reconnection_task and not peer_manager._reconnection_task.done():
+        peer_manager._reconnection_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await peer_manager._reconnection_task
+        peer_manager._reconnection_task = None
 
     peer_list = [
         {"ip": f"198.51.100.{idx}", "port": 6100 + idx, "peer_source": "tracker"}
@@ -725,6 +792,8 @@ async def test_connect_to_peers_recycles_stale_unchoke_peer_faster_when_sparse(
 ):
     """Sparse swarms should recycle stale-unchoke failures without waiting full backoff."""
     peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     peer_manager._failed_peers["203.0.113.77:6881"] = {
         "timestamp": time.time() - 20.0,
         "count": 4,
@@ -794,9 +863,11 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
     peer_manager._running = True
     peer_manager.max_peers_per_torrent = 60
     peer_manager.config.network.enable_fail_fast_dht = True
-    peer_manager.config.network.max_concurrent_connection_attempts = 60
+    peer_manager.config.network.max_concurrent_connection_attempts = 2
     peer_manager._connect_to_peer = AsyncMock(side_effect=ConnectionError("refused"))
     peer_manager._calculate_adaptive_handshake_timeout = lambda: 0.01
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
 
     emitted_events: list[object] = []
 
@@ -806,7 +877,7 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
 
     peer_manager._event_bus = _EventBus()
 
-    peer_list = [{"ip": "198.51.100.1", "port": 6200 + idx} for idx in range(95)]
+    peer_list = [{"ip": "198.51.100.1", "port": 6200 + idx} for idx in range(12)]
 
     monkeypatch.setattr(
         peer_manager,
@@ -814,7 +885,11 @@ async def test_connect_to_peers_all_fail_triggers_low_peer_recovery_event(
         AsyncMock(side_effect=lambda peers: peers),
     )
 
-    await peer_manager.connect_to_peers(peer_list)
+    try:
+        await peer_manager.connect_to_peers(peer_list)
+    finally:
+        await _cancel_reconnection_task(peer_manager)
+        await _cancel_stray_connect_tasks()
 
     assert len(peer_manager.connections) == 0
     assert any(isinstance(event, PeerCountLowEvent) for event in emitted_events)
@@ -1068,6 +1143,88 @@ async def test_request_piece(peer_manager, peer_info):
         assert call_args[1].piece_index == 0
         assert call_args[1].begin == 0
         assert call_args[1].length == 16384
+
+
+@pytest.mark.asyncio
+async def test_request_piece_acknowledges_only_exact_wire_request(
+    peer_manager,
+    peer_info,
+):
+    """A queued request sent for another caller must not acknowledge this block."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info,
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_choking = False
+    connection.max_pipeline_depth = 1
+    connection.writer = MagicMock()
+    connection.writer.drain = AsyncMock()
+    older_request = RequestInfo(1, 0, 16384, time.time())
+    connection._priority_queue = [(-999.0, time.time(), older_request)]
+
+    with patch.object(
+        peer_manager,
+        "_send_message",
+        new_callable=AsyncMock,
+    ) as mock_send:
+        sent = await peer_manager.request_piece(connection, 2, 0, 16384)
+
+    assert sent is False
+    assert mock_send.await_args.args[1].piece_index == 1
+    assert (1, 0, 16384) in connection.outstanding_requests
+    assert (2, 0, 16384) not in connection.outstanding_requests
+    assert connection._priority_queue == []
+
+
+@pytest.mark.asyncio
+async def test_request_piece_rolls_back_outstanding_when_send_fails(
+    peer_manager,
+    peer_info,
+):
+    """Failed writes must not leave phantom outstanding requests."""
+    connection = AsyncPeerConnection(
+        peer_info=peer_info,
+        torrent_data=peer_manager.torrent_data,
+    )
+    connection.state = ConnectionState.ACTIVE
+    connection.peer_choking = False
+    connection.writer = MagicMock()
+    connection.writer.drain = AsyncMock()
+
+    with (
+        patch.object(
+            peer_manager,
+            "_send_message",
+            new_callable=AsyncMock,
+            side_effect=ConnectionError("write failed"),
+        ),
+        pytest.raises(ConnectionError, match="write failed"),
+    ):
+        await peer_manager.request_piece(connection, 2, 0, 16384)
+
+    assert connection.outstanding_requests == {}
+
+
+@pytest.mark.asyncio
+async def test_pool_acquire_failure_does_not_open_unleased_tcp(
+    peer_manager,
+    peer_info,
+):
+    """Pool admission failure must end the attempt without direct TCP fallback."""
+    peer_manager.connection_pool.acquire = AsyncMock(return_value=None)
+
+    with (
+        patch.object(
+            peer_manager,
+            "_open_tcp_with_semaphore",
+            new_callable=AsyncMock,
+        ) as open_tcp,
+        pytest.raises(PeerConnectionError, match="Failed to establish TCP connection"),
+    ):
+        await peer_manager._connect_to_peer(peer_info)
+
+    open_tcp.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1720,6 +1877,8 @@ async def test_low_download_diversity_hysteresis_delays_exit_from_full_unchoke(
     peer_manager.config.network.low_download_diversity_full_unchoke = True
     peer_manager.config.network.low_download_diversity_use_hysteresis = True
     peer_manager.config.network.low_download_diversity_exit_margin = 1
+    # Isolate hysteresis behavior from leech-heavy upload slot expansion.
+    peer_manager.config.network.leech_heavy_swarm_total_upload_bps_threshold = 0.0
 
     def _wired_peer(ip: str, port: int, *, peer_choking: bool) -> AsyncPeerConnection:
         c = AsyncPeerConnection(
@@ -1834,8 +1993,9 @@ async def test_monitor_unchoke_timeout_triggers_hard_recovery(
     connection.am_interested = True
     peer_manager.connections[str(peer_info)] = connection
 
-    # Second active peer so the unchoke monitor uses the normal 30s threshold (not the
-    # solo-peer 180s anti-collapse window).
+    # Fill the local peer budget and provide a replacement candidate so capacity-aware
+    # retention uses the normal hard timeout rather than the sparse-swarm grace window.
+    peer_manager.max_peers_per_torrent = 2
     decoy = PeerInfo(ip="127.0.0.2", port=6882)
     decoy_conn = AsyncPeerConnection(
         peer_info=decoy,
@@ -1844,6 +2004,9 @@ async def test_monitor_unchoke_timeout_triggers_hard_recovery(
     decoy_conn.state = ConnectionState.ACTIVE
     decoy_conn.peer_choking = False
     peer_manager.connections[str(decoy)] = decoy_conn
+    peer_manager._pending_peer_queue = [
+        PeerInfo(ip="127.0.0.3", port=6883, peer_source="tracker")
+    ]
 
     disconnect_mock = AsyncMock()
     record_failure_mock = AsyncMock()
@@ -2206,6 +2369,8 @@ async def test_connect_to_peers_preserves_peer_completion_context(
 ):
     """Completion context hints are carried per peer into _connect_to_peer inputs."""
     peer_manager._running = True
+    _disable_pool_warmup_for_tests(peer_manager, monkeypatch)
+    await _cancel_reconnection_task(peer_manager)
     captured_peers = []
 
     async def fake_connect_to_peer(peer_info: PeerInfo) -> None:
@@ -2223,7 +2388,11 @@ async def test_connect_to_peers_preserves_peer_completion_context(
         {"ip": "192.0.2.2", "port": 6882, "complete": True, "completion_percent": 0.0},
     ]
 
-    await peer_manager.connect_to_peers(peer_list)
+    try:
+        await peer_manager.connect_to_peers(peer_list)
+    finally:
+        await _cancel_reconnection_task(peer_manager)
+        await _cancel_stray_connect_tasks()
 
     by_ip = {peer.ip: peer for peer in captured_peers}
     assert by_ip["192.0.2.1"].is_seeder is False
@@ -3038,6 +3207,10 @@ async def test_monitor_unchoke_timeout_defers_seed_anchor_before_recovery(
     decoy_conn.state = ConnectionState.ACTIVE
     decoy_conn.peer_choking = False
     peer_manager.connections[str(decoy)] = decoy_conn
+    peer_manager.max_peers_per_torrent = 2
+    peer_manager._pending_peer_queue = [
+        PeerInfo(ip="127.0.0.3", port=6883, peer_source="tracker")
+    ]
 
     disconnect_mock = AsyncMock()
     record_failure_mock = AsyncMock()
@@ -3806,6 +3979,62 @@ def test_notify_requestable_peer_deficit_is_hysteresis_gated(peer_manager) -> No
     schedule_mock.assert_not_called()
 
 
+def test_notify_requestable_peer_deficit_preserves_supplier_redundancy(
+    peer_manager,
+) -> None:
+    """Recent payload must not stop growth with only two requestable suppliers."""
+    peer_manager._pending_peer_queue = [PeerInfo(ip="198.51.100.2", port=6881)]  # noqa: SLF001
+    peer_manager._running = True  # noqa: SLF001
+    peer_manager._requestable_deficit_notify_min_interval_s = 0.0  # noqa: SLF001
+    peer_manager._requestable_deficit_last_notified_at = 0.0  # noqa: SLF001
+    with (
+        patch.object(
+            peer_manager,
+            "_snapshot_connection_counts",
+            return_value=(3, 3, 2),
+        ),
+        patch.object(
+            peer_manager, "_has_recent_productive_download", return_value=True
+        ),
+        patch.object(peer_manager, "_schedule_pending_resume") as schedule_mock,
+    ):
+        peer_manager.notify_requestable_peer_deficit()
+
+    schedule_mock.assert_called_once_with(reason="requestable_peer_deficit")
+
+
+def test_packed_bitfield_completion_ignores_padding_bits() -> None:
+    """Seeder detection must count packed bits, including partial final bytes."""
+    assert _bitfield_completion(b"\xff\x80", 9) == 1.0
+    assert _bitfield_completion(b"\x80", 8) == pytest.approx(0.125)
+    assert _bitfield_completion(b"\xff", 9) == pytest.approx(8 / 9)
+
+
+def test_request_coalescing_preserves_exact_block_boundaries(peer_manager) -> None:
+    """Adjacent standard blocks remain separate BEP 3 requests."""
+    requests = [
+        RequestInfo(1, 0, 16384, 1.0),
+        RequestInfo(1, 16384, 16384, 2.0),
+    ]
+    assert peer_manager._coalesce_requests(requests) == requests
+
+
+def test_adaptive_pipeline_grows_for_high_latency_peer(peer_manager) -> None:
+    """High RTT requires more in-flight blocks instead of shrinking the pipeline."""
+    peer_manager.config.network.pipeline_depth = 16
+    peer_manager.config.network.pipeline_min_depth = 4
+    peer_manager.config.network.pipeline_max_depth = 128
+    peer_manager.config.network.block_size_kib = 16
+    connection = MagicMock()
+    connection.stats = SimpleNamespace(
+        average_block_latency=0.8,
+        request_latency=0.8,
+        download_rate=512 * 1024,
+    )
+
+    assert peer_manager._calculate_pipeline_depth(connection) > 16
+
+
 def test_order_peer_scores_tracker_before_dht_preserves_intra_bucket_order(
     peer_manager,
 ) -> None:
@@ -3843,21 +4072,26 @@ class TestConnectBatchMaxDuration:
     """_connect_batch_max_duration_s: patience when few actives, bounded on large swarms."""
 
     def test_few_active_peers_get_long_budget(self) -> None:
-        assert _connect_batch_max_duration_s(0) == 45.0
+        assert _connect_batch_max_duration_s(0) == 60.0
         assert _connect_batch_max_duration_s(1) == 45.0
         assert _connect_batch_max_duration_s(2) == 45.0
 
     def test_mid_swarm_uses_short_budget(self) -> None:
-        assert _connect_batch_max_duration_s(3) == 20.0
-        assert _connect_batch_max_duration_s(49) == 20.0
+        # Below swarm growth target (default 50 → 12), batches stay on the 45s budget.
+        assert _connect_batch_max_duration_s(3) == 45.0
+        assert _connect_batch_max_duration_s(11, max_peers_per_torrent=50) == 45.0
+        # At/above growth target with healthy requestable peers, mid-swarm uses 20s.
+        assert _connect_batch_max_duration_s(15, requestable_peer_count=3) == 20.0
+        assert _connect_batch_max_duration_s(49, requestable_peer_count=2) == 20.0
 
     def test_mid_swarm_short_when_no_extension_signals(self) -> None:
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=0,
                 pending_queue_depth=47,
                 inflight_peer_connects=2,
+                remote_choked_active_count=0,
             )
             == 20.0
         )
@@ -3865,25 +4099,27 @@ class TestConnectBatchMaxDuration:
     def test_mid_swarm_extends_when_requestable_zero_and_backlog(self) -> None:
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=0,
                 pending_queue_depth=48,
                 inflight_peer_connects=0,
+                remote_choked_active_count=1,
             )
             == 45.0
         )
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=0,
                 pending_queue_depth=0,
                 inflight_peer_connects=3,
+                remote_choked_active_count=2,
             )
             == 45.0
         )
         assert (
             _connect_batch_max_duration_s(
-                10,
+                15,
                 requestable_peer_count=1,
                 pending_queue_depth=100,
                 inflight_peer_connects=10,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import Any, Optional, Sized, Union
 
 from ccbt.config.config import get_config
@@ -338,6 +339,7 @@ class AsyncFileAssembler:
         # Track which pieces have been written to disk
         self.written_pieces: set = set()
         self.lock = asyncio.Lock()
+        self._piece_write_locks: dict[int, asyncio.Lock] = {}
 
         # Disk I/O manager
         self.disk_io = disk_io_manager or DiskIOManager(
@@ -598,62 +600,62 @@ class AsyncFileAssembler:
             FileAssemblerError: If writing fails
 
         """
-        # Ensure disk I/O manager is started
-        if not self._disk_io_started:
-            # Check if disk_io is a mock (for testing)
-            if hasattr(self.disk_io, "start") and callable(self.disk_io.start):
-                if asyncio.iscoroutinefunction(self.disk_io.start):
-                    await self.disk_io.start()
-                else:
-                    self.disk_io.start()
-            self._disk_io_started = True
-
-        async with self.lock:
+        piece_write_lock = self._piece_write_locks.setdefault(
+            piece_index,
+            asyncio.Lock(),
+        )
+        async with piece_write_lock:
             if piece_index in self.written_pieces:
                 return  # Already written
 
-        # Find all file segments that belong to this piece
-        piece_segments = [
-            seg for seg in self.file_segments if seg.piece_index == piece_index
-        ]
+            # Ensure disk I/O manager is started
+            if not self._disk_io_started:
+                # Check if disk_io is a mock (for testing)
+                if hasattr(self.disk_io, "start") and callable(self.disk_io.start):
+                    if asyncio.iscoroutinefunction(self.disk_io.start):
+                        await self.disk_io.start()
+                    else:
+                        self.disk_io.start()
+                self._disk_io_started = True
 
-        if not piece_segments:
-            # Note: Log detailed error information
-            self.logger.error(
-                "No file segments found for piece %d (num_pieces=%d, file_segments=%d, files=%d). "
-                "This may indicate metadata is incomplete or file_segments weren't built correctly.",
-                piece_index,
-                self.num_pieces,
-                len(self.file_segments),
-                len(self.files) if self.files else 0,
-            )
-            msg = f"No file segments found for piece {piece_index} (file_segments={len(self.file_segments)}, files={len(self.files) if self.files else 0})"
-            raise FileAssemblerError(msg)
+            piece_segments = [
+                segment
+                for segment in self.file_segments
+                if segment.piece_index == piece_index
+            ]
 
-        # Determine if Xet chunking should be used
-        if use_xet_chunking is None:
-            use_xet_chunking = self.config.disk.xet_enabled
-
-        # Apply Xet chunking if enabled
-        if use_xet_chunking and self.config.disk.xet_deduplication_enabled:
-            try:
-                await self._store_xet_chunks(piece_index, piece_data, piece_segments)
-            except Exception as e:
-                self.logger.warning(
-                    "Failed to store Xet chunks for piece %d: %s. Continuing with standard write.",
+            if not piece_segments:
+                self.logger.error(
+                    "No file segments found for piece %d (num_pieces=%d, file_segments=%d, files=%d). "
+                    "This may indicate metadata is incomplete or file_segments weren't built correctly.",
                     piece_index,
-                    e,
+                    self.num_pieces,
+                    len(self.file_segments),
+                    len(self.files) if self.files else 0,
                 )
-                # Continue with standard write on error
+                msg = f"No file segments found for piece {piece_index} (file_segments={len(self.file_segments)}, files={len(self.files) if self.files else 0})"
+                raise FileAssemblerError(msg)
 
-        # Write each segment to its file (standard write, always happens)
-        for segment in piece_segments:
-            await self._write_segment_to_file_async(segment, piece_data)
+            if use_xet_chunking is None:
+                use_xet_chunking = self.config.disk.xet_enabled
 
-        # Wait a bit for async writes to complete
-        await asyncio.sleep(0.01)
+            if use_xet_chunking and self.config.disk.xet_deduplication_enabled:
+                try:
+                    await self._store_xet_chunks(
+                        piece_index,
+                        piece_data,
+                        piece_segments,
+                    )
+                except Exception as error:
+                    self.logger.warning(
+                        "Failed to store Xet chunks for piece %d: %s. Continuing with standard write.",
+                        piece_index,
+                        error,
+                    )
 
-        async with self.lock:
+            for segment in piece_segments:
+                await self._write_segment_to_file_async(segment, piece_data)
+
             self.written_pieces.add(piece_index)
 
     async def _write_segment_to_file_async(
@@ -698,13 +700,12 @@ class AsyncFileAssembler:
                 segment_data = piece_data[segment_start:segment_end]
 
             # Use DiskIOManager for async writing
-            from pathlib import Path
-
-            await self.disk_io.write_block(
+            write_future = await self.disk_io.write_block(
                 Path(segment.file_path),
                 segment.start_offset,
                 segment_data,
             )
+            await write_future
 
         except Exception as e:
             msg = f"Failed to write segment for {segment.file_path}: {e}"

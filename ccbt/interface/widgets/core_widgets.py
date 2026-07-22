@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
+from ccbt.interface.content_load import (
+    SyncContentLoadGuard,
+    clear_container_children,
+    mount_or_update_static,
+    query_child_by_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +85,19 @@ except ImportError:
 
 
 def _get_rate(stats: dict[str, Any], key: str) -> float:
-    """Read canonical rate field."""
-    return float(stats.get(key, 0.0))
+    """Read canonical rate field with common daemon/dashboard aliases."""
+    aliases: tuple[str, ...] = ()
+    if key == "download_rate":
+        aliases = ("total_download_rate", "total_download_speed")
+    elif key == "upload_rate":
+        aliases = ("total_upload_rate", "total_upload_speed")
+    raw = stats.get(key)
+    if raw is None or (isinstance(raw, (int, float)) and float(raw) == 0.0):
+        for alt in aliases:
+            alt_val = stats.get(alt)
+            if isinstance(alt_val, (int, float)) and float(alt_val) != 0.0:
+                return float(alt_val)
+    return float(raw or 0.0)
 
 
 class Overview(Static):  # type: ignore[misc]
@@ -350,7 +367,7 @@ class GlobalTorrentMetricsPanel(Static):  # type: ignore[misc]
         swarm_samples: list[dict[str, Any]] | None = None,
     ) -> None:  # pragma: no cover
         """Render aggregated torrent metrics."""
-        if not stats:
+        if not isinstance(stats, dict) or not stats:
             self.update(Panel(_("No metrics available"), border_style="red"))
             return
 
@@ -558,6 +575,33 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         self._graph_selector: Optional[Any] = None  # ButtonSelector
         self._active_graph_tab_id: Optional[str] = None
         self._registered_widgets: list[Any] = []  # Track registered widgets for cleanup
+        self._graph_load_guard = SyncContentLoadGuard()
+
+    _GRAPH_TAB_WIDGET_IDS: ClassVar[dict[str, str]] = {
+        "graph-tab-performance": "performance-graph",
+        "graph-tab-disk": "disk-graph",
+        "graph-tab-system": "system-graph",
+        "graph-tab-network": "network-graph",
+        "graph-tab-swarm": "swarm-health-graph",
+        "graph-tab-peers": "peer-quality-graph",
+        "graph-tab-peer-dist": "peer-quality-distribution-widget",
+        "graph-tab-dht": "dht-health-widget",
+        "graph-tab-swarm-timeline": "swarm-timeline-widget",
+        "graph-tab-global-kpis": "global-kpis-panel",
+    }
+
+    _GRAPH_TAB_PLACEHOLDER_IDS: ClassVar[dict[str, str]] = {
+        "graph-tab-performance": "performance-placeholder",
+        "graph-tab-disk": "disk-placeholder",
+        "graph-tab-system": "system-placeholder",
+        "graph-tab-network": "network-placeholder",
+        "graph-tab-swarm": "swarm-placeholder",
+        "graph-tab-peers": "peer-quality-placeholder",
+        "graph-tab-peer-dist": "peer-dist-placeholder",
+        "graph-tab-dht": "dht-health-placeholder",
+        "graph-tab-swarm-timeline": "swarm-timeline-placeholder",
+        "graph-tab-global-kpis": "global-kpis-placeholder",
+    }
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the graphs section layout.
@@ -676,13 +720,25 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         Args:
             graph_tab_id: ID of the graph tab to load
         """
+        self._graph_load_guard.run(self._load_graph_content_impl, graph_tab_id)
+
+    def _load_graph_content_impl(self, graph_tab_id: str) -> None:  # pragma: no cover
+        """Load graph tab content (serialized; do not call directly)."""
         try:
             graph_area = self.query_one("#graph-display-area", Container)  # type: ignore[attr-defined]
             # Note: Ensure graph area is visible
             if graph_area:
                 graph_area.display = True  # type: ignore[attr-defined]
 
-            if graph_tab_id == self._active_graph_tab_id:
+            widget_id = self._GRAPH_TAB_WIDGET_IDS.get(graph_tab_id)
+            placeholder_id = self._GRAPH_TAB_PLACEHOLDER_IDS.get(
+                graph_tab_id,
+                f"{graph_tab_id}-placeholder",
+            )
+            if graph_tab_id == self._active_graph_tab_id and (
+                (widget_id and query_child_by_id(graph_area, widget_id) is not None)
+                or query_child_by_id(graph_area, placeholder_id) is not None
+            ):
                 return
 
             # Note: Clear existing content before loading new graph
@@ -701,29 +757,35 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
                 logger.debug("Error unregistering widgets: %s", e)
 
             try:
-                graph_area.remove_children()  # type: ignore[attr-defined]
+                clear_container_children(graph_area)
             except Exception as e:
                 logger.debug("Error removing graph children: %s", e)
 
             # Note: Verify data provider is available and valid
             if not self._data_provider:
                 logger.warning("Data provider not available for graph loading")
-                placeholder = Static(
-                    _("{graph_tab_id} - Data provider not available").format(graph_tab_id=graph_tab_id),
-                    id=f"{graph_tab_id}-placeholder"
+                mount_or_update_static(
+                    graph_area,
+                    f"{graph_tab_id}-placeholder",
+                    _("{graph_tab_id} - Data provider not available").format(
+                        graph_tab_id=graph_tab_id
+                    ),
+                    Static,
                 )
-                graph_area.mount(placeholder)  # type: ignore[attr-defined]
                 self._active_graph_tab_id = graph_tab_id
                 return
 
             # Note: Verify data provider has required methods
             if not hasattr(self._data_provider, "get_adapter"):
                 logger.warning("Data provider missing get_adapter method")
-                placeholder = Static(
-                    _("{graph_tab_id} - Data provider configuration error").format(graph_tab_id=graph_tab_id),
-                    id=f"{graph_tab_id}-placeholder"
+                mount_or_update_static(
+                    graph_area,
+                    f"{graph_tab_id}-placeholder",
+                    _("{graph_tab_id} - Data provider configuration error").format(
+                        graph_tab_id=graph_tab_id
+                    ),
+                    Static,
                 )
-                graph_area.mount(placeholder)  # type: ignore[attr-defined]
                 self._active_graph_tab_id = graph_tab_id
                 return
 
@@ -996,17 +1058,21 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
             )
 
     def _ensure_graph_visible(self, graph_widget: Any) -> None:  # pragma: no cover
-        """Ensure graph widget is visible and trigger initial update.
-        
-        Args:
-            graph_widget: Graph widget instance to make visible
-        """
+        """Ensure graph widget is visible, bound, and hydrated."""
         try:
             if graph_widget:
                 graph_widget.display = True  # type: ignore[attr-defined]
-                # Trigger refresh to ensure widget repaints
                 graph_widget.refresh()  # type: ignore[attr-defined]
-                logger.debug("Ensured graph widget is visible: %s", graph_widget.id if hasattr(graph_widget, "id") else "unknown")
+                from ccbt.interface.reactive_bridge import request_lazy_bind
+
+                request_lazy_bind(graph_widget)
+                app = getattr(self, "app", None)
+                if app is not None and hasattr(app, "refresh_ui_bindings"):
+                    app.call_later(app.refresh_ui_bindings)  # type: ignore[attr-defined]
+                logger.debug(
+                    "Ensured graph widget is visible: %s",
+                    graph_widget.id if hasattr(graph_widget, "id") else "unknown",
+                )
         except Exception as e:
             logger.debug("Error ensuring graph visibility: %s", e)
 

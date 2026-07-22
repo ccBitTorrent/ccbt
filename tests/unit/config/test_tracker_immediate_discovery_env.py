@@ -17,8 +17,8 @@ config_module = importlib.import_module("ccbt.config.config")
 def test_discovery_defaults_tracker_immediate_burst() -> None:
     """Immediate burst defaults limit tracker-callback connect pressure."""
     cfg = Config()
-    assert cfg.discovery.tracker_immediate_connect_burst_total == 16
-    assert cfg.discovery.tracker_immediate_connect_burst_per_source == 16
+    assert cfg.discovery.tracker_immediate_connect_burst_total == 50
+    assert cfg.discovery.tracker_immediate_connect_burst_per_source == 50
 
 
 @pytest.mark.unit
@@ -41,7 +41,7 @@ def test_discovery_defaults_tracker_immediate_window_and_per_source_mode() -> No
     cfg = Config()
     assert cfg.discovery.tracker_immediate_connect_window_s == 20.0
     assert cfg.discovery.tracker_immediate_connect_window_cap == 6
-    assert cfg.discovery.tracker_immediate_per_source_cap_mode == "half_max_peers"
+    assert cfg.discovery.tracker_immediate_per_source_cap_mode == "full_max_peers"
     assert cfg.network.mse_initiator_timeout_scale_zero_active == 1.0
 
 

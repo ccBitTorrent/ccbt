@@ -150,7 +150,7 @@ async def test_create_peer_connection_warning(connection_pool):
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
 
     # Mock config to avoid dependency
-    with patch("ccbt.config.config.get_config") as mock_get_config:
+    with patch("ccbt.peer.connection_pool.get_config") as mock_get_config:
         mock_config = MagicMock()
         mock_config.network.connection_timeout = 1.0
         mock_get_config.return_value = mock_config

@@ -92,7 +92,7 @@ class TestConfigUtilsF841Fixes:
         # Patch the internal imports - they're imported inside the function
         from ccbt.config import config as config_module
         monkeypatch.setattr(config_module, "init_config", mock_init_config)
-        monkeypatch.setattr(config_module, "get_config", mock_get_config)
+        monkeypatch.setattr("ccbt.config.config.get_config", mock_get_config)
 
         # Test that function works without the unused config_manager variable
         result = await config_utils._restart_daemon_async(force=False)
@@ -150,7 +150,7 @@ class TestConfigUtilsF841Fixes:
         # Patch the internal imports - they're imported inside the function
         from ccbt.config import config as config_module
         monkeypatch.setattr(config_module, "init_config", mock_init_config)
-        monkeypatch.setattr(config_module, "get_config", mock_get_config)
+        monkeypatch.setattr("ccbt.config.config.get_config", mock_get_config)
 
         # Test that exception is caught and logged (without unused 'e' variable)
         result = await config_utils._restart_daemon_async(force=False)

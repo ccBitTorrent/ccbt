@@ -40,6 +40,16 @@ def test_classify_prefix_mse_p2p_crypto() -> None:
     assert classify_prefix(prefix) is InboundProtocolKind.MSE_P2P
 
 
+def test_classify_prefix_mse_p2p_crypto_frame_lead() -> None:
+    prefix = struct.pack("!I", 200) + bytes([0x04, 0x00])
+    assert classify_prefix(prefix) is InboundProtocolKind.MSE_P2P
+
+
+def test_classify_prefix_mse_p2p_small_crypto_frame_lead() -> None:
+    prefix = struct.pack("!I", 8) + bytes([0x02, 0x00])
+    assert classify_prefix(prefix) is InboundProtocolKind.MSE_P2P
+
+
 def test_classify_prefix_unknown_when_plain_prefix_incomplete() -> None:
     prefix = bytes([PROTOCOL_STRING_LEN]) + PROTOCOL_STRING[:5]
     assert classify_prefix(prefix) is InboundProtocolKind.UNKNOWN

@@ -77,6 +77,7 @@ from ccbt.daemon.ipc_protocol import (
     StatusResponse,
     TorrentAddRequest,
     TorrentListResponse,
+    TorrentStatusResponse,
     TrackerAddRequest,
     TrackerInfo,
     TrackerListResponse,
@@ -112,6 +113,7 @@ class IPCServer:
         tls_enabled: bool = False,
         shutdown_callback: Optional[Callable[[], Awaitable[None]]] = None,
         shutdown_event: Optional[asyncio.Event] = None,
+        session_startup_complete: Optional[asyncio.Event] = None,
     ):
         """Initialize IPC server.
 
@@ -126,6 +128,7 @@ class IPCServer:
             tls_enabled: Enable TLS/HTTPS (requires key_manager)
             shutdown_callback: Optional callback invoked when /shutdown is requested
             shutdown_event: Optional daemon shutdown event (used for idempotent status)
+            session_startup_complete: Optional event set when session startup finishes
 
         """
         self.session_manager = session_manager
@@ -175,6 +178,7 @@ class IPCServer:
         self.websocket_heartbeat_interval = websocket_heartbeat_interval
         self._shutdown_callback = shutdown_callback
         self._shutdown_event = shutdown_event
+        self._session_startup_complete = session_startup_complete
 
         self.app = web.Application()  # type: ignore[attr-defined]
         self.runner: Optional[web.AppRunner] = None  # type: ignore[attr-defined]
@@ -186,6 +190,7 @@ class IPCServer:
         self._websocket_subscriptions: dict[web.WebSocketResponse, set[EventType]] = {}  # type: ignore[attr-defined]
         self._websocket_filters: dict[web.WebSocketResponse, dict[str, Any]] = {}  # type: ignore[attr-defined]
         self._websocket_heartbeat_tasks: dict[web.WebSocketResponse, asyncio.Task] = {}  # type: ignore[attr-defined]
+        self._shutting_down = False
 
         # Setup routes and middleware
         self._setup_middleware()
@@ -199,6 +204,16 @@ class IPCServer:
         async def auth_middleware(request: Request, handler: Any) -> Response:
             """Mandatory authentication middleware."""
             try:
+                # Reject new work once shutdown has started (in-flight handlers may still run).
+                if self._shutting_down and not request.path.endswith("/shutdown"):
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Daemon is shutting down",
+                            code="SHUTTING_DOWN",
+                        ).model_dump(),
+                        status=503,
+                    )
+
                 # Skip authentication for WebSocket upgrade requests (handled separately)
                 if (
                     request.path == f"{API_BASE_PATH}/events"
@@ -818,17 +833,21 @@ class IPCServer:
         return get_version()
 
     async def _handle_status(self, _request: Request) -> Response:
-        """Handle GET /api/v1/status."""
+        """Handle GET /api/v1/status.
+
+        Keep this handler lightweight: the dashboard probes it repeatedly during
+        startup. Avoid get_global_stats() and other heavy session work here.
+        """
         uptime = time.time() - self._start_time
         pid = os.getpid()
 
-        # Get global stats
-        global_stats = await self.session_manager.get_global_stats()
+        num_torrents = await self.session_manager.get_torrent_count_fast(1.0)
 
         inbound_top: dict[str, int] = {}
         try:
-            raw_unknown = (
-                await self.session_manager.get_inbound_unknown_info_hash_metrics()
+            raw_unknown = await asyncio.wait_for(
+                self.session_manager.get_inbound_unknown_info_hash_metrics(),
+                timeout=0.5,
             )
             if isinstance(raw_unknown, dict) and raw_unknown:
                 top_n = 32
@@ -837,6 +856,8 @@ class IPCServer:
                     key=lambda kv: (-int(kv[1]), str(kv[0])),
                 )[:top_n]
                 inbound_top = {str(k): int(v) for k, v in sorted_items}
+        except asyncio.TimeoutError:
+            logger.debug("status: inbound metrics timed out (non-fatal)")
         except Exception:
             logger.debug(
                 "status: inbound unknown info-hash metrics unavailable",
@@ -844,11 +865,18 @@ class IPCServer:
             )
 
         status = StatusResponse(
-            status="running",
+            status=(
+                "shutting_down"
+                if self._shutdown_event is not None and self._shutdown_event.is_set()
+                else "starting"
+                if self._session_startup_complete is not None
+                and not self._session_startup_complete.is_set()
+                else "running"
+            ),
             pid=pid,
             uptime=uptime,
             version=self._get_package_version(),
-            num_torrents=global_stats.get("num_torrents", 0),
+            num_torrents=num_torrents,
             ipc_url=f"http://{self.host}:{self.port}",
             inbound_unknown_info_hash_metrics_top=inbound_top,
         )
@@ -1881,6 +1909,9 @@ class IPCServer:
                 )
 
             info_hash_bytes = bytes.fromhex(info_hash_hex)
+            torrent_session = None
+            peer_manager = None
+            peer_quality_metrics = None
             async with self.session_manager.lock:
                 torrent_session = self.session_manager.torrents.get(info_hash_bytes)
                 if not torrent_session:
@@ -1892,69 +1923,65 @@ class IPCServer:
                         status=404,
                     )
 
-                # Get peer manager
-                peer_manager = None
-                if hasattr(torrent_session, "download_manager"):
-                    download_manager = torrent_session.download_manager
-                    if hasattr(download_manager, "peer_manager"):
-                        peer_manager = download_manager.peer_manager
+                download_manager = getattr(torrent_session, "download_manager", None)
+                if download_manager is not None:
+                    peer_manager = getattr(download_manager, "peer_manager", None)
+                if peer_manager is None:
+                    peer_manager = getattr(torrent_session, "peer_manager", None)
 
-                # Get peer quality metrics from PeerConnectionHelper if available
                 peer_helper = getattr(torrent_session, "_peer_helper", None)
-                peer_quality_metrics = (
-                    getattr(peer_helper, "_peer_quality_metrics", None)
-                    if peer_helper
-                    else None
-                )
+                if peer_helper is not None:
+                    peer_quality_metrics = getattr(
+                        peer_helper,
+                        "_peer_quality_metrics",
+                        None,
+                    )
 
-                # Collect peer quality scores
-                quality_scores = []
-                top_peers = []
+            quality_scores: list[float] = []
+            top_peers: list[dict[str, Any]] = []
+            high_quality = 0
+            medium_quality = 0
+            low_quality = 0
+            avg_score = 0.0
 
-                if peer_manager and hasattr(peer_manager, "get_active_peers"):
-                    active_peers = peer_manager.get_active_peers()
-                    for peer in active_peers:
-                        if not hasattr(peer, "peer_info") or not hasattr(peer, "stats"):
-                            continue
+            if peer_manager and hasattr(peer_manager, "get_active_peers"):
+                active_peers = peer_manager.get_active_peers()
+                for peer in active_peers:
+                    if not hasattr(peer, "peer_info") or not hasattr(peer, "stats"):
+                        continue
 
-                        # Calculate quality score (placeholder - should use actual ranking logic)
-                        download_rate = getattr(peer.stats, "download_rate", 0.0)
-                        upload_rate = getattr(peer.stats, "upload_rate", 0.0)
-                        performance_score = getattr(
-                            peer.stats, "performance_score", 0.5
-                        )
+                    download_rate = getattr(peer.stats, "download_rate", 0.0)
+                    upload_rate = getattr(peer.stats, "upload_rate", 0.0)
+                    performance_score = getattr(peer.stats, "performance_score", 0.5)
 
-                        # Simple quality score calculation (matches ranking logic)
-                        max_rate = 10 * 1024 * 1024
-                        upload_norm = (
-                            min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
-                        )
-                        download_norm = (
-                            min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
-                        )
-                        quality_score = (
-                            (upload_norm * 0.6)
-                            + (download_norm * 0.4)
-                            + (performance_score * 0.2)
-                        )
+                    max_rate = 10 * 1024 * 1024
+                    upload_norm = (
+                        min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
+                    )
+                    download_norm = (
+                        min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
+                    )
+                    quality_score = (
+                        (upload_norm * 0.6)
+                        + (download_norm * 0.4)
+                        + (performance_score * 0.2)
+                    )
 
-                        quality_scores.append(quality_score)
-                        top_peers.append(
-                            {
-                                "peer_key": str(peer.peer_info),
-                                "ip": peer.peer_info.ip,
-                                "port": peer.peer_info.port,
-                                "quality_score": quality_score,
-                                "download_rate": download_rate,
-                                "upload_rate": upload_rate,
-                            }
-                        )
+                    quality_scores.append(quality_score)
+                    top_peers.append(
+                        {
+                            "peer_key": str(peer.peer_info),
+                            "ip": peer.peer_info.ip,
+                            "port": peer.peer_info.port,
+                            "quality_score": quality_score,
+                            "download_rate": download_rate,
+                            "upload_rate": upload_rate,
+                        }
+                    )
 
-                # Sort top peers by quality
                 top_peers.sort(key=lambda p: p["quality_score"], reverse=True)
-                top_peers = top_peers[:10]  # Top 10
+                top_peers = top_peers[:10]
 
-                # Calculate distribution
                 high_quality = sum(1 for s in quality_scores if s > 0.7)
                 medium_quality = sum(1 for s in quality_scores if 0.3 < s <= 0.7)
                 low_quality = sum(1 for s in quality_scores if s <= 0.3)
@@ -1963,42 +1990,39 @@ class IPCServer:
                     sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
                 )
 
-                # Use stored metrics if available and current calculation is empty
-                if not quality_scores and peer_quality_metrics:
-                    last_ranking = peer_quality_metrics.get("last_ranking", {})
-                    avg_score = last_ranking.get("average_score", 0.0)
-                    high_quality = last_ranking.get("high_quality_count", 0)
-                    medium_quality = last_ranking.get("medium_quality_count", 0)
-                    low_quality = last_ranking.get("low_quality_count", 0)
+            if not quality_scores and peer_quality_metrics:
+                last_ranking = peer_quality_metrics.get("last_ranking", {})
+                avg_score = last_ranking.get("average_score", 0.0)
+                high_quality = last_ranking.get("high_quality_count", 0)
+                medium_quality = last_ranking.get("medium_quality_count", 0)
+                low_quality = last_ranking.get("low_quality_count", 0)
 
-                    # Get top peers from stored scores if available
-                    stored_scores = peer_quality_metrics.get("quality_scores", [])
-                    if stored_scores:
-                        # Recalculate distribution
-                        high_quality = sum(1 for s in stored_scores if s > 0.7)
-                        medium_quality = sum(1 for s in stored_scores if 0.3 < s <= 0.7)
-                        low_quality = sum(1 for s in stored_scores if s <= 0.3)
-                        avg_score = (
-                            sum(stored_scores) / len(stored_scores)
-                            if stored_scores
-                            else 0.0
-                        )
+                stored_scores = peer_quality_metrics.get("quality_scores", [])
+                if stored_scores:
+                    high_quality = sum(1 for s in stored_scores if s > 0.7)
+                    medium_quality = sum(1 for s in stored_scores if 0.3 < s <= 0.7)
+                    low_quality = sum(1 for s in stored_scores if s <= 0.3)
+                    avg_score = (
+                        sum(stored_scores) / len(stored_scores)
+                        if stored_scores
+                        else 0.0
+                    )
 
-                response = PeerQualityMetricsResponse(
-                    info_hash=info_hash_hex,
-                    total_peers_ranked=len(quality_scores),
-                    average_quality_score=avg_score,
-                    high_quality_peers=high_quality,
-                    medium_quality_peers=medium_quality,
-                    low_quality_peers=low_quality,
-                    top_quality_peers=top_peers,
-                    quality_distribution={
-                        "high": high_quality,
-                        "medium": medium_quality,
-                        "low": low_quality,
-                    },
-                )
-                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+            response = PeerQualityMetricsResponse(
+                info_hash=info_hash_hex,
+                total_peers_ranked=len(quality_scores),
+                average_quality_score=avg_score,
+                high_quality_peers=high_quality,
+                medium_quality_peers=medium_quality,
+                low_quality_peers=low_quality,
+                top_quality_peers=top_peers,
+                quality_distribution={
+                    "high": high_quality,
+                    "medium": medium_quality,
+                    "low": low_quality,
+                },
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Failed to get peer quality metrics")
             return web.json_response(  # type: ignore[attr-defined]
@@ -2611,18 +2635,26 @@ class IPCServer:
     async def _handle_list_torrents(self, _request: Request) -> Response:
         """Handle GET /api/v1/torrents."""
         try:
-            result = await self.executor.execute("torrent.list")
-
-            if not result.success:
-                return web.json_response(  # type: ignore[attr-defined]
-                    ErrorResponse(
-                        error=result.error or "Failed to list torrents",
-                        code="LIST_FAILED",
-                    ).model_dump(),
-                    status=500,
+            status_dict = await asyncio.wait_for(
+                self.session_manager.get_status_summaries_light(),
+                timeout=8.0,
+            )
+            torrents = [
+                TorrentStatusResponse(
+                    info_hash=info_hash_hex,
+                    name=status.get("name", "Unknown"),
+                    status=status.get("status", "unknown"),
+                    progress=float(status.get("progress", 0.0) or 0.0),
+                    download_rate=float(status.get("download_rate", 0.0) or 0.0),
+                    upload_rate=float(status.get("upload_rate", 0.0) or 0.0),
+                    num_peers=int(status.get("connected_peers", 0) or 0),
+                    num_seeds=int(status.get("active_peers", 0) or 0),
+                    total_size=int(status.get("total_size", 0) or 0),
+                    downloaded=int(status.get("downloaded", 0) or 0),
+                    uploaded=int(status.get("uploaded", 0) or 0),
                 )
-
-            torrents = result.data.get("torrents", [])
+                for info_hash_hex, status in status_dict.items()
+            ]
             response = TorrentListResponse(torrents=torrents)
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as e:
@@ -5080,18 +5112,22 @@ class IPCServer:
 
     async def _handle_get_global_stats(self, _request: Request) -> Response:
         """Handle GET /api/v1/session/stats."""
-        result = await self.executor.execute("session.get_global_stats")
+        try:
+            summaries = await self.session_manager.get_status_summaries()
+            stats = self.session_manager.derive_global_stats_from_summaries(summaries)
+        except Exception as exc:
+            logger.debug("Fast global stats failed, falling back to executor: %s", exc)
+            result = await self.executor.execute("session.get_global_stats")
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to get global stats",
+                        code="SESSION_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            stats = result.data.get("stats", {})
 
-        if not result.success:
-            return web.json_response(  # type: ignore[attr-defined]
-                ErrorResponse(
-                    error=result.error or "Failed to get global stats",
-                    code="SESSION_ERROR",
-                ).model_dump(),
-                status=500,
-            )
-
-        stats = result.data.get("stats", {})
         # Canonical manager returns download_rate/upload_rate; IPC exposes total_* for API
         response = GlobalStatsResponse(
             num_torrents=stats.get("num_torrents", 0),
@@ -5110,37 +5146,52 @@ class IPCServer:
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
 
     async def _handle_ui_snapshot(self, _request: Request) -> Response:
-        """Handle GET /api/v1/ui/snapshot - single response for dashboard first-paint."""
+        """Handle GET /api/v1/ui/snapshot - single lightweight dashboard first-paint."""
         try:
-            # Global stats
-            stats_result = await self.executor.execute("session.get_global_stats")
-            if not stats_result.success:
-                return web.json_response(  # type: ignore[attr-defined]
-                    ErrorResponse(
-                        error=stats_result.error or "Failed to get global stats",
-                        code="SESSION_ERROR",
-                    ).model_dump(),
-                    status=500,
-                )
-            stats = stats_result.data.get("stats", {})
+            status_dict = await asyncio.wait_for(
+                self.session_manager.get_status_summaries_light(),
+                timeout=8.0,
+            )
+            stats = self.session_manager.derive_global_stats_from_summaries(
+                status_dict,
+            )
             global_stats = dict(stats)
             global_stats.setdefault(
                 "total_download_rate",
-                stats.get("download_rate", stats.get("total_download_rate", 0.0)),
+                stats.get("download_rate", 0.0),
             )
             global_stats.setdefault(
                 "total_upload_rate",
-                stats.get("upload_rate", stats.get("total_upload_rate", 0.0)),
+                stats.get("upload_rate", 0.0),
             )
 
-            # Torrent list
-            list_result = await self.executor.execute("torrent.list")
-            torrents_raw = (
-                list_result.data.get("torrents", []) if list_result.success else []
-            )
-            torrents = [
-                t.model_dump() if hasattr(t, "model_dump") else t for t in torrents_raw
-            ]
+            torrents = list(status_dict.values())
+
+            rate_samples: list[dict[str, Any]] = []
+            try:
+                rate_samples = await asyncio.wait_for(
+                    self.session_manager.get_rate_samples(120),
+                    timeout=3.0,
+                )
+            except Exception:
+                logger.debug("UI snapshot: rate samples unavailable", exc_info=True)
+
+            if (
+                float(global_stats.get("download_rate", 0.0) or 0.0) == 0.0
+                and rate_samples
+            ):
+                latest = max(
+                    rate_samples,
+                    key=lambda sample: float(sample.get("timestamp", 0.0)),
+                )
+                global_stats["download_rate"] = float(
+                    latest.get("download_rate", 0.0) or 0.0
+                )
+                global_stats["upload_rate"] = float(
+                    latest.get("upload_rate", 0.0) or 0.0
+                )
+                global_stats["total_download_rate"] = global_stats["download_rate"]
+                global_stats["total_upload_rate"] = global_stats["upload_rate"]
 
             # Services status (same shape as GET /services/status)
             services_status = {"services": {}}
@@ -5175,46 +5226,53 @@ class IPCServer:
                 "status": "running",
             }
 
-            # Rate samples (truncated for first-paint graph)
-            rate_samples = []
-            try:
-                samples_raw = await self.session_manager.get_rate_samples(60)
-                rate_samples = (samples_raw or [])[-30:]
-            except Exception as e:
-                logger.debug("UI snapshot: rate samples unavailable: %s", e)
+            system_metrics: dict[str, Any] = {}
+            disk_io_metrics: dict[str, Any] = {}
+            network_timing: dict[str, Any] = {}
+            with contextlib.suppress(Exception):
+                from ccbt.monitoring import get_metrics_collector
 
-            # Aggregated peers across torrents (R9): cap at 200 rows so the
-            # dashboard's peer panel populates on first paint instead of
-            # waiting for the 3s _peers_update_loop / per-torrent HTTP fetch.
-            peers: list[dict[str, Any]] = []
+                collector = get_metrics_collector()
+                if collector is not None:
+                    if not collector.running:
+                        await collector.collect_system_metrics()
+                    system_metrics = dict(collector.get_system_metrics())
             try:
-                peer_cap = 200
-                for t in torrents:
-                    if len(peers) >= peer_cap:
-                        break
-                    ih = t.get("info_hash") if isinstance(t, dict) else None
-                    if not ih:
-                        continue
-                    peer_result = await self.executor.execute(
-                        "torrent.get_peers", info_hash=ih
-                    )
-                    if not peer_result.success:
-                        continue
-                    for p in peer_result.data.get("peers", []):
-                        if len(peers) >= peer_cap:
-                            break
-                        if isinstance(p, dict):
-                            row = dict(p)
-                            row.setdefault("info_hash", ih)
-                            peers.append(row)
-            except Exception as e:
-                logger.debug("UI snapshot: peers aggregation unavailable: %s", e)
+                disk_io_metrics = dict(self.session_manager.get_disk_io_metrics())
+            except Exception:
+                logger.debug("UI snapshot: disk I/O metrics unavailable", exc_info=True)
+            try:
+                raw_network = await asyncio.wait_for(
+                    self.session_manager.get_network_timing_metrics(),
+                    timeout=2.0,
+                )
+                network_timing = {
+                    "utp_delay_ms": float(
+                        raw_network.get(
+                            "utp_delay_ms",
+                            raw_network.get("rtt_avg_ms", 0.0),
+                        )
+                    ),
+                    "network_overhead_rate": float(
+                        raw_network.get("network_overhead_rate", 0.0),
+                    ),
+                }
+            except Exception:
+                logger.debug(
+                    "UI snapshot: network timing metrics unavailable",
+                    exc_info=True,
+                )
+
+            peers: list[dict[str, Any]] = []
 
             response = UISnapshotResponse(
                 global_stats=global_stats,
                 torrents=torrents,
                 services_status=services_status,
                 rate_samples=rate_samples,
+                system_metrics=system_metrics,
+                disk_io_metrics=disk_io_metrics,
+                network_timing=network_timing,
                 peers=peers,
             )
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
@@ -6354,26 +6412,45 @@ class IPCServer:
 
     async def stop(self) -> None:
         """Stop the IPC server."""
-        # Close all WebSocket connections
-        for ws in list(self._websocket_connections):
+        self._shutting_down = True
+
+        async def _close_websocket(ws: web.WebSocketResponse) -> None:
             if not ws.closed:
                 await ws.close()
 
+        # Close all WebSocket connections (bounded wait per socket)
+        for ws in list(self._websocket_connections):
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(_close_websocket(ws), timeout=1.0)
+
         # Cancel heartbeat tasks
-        for task in self._websocket_heartbeat_tasks.values():
+        for task in list(self._websocket_heartbeat_tasks.values()):
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(task, timeout=1.0)
 
         self._websocket_connections.clear()
         self._websocket_subscriptions.clear()
         self._websocket_filters.clear()
         self._websocket_heartbeat_tasks.clear()
 
-        # Stop server
+        # Stop server (bounded — hung handlers must not block daemon exit)
         if self.site:
-            await self.site.stop()
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(self.site.stop(), timeout=3.0)
+            self.site = None
         if self.runner:
-            await self.runner.cleanup()
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(self.runner.cleanup(), timeout=3.0)
+            self.runner = None
 
         logger.info("IPC server stopped")
+
+    def mark_shutting_down(self) -> None:
+        """Signal that daemon shutdown has started; reject new IPC requests."""
+        self._shutting_down = True
+
+    @property
+    def shutting_down(self) -> bool:
+        """Return True once IPC shutdown has been requested."""
+        return self._shutting_down

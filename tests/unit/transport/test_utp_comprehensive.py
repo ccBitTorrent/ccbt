@@ -45,9 +45,9 @@ class TestConnectionLifecycle:
         mock_manager = MagicMock()
         mock_transport = MagicMock()
         mock_manager.get_transport.return_value = mock_transport
-        mock_manager._generate_connection_id.return_value = 12345
+        mock_manager.generate_connection_id.return_value = 12345
         mock_manager.register_connection = MagicMock()
-        connection.utp_socket_manager = mock_manager
+        connection.socket_manager = mock_manager
 
         await connection.initialize_transport()
 
@@ -300,8 +300,13 @@ class TestSocketManager:
         return manager
 
     @pytest.mark.asyncio
-    async def test_get_instance_returns_independent_managers(self):
+    async def test_get_instance_returns_independent_managers(self, monkeypatch):
         """Test get_instance returns independent manager instances."""
+        from ccbt.config.config import get_config
+
+        config = get_config()
+        monkeypatch.setattr(config.network, "listen_port", 0)
+
         manager1 = await UTPSocketManager.get_instance()
         manager2 = await UTPSocketManager.get_instance()
         assert manager1 is not manager2

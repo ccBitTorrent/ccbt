@@ -31,7 +31,7 @@ from ccbt.protocols.bittorrent_v2 import (
     ProtocolVersionError,
     expected_plaintext_handshake_total_len,
 )
-from ccbt.security.mse_handshake import MSEHandshake
+from ccbt.security.mse_handshake import MSEHandshake, is_probable_mse_lead
 from ccbt.security.swarm_auth_policy import evaluate_inbound_admission
 from ccbt.utils.exceptions import HandshakeError
 from ccbt.utils.shutdown import is_shutting_down
@@ -1374,7 +1374,7 @@ class IncomingPeerServer:
                     peer_port,
                 )
                 writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
 
             session, fallback_info_hash = candidates[0]
@@ -1389,7 +1389,7 @@ class IncomingPeerServer:
                     peer_port,
                 )
                 writer.close()
-                await writer.wait_closed()
+                await self._close_writer_safely(writer)
                 return
 
             create_mse = getattr(peer_manager, "_create_mse_handshake", None)
@@ -1404,7 +1404,7 @@ class IncomingPeerServer:
                         reader=cast("asyncio.StreamReader", reader),
                         writer=writer,
                         info_hash=fallback_info_hash,
-                        initial_payload_size=0,
+                        initial_payload_size=68,
                         initial_payload_timeout=timeout,
                         info_hash_candidates=info_hash_candidates,
                     ),
@@ -1575,15 +1575,11 @@ class IncomingPeerServer:
         else:
             peer_ip, peer_port = "unknown", 0
 
-        self.logger.debug("Incoming connection from %s:%d", peer_ip, peer_port)
-
         if self._should_abort_inbound_registration_wait():
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+            await self._close_writer_safely(writer)
             return
+
+        self.logger.debug("Incoming connection from %s:%d", peer_ip, peer_port)
 
         try:
             replayable_reader = _ReplayableStreamReader(reader)
@@ -1601,15 +1597,42 @@ class IncomingPeerServer:
             protocol_kind = classify_prefix(prefix)
             replayable_reader.unread(prefix)
             if protocol_kind == InboundProtocolKind.UNKNOWN:
-                self.logger.debug(
-                    "Non-BitTorrent connection from %s:%d (unrecognized protocol lead). "
-                    "This may be a port scanner, bot, or unsupported envelope.",
-                    peer_ip,
-                    peer_port,
-                )
-                writer.close()
-                await writer.wait_closed()
-                return
+                lead_hex = prefix[:8].hex()
+                if len(prefix) > 0 and prefix[0] == PROTOCOL_STRING_LEN:
+                    self.logger.debug(
+                        "Inbound %s:%d lead starts with plaintext length byte; "
+                        "attempting extended plaintext read (bytes=%s)",
+                        peer_ip,
+                        peer_port,
+                        lead_hex,
+                    )
+                    protocol_kind = InboundProtocolKind.BITTORRENT_PLAINTEXT
+                elif is_probable_mse_lead(prefix):
+                    self.logger.debug(
+                        "Inbound %s:%d unrecognized protocol lead (bytes=%s); "
+                        "attempting optimistic MSE fallback",
+                        peer_ip,
+                        peer_port,
+                        lead_hex,
+                    )
+                    await self._handle_inbound_mse_connection(
+                        replayable_reader,
+                        writer,
+                        peer_ip,
+                        peer_port,
+                    )
+                    return
+                else:
+                    self.logger.debug(
+                        "Non-BitTorrent connection from %s:%d (unrecognized protocol lead, bytes=%s). "
+                        "This may be a port scanner, bot, or unsupported envelope.",
+                        peer_ip,
+                        peer_port,
+                        lead_hex,
+                    )
+                    writer.close()
+                    await self._close_writer_safely(writer)
+                    return
 
             if protocol_kind == InboundProtocolKind.MSE_P2P:
                 self.logger.debug(

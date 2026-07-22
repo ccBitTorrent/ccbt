@@ -199,18 +199,25 @@ class CompatibilityLinter:
         - `from typing import Tuple`
         - `from typing import TYPE_CHECKING, Optional, Tuple`
         - `from typing import Tuple as T` (also valid)
+        - multiline `from typing import (...)` blocks
         """
-        # Check for Tuple import from typing
-        # Pattern matches: from typing import Tuple, from typing import ..., Tuple, ...
         patterns = [
-            r"from\s+typing\s+import\s+.*\bTuple\b",  # from typing import Tuple or from typing import ..., Tuple
-            r"from\s+typing\s+import\s+.*\bTuple\s+as\s+\w+",  # from typing import Tuple as T
+            r"from\s+typing\s+import\s+.*\bTuple\b",
+            r"from\s+typing\s+import\s+.*\bTuple\s+as\s+\w+",
         ]
-        
+
         for pattern in patterns:
             if re.search(pattern, content, re.IGNORECASE):
                 return True
-        
+
+        multiline_match = re.search(
+            r"from\s+typing\s+import\s+\((.*?)\)",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if multiline_match and re.search(r"\bTuple\b", multiline_match.group(1)):
+            return True
+
         return False
 
     def _check_union_syntax(

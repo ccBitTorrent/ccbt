@@ -242,7 +242,47 @@ async def test_tracker_ingress_holds_new_peers_when_pending_queue_deep(
         ingress_source="announce_loop",
     )
     assert merged == 0
-    assert int(session._peer_discovery_metrics.get("ingress_budget_drop_total", 0)) >= 1
+    assert int(session._peer_discovery_metrics.get("ingress_hold_deferred_total", 0)) >= 1
+    assert ("10.0.0.88", 6888) in session._tracker_ingress_hold_buffer
+
+
+@pytest.mark.asyncio
+async def test_tracker_ingress_admits_new_peers_when_requestable_zero(
+    tmp_path,
+) -> None:
+    """Bypass ingress hold when no requestable peers remain and capacity exists."""
+    td = {
+        "name": "hold-bypass-torrent",
+        "info_hash": b"5" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.config.discovery.tracker_ingress_hold_pending_queue_threshold = 1
+
+    class _PM:
+        def __init__(self) -> None:
+            self._pending_peer_queue = [object(), object()]
+            self._pending_peer_queue_lock = asyncio.Lock()
+            self.max_peers_per_torrent = 50
+
+        def _snapshot_connection_counts(self) -> tuple[int, int, int]:
+            return 1, 1, 0
+
+    session.download_manager.peer_manager = _PM()
+
+    merged = await session._ingest_tracker_discovery_peers(  # noqa: SLF001
+        [{"ip": "10.0.0.99", "port": 6999, "peer_source": "tracker"}],
+        tracker_url="udp://tracker-bypass:80",
+        ingress_source="tracker_immediate",
+    )
+    assert merged == 1
+    assert ("10.0.0.99", 6999) in session._tracker_discovery_ingress_pending
 
 
 @pytest.mark.asyncio
@@ -282,11 +322,7 @@ async def test_tracker_ingress_hold_effective_threshold_scales_with_mpt(
         ingress_source="announce_loop",
     )
     assert merged == 0
-    assert int(session._peer_discovery_metrics.get("ingress_budget_drop_total", 0)) >= 1
-
-
-@pytest.mark.asyncio
-async def test_refresh_outbound_pending_peer_queue_metric_reads_pm(tmp_path) -> None:
+    assert int(session._peer_discovery_metrics.get("ingress_hold_deferred_total", 0)) >= 1
     """Outbound pending depth must reflect peer-manager queue, not ingress coalescer."""
     td = {
         "name": "metric-torrent",
@@ -419,3 +455,39 @@ async def test_tracker_ingress_first_reentrant_does_not_spike_cycles(tmp_path) -
 
     assert session._tracker_reentrant_non_progress_cycles == 0
     assert session._tracker_discovery_last_pm_queue_depth == 500
+
+
+@pytest.mark.asyncio
+async def test_tracker_ingress_hold_buffer_flushes_when_depth_drops(tmp_path) -> None:
+    """Deferred hold-buffer peers replay when pending depth falls below threshold."""
+    td = {
+        "name": "hold-flush-torrent",
+        "info_hash": b"8" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    session.config.discovery.tracker_ingress_hold_pending_queue_threshold = 10
+    session.config.discovery.tracker_ingress_hold_buffer_max = 50
+    session._tracker_ingress_hold_buffer[("10.0.0.50", 5050)] = {
+        "ip": "10.0.0.50",
+        "port": 5050,
+        "peer_source": "tracker",
+    }
+
+    class _PM:
+        def __init__(self) -> None:
+            self._pending_peer_queue: list[object] = []
+            self._pending_peer_queue_lock = asyncio.Lock()
+
+    session.download_manager.peer_manager = _PM()
+
+    flushed = await session._flush_tracker_ingress_hold_buffer()  # noqa: SLF001
+    assert flushed == 1
+    assert ("10.0.0.50", 5050) not in session._tracker_ingress_hold_buffer
+    assert ("10.0.0.50", 5050) in session._tracker_discovery_ingress_pending

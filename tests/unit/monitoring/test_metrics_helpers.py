@@ -511,9 +511,7 @@ class TestInitMetrics:
         def raise_error():
             raise Exception("Config error")
 
-        from ccbt import config as config_module
-
-        monkeypatch.setattr(config_module, "get_config", raise_error)
+        monkeypatch.setattr("ccbt.config.config.get_config", raise_error)
 
         # Should not raise, but return None
         metrics = await init_metrics()
@@ -627,9 +625,7 @@ class TestShutdownMetrics:
         def raise_config_error():
             raise RuntimeError("Config error")
 
-        from ccbt import config as config_module
-
-        monkeypatch.setattr(config_module, "get_config", raise_config_error)
+        monkeypatch.setattr("ccbt.config.config.get_config", raise_config_error)
 
         # Should return None, not raise
         result = await init_metrics()
@@ -672,9 +668,7 @@ def mock_config_enabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
@@ -696,9 +690,7 @@ def mock_config_disabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

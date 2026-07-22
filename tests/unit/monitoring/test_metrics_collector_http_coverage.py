@@ -52,15 +52,12 @@ class TestMetricsCollectorHTTPCoverage:
                 raise AttributeError("Cannot access metrics_port")
 
         config_with_raise = ConfigWithRaise(ObsWithRaise())
-
-        from ccbt import config as config_module
-
-        original_get_config = config_module.get_config
+        from ccbt.config.config import get_config as original_get_config
 
         def get_config_with_raise():
             return config_with_raise
 
-        monkeypatch.setattr(config_module, "get_config", get_config_with_raise)
+        monkeypatch.setattr("ccbt.config.config.get_config", get_config_with_raise)
 
         try:
             await metrics._start_prometheus_server()
@@ -70,7 +67,7 @@ class TestMetricsCollectorHTTPCoverage:
         finally:
             # Restore
             monkeypatch.setattr(HTTPServer, "__init__", original_init)
-            monkeypatch.setattr(config_module, "get_config", original_get_config)
+            monkeypatch.setattr("ccbt.config.config.get_config", original_get_config)
 
     @pytest.mark.asyncio
     async def test_start_when_disabled_returns_early(self, mock_config_disabled):
@@ -120,9 +117,7 @@ def mock_config_enabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
@@ -144,9 +139,7 @@ def mock_config_disabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

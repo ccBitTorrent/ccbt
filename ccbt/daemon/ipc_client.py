@@ -111,6 +111,15 @@ class IPCClient:
         self.base_url = base_url or self._get_default_url()
         self.timeout = aiohttp.ClientTimeout(total=timeout)
 
+        if self.api_key is None:
+            try:
+                from ccbt.daemon.daemon_manager import resolve_daemon_connection_params
+
+                _port, resolved_key, _config_path = resolve_daemon_connection_params()
+                self.api_key = resolved_key
+            except Exception as e:
+                logger.debug(_("Could not resolve daemon API key: %s"), e)
+
         self._session: Optional[aiohttp.ClientSession] = None
         self._session_loop: Optional[asyncio.AbstractEventLoop] = (
             None  # Track loop session was created with
@@ -275,11 +284,11 @@ class IPCClient:
             if sys.platform == "win32":
                 # On Windows, be more aggressive with connection limits to prevent buffer exhaustion
                 connector = aiohttp.TCPConnector(
-                    limit=5,  # Lower limit on Windows
-                    limit_per_host=3,  # Lower per-host limit on Windows
+                    limit=2,
+                    limit_per_host=1,
                     ttl_dns_cache=300,
                     force_close=True,
-                    enable_cleanup_closed=True,  # Enable cleanup of closed connections
+                    enable_cleanup_closed=True,
                 )
             self._session = aiohttp.ClientSession(
                 timeout=self.timeout, connector=connector
@@ -2961,9 +2970,13 @@ class IPCClient:
         try:
             # Use a shorter timeout for the status check to avoid long waits
             # The caller will handle retries with exponential backoff
-            status = await asyncio.wait_for(self.get_status(), timeout=3.0)
-            # Verify we got a valid status response
-            return status is not None and hasattr(status, "status")
+            status_timeout = 3.0
+            if self.timeout is not None and self.timeout.total is not None:
+                status_timeout = min(float(self.timeout.total), 15.0)
+            status = await asyncio.wait_for(self.get_status(), timeout=status_timeout)
+            if status is None:
+                return False
+            return status.status in ("running", "starting", "shutting_down")
         except asyncio.TimeoutError:
             logger.debug(
                 _(

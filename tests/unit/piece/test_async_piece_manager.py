@@ -661,6 +661,18 @@ class TestAsyncPieceManagerPieceSelector:
         assert metrics["no_progress_gate_reason"] == "test_reason"
         assert metrics["no_progress_gate_engaged_at"] == 1234.5
 
+    def test_active_request_metric_reconciles_to_live_ledger(self, piece_manager):
+        """Recovery telemetry must not inherit drift from cumulative mutations."""
+        piece_manager._piece_selection_metrics["active_block_requests"] = 1707
+        piece_manager._active_block_requests = {
+            0: {"127.0.0.1:6881": [(0, 16384, time.time())]}
+        }
+
+        metrics = piece_manager.get_piece_selection_metrics()
+
+        assert metrics["active_block_requests"] == 1
+        assert piece_manager._piece_selection_metrics["active_block_requests"] == 1
+
     @pytest.mark.asyncio
     async def test_piece_selector_no_progress_gate_counts_choked_with_piece_reason(
         self, piece_manager
@@ -1115,6 +1127,97 @@ class TestAsyncPieceManagerHandlePieceBlock:
     """Test handle_piece_block functionality."""
 
     @pytest.mark.asyncio
+    async def test_concurrent_out_of_order_blocks_mutate_before_awaited_progress(
+        self,
+        piece_manager,
+    ):
+        """Concurrent blocks remain atomic while progress I/O runs outside the lock."""
+        piece_index = 0
+        piece = PieceData(piece_index, 32768)
+        piece_manager.pieces[piece_index] = piece
+
+        progress_entered = asyncio.Event()
+        release_progress = asyncio.Event()
+        file_selection_manager = MagicMock()
+        file_selection_manager.get_files_for_piece.return_value = [0]
+        file_selection_manager.get_file_state.return_value = SimpleNamespace(
+            bytes_downloaded=0
+        )
+        file_selection_manager.mapper.piece_to_files = {
+            piece_index: [(0, 0, piece.length)]
+        }
+
+        async def delayed_progress(_file_index: int, _bytes_downloaded: int) -> None:
+            progress_entered.set()
+            await release_progress.wait()
+
+        file_selection_manager.update_file_progress = AsyncMock(
+            side_effect=delayed_progress
+        )
+        piece_manager.file_selection_manager = file_selection_manager
+        performance_update = AsyncMock()
+        hash_verification = AsyncMock()
+        expected_block_count = 2
+        completed: list[int] = []
+        piece_manager.on_piece_completed = completed.append
+
+        with (
+            patch.object(
+                piece_manager,
+                "_update_peer_performance_on_piece_complete",
+                performance_update,
+            ),
+            patch.object(
+                piece_manager,
+                "_verify_piece_hash",
+                hash_verification,
+            ),
+            patch(
+                "ccbt.piece.async_piece_manager.emit_event",
+                new_callable=AsyncMock,
+            ),
+        ):
+            last_block = asyncio.create_task(
+                piece_manager.handle_piece_block(
+                    piece_index,
+                    16384,
+                    b"b" * 16384,
+                    "peer-b",
+                )
+            )
+            await asyncio.wait_for(progress_entered.wait(), timeout=1.0)
+
+            first_block = asyncio.create_task(
+                piece_manager.handle_piece_block(
+                    piece_index,
+                    0,
+                    b"a" * 16384,
+                    "peer-a",
+                )
+            )
+
+            async def wait_for_both_mutations() -> None:
+                while not piece.is_complete():
+                    await asyncio.sleep(0)
+
+            await asyncio.wait_for(wait_for_both_mutations(), timeout=1.0)
+
+            assert piece.is_complete()
+            assert piece.get_data() == (b"a" * 16384) + (b"b" * 16384)
+            assert piece_index in piece_manager.completed_pieces
+            assert completed == []
+
+            release_progress.set()
+            await asyncio.gather(last_block, first_block)
+
+        assert completed == [piece_index]
+        performance_update.assert_awaited_once()
+        assert (
+            file_selection_manager.update_file_progress.await_count
+            == expected_block_count
+        )
+
+    @pytest.mark.asyncio
     async def test_handle_piece_block_completes_piece(self, piece_manager):
         """Test handling block that completes a piece."""
         piece_index = 0
@@ -1344,6 +1447,18 @@ class TestAsyncPieceManagerEdgeCases:
         piece_manager._retry_requested_pieces.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_get_download_progress_zero_pieces_metadata_pending(self):
+        """Metadata-pending magnets must not report 100% progress."""
+        torrent_data = {
+            "info_hash": b"\x00" * 20,
+            "file_info": {"total_length": 0, "type": "single"},
+            "pieces_info": {"num_pieces": 0, "piece_length": 16384, "piece_hashes": []},
+            "_metadata_incomplete": True,
+        }
+        manager = AsyncPieceManager(torrent_data)
+        assert manager.get_download_progress() == 0.0
+
+    @pytest.mark.asyncio
     async def test_get_download_progress_zero_pieces(self):
         """Test download progress with zero pieces."""
         torrent_data = {
@@ -1531,6 +1646,100 @@ class TestAsyncPieceManagerEdgeCases:
         assert requests_sent == 1
         assert peer_manager.request_piece.await_count == 1
         assert piece_manager._piece_selection_metrics["unknown_peer_probes"] == 1
+
+    @pytest.mark.asyncio
+    async def test_request_blocks_normal_plans_only_real_free_slots(self):
+        """Large pieces must not create hundreds of allocations for full pipelines."""
+        torrent_data = {
+            "info_hash": b"\x19" * 20,
+            "file_info": {
+                "name": "bounded.bin",
+                "total_length": 131072,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 131072,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 131072,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+
+        peer = MagicMock()
+        peer.peer_info = PeerInfo(ip="198.51.100.90", port=6881)
+        peer.can_request.return_value = True
+        peer.get_available_pipeline_slots.return_value = 2
+        peer.outstanding_requests = {}
+        peer.max_pipeline_depth = 8
+        peer.peer_choking = False
+        peer.stats = SimpleNamespace(download_rate=10.0)
+        peer.peer_state = SimpleNamespace(pieces_we_have={0}, bitfield=b"\x80")
+        captured: list[RequestInfo] = []
+
+        def balance(
+            requests: list[RequestInfo],
+            peers: list[MagicMock],
+            min_allocation_per_peer: int = 1,
+        ) -> dict[str, list[RequestInfo]]:
+            del min_allocation_per_peer
+            captured.extend(requests)
+            return {str(peers[0].peer_info): requests}
+
+        peer_manager = SimpleNamespace(
+            _balance_requests_across_peers=balance,
+            get_active_peers=lambda: [peer],
+            request_piece=AsyncMock(return_value=True),
+        )
+        requests_sent = await piece_manager._request_blocks_normal(
+            0,
+            piece_manager.pieces[0].get_missing_blocks(),
+            [peer],
+            peer_manager,
+        )
+
+        assert len(captured) == 2
+        assert requests_sent == 2
+
+    @pytest.mark.asyncio
+    async def test_refill_downloading_piece_dispatches_only_unclaimed_blocks(self):
+        """A received block should make newly free capacity immediately reusable."""
+        torrent_data = {
+            "info_hash": b"\x1a" * 20,
+            "file_info": {
+                "name": "refill.bin",
+                "total_length": 65536,
+                "type": "single",
+            },
+            "pieces_info": {
+                "num_pieces": 1,
+                "piece_length": 65536,
+                "piece_hashes": [b"\x01" * 20],
+                "total_length": 65536,
+            },
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        await piece_manager.update_from_metadata(torrent_data)
+        piece_manager.is_downloading = True
+        piece_manager._stopping = False
+        piece_manager._peer_manager = MagicMock()
+        piece = piece_manager.pieces[0]
+        piece.state = PieceState.DOWNLOADING
+        piece.blocks[0].received = True
+        piece.blocks[1].requested_from.add("198.51.100.91:6881")
+        peer = MagicMock()
+        piece_manager._get_peers_for_piece = AsyncMock(return_value=[peer])
+        piece_manager._request_blocks_normal = AsyncMock(return_value=1)
+
+        await piece_manager._refill_downloading_piece(0)
+
+        refill_blocks = piece_manager._request_blocks_normal.await_args.args[1]
+        assert refill_blocks == piece.blocks[2:]
+        assert piece_manager._request_blocks_normal.await_args.kwargs == {
+            "allow_existing_piece_requests": True
+        }
+        assert piece.requests_dispatched == 1
 
     @pytest.mark.asyncio
     async def test_request_blocks_normal_does_not_track_piece_when_send_fails(self):
@@ -1954,10 +2163,10 @@ class TestAsyncPieceManagerEdgeCases:
         assert available_peers == [fresh_peer]
 
     @pytest.mark.asyncio
-    async def test_select_pieces_stalls_temporarily_when_no_availability_announced(
+    async def test_select_pieces_keeps_optimistic_bootstrap_without_deadband(
         self, piece_manager
     ):
-        """Repeated selections with no announced availability should enter a short deadband."""
+        """A requestable unknown peer should keep optimistic bootstrap live."""
         piece_manager._availability_deadband_threshold = 2
         piece_manager._availability_deadband_s = 1.0
         piece = piece_manager.pieces[0]
@@ -1975,13 +2184,14 @@ class TestAsyncPieceManagerEdgeCases:
             get_active_peers=lambda: [peer],
             connections={},
         )
+        piece_manager._get_peers_for_piece = AsyncMock(return_value=[])
 
         await piece_manager._select_pieces()
         await piece_manager._select_pieces()
 
-        assert piece_manager._availability_deadband_until > time.time()
+        assert piece_manager._availability_deadband_until == 0.0
         assert (
-            piece_manager._piece_selection_metrics["availability_deadband_events"] >= 1
+            piece_manager._piece_selection_metrics["availability_deadband_events"] == 0
         )
 
     @pytest.mark.asyncio
@@ -3437,7 +3647,9 @@ class TestAsyncPieceManagerEdgeCases:
         assert piece_manager.pieces[0].state == PieceState.MISSING
 
     @pytest.mark.asyncio
-    async def test_deferred_checkpoint_restore_clears_stale_endgame_from_checkpoint(self):
+    async def test_deferred_checkpoint_restore_clears_stale_endgame_from_checkpoint(
+        self,
+    ):
         """Magnet deferral must not keep endgame_mode True from a bogus checkpoint."""
         torrent_data = {
             "info_hash": b"\x0e" * 20,
@@ -3464,6 +3676,60 @@ class TestAsyncPieceManagerEdgeCases:
         await piece_manager.restore_from_checkpoint(checkpoint)
 
         assert piece_manager.endgame_mode is False
+
+    @pytest.mark.asyncio
+    async def test_deferred_checkpoint_sanitizes_false_complete_with_zero_bytes(self):
+        """Verified checkpoint claims with no downloaded bytes must reset to MISSING."""
+        torrent_data = {
+            "info_hash": b"\x0b" * 20,
+            "name": "false-complete.bin",
+            "announce": "http://tracker.example.com/announce",
+            "_metadata_incomplete": True,
+            "file_info": None,
+            "pieces_info": None,
+        }
+        piece_manager = AsyncPieceManager(torrent_data)
+        checkpoint = TorrentCheckpoint(
+            info_hash=b"\x0b" * 20,
+            torrent_name="false-complete.bin",
+            total_pieces=2,
+            piece_length=16384,
+            total_length=32768,
+            verified_pieces=[0, 1],
+            piece_states={
+                0: CheckpointPieceState.VERIFIED,
+                1: CheckpointPieceState.VERIFIED,
+            },
+            download_stats=DownloadStats(bytes_downloaded=0),
+            output_dir=".",
+        )
+
+        await piece_manager.restore_from_checkpoint(checkpoint)
+
+        updated_torrent_data = {
+            "info_hash": b"\x0b" * 20,
+            "name": "false-complete.bin",
+            "announce": "http://tracker.example.com/announce",
+            "_metadata_incomplete": False,
+            "file_info": {
+                "name": "false-complete.bin",
+                "type": "single",
+                "total_length": 32768,
+            },
+            "pieces_info": {
+                "num_pieces": 2,
+                "piece_length": 16384,
+                "piece_hashes": [b"\x11" * 20, b"\x22" * 20],
+                "total_length": 32768,
+            },
+        }
+
+        await piece_manager.update_from_metadata(updated_torrent_data)
+
+        assert piece_manager.pieces[0].state == PieceState.MISSING
+        assert piece_manager.pieces[1].state == PieceState.MISSING
+        assert piece_manager.verified_pieces == set()
+        assert piece_manager.sync_download_complete_if_verified() is False
 
     @pytest.mark.asyncio
     async def test_checkpoint_restore_reconciles_stale_endgame_when_layout_ready(self):
@@ -3670,23 +3936,23 @@ class TestAsyncPieceManagerPipelineThreshold:
             AsyncPieceManager._high_pipeline_utilization_filter_threshold(25, 1) == 0.9
         )
 
-    def test_sparse_swarm_pipeline_cap_only_when_few_actives_and_deep_config(
+    def test_sparse_swarm_keeps_full_adaptive_pipeline_when_unthrottled(
         self,
     ) -> None:
         conn = SimpleNamespace(max_pipeline_depth=96)
-        assert AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
-            conn, active_peer_count=1
-        ) == max(24, (96 * 2) // 5)
         assert (
-            AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
-                conn, active_peer_count=3
+            AsyncPieceManager._peer_effective_pipeline_cap(
+                conn,
+                active_peer_count=1,
+                throttle_requests=False,
             )
-            is None
+            == 96
         )
-        shallow = SimpleNamespace(max_pipeline_depth=16)
         assert (
-            AsyncPieceManager._sparse_swarm_effective_pipeline_cap(
-                shallow, active_peer_count=1
+            AsyncPieceManager._peer_effective_pipeline_cap(
+                conn,
+                active_peer_count=5,
+                throttle_requests=True,
             )
-            is None
+            == 48
         )

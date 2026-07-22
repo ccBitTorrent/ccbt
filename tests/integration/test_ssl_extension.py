@@ -57,54 +57,69 @@ class TestSSLExtensionIntegration:
     @pytest.mark.asyncio
     async def test_ssl_extension_message_flow(self):
         """Test complete SSL extension message flow."""
-        manager = ExtensionManager()
-        # Start extensions to activate SSL extension
-        await manager.start()
+        config_data = {
+            "security": {
+                "ssl": {
+                    "enable_ssl_peers": True,
+                    "ssl_extension_enabled": True,
+                    "ssl_extension_timeout": 2.0,
+                    "ssl_extension_opportunistic": True,
+                }
+            }
+        }
+        config = Config(**config_data)
 
-        protocol_ext = manager.get_extension("protocol")
-        ssl_ext = manager.get_extension("ssl")
+        with patch("ccbt.extensions.manager.get_config", return_value=config):
+            manager = ExtensionManager()
+            # Start extensions to activate SSL extension
+            await manager.start()
 
-        peer_id = "integration_test_peer"
+            protocol_ext = manager.get_extension("protocol")
+            ssl_ext = manager.get_extension("ssl")
 
-        # Simulate peer extension handshake
-        peer_handshake = {"ssl": {"supports_ssl": True, "version": "1.0"}}
-        manager.set_peer_extensions(peer_id, peer_handshake)
+            peer_id = "integration_test_peer"
 
-        # Verify peer supports SSL extension
-        assert manager.peer_supports_extension(peer_id, "ssl")
+            # Simulate peer extension handshake
+            peer_handshake = {"ssl": {"supports_ssl": True, "version": "1.0"}}
+            manager.set_peer_extensions(peer_id, peer_handshake)
 
-        # Encode SSL request
-        request_data = ssl_ext.encode_request()
-        request_id = ssl_ext.decode_request(request_data)
+            # Verify peer supports SSL extension
+            assert manager.peer_supports_extension(peer_id, "ssl")
 
-        # Get SSL extension message ID
-        ssl_ext_info = protocol_ext.get_extension_info("ssl")
-        assert ssl_ext_info is not None
+            # Encode SSL request
+            request_data = ssl_ext.encode_request()
+            request_id = ssl_ext.decode_request(request_data)
 
-        # Encode as extension message
-        extension_message = protocol_ext.encode_extension_message(
-            ssl_ext_info.message_id, request_data
-        )
+            # Get SSL extension message ID
+            ssl_ext_info = protocol_ext.get_extension_info("ssl")
+            assert ssl_ext_info is not None
 
-        # Verify message format
-        # Extension message format: <length><extension_message_id><payload>
-        assert len(extension_message) >= 5
-        length, ext_msg_id = struct.unpack("!IB", extension_message[:5])
-        assert ext_msg_id == ssl_ext_info.message_id
+            # Encode as extension message
+            extension_message = protocol_ext.encode_extension_message(
+                ssl_ext_info.message_id, request_data
+            )
 
-        # Handle request (simulate peer receiving)
-        response = await manager.handle_ssl_message(peer_id, ssl_ext_info.message_id, request_data)
+            # Verify message format
+            # Extension message format: <length><extension_message_id><payload>
+            assert len(extension_message) >= 5
+            length, ext_msg_id = struct.unpack("!IB", extension_message[:5])
+            assert ext_msg_id == ssl_ext_info.message_id
 
-        # Verify response
-        assert response is not None
-        response_msg_type, response_request_id = struct.unpack("!BI", response)
-        assert response_msg_type == SSLMessageType.ACCEPT
-        assert response_request_id == request_id
+            # Handle request (simulate peer receiving)
+            response = await manager.handle_ssl_message(
+                peer_id, ssl_ext_info.message_id, request_data
+            )
 
-        # Verify negotiation state
-        negotiation_state = ssl_ext.get_negotiation_state(peer_id)
-        assert negotiation_state is not None
-        assert negotiation_state.state == "accepted"
+            # Verify response
+            assert response is not None
+            response_msg_type, response_request_id = struct.unpack("!BI", response)
+            assert response_msg_type == SSLMessageType.ACCEPT
+            assert response_request_id == request_id
+
+            # Verify negotiation state
+            negotiation_state = ssl_ext.get_negotiation_state(peer_id)
+            assert negotiation_state is not None
+            assert negotiation_state.state == "accepted"
 
     @pytest.mark.asyncio
     async def test_ssl_negotiation_with_mock_connection(self):

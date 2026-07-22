@@ -7,7 +7,6 @@ Provides validated data models for type safety and runtime validation.
 
 from __future__ import annotations
 
-import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -41,14 +40,7 @@ class AdaptiveTimeoutHealthPeerSource(str, Enum):
     """Use post-handshake active peers only (legacy behavior)."""
 
 
-_SWARM_TIMEOUT_SIGNALS_KW: dict[str, bool] = {"frozen": True}
-if sys.version_info >= (3, 10):
-    _SWARM_TIMEOUT_SIGNALS_KW["slots"] = True
-
-
-@dataclass(**_SWARM_TIMEOUT_SIGNALS_KW)
-
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class SwarmTimeoutSignals:
     """Peer counts for adaptive timeout health (handshake / DHT query timeouts)."""
 
@@ -810,6 +802,12 @@ class NetworkConfig(BaseModel):
         le=128,
         description="Request pipeline depth",
     )
+    request_timeout: float = Field(
+        default=60.0,
+        ge=1.0,
+        le=600.0,
+        description="Base BitTorrent block request timeout in seconds",
+    )
     sparse_pipeline_stale_payload_cancel_s: float = Field(
         default=120.0,
         ge=0.0,
@@ -925,10 +923,10 @@ class NetworkConfig(BaseModel):
 
     # Connection settings
     connection_timeout: float = Field(
-        default=30.0,
+        default=12.0,
         ge=1.0,
         le=300.0,
-        description="Connection timeout in seconds",
+        description="Outbound TCP establishment timeout in seconds",
     )
     handshake_timeout: float = Field(
         default=10.0,
@@ -1036,6 +1034,33 @@ class NetworkConfig(BaseModel):
         le=300.0,
         description="Metadata exchange timeout in seconds (BEP 9 compliant)",
     )
+    metadata_exchange_max_peers: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum parallel peers for metadata exchange after cold start",
+    )
+    metadata_exchange_cold_start_max_peers: int = Field(
+        default=18,
+        ge=1,
+        le=30,
+        description="Parallel peers for metadata exchange during magnet cold start",
+    )
+    metadata_exchange_cold_start_timeout: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=120.0,
+        description="Per-fetch timeout (seconds) for metadata during magnet cold start",
+    )
+    metadata_phase_plaintext_connect_attempts: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description=(
+            "Outbound peer connects to skip MSE for this many attempts per peer "
+            "while metadata is incomplete and no active peers exist"
+        ),
+    )
     metadata_piece_timeout: float = Field(
         default=15.0,
         ge=5.0,
@@ -1133,12 +1158,30 @@ class NetworkConfig(BaseModel):
         description="Maximum concurrent connection attempts to prevent OS socket exhaustion (BitTorrent spec compliant)",
     )
     connect_to_peers_parallel_batches: int = Field(
-        default=1,
+        default=2,
         ge=1,
         le=8,
         description=(
             "Maximum concurrent connect_to_peers batches per torrent (1 = legacy single-flight). "
             "Values above 1 reduce discovery callback queueing but increase parallel handshake load."
+        ),
+    )
+    pending_peer_queue_max_age_s: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description=(
+            "Maximum age in seconds for peers waiting in the outbound pending queue "
+            "before they are dropped during cold-start discovery bursts."
+        ),
+    )
+    pending_peer_queue_max_depth: int = Field(
+        default=600,
+        ge=100,
+        le=5000,
+        description=(
+            "Maximum peers retained in the outbound pending connect queue. "
+            "Overflow drops lowest-priority tail entries to prevent unbounded backlog."
         ),
     )
     mse_initiator_timeout_scale_zero_active: float = Field(
@@ -1203,10 +1246,101 @@ class NetworkConfig(BaseModel):
 
     # Upload slots
     max_upload_slots: int = Field(
-        default=4,
+        default=8,
         ge=1,
         le=20,
         description="Maximum upload slots",
+    )
+    low_swarm_min_upload_slots: int = Field(
+        default=8,
+        ge=1,
+        le=20,
+        description=(
+            "Minimum upload slots when the swarm is small (<=10 actives) and "
+            "leech-heavy — improves reciprocation so remotes unchoke us"
+        ),
+    )
+    connect_batch_early_exit_min_active_peers: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description=(
+            "Do not early-cancel in-flight connect tasks until at least this many "
+            "post-handshake actives exist (prevents stopping at 5/5 during cold start)"
+        ),
+    )
+    connect_batch_zero_active_max_duration_s: float = Field(
+        default=60.0,
+        ge=30.0,
+        le=120.0,
+        description=(
+            "Wall-clock budget for a connect batch when active peers are zero "
+            "(restart collapse recovery — avoids aborting handshakes at 45s)"
+        ),
+    )
+    connect_batch_max_peers_per_owner: int = Field(
+        default=100,
+        ge=20,
+        le=500,
+        description=(
+            "Maximum peers one connect_to_peers batch owner processes before "
+            "queueing the remainder. Prevents megabatch churn from starving "
+            "handshakes that are close to completing."
+        ),
+    )
+    connect_batch_productive_pause_min_requestable: int = Field(
+        default=8,
+        ge=3,
+        le=50,
+        description=(
+            "Pause outbound connect megabatches once this many peers are "
+            "requestable, so piece pipelines get CPU instead of connect churn."
+        ),
+    )
+    connect_throttle_productive_window_s: float = Field(
+        default=30.0,
+        ge=5.0,
+        le=120.0,
+        description=(
+            "Seconds after last piece payload during which outbound connect "
+            "parallelism is throttled to protect active download peers."
+        ),
+    )
+    connect_throttle_productive_max_concurrent: int = Field(
+        default=8,
+        ge=3,
+        le=50,
+        description=(
+            "Maximum parallel outbound TCP connects while a productive download "
+            "is in flight (pipeline-saturated but unchoked peers)."
+        ),
+    )
+    steady_connect_drain_interval_s: float = Field(
+        default=10.0,
+        ge=2.0,
+        le=60.0,
+        description=(
+            "Interval for background pending-queue resume while active peers "
+            "remain below the swarm growth target (max_peers_per_torrent / 4)."
+        ),
+    )
+    pending_stale_purge_age_s: float = Field(
+        default=120.0,
+        ge=30.0,
+        le=600.0,
+        description=(
+            "Drop pending-queue peers older than this after a zero-success "
+            "connect batch so dead addresses are not retried indefinitely."
+        ),
+    )
+    pending_requeue_skip_after_hard_disconnect_s: float = Field(
+        default=300.0,
+        ge=60.0,
+        le=3600.0,
+        description=(
+            "Do not re-queue peers for this many seconds after hard choke-timeout "
+            "disconnect or stale-unchoke failure."
+        ),
     )
 
     # Tit-for-tat / reciprocation (upload side encourages remote UNCHOKE)
@@ -1650,7 +1784,13 @@ class NetworkConfig(BaseModel):
         default=200,
         ge=1,
         le=10000,
-        description="Maximum connections in connection pool",
+        description="Deprecated alias for the legacy peer connection pool limit",
+    )
+    max_live_sockets: int = Field(
+        default=200,
+        ge=1,
+        le=10000,
+        description="Process-wide maximum live inbound and outbound peer sockets",
     )
     connection_pool_max_idle_time: float = Field(
         default=300.0,
@@ -1659,8 +1799,8 @@ class NetworkConfig(BaseModel):
         description="Maximum idle time before connection is closed (seconds)",
     )
     connection_pool_warmup_enabled: bool = Field(
-        default=True,
-        description="Enable connection warmup to pre-establish connections",
+        default=False,
+        description="Deprecated; BitTorrent protocol streams are not reusable",
     )
     connection_pool_warmup_count: int = Field(
         default=10,
@@ -1857,8 +1997,8 @@ class NetworkConfig(BaseModel):
         description="Enable request prioritization (rarest pieces first)",
     )
     pipeline_enable_coalescing: bool = Field(
-        default=True,
-        description="Enable request coalescing (combine adjacent requests)",
+        default=False,
+        description="Deprecated compatibility flag; wire block requests remain exact",
     )
     pipeline_coalesce_threshold_kib: int = Field(
         default=4,
@@ -2672,7 +2812,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_connect_burst_total: int = Field(
-        default=16,
+        default=50,
         ge=1,
         le=512,
         description=(
@@ -2681,7 +2821,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_connect_burst_per_source: int = Field(
-        default=16,
+        default=50,
         ge=1,
         le=512,
         description=(
@@ -2707,7 +2847,7 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     tracker_immediate_per_source_cap_mode: str = Field(
-        default="half_max_peers",
+        default="full_max_peers",
         description=(
             "half_max_peers: per-source limit min(burst, max(1, max_peers_per_torrent//2)). "
             "full_max_peers: min(burst_per_source, max_peers_per_torrent)."
@@ -2882,13 +3022,12 @@ class DiscoveryConfig(BaseModel):
     # Default trackers for magnet links without tr= parameters
     default_trackers: list[str] = Field(
         default_factory=lambda: [
-            "https://tracker.opentrackr.org:443/announce",
-            "https://tracker.torrent.eu.org:443/announce",
-            "https://tracker.openbittorrent.com:443/announce",
-            "http://tracker.opentrackr.org:1337/announce",
-            "http://tracker.openbittorrent.com:80/announce",
             "udp://tracker.opentrackr.org:1337/announce",
-            "udp://tracker.openbittorrent.com:80/announce",
+            "http://tracker.dler.org:6969/announce",
+            "http://tracker.renfei.net:8080/announce",
+            "https://tracker.nekomi.cn/announce",
+            "http://bt2.archive.org:6969/announce",
+            "https://tr.nyacat.pw/announce",
         ],
         description="Default trackers to use for magnet links without tr= parameters",
     )
@@ -2924,6 +3063,24 @@ class DiscoveryConfig(BaseModel):
             "Per-torrent pending peer queue depth at which new tracker ingress merges "
             "are held (0 disables). Session applies min(config, max(64, 2*MPT+3*burst)) "
             "so large values still engage on low max_peers_per_torrent."
+        ),
+    )
+    tracker_ingress_hold_buffer_max: int = Field(
+        default=500,
+        ge=0,
+        le=10000,
+        description=(
+            "Max tracker peers buffered while ingress hold is active (0 disables buffer; "
+            "peers are dropped when hold engages and buffer is full)"
+        ),
+    )
+    tracker_immediate_pending_budget_max: int = Field(
+        default=400,
+        ge=50,
+        le=5000,
+        description=(
+            "Per-torrent pending peer queue depth above which immediate tracker overflow "
+            "is deferred to the ingress hold buffer instead of the connect queue"
         ),
     )
     # Legacy removal tracked under project todo legacy-markers-deprecation (do not drop silently).

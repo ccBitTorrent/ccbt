@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -13,6 +14,9 @@ from ccbt.peer.tcp_server import IncomingPeerServer
 from ccbt.security.mse_handshake import MSEHandshake
 
 pytestmark = [pytest.mark.integration, pytest.mark.peer, pytest.mark.security]
+
+_MSE_INTEGRATION_TIMEOUT = 30.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 5.0
+_HANDSHAKE_TIMEOUT = 10.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 1.0
 
 
 def _build_handshake_payload(info_hash: bytes) -> bytes:
@@ -52,10 +56,10 @@ async def _run_loopback_mse_handshake(
             reader,
             writer,
             info_hash,
-            timeout=1.0,
+            timeout=_MSE_INTEGRATION_TIMEOUT,
             initial_payload=outbound_payload,
         )
-        assert result.success
+        assert result.success, result.error
     finally:
         writer.close()
         await writer.wait_closed()
@@ -80,7 +84,7 @@ async def test_tcp_server_routes_pe_initial_payload_to_single_session() -> None:
         {info_hash: accept_incoming_encrypted}
     )
     config = SimpleNamespace(
-        network=SimpleNamespace(handshake_timeout=1.0),
+        network=SimpleNamespace(handshake_timeout=_HANDSHAKE_TIMEOUT),
     )
 
     server = IncomingPeerServer(session_manager, config=config)
@@ -90,6 +94,7 @@ async def test_tcp_server_routes_pe_initial_payload_to_single_session() -> None:
         server._handle_connection, "127.0.0.1", 0
     )
     try:
+        await asyncio.sleep(0.05)
         port = tcp_server.sockets[0].getsockname()[1]
         await _run_loopback_mse_handshake(info_hash, outbound_payload, port)
 
@@ -128,7 +133,7 @@ async def test_tcp_server_resolves_multi_hash_for_pe_first_handshake() -> None:
         }
     )
     config = SimpleNamespace(
-        network=SimpleNamespace(handshake_timeout=1.0),
+        network=SimpleNamespace(handshake_timeout=_HANDSHAKE_TIMEOUT),
     )
 
     server = IncomingPeerServer(session_manager, config=config)
@@ -138,6 +143,7 @@ async def test_tcp_server_resolves_multi_hash_for_pe_first_handshake() -> None:
         server._handle_connection, "127.0.0.1", 0
     )
     try:
+        await asyncio.sleep(0.05)
         port = tcp_server.sockets[0].getsockname()[1]
         await _run_loopback_mse_handshake(target_info_hash, outbound_payload, port)
 

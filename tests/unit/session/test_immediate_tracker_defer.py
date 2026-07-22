@@ -13,6 +13,12 @@ from ccbt.session.session import AsyncTorrentSession
 pytestmark = [pytest.mark.unit]
 
 
+def _session_config() -> SimpleNamespace:
+    return SimpleNamespace(
+        discovery=SimpleNamespace(tracker_immediate_pending_budget_max=400),
+    )
+
+
 @pytest.mark.asyncio
 async def test_defer_immediate_tracker_peers_to_pending_enqueues() -> None:
     """Burst-circuit path should enqueue peers on the peer manager pending queue."""
@@ -26,7 +32,10 @@ async def test_defer_immediate_tracker_peers_to_pending_enqueues() -> None:
         info=SimpleNamespace(name="test-torrent"),
         download_manager=SimpleNamespace(peer_manager=mock_pm),
         logger=logging.getLogger("test_immediate_defer"),
+        config=_session_config(),
+        _peer_discovery_metrics={},
     )
+    session._refresh_outbound_pending_peer_queue_metric = AsyncMock(return_value=0)
     recorded: list[tuple[list[dict], str]] = []
 
     def record_discovered_peers(pl: list[dict], source: str = "tracker") -> None:
@@ -58,6 +67,7 @@ async def test_defer_immediate_tracker_peers_no_peer_manager() -> None:
         info=SimpleNamespace(name="x"),
         download_manager=SimpleNamespace(peer_manager=None),
         logger=logging.getLogger("test_immediate_defer"),
+        config=_session_config(),
     )
     session.record_discovered_peers = MagicMock()
 

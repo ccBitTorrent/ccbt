@@ -21,6 +21,12 @@ async def _cancel_stray_tasks() -> None:
         await asyncio.gather(*pending, return_exceptions=True)
 
 
+async def _stop_with_timeout(coro, timeout: float = 30.0) -> None:
+    """Stop IPC/session helpers without hanging CI teardown."""
+    with contextlib.suppress(asyncio.TimeoutError, Exception):
+        await asyncio.wait_for(coro, timeout=timeout)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def mock_session_manager(monkeypatch):
     """Create a lightweight session manager for IPC tests."""
@@ -42,7 +48,7 @@ async def mock_session_manager(monkeypatch):
         try:
             yield session
         finally:
-            await session.stop()
+            await _stop_with_timeout(session.stop())
             await _cancel_stray_tasks()
 
 
@@ -63,5 +69,5 @@ async def ipc_server(mock_session_manager):
     try:
         yield server, api_key, actual_port
     finally:
-        await server.stop()
+        await _stop_with_timeout(server.stop())
         await _cancel_stray_tasks()

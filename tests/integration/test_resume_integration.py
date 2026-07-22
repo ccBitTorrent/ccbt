@@ -234,14 +234,13 @@ class TestResumeIntegration:
         )
 
         # Test priority order with explicit torrent path
-        # Patch Path in checkpoint_operations module, not session module
         with patch("ccbt.session.checkpoint_operations.Path") as mock_path_class:
             mock_path_instance = Mock()
             mock_path_instance.exists.return_value = True
             mock_path_class.return_value = mock_path_instance
+            mock_path_class.side_effect = lambda *args, **kwargs: mock_path_instance
 
-            # TorrentParser is imported inside the function, so patch it where it's imported
-            with patch("ccbt.core.torrent.TorrentParser") as mock_parser_class:
+            with patch("ccbt.session.session.TorrentParser") as mock_parser_class:
                 mock_parser = Mock()
                 mock_parser.parse.return_value = {
                     "info_hash": bytes.fromhex("0123456789ABCDEF0123456789ABCDEF01234567"),

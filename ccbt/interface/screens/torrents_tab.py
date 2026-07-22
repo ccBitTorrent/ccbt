@@ -6,10 +6,20 @@ Implements the main Torrents tab with nested sub-tabs for different torrent stat
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
+from ccbt.interface.content_load import (
+    SyncContentLoadGuard,
+    clear_container_children,
+    coalesce_gather_result,
+    query_child_by_id,
+    remove_widgets_by_ids,
+    schedule_widget_worker,
+    torrents_snapshot_from_app,
+)
 from ccbt.interface.widgets.core_widgets import GlobalTorrentMetricsPanel
 
 if TYPE_CHECKING:
@@ -203,14 +213,14 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
 
             # Note: F2.3.1 — removed set_interval self-poll; the screen now
             # self-renders via data_bind to the App torrents_data reactive.
-            try:
-                from ccbt.interface.terminal_dashboard import TerminalDashboard
+            from ccbt.interface.reactive_bridge import request_lazy_bind
 
-                self.data_bind(torrents_data=TerminalDashboard.torrents_data)
-            except (
-                Exception
-            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
-                logger.debug("GlobalTorrentsScreen data_bind skipped: %s", exc)
+            request_lazy_bind(self)
+
+            torrents = torrents_snapshot_from_app(self)
+            if torrents is not None:
+                self._paint_torrent_list(torrents)
+            self.call_after_refresh(self._hydrate_torrents_from_app)  # type: ignore[attr-defined]
 
             # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
@@ -218,6 +228,13 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                 self._torrents_table.display = True  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error mounting global torrents screen: %s", e, exc_info=True)
+
+    def _hydrate_torrents_from_app(self) -> None:
+        """Paint torrent rows and refresh metrics after mount/layout."""
+        torrents = torrents_snapshot_from_app(self)
+        if torrents is not None:
+            self._paint_torrent_list(torrents)
+        self._schedule_refresh_torrents(torrents)
 
     def on_language_changed(self, message: Any) -> None:  # pragma: no cover
         """Handle language change event.
@@ -268,9 +285,125 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
 
         Uses ``value`` directly instead of re-fetching ``list_torrents()``.
         """
-        import asyncio as _asyncio
+        torrents = list(value or [])
+        self._paint_torrent_list(torrents)
+        self._schedule_refresh_torrents(torrents)
 
-        _asyncio.create_task(self.refresh_torrents(torrents_override=value))
+    def _ensure_table_ready(self) -> bool:
+        """Ensure table widgets are queried and columns exist."""
+        if not getattr(self, "_empty_message", None):
+            with contextlib.suppress(Exception):
+                self._empty_message = self.query_one(
+                    "#torrents-empty-message", Static
+                )  # type: ignore[attr-defined]
+        if not getattr(self, "_torrents_table", None):
+            with contextlib.suppress(Exception):
+                self._torrents_table = self.query_one(
+                    "#torrents-table", DataTable
+                )  # type: ignore[attr-defined]
+        table = getattr(self, "_torrents_table", None)
+        if not table:
+            return False
+        if not table.columns:  # type: ignore[attr-defined]
+            table.add_columns(
+                "#",
+                _("Name"),
+                _("Size"),
+                _("Progress"),
+                _("Status"),
+                _("↓ Speed"),
+                _("↑ Speed"),
+                _("Peers"),
+                _("Seeds"),
+            )
+            table.zebra_stripes = True
+        return True
+
+    def _paint_torrent_list(self, torrents: list[dict[str, Any]]) -> None:
+        """Synchronously paint the torrent table (no IPC; safe from watch_* / call_later)."""
+        if not self._ensure_table_ready():
+            return
+
+        filtered = list(torrents)
+        if self._filter_text:
+            filtered = [
+                t
+                for t in filtered
+                if self._filter_text.lower() in str(t.get("name", "")).lower()
+            ]
+
+        if not filtered:
+            if self._torrents_table:
+                self._torrents_table.clear()
+                self._torrents_table.display = False  # type: ignore[attr-defined]
+            if self._empty_message:
+                self._empty_message.display = True  # type: ignore[attr-defined]
+            return
+
+        if self._empty_message:
+            self._empty_message.display = False  # type: ignore[attr-defined]
+        if self._torrents_table:
+            self._torrents_table.display = True  # type: ignore[attr-defined]
+            self._torrents_table.clear()
+            if not self._torrents_table.columns:  # type: ignore[attr-defined]
+                self._ensure_table_ready()
+
+            for idx, torrent in enumerate(filtered, 1):
+                size = torrent.get("total_size", 0)
+                if size >= 1024 * 1024 * 1024:
+                    size_str = f"{size / (1024**3):.2f} GB"
+                elif size >= 1024 * 1024:
+                    size_str = f"{size / (1024**2):.2f} MB"
+                elif size >= 1024:
+                    size_str = f"{size / 1024:.2f} KB"
+                else:
+                    size_str = f"{size} B"
+
+                progress = float(torrent.get("progress", 0.0)) * 100
+                progress_str = f"{progress:.1f}%"
+
+                down_rate = float(torrent.get("download_rate", 0.0))
+                if down_rate >= 1024 * 1024:
+                    down_str = f"{down_rate / (1024 * 1024):.2f} MB/s"
+                elif down_rate >= 1024:
+                    down_str = f"{down_rate / 1024:.2f} KB/s"
+                else:
+                    down_str = f"{down_rate:.2f} B/s"
+
+                up_rate = float(torrent.get("upload_rate", 0.0))
+                if up_rate >= 1024 * 1024:
+                    up_str = f"{up_rate / (1024 * 1024):.2f} MB/s"
+                elif up_rate >= 1024:
+                    up_str = f"{up_rate / 1024:.2f} KB/s"
+                else:
+                    up_str = f"{up_rate:.2f} B/s"
+
+                info_hash = torrent.get("info_hash") or torrent.get("info_hash_hex", "")
+                self._torrents_table.add_row(
+                    str(idx),
+                    torrent.get("name", "Unknown"),
+                    size_str,
+                    progress_str,
+                    torrent.get("status", "unknown"),
+                    down_str,
+                    up_str,
+                    str(torrent.get("connected_peers", 0)),
+                    str(torrent.get("active_peers", 0)),
+                    key=str(info_hash),
+                )
+            with contextlib.suppress(Exception):
+                self._torrents_table.refresh()  # type: ignore[attr-defined]
+
+    def _schedule_refresh_torrents(
+        self, torrents_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:
+        """Schedule ``refresh_torrents`` via Textual workers (watch_* safe)."""
+        schedule_widget_worker(
+            self,
+            self.refresh_torrents(torrents_override=torrents_override),
+            group=f"{type(self).__name__}_torrents",
+            exclusive=False,
+        )
 
     async def refresh_torrents(
         self, torrents_override: Optional[list[dict[str, Any]]] = None
@@ -283,11 +416,19 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                 render from this list directly.
         """
         # Note: Check if widget is visible and attached before refreshing
-        if not self.is_attached or not self.display:  # type: ignore[attr-defined]
+        if not self.is_attached:  # type: ignore[attr-defined]
             logger.debug(
-                "GlobalTorrentsScreen: Widget not attached or not visible, skipping refresh"
+                "GlobalTorrentsScreen: Widget not attached, skipping refresh"
             )
             return
+        if torrents_override is None and not self.display:  # type: ignore[attr-defined]
+            # Nested screens may report display=False while still visible in the pane.
+            parent = getattr(self, "parent", None)
+            if parent is None or not getattr(parent, "display", True):
+                logger.debug(
+                    "GlobalTorrentsScreen: Widget not visible, skipping refresh"
+                )
+                return
 
         # Note: Re-query _torrents_table if it's None (may happen if called before on_mount completes)
         if not self._torrents_table:
@@ -365,37 +506,9 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                     ),
                     return_exceptions=True,
                 )
-                # Handle exceptions from gather
-                if isinstance(stats, Exception):
-                    if isinstance(stats, asyncio.TimeoutError):
-                        logger.debug(
-                            "GlobalTorrentsScreen: Timeout fetching global stats"
-                        )
-                    elif isinstance(stats, asyncio.CancelledError):
-                        logger.debug(
-                            "GlobalTorrentsScreen: Global stats fetch cancelled"
-                        )
-                    else:
-                        logger.debug(
-                            "GlobalTorrentsScreen: Error fetching global stats: %s",
-                            stats,
-                        )
-                    stats = {}
-                if isinstance(swarm_samples, Exception):
-                    if isinstance(swarm_samples, asyncio.TimeoutError):
-                        logger.debug(
-                            "GlobalTorrentsScreen: Timeout fetching swarm health"
-                        )
-                    elif isinstance(swarm_samples, asyncio.CancelledError):
-                        logger.debug(
-                            "GlobalTorrentsScreen: Swarm health fetch cancelled"
-                        )
-                    else:
-                        logger.debug(
-                            "GlobalTorrentsScreen: Error fetching swarm health: %s",
-                            swarm_samples,
-                        )
-                    swarm_samples = []
+                # Handle exceptions from gather (CancelledError is BaseException, not Exception)
+                stats = coalesce_gather_result(stats, {})
+                swarm_samples = coalesce_gather_result(swarm_samples, [])
             except Exception as e:
                 logger.debug(
                     "GlobalTorrentsScreen: Error in gather for stats/swarm: %s", e
@@ -406,8 +519,6 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                 "GlobalTorrentsScreen: Retrieved %d torrents",
                 len(torrents) if torrents else 0,
             )
-            if self._metrics_panel:
-                self._metrics_panel.update_metrics(stats, swarm_samples or [])
 
             # Apply filter
             if self._filter_text:
@@ -417,97 +528,21 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                     if self._filter_text.lower() in t.get("name", "").lower()
                 ]
 
-            if not torrents:
-                if self._torrents_table:
-                    self._torrents_table.clear()
-                    self._torrents_table.display = False  # type: ignore[attr-defined]
-                if self._empty_message:
-                    self._empty_message.display = True  # type: ignore[attr-defined]
-                return
+            self._paint_torrent_list(torrents)
 
-            if self._empty_message:
-                self._empty_message.display = False  # type: ignore[attr-defined]
-            if self._torrents_table and not self._torrents_table.display:  # type: ignore[attr-defined]
-                self._torrents_table.display = True  # type: ignore[attr-defined]
-
-            if not self._torrents_table:
-                return
-
-            # Clear and repopulate table
-            self._torrents_table.clear()
-            # Note: Ensure columns exist (clear() might remove them)
-            if not self._torrents_table.columns:  # type: ignore[attr-defined]
-                self._torrents_table.add_columns(
-                    "#",
-                    _("Name"),
-                    _("Size"),
-                    _("Progress"),
-                    _("Status"),
-                    _("↓ Speed"),
-                    _("↑ Speed"),
-                    _("Peers"),
-                    _("Seeds"),
-                )
-
-            logger.debug(
-                "GlobalTorrentsScreen: Populating table with %d torrents", len(torrents)
-            )
-
-            for idx, torrent in enumerate(torrents, 1):
-                # Format size
-                size = torrent.get("total_size", 0)
-                if size >= 1024 * 1024 * 1024:
-                    size_str = f"{size / (1024**3):.2f} GB"
-                elif size >= 1024 * 1024:
-                    size_str = f"{size / (1024**2):.2f} MB"
-                elif size >= 1024:
-                    size_str = f"{size / 1024:.2f} KB"
-                else:
-                    size_str = f"{size} B"
-
-                # Format progress
-                progress = torrent.get("progress", 0.0) * 100
-                progress_str = f"{progress:.1f}%"
-
-                # Format speeds
-                down_rate = torrent.get("download_rate", 0.0)
-                if down_rate >= 1024 * 1024:
-                    down_str = f"{down_rate / (1024 * 1024):.2f} MB/s"
-                elif down_rate >= 1024:
-                    down_str = f"{down_rate / 1024:.2f} KB/s"
-                else:
-                    down_str = f"{down_rate:.2f} B/s"
-
-                up_rate = torrent.get("upload_rate", 0.0)
-                if up_rate >= 1024 * 1024:
-                    up_str = f"{up_rate / (1024 * 1024):.2f} MB/s"
-                elif up_rate >= 1024:
-                    up_str = f"{up_rate / 1024:.2f} KB/s"
-                else:
-                    up_str = f"{up_rate:.2f} B/s"
-
-                info_hash = torrent.get("info_hash", "")
-                self._torrents_table.add_row(
-                    str(idx),
-                    torrent.get("name", "Unknown"),
-                    size_str,
-                    progress_str,
-                    torrent.get("status", "unknown"),
-                    down_str,
-                    up_str,
-                    str(torrent.get("connected_peers", 0)),
-                    str(torrent.get("active_peers", 0)),
-                    key=info_hash,
-                )
-
-            logger.debug(
-                "GlobalTorrentsScreen: Added %d torrents to table", len(torrents)
-            )
-
-            # Note: Force table refresh and ensure visibility
-            if hasattr(self._torrents_table, "refresh"):
-                self._torrents_table.refresh()  # type: ignore[attr-defined]
-            self._torrents_table.display = True  # type: ignore[attr-defined]
+            if stats and self._metrics_panel:
+                self._metrics_panel.update_metrics(stats, swarm_samples or [])
+            elif self._metrics_panel and torrents:
+                derived = {
+                    "num_torrents": len(torrents),
+                    "download_rate": sum(
+                        float(t.get("download_rate", 0.0)) for t in torrents
+                    ),
+                    "upload_rate": sum(
+                        float(t.get("upload_rate", 0.0)) for t in torrents
+                    ),
+                }
+                self._metrics_panel.update_metrics(derived, swarm_samples or [])
         except asyncio.CancelledError:
             logger.debug("GlobalTorrentsScreen: Refresh cancelled")
             raise  # Re-raise CancelledError to allow proper cleanup
@@ -733,14 +768,14 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
 
             # Note: F2.3.2 — removed set_interval self-poll; the screen now
             # self-renders via data_bind to the App torrents_data reactive.
-            try:
-                from ccbt.interface.terminal_dashboard import TerminalDashboard
+            from ccbt.interface.reactive_bridge import request_lazy_bind
 
-                self.data_bind(torrents_data=TerminalDashboard.torrents_data)
-            except (
-                Exception
-            ) as exc:  # pragma: no cover - defensive for non-mounted contexts
-                logger.debug("FilteredTorrentsScreen data_bind skipped: %s", exc)
+            request_lazy_bind(self)
+            torrents = torrents_snapshot_from_app(self)
+            if torrents is not None:
+                self._schedule_refresh_torrents(torrents)
+            else:
+                self._schedule_refresh_torrents(None)
 
             # Note: Ensure widget is visible
             self.display = True  # type: ignore[attr-defined]
@@ -755,9 +790,17 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
         self, value: list[dict[str, Any]]
     ) -> None:  # pragma: no cover
         """Reactive watcher: render the filtered table from the bound list (F2.3.2)."""
-        import asyncio as _asyncio
+        self._schedule_refresh_torrents(value)
 
-        _asyncio.create_task(self.refresh_torrents(torrents_override=value))
+    def _schedule_refresh_torrents(
+        self, torrents_override: Optional[list[dict[str, Any]]] = None
+    ) -> None:
+        schedule_widget_worker(
+            self,
+            self.refresh_torrents(torrents_override=torrents_override),
+            group=f"{type(self).__name__}_torrents",
+            exclusive=False,
+        )
 
     async def refresh_torrents(
         self, torrents_override: Optional[list[dict[str, Any]]] = None
@@ -770,11 +813,18 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
                 list directly.
         """
         # Note: Check if widget is visible and attached before refreshing
-        if not self.is_attached or not self.display:  # type: ignore[attr-defined]
+        if not self.is_attached:  # type: ignore[attr-defined]
             logger.debug(
-                "FilteredTorrentsScreen: Widget not attached or not visible, skipping refresh"
+                "FilteredTorrentsScreen: Widget not attached, skipping refresh"
             )
             return
+        if torrents_override is None and not self.display:  # type: ignore[attr-defined]
+            parent = getattr(self, "parent", None)
+            if parent is None or not getattr(parent, "display", True):
+                logger.debug(
+                    "FilteredTorrentsScreen: Widget not visible, skipping refresh"
+                )
+                return
 
         # Note: Re-query _torrents_table if it's None (may happen if called before on_mount completes)
         if not self._torrents_table:
@@ -1010,6 +1060,16 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         self._sub_tabs: Optional[Tabs] = None
         self._content_area: Optional[Container] = None
         self._active_sub_tab_id: Optional[str] = None
+        self._sub_tab_load_guard = SyncContentLoadGuard()
+
+    _SUB_TAB_SCREEN_IDS: ClassVar[dict[str, str]] = {
+        "sub-tab-global": "global-screen",
+        "sub-tab-downloading": "downloading-screen",
+        "sub-tab-seeding": "seeding-screen",
+        "sub-tab-completed": "completed-screen",
+        "sub-tab-active": "active-screen",
+        "sub-tab-inactive": "inactive-screen",
+    }
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the torrents tab with nested sub-tabs."""
@@ -1035,13 +1095,15 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         try:
             self._sub_tabs = self.query_one("#torrents-sub-tabs", Tabs)  # type: ignore[attr-defined]
             self._content_area = self.query_one("#torrents-sub-content", Container)  # type: ignore[attr-defined]
-            # Note: Ensure tab is active and content area is visible
-            if self._sub_tabs:
-                self._sub_tabs.active = "sub-tab-global"  # type: ignore[attr-defined]
             if self._content_area:
                 self._content_area.display = True  # type: ignore[attr-defined]
-            # Load initial content for Global sub-tab
-            self._load_sub_tab_content("sub-tab-global")
+
+            def initialize_sub_tabs() -> None:
+                if self._sub_tabs:
+                    self._sub_tabs.active = "sub-tab-global"  # type: ignore[attr-defined]
+                self._load_sub_tab_content("sub-tab-global")
+
+            self.call_after_refresh(initialize_sub_tabs)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error mounting torrents tab content: %s", e, exc_info=True)
 
@@ -1051,51 +1113,65 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
         Args:
             sub_tab_id: ID of the sub-tab to load
         """
+        self._sub_tab_load_guard.run(self._load_sub_tab_content_impl, sub_tab_id)
+
+    def _load_sub_tab_content_impl(self, sub_tab_id: str) -> None:  # pragma: no cover
+        """Load content for a specific sub-tab (serialized; do not call directly)."""
         if not self._content_area or not self._data_provider:
             return
-        if sub_tab_id == self._active_sub_tab_id:
+
+        screen_id = self._SUB_TAB_SCREEN_IDS.get(sub_tab_id, f"{sub_tab_id}-content")
+        if (
+            sub_tab_id == self._active_sub_tab_id
+            and query_child_by_id(self._content_area, screen_id) is not None
+        ):
             return
 
         # Note: Properly remove existing widgets by ID to prevent duplicate ID errors
-        # We need to check the parent's children list directly and remove all instances
         try:
-            # Get all children and remove them individually to ensure proper cleanup
-            # This is more reliable than query_one which might miss widgets in certain states
-            children_to_remove = list(self._content_area.children)  # type: ignore[attr-defined]
-            for child in children_to_remove:
-                try:
-                    child.remove()  # type: ignore[attr-defined]
-                except Exception:
-                    pass  # Widget might already be removed, ignore
-
-            # Also explicitly remove by ID as a backup
-            screen_ids = [
-                "global-screen",
-                "downloading-screen",
-                "seeding-screen",
-                "completed-screen",
-                "active-screen",
-                "inactive-screen",
-            ]
-            for screen_id in screen_ids:
-                try:
-                    # Try to find and remove by ID (might find duplicates)
-                    existing_screens = list(self._content_area.query(f"#{screen_id}"))  # type: ignore[attr-defined]
-                    for existing_screen in existing_screens:
-                        try:
-                            existing_screen.remove()  # type: ignore[attr-defined]
-                        except Exception:
-                            pass
-                except Exception:
-                    pass  # Widget might not exist, ignore
-
-            # Call remove_children() as final cleanup
-            self._content_area.remove_children()  # type: ignore[attr-defined]
+            remove_widgets_by_ids(
+                self._content_area,
+                list(self._SUB_TAB_SCREEN_IDS.values()),
+            )
+            clear_container_children(self._content_area)
         except Exception as e:
             logger.debug("Error removing existing content: %s", e)
 
         # Mount the new screen
         self._mount_sub_tab_screen(sub_tab_id)
+
+    def _after_mount_screen(self, screen: Any, sub_tab_id: str) -> None:
+        """Wire reactive bindings and hydrate a newly mounted torrent screen."""
+        from ccbt.interface.reactive_bridge import request_lazy_bind
+
+        screen.display = True  # type: ignore[attr-defined]
+        request_lazy_bind(screen)
+        self._active_sub_tab_id = sub_tab_id
+
+        def refresh_after_mount() -> None:
+            app = getattr(self, "app", None)
+            override: list[dict[str, Any]] | None = None
+            if app is not None:
+                data = getattr(app, "torrents_data", None)
+                if data is not None:
+                    override = list(data)
+            if hasattr(screen, "_paint_torrent_list") and override is not None:
+                screen._paint_torrent_list(override)  # type: ignore[attr-defined]
+            if hasattr(screen, "_schedule_refresh_torrents"):
+                screen._schedule_refresh_torrents(override)  # type: ignore[attr-defined]
+            elif hasattr(screen, "refresh_torrents"):
+                async def _run() -> None:
+                    await screen.refresh_torrents(torrents_override=override)
+
+                try:
+                    if app is not None and hasattr(app, "loop"):
+                        app.loop.create_task(_run())  # type: ignore[attr-defined]
+                    else:
+                        asyncio.create_task(_run())
+                except Exception:
+                    pass
+
+        self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
 
     def _mount_sub_tab_screen(self, sub_tab_id: str) -> None:  # pragma: no cover
         """Mount the screen for a specific sub-tab.
@@ -1163,18 +1239,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="global-screen",
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # Note: Ensure screen is visible
-            screen.display = True  # type: ignore[attr-defined]
-
-            # Note: Trigger refresh after mounting to populate data
-            def refresh_after_mount() -> None:
-                import asyncio
-
-                if hasattr(screen, "refresh_torrents"):
-                    asyncio.create_task(screen.refresh_torrents())
-
-            self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
-            self._active_sub_tab_id = sub_tab_id
+            self._after_mount_screen(screen, sub_tab_id)
         elif sub_tab_id == "sub-tab-downloading":
             screen = FilteredTorrentsScreen(
                 self._data_provider,
@@ -1184,18 +1249,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="downloading-screen",
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # Note: Ensure screen is visible
-            screen.display = True  # type: ignore[attr-defined]
-
-            # Note: Trigger refresh after mounting to populate data
-            def refresh_after_mount() -> None:
-                import asyncio
-
-                if hasattr(screen, "refresh_torrents"):
-                    asyncio.create_task(screen.refresh_torrents())
-
-            self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
-            self._active_sub_tab_id = sub_tab_id
+            self._after_mount_screen(screen, sub_tab_id)
         elif sub_tab_id == "sub-tab-seeding":
             screen = FilteredTorrentsScreen(
                 self._data_provider,
@@ -1205,18 +1259,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="seeding-screen",
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # Note: Ensure screen is visible
-            screen.display = True  # type: ignore[attr-defined]
-
-            # Note: Trigger refresh after mounting to populate data
-            def refresh_after_mount() -> None:
-                import asyncio
-
-                if hasattr(screen, "refresh_torrents"):
-                    asyncio.create_task(screen.refresh_torrents())
-
-            self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
-            self._active_sub_tab_id = sub_tab_id
+            self._after_mount_screen(screen, sub_tab_id)
         elif sub_tab_id == "sub-tab-completed":
             # Completed = progress >= 1.0
             screen = FilteredTorrentsScreen(
@@ -1227,18 +1270,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="completed-screen",
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # Note: Ensure screen is visible
-            screen.display = True  # type: ignore[attr-defined]
-
-            # Note: Trigger refresh after mounting to populate data
-            def refresh_after_mount() -> None:
-                import asyncio
-
-                if hasattr(screen, "refresh_torrents"):
-                    asyncio.create_task(screen.refresh_torrents())
-
-            self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
-            self._active_sub_tab_id = sub_tab_id
+            self._after_mount_screen(screen, sub_tab_id)
         elif sub_tab_id == "sub-tab-active":
             # Active = downloading or seeding
             screen = FilteredTorrentsScreen(
@@ -1249,18 +1281,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="active-screen",
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # Note: Ensure screen is visible
-            screen.display = True  # type: ignore[attr-defined]
-
-            # Note: Trigger refresh after mounting to populate data
-            def refresh_after_mount() -> None:
-                import asyncio
-
-                if hasattr(screen, "refresh_torrents"):
-                    asyncio.create_task(screen.refresh_torrents())
-
-            self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
-            self._active_sub_tab_id = sub_tab_id
+            self._after_mount_screen(screen, sub_tab_id)
         elif sub_tab_id == "sub-tab-inactive":
             # Inactive = paused or stopped
             screen = FilteredTorrentsScreen(
@@ -1271,18 +1292,7 @@ class TorrentsTabContent(Container):  # type: ignore[misc]
                 id="inactive-screen",
             )
             self._content_area.mount(screen)  # type: ignore[attr-defined]
-            # Note: Ensure screen is visible
-            screen.display = True  # type: ignore[attr-defined]
-
-            # Note: Trigger refresh after mounting to populate data
-            def refresh_after_mount() -> None:
-                import asyncio
-
-                if hasattr(screen, "refresh_torrents"):
-                    asyncio.create_task(screen.refresh_torrents())
-
-            self.call_later(refresh_after_mount)  # type: ignore[attr-defined]
-            self._active_sub_tab_id = sub_tab_id
+            self._after_mount_screen(screen, sub_tab_id)
         else:
             placeholder = Static(
                 f"{sub_tab_id} content - Coming soon", id=f"{sub_tab_id}-content"

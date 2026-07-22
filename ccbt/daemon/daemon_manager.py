@@ -110,6 +110,142 @@ def read_daemon_config() -> Optional[dict[str, Any]]:
         return None
 
 
+def write_daemon_config(
+    ipc_port: int,
+    api_key: str,
+    *,
+    ipc_host: str = "127.0.0.1",
+) -> Path:
+    """Write daemon runtime config.json for CLI/dashboard discovery."""
+    import json
+
+    config_path = get_daemon_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "ipc_port": ipc_port,
+                "api_key": api_key,
+                "ipc_host": ipc_host,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    logger.debug("Wrote daemon config to %s", config_path)
+    return config_path
+
+
+def _resolve_ipc_port_from_cfg(cfg: Any) -> int:
+    if cfg.daemon and cfg.daemon.ipc_port:
+        return int(cfg.daemon.ipc_port)
+    return DEFAULT_IPC_PORT
+
+
+def resolve_daemon_connection_params(
+    cfg: Optional[Any] = None,
+) -> tuple[int, Optional[str], Path]:
+    """Resolve IPC port and API key for connecting to the daemon.
+
+    Prefers ``~/.ccbt/daemon/config.json`` when present (authoritative for a
+    running daemon), then falls back to the loaded application config.
+    """
+    if cfg is None:
+        from ccbt.config.config import get_config
+
+        cfg = get_config()
+
+    config_path = get_daemon_config_path()
+    daemon_config = read_daemon_config()
+    logger.debug(
+        "Daemon connection: config_path=%s, file_exists=%s",
+        config_path,
+        config_path.exists(),
+    )
+
+    if daemon_config:
+        port = daemon_config.get("ipc_port")
+        port = int(port) if port is not None else _resolve_ipc_port_from_cfg(cfg)
+        api_key = daemon_config.get("api_key") or (
+            cfg.daemon.api_key if cfg.daemon else None
+        )
+        logger.debug(
+            "Using daemon config file: port=%d, api_key_present=%s",
+            port,
+            bool(api_key),
+        )
+        return port, api_key, config_path
+
+    port = _resolve_ipc_port_from_cfg(cfg)
+    api_key = cfg.daemon.api_key if cfg.daemon else None
+    return port, api_key, config_path
+
+
+def is_process_alive(pid: int) -> bool:
+    """Return True when ``pid`` refers to a live process."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        tasklist_path = shutil.which("tasklist")
+        if not tasklist_path:
+            tasklist_path = os.path.join(
+                os.environ.get("SYSTEMROOT", "C:\\Windows"),
+                "System32",
+                "tasklist.exe",
+            )
+        try:
+            result = subprocess.run(
+                [tasklist_path, "/FI", f"PID eq {pid}", "/FO", "CSV"],
+                check=False,
+                capture_output=True,
+                timeout=2,
+                text=True,
+            )
+            output = (result.stdout or "").strip()
+            return f'"{pid}"' in output or f",{pid}," in output
+        except Exception as e:
+            logger.debug("Could not verify process %d on Windows: %s", pid, e)
+            return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    else:
+        return True
+
+
+def get_live_daemon_pid() -> Optional[int]:
+    """Return PID when daemon PID or lock file points at a live process."""
+    daemon_manager = DaemonManager()
+    pid = daemon_manager.get_pid()
+    if pid is not None and is_process_alive(pid):
+        return pid
+
+    if daemon_manager.lock_file.exists():
+        try:
+            lock_pid_text = daemon_manager.lock_file.read_text(encoding="utf-8").strip()
+            if lock_pid_text.isdigit():
+                lock_pid = int(lock_pid_text)
+                if is_process_alive(lock_pid):
+                    return lock_pid
+        except OSError as e:
+            logger.debug("Could not read daemon lock file: %s", e)
+
+    return None
+
+
+def is_daemon_ipc_listening(
+    ipc_port: int,
+    host: str = "127.0.0.1",
+    *,
+    timeout: float = 0.5,
+) -> bool:
+    """Return True when the daemon IPC port accepts TCP connections."""
+    from ccbt.utils.port_checker import is_port_listening
+
+    return is_port_listening(host, ipc_port, timeout=timeout)
+
+
 class DaemonManager:
     """Manages daemon process lifecycle and single instance enforcement."""
 
@@ -624,15 +760,33 @@ class DaemonManager:
             raise
 
     def remove_pid(self) -> None:
-        """Remove PID file, daemon config.json, and release lock."""
+        """Remove PID/config files owned by this process and release lock."""
+        current_pid = os.getpid()
+        pid_from_file = self.get_pid()
+
         if self.pid_file.exists():
-            self.pid_file.unlink()
-            logger.debug("Removed PID file: %s", self.pid_file)
+            if pid_from_file is None or pid_from_file == current_pid:
+                self.pid_file.unlink()
+                logger.debug("Removed PID file: %s", self.pid_file)
+            else:
+                logger.debug(
+                    "Skipping PID file removal: file PID %s != current PID %s",
+                    pid_from_file,
+                    current_pid,
+                )
+
         config_json = self.state_dir / "config.json"
-        if config_json.exists():
+        if config_json.exists() and pid_from_file == current_pid:
             with contextlib.suppress(OSError):
                 config_json.unlink()
             logger.debug("Removed daemon config: %s", config_json)
+        elif config_json.exists() and pid_from_file not in (None, current_pid):
+            logger.debug(
+                "Skipping daemon config removal: owned by PID %s (current PID %s)",
+                pid_from_file,
+                current_pid,
+            )
+
         # Release lock file
         self.release_lock()
 
@@ -686,13 +840,20 @@ class DaemonManager:
                 # If we can't open log file, fall back to DEVNULL
                 log_fd = subprocess.DEVNULL
 
-            process = subprocess.Popen(
-                args,
-                stdout=log_fd,
-                stderr=log_fd,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            popen_kwargs: dict[str, Any] = {
+                "args": args,
+                "stdout": log_fd,
+                "stderr": log_fd,
+                "stdin": subprocess.DEVNULL,
+            }
+            if sys.platform == "win32":
+                popen_kwargs["creationflags"] = (
+                    subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                popen_kwargs["start_new_session"] = True
+
+            process = subprocess.Popen(**popen_kwargs)
 
             # Note: Wait longer and check multiple times
             # This gives the daemon time to initialize and write PID file
@@ -837,11 +998,17 @@ class DaemonManager:
         time.sleep(1.0)  # Brief pause
         return self.start(script_path=script_path)
 
-    def setup_signal_handlers(self, shutdown_callback: Any) -> None:
+    def setup_signal_handlers(
+        self,
+        shutdown_callback: Any,
+        *,
+        respond_to_sigint: bool = True,
+    ) -> None:
         """Set up signal handlers for graceful shutdown.
 
         Args:
             shutdown_callback: Async callback function for shutdown
+            respond_to_sigint: When False, ignore SIGINT (background daemon on Windows)
 
         """
         # Store reference to shutdown callback for direct access
@@ -939,7 +1106,11 @@ class DaemonManager:
         if sys.platform != "win32":
             signal.signal(signal.SIGTERM, signal_handler)
             signal.signal(signal.SIGHUP, signal_handler)  # Reload signal
-        signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+        if respond_to_sigint:
+            signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+        else:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            logger.debug("SIGINT ignored (background daemon mode)")
 
     @staticmethod
     def daemonize() -> None:

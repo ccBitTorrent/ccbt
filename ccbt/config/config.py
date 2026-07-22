@@ -694,6 +694,7 @@ class ConfigManager:
             "CCBT_XET_MULTICAST_ADDRESS": "network.xet_multicast_address",
             "CCBT_XET_MULTICAST_PORT": "network.xet_multicast_port",
             "CCBT_PIPELINE_DEPTH": "network.pipeline_depth",
+            "CCBT_REQUEST_TIMEOUT": "network.request_timeout",
             "CCBT_SPARSE_PIPELINE_STALE_PAYLOAD_CANCEL_S": (
                 "network.sparse_pipeline_stale_payload_cancel_s"
             ),
@@ -721,6 +722,16 @@ class ConfigManager:
                 "network.adaptive_timeout_normal_max_peers"
             ),
             "CCBT_METADATA_EXCHANGE_TIMEOUT": "network.metadata_exchange_timeout",
+            "CCBT_METADATA_EXCHANGE_MAX_PEERS": "network.metadata_exchange_max_peers",
+            "CCBT_METADATA_EXCHANGE_COLD_START_MAX_PEERS": (
+                "network.metadata_exchange_cold_start_max_peers"
+            ),
+            "CCBT_METADATA_EXCHANGE_COLD_START_TIMEOUT": (
+                "network.metadata_exchange_cold_start_timeout"
+            ),
+            "CCBT_METADATA_PHASE_PLAINTEXT_CONNECT_ATTEMPTS": (
+                "network.metadata_phase_plaintext_connect_attempts"
+            ),
             "CCBT_PEER_QUALITY_PROBATION_TIMEOUT": "network.peer_quality_probation_timeout",
             "CCBT_METADATA_PIECE_TIMEOUT": "network.metadata_piece_timeout",
             "CCBT_BITFIELD_HAVE_WAIT_TIMEOUT_S": "network.bitfield_have_wait_timeout_s",
@@ -747,6 +758,13 @@ class ConfigManager:
             "CCBT_PER_PEER_DOWN_KIB": "network.per_peer_down_kib",
             "CCBT_PER_PEER_UP_KIB": "network.per_peer_up_kib",
             "CCBT_MAX_UPLOAD_SLOTS": "network.max_upload_slots",
+            "CCBT_LOW_SWARM_MIN_UPLOAD_SLOTS": "network.low_swarm_min_upload_slots",
+            "CCBT_CONNECT_BATCH_EARLY_EXIT_MIN_ACTIVE_PEERS": (
+                "network.connect_batch_early_exit_min_active_peers"
+            ),
+            "CCBT_CONNECT_BATCH_ZERO_ACTIVE_MAX_DURATION_S": (
+                "network.connect_batch_zero_active_max_duration_s"
+            ),
             "CCBT_RECIPROCATION_CHOKED_PEER_SCORE_BOOST": (
                 "network.reciprocation_choked_peer_score_boost"
             ),
@@ -861,6 +879,7 @@ class ConfigManager:
             "CCBT_DNS_CACHE_TTL": "network.dns_cache_ttl",
             # Connection pool
             "CCBT_CONNECTION_POOL_MAX_CONNECTIONS": "network.connection_pool_max_connections",
+            "CCBT_MAX_LIVE_SOCKETS": "network.max_live_sockets",
             "CCBT_CONNECTION_POOL_MAX_IDLE_TIME": "network.connection_pool_max_idle_time",
             "CCBT_CONNECTION_POOL_WARMUP_ENABLED": "network.connection_pool_warmup_enabled",
             "CCBT_CONNECTION_POOL_WARMUP_COUNT": "network.connection_pool_warmup_count",

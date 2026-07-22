@@ -30,6 +30,9 @@ DEFAULT_BOOTSTRAP = [
     ("dht.transmissionbt.com", 6881),
     ("router.utorrent.com", 6881),
     ("dht.libtorrent.org", 25401),
+    ("dht.aelitis.com", 6881),
+    ("router.silotis.us", 6881),
+    ("router.bitcomet.com", 6881),
 ]
 
 
@@ -543,9 +546,14 @@ class AsyncDHTClient:
         self.last_bootstrap_state = "idle"
         self.last_lookup_state = "idle"
         self._empty_table_rebootstrap_attempts = 0
-        self._max_empty_table_rebootstrap_attempts = 3
+        self._max_empty_table_rebootstrap_attempts = self._dht_bootstrap_retries_max
         self._last_empty_table_rebootstrap_at = 0.0
-        self._empty_table_rebootstrap_backoff = 1.0
+        self._empty_table_rebootstrap_backoff = float(
+            getattr(discovery_cfg, "dht_zero_state_reprobe_wait_s", 45.0) or 45.0
+        )
+        self._empty_table_backoff_factor = float(
+            getattr(discovery_cfg, "dht_empty_state_backoff_factor", 1.5) or 1.5
+        )
         self._zero_node_rebootstrap_task: Optional[asyncio.Task[None]] = None
 
         # Pending queries
@@ -1081,7 +1089,8 @@ class AsyncDHTClient:
         self._last_empty_table_rebootstrap_at = now
         self._empty_table_rebootstrap_attempts += 1
         self._empty_table_rebootstrap_backoff = min(
-            self._empty_table_rebootstrap_backoff * 2.0, 60.0
+            self._empty_table_rebootstrap_backoff * self._empty_table_backoff_factor,
+            60.0,
         )
         self.last_bootstrap_state = "scheduled:empty_table_rebootstrap"
         self.last_bootstrap_failure_reason = (
@@ -2267,6 +2276,13 @@ class AsyncDHTClient:
             self.logger.warning(
                 "DHT lookup for %s completed with queried 0 nodes. Treating this as bootstrap-missing rather than a normal empty peer result.",
                 info_hash.hex()[:8],
+            )
+            retry_scheduled = self._schedule_zero_node_rebootstrap(
+                reason=f"query_zero_nodes:{info_hash.hex()[:8]}"
+            )
+            self._last_query_metrics["empty_table_retry_scheduled"] = retry_scheduled
+            self._last_query_metrics["empty_table_retry_reason_code"] = (
+                "scheduled" if retry_scheduled else "suppressed"
             )
 
         return peers

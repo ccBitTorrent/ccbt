@@ -835,6 +835,18 @@ class UISnapshotResponse(BaseModel):
         default_factory=list,
         description="Recent rate samples for graph (timestamp, download_rate, upload_rate); may be truncated",
     )
+    system_metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="CPU/memory/disk usage percentages for graph panels",
+    )
+    disk_io_metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Disk read/write throughput metrics for graph panels",
+    )
+    network_timing: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Network timing metrics (uTP delay, overhead rate)",
+    )
     peers: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Aggregated peer rows across torrents (capped) for first-paint peer panels; same shape as GET /torrents/{ih}/peers rows",

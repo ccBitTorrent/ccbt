@@ -635,6 +635,38 @@ class StatusLoop:
                     )
                     or 0
                 )
+                status["metadata_incomplete"] = metadata_incomplete
+                discovery_metrics = getattr(self.s, "_peer_discovery_metrics", {}) or {}
+                status["ingress_hold_deferred_total"] = int(
+                    discovery_metrics.get("ingress_hold_deferred_total", 0) or 0
+                )
+                stage_counters = (
+                    getattr(peer_manager, "_connection_stage_counters", {}) or {}
+                )
+                handshake_received = int(
+                    stage_counters.get("handshake_received", 0) or 0
+                )
+                status["handshake_received"] = handshake_received
+                mse_attempted = int(stage_counters.get("mse_attempted", 0) or 0)
+                mse_fallback = int(stage_counters.get("mse_fallback_plain", 0) or 0)
+                status["mse_fallback_rate"] = (
+                    float(mse_fallback) / float(mse_attempted)
+                    if mse_attempted > 0
+                    else 0.0
+                )
+                tcp_server = getattr(
+                    getattr(self.s, "session_manager", None), "tcp_server", None
+                )
+                inbound_unknown_total = 0
+                if tcp_server is not None:
+                    with contextlib.suppress(Exception):
+                        inbound_unknown_total = sum(
+                            int(v)
+                            for v in getattr(
+                                tcp_server, "_inbound_unknown_hash_counts", {}
+                            ).values()
+                        )
+                status["inbound_unknown_total"] = inbound_unknown_total
                 status["inbound_outbound_fairness_pressure"] = float(
                     inbound_probation_depth
                 ) / max(1.0, float(status["outbound_pending_depth"] or 0.0))

@@ -18,6 +18,7 @@ from typing import Awaitable, Callable, Optional
 
 from ccbt.config import get_config
 from ccbt.models import PeerInfo
+from ccbt.utils.shutdown import is_shutting_down
 
 
 @dataclass
@@ -139,6 +140,8 @@ class AsyncPexManager:
 
         while True:  # pragma: no cover - Background loop, tested via cancellation
             try:
+                if is_shutting_down():
+                    break
                 # Note: Adaptive PEX interval based on connected peer count
                 # BEP 11 compliant: max 1 message per minute (60s), but allow 30s minimum for low peer counts
                 # If we have callback to get peer count, use it to adjust interval
@@ -178,7 +181,12 @@ class AsyncPexManager:
                 else:
                     pex_interval = base_pex_interval
 
+                if is_shutting_down():
+                    break
+
                 await asyncio.sleep(pex_interval)
+                if is_shutting_down():
+                    break
                 await (
                     self._send_pex_messages()
                 )  # pragma: no cover - Tested via direct calls

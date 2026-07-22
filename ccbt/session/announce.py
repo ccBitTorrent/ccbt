@@ -395,6 +395,15 @@ class AnnounceController:
                 seen.add(v)
                 unique.append(v)
 
+        from ccbt.core.magnet import (
+            get_configured_default_trackers,
+            merge_tracker_url_lists,
+        )
+
+        has_http = any(u.startswith(("http://", "https://")) for u in unique)
+        if not has_http or len(unique) < 3:
+            unique = merge_tracker_url_lists(unique, get_configured_default_trackers())
+
         # Get healthy trackers from health manager (prioritize these)
         healthy_trackers: list[str] = []
         try:
@@ -432,19 +441,15 @@ class AnnounceController:
                         )
                     else:
                         fallback_trackers = [
-                            "https://tracker.opentrackr.org:443/announce",
-                            "https://tracker.torrent.eu.org:443/announce",
-                            "https://tracker.openbittorrent.com:443/announce",
-                            "http://tracker.opentrackr.org:1337/announce",
-                            "http://tracker.openbittorrent.com:80/announce",
+                            "http://tracker.dler.org:6969/announce",
+                            "http://tracker.renfei.net:8080/announce",
+                            "https://tracker.nekomi.cn/announce",
                         ]
                 except Exception:
                     fallback_trackers = [
-                        "https://tracker.opentrackr.org:443/announce",
-                        "https://tracker.torrent.eu.org:443/announce",
-                        "https://tracker.openbittorrent.com:443/announce",
-                        "http://tracker.opentrackr.org:1337/announce",
-                        "http://tracker.openbittorrent.com:80/announce",
+                        "http://tracker.dler.org:6969/announce",
+                        "http://tracker.renfei.net:8080/announce",
+                        "https://tracker.nekomi.cn/announce",
                     ]
 
                 # Add fallback trackers not already in the list

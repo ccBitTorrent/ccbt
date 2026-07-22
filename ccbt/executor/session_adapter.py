@@ -955,7 +955,7 @@ class LocalSessionAdapter(SessionAdapter):
         """List all torrents."""
         from ccbt.daemon.ipc_protocol import TorrentStatusResponse
 
-        status_dict = await self.session_manager.get_status()
+        status_dict = await self.session_manager.get_status_summaries()
         torrents = []
         for info_hash_hex, status in status_dict.items():
             # Canonical internal keys were normalized to connected_peers/active_peers.

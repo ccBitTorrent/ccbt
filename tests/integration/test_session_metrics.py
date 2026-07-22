@@ -84,12 +84,10 @@ class TestAsyncSessionManagerMetrics:
         monitoring_module._GLOBAL_METRICS_COLLECTOR = None
 
         # Patch get_config to raise an error, which will cause init_metrics to fail
-        from ccbt import config as config_module
-
         def raise_error():
             raise RuntimeError("Config error")
 
-        monkeypatch.setattr(config_module, "get_config", raise_error)
+        monkeypatch.setattr("ccbt.config.config.get_config", raise_error)
 
         session = AsyncSessionManager()
         session.config.nat.auto_map_ports = False  # Disable NAT to prevent hanging
@@ -201,9 +199,8 @@ def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
 
+    import ccbt.config.config as config_module
     import ccbt.monitoring as monitoring_module
-    from ccbt import config as config_module
-
     # Reset metrics singleton before each test
     monitoring_module._GLOBAL_METRICS_COLLECTOR = None
 
@@ -221,7 +218,7 @@ def mock_config_enabled(monkeypatch):
     mock_nat.auto_map_ports = False
     mock_config.nat = mock_nat
 
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
@@ -231,9 +228,8 @@ def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
 
+    import ccbt.config.config as config_module
     import ccbt.monitoring as monitoring_module
-    from ccbt import config as config_module
-
     # Reset metrics singleton before each test
     monitoring_module._GLOBAL_METRICS_COLLECTOR = None
 
@@ -251,7 +247,7 @@ def mock_config_disabled(monkeypatch):
     mock_nat.auto_map_ports = False
     mock_config.nat = mock_nat
 
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 import os
 import random
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -33,7 +35,7 @@ def make_torrent_data(
 
 # Import network mock fixtures to make them available to all tests
 # This ensures fixtures from tests/fixtures/network_mocks.py are discoverable
-pytest_plugins = ["tests.fixtures.network_mocks"]
+pytest_plugins = ["tests.fixtures.network_mocks", "tests.fixtures.config_mocks"]
 
 # Import timeout hooks for per-test timeout management
 # This applies timeout markers based on test categories
@@ -83,8 +85,40 @@ except Exception:
 # #endregion
 
 
+def _ensure_unittest_patch_targets() -> None:
+    """Register submodules on parent packages for unittest.patch on all platforms."""
+    config_submodules = (
+        "config",
+        "config_backup",
+        "config_capabilities",
+        "config_conditional",
+        "config_diff",
+    )
+    peer_submodules = (
+        "async_peer_connection",
+        "ssl_peer",
+        "utp_peer",
+        "peer",
+        "connection_pool",
+    )
+    for submodule in config_submodules:
+        module = importlib.import_module(f"ccbt.config.{submodule}")
+        pkg = importlib.import_module("ccbt.config")
+        if getattr(pkg, submodule, None) is not module:
+            setattr(pkg, submodule, module)
+    for submodule in peer_submodules:
+        module = importlib.import_module(f"ccbt.peer.{submodule}")
+        pkg = importlib.import_module("ccbt.peer")
+        if getattr(pkg, submodule, None) is not module:
+            setattr(pkg, submodule, module)
+    cli_main = importlib.import_module("ccbt.cli.main")
+    if sys.modules.get("ccbt.cli.main") is not cli_main:
+        sys.modules["ccbt.cli.main"] = cli_main
+
+
 def pytest_configure(config):
     """Register all project markers to avoid warnings when ini isn't loaded."""
+    _ensure_unittest_patch_targets()
     # #region agent log
     _debug_log("E", "conftest.py:pytest_configure", "Pytest configuration started", {})
     # #endregion
@@ -802,6 +836,7 @@ def mock_dht_client():
     mock_dht = MagicMock()
     mock_dht.start = AsyncMock()
     mock_dht.stop = AsyncMock()
+    mock_dht.bootstrap = AsyncMock()
     mock_dht.wait_for_bootstrap = AsyncMock(return_value=True)
     mock_dht.routing_table = MagicMock()
     mock_dht.routing_table.nodes = {}

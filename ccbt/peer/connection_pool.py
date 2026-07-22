@@ -11,8 +11,10 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
+from itertools import count
 from typing import TYPE_CHECKING, Any, Optional
 
+from ccbt.config.config import get_config
 from ccbt.monitoring import get_metrics_collector
 from ccbt.utils.shutdown import is_shutting_down
 
@@ -49,6 +51,71 @@ class PooledConnection:
         """Wait for the connection to be fully closed."""
         if self.writer:
             await self.writer.wait_closed()
+
+
+@dataclass(frozen=True)
+class LiveSocketLease:
+    """Unique ownership token for one process-wide live socket slot."""
+
+    token: int
+    peer_id: str
+
+
+class LiveSocketLimiter:
+    """Idempotent process-wide admission limiter for live peer sockets."""
+
+    def __init__(self, max_live_sockets: int) -> None:
+        """Initialize the limiter with a fixed process-wide capacity."""
+        self.max_live_sockets = max(1, int(max_live_sockets))
+        self.semaphore = asyncio.Semaphore(self.max_live_sockets)
+        self._owners: set[int] = set()
+        self._lock = asyncio.Lock()
+        self._tokens = count(1)
+
+    async def acquire(
+        self,
+        peer_id: str,
+        *,
+        timeout: float,
+    ) -> Optional[LiveSocketLease]:
+        """Acquire one unique live-socket lease."""
+        try:
+            await asyncio.wait_for(self.semaphore.acquire(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return None
+        lease = LiveSocketLease(next(self._tokens), peer_id)
+        async with self._lock:
+            self._owners.add(lease.token)
+        return lease
+
+    async def release(self, lease: LiveSocketLease) -> bool:
+        """Release a lease once; duplicate release is an observable no-op."""
+        async with self._lock:
+            if lease.token not in self._owners:
+                with contextlib.suppress(Exception):
+                    get_metrics_collector().increment_counter(
+                        "peer_live_socket_duplicate_release_total"
+                    )
+                return False
+            self._owners.remove(lease.token)
+        self.semaphore.release()
+        return True
+
+    @property
+    def live_count(self) -> int:
+        """Return the number of currently owned live-socket slots."""
+        return len(self._owners)
+
+
+_PROCESS_LIVE_SOCKET_LIMITER: Optional[LiveSocketLimiter] = None
+
+
+def get_process_live_socket_limiter(max_live_sockets: int) -> LiveSocketLimiter:
+    """Return the single process-wide limiter used by all torrent managers."""
+    global _PROCESS_LIVE_SOCKET_LIMITER
+    if _PROCESS_LIVE_SOCKET_LIMITER is None:
+        _PROCESS_LIVE_SOCKET_LIMITER = LiveSocketLimiter(max_live_sockets)
+    return _PROCESS_LIVE_SOCKET_LIMITER
 
 
 @dataclass
@@ -91,6 +158,7 @@ class PeerConnectionPool:
         health_check_interval: float = 60.0,  # 1 minute
         max_usage_count: int = 1000,
         config: Any = None,
+        live_socket_limiter: Optional[LiveSocketLimiter] = None,
     ):
         """Initialize connection pool.
 
@@ -100,6 +168,7 @@ class PeerConnectionPool:
             health_check_interval: Interval for health checks
             max_usage_count: Maximum usage count before recycling connection
             config: Optional config object for adaptive limits
+            live_socket_limiter: Optional shared process-wide socket limiter
 
         """
         self.config = config
@@ -120,7 +189,15 @@ class PeerConnectionPool:
         self.max_idle_time = max_idle_time
         self.health_check_interval = health_check_interval
         self.max_usage_count = max_usage_count
-        self.semaphore = asyncio.Semaphore(self.max_connections)
+        self.live_socket_limiter = live_socket_limiter or LiveSocketLimiter(
+            self.max_connections
+        )
+        self.semaphore = self.live_socket_limiter.semaphore
+        self._state_lock = asyncio.Lock()
+        self._permit_owners: set[str] = set()
+        self._live_socket_leases: dict[str, LiveSocketLease] = {}
+        self._checked_out: set[str] = set()
+        self._pending_creations: set[str] = set()
 
         # Background tasks
         self._health_check_task: Optional[asyncio.Task] = None
@@ -273,29 +350,8 @@ class PeerConnectionPool:
         return int(adaptive_limit)
 
     def update_adaptive_limit(self) -> None:
-        """Recalculate and update the adaptive connection limit.
-
-        This should be called periodically to adjust limits based on current conditions.
-        """
-        if not self.config or not getattr(
-            self.config, "connection_pool_adaptive_limit_enabled", False
-        ):
-            return
-
-        old_limit = self.max_connections
-        new_limit = self._calculate_adaptive_limit(self.base_max_connections)
-
-        if new_limit != old_limit:
-            self.logger.debug(
-                "Updating adaptive connection limit: %d -> %d",
-                old_limit,
-                new_limit,
-            )
-            self.max_connections = new_limit
-            # Update semaphore (create new one with new limit)
-            # Note: existing semaphore will continue with old limit until all connections are released
-            # This is acceptable as it's a gradual transition
-            self.semaphore = asyncio.Semaphore(new_limit)
+        """Keep lease capacity fixed; replacing a live semaphore strands waiters."""
+        return
 
     async def start(self) -> None:
         """Start the connection pool."""
@@ -349,60 +405,14 @@ class PeerConnectionPool:
         await self.stop()
 
     async def acquire(self, peer_info: PeerInfo) -> Optional[Any]:
-        """Acquire a connection for a peer.
-
-        Args:
-            peer_info: Peer information
-
-        Returns:
-            Connection object or None if acquisition failed
-
-        """
+        """Open a fresh TCP stream under an exact live-socket lease."""
         peer_id = f"{peer_info.ip}:{peer_info.port}"
 
-        # Check if we already have a healthy connection
-        # Prefer connections with higher health levels and quality scores
-        if peer_id in self.pool:
-            connection = self.pool[peer_id]
-            metrics = self.metrics[peer_id]
+        async with self._state_lock:
+            if peer_id in self._checked_out or peer_id in self._pending_creations:
+                return None
+            self._pending_creations.add(peer_id)
 
-            if metrics.is_healthy and self._is_connection_valid(connection):
-                # Calculate connection quality
-                quality_score = self._calculate_connection_quality(metrics)
-
-                # Only reuse if health level is acceptable (>= 1 = fair or better)
-                # and quality score is above threshold
-                quality_threshold = 0.3
-                if self.config:
-                    quality_threshold = getattr(
-                        self.config, "connection_pool_quality_threshold", 0.3
-                    )
-
-                if metrics.health_level >= 1 and quality_score >= quality_threshold:
-                    metrics.last_used = time.time()
-                    metrics.usage_count += 1
-                    self.logger.debug(
-                        "Reusing existing connection for %s (health_level=%d, quality_score=%.2f)",
-                        peer_id,
-                        metrics.health_level,
-                        quality_score,
-                    )
-                    return connection
-                # Health level is poor or quality is low - remove connection
-                self.logger.debug(
-                    "Connection %s has poor health/quality (health_level=%d, quality_score=%.2f), removing",
-                    peer_id,
-                    metrics.health_level,
-                    quality_score,
-                )
-                await self._remove_connection(peer_id)
-            else:
-                # Remove unhealthy connection
-                await self._remove_connection(peer_id)
-
-        # Try to acquire semaphore
-        # Note: Increase timeout for Windows semaphore acquisition
-        # WinError 121 can occur if semaphore acquisition times out
         semaphore_timeout = 10.0  # Increased from 5.0 for Windows compatibility
         if self.config is not None:
             with contextlib.suppress(TypeError, ValueError):
@@ -413,9 +423,13 @@ class PeerConnectionPool:
                     20.0,
                     max(2.0, configured_connect_timeout * 0.5),
                 )
-        try:
-            await asyncio.wait_for(self.semaphore.acquire(), timeout=semaphore_timeout)
-        except asyncio.TimeoutError:
+        lease = await self.live_socket_limiter.acquire(
+            peer_id,
+            timeout=semaphore_timeout,
+        )
+        if lease is None:
+            async with self._state_lock:
+                self._pending_creations.discard(peer_id)
             self.logger.debug(
                 "Failed to acquire connection slot for %s after %s seconds. "
                 "This may indicate too many concurrent connections.",
@@ -425,94 +439,41 @@ class PeerConnectionPool:
             return None
 
         try:
-            # Pre-initialize metrics before connection creation to ensure
-            # establishment time tracking works correctly
             if peer_id not in self.metrics:
                 self.metrics[peer_id] = ConnectionMetrics()
 
-            # Create new connection
             connection = await self._create_connection(peer_info)
             if connection:
-                self.pool[peer_id] = connection
+                async with self._state_lock:
+                    self.pool[peer_id] = connection
+                    self._live_socket_leases[peer_id] = lease
+                    self._permit_owners.add(peer_id)
+                    self._checked_out.add(peer_id)
+                    self._pending_creations.discard(peer_id)
                 self.logger.debug("Created new connection for %s", peer_id)
                 return connection
             # Note: Remove metrics entry if connection creation failed
             # This prevents failed connections from being marked as "stale" later
             if peer_id in self.metrics:
                 del self.metrics[peer_id]
-            self.semaphore.release()
+            await self.live_socket_limiter.release(lease)
+            async with self._state_lock:
+                self._pending_creations.discard(peer_id)
             return None
         except Exception:
             # Note: Remove metrics entry if connection creation raised exception
             # This prevents failed connections from being marked as "stale" later
             if peer_id in self.metrics:
                 del self.metrics[peer_id]
-            self.semaphore.release()
+            await self.live_socket_limiter.release(lease)
+            async with self._state_lock:
+                self._pending_creations.discard(peer_id)
             self.logger.exception("Failed to create connection for %s", peer_id)
             return None
 
     async def release(self, peer_id: str, connection: Any) -> None:  # noqa: ARG002
-        """Release a connection back to the pool.
-
-        Args:
-            peer_id: Peer identifier
-            connection: Connection object
-
-        """
-        if peer_id not in self.pool:
-            # Connection was already removed
-            self.semaphore.release()
-            return
-
-        metrics = self.metrics.get(peer_id)
-        if metrics:
-            metrics.last_used = time.time()
-
-            # Check if connection should be recycled
-            should_recycle = False
-            recycle_reason = ""
-
-            # Check usage count threshold
-            if metrics.usage_count >= self.max_usage_count:
-                should_recycle = True
-                recycle_reason = f"usage_count={metrics.usage_count}"
-
-            # Performance-based recycling (if enabled)
-            pool_grace = 60.0
-            if self.config is not None:
-                pool_grace = float(
-                    getattr(self.config, "connection_pool_grace_period", 60.0) or 60.0
-                )
-            conn_age = time.time() - metrics.created_at
-            skip_perf_recycle = (
-                conn_age < pool_grace and int(metrics.bytes_received) < 1
-            )
-            if (
-                self.config
-                and not skip_perf_recycle
-                and getattr(
-                    self.config, "connection_pool_performance_recycling_enabled", True
-                )
-            ):
-                performance_score = self._evaluate_connection_performance(metrics)
-                performance_threshold = getattr(
-                    self.config, "connection_pool_performance_threshold", 0.3
-                )
-
-                if performance_score < performance_threshold:
-                    should_recycle = True
-                    recycle_reason = f"performance_score={performance_score:.2f} < {performance_threshold}"
-
-            if should_recycle:
-                self.logger.debug(
-                    "Recycling connection for %s (%s)",
-                    peer_id,
-                    recycle_reason,
-                )
-                await self._remove_connection(peer_id)
-                self.semaphore.release()
-            else:
-                self.logger.debug("Released connection for %s", peer_id)
+        """Close a protocol-owned stream and release its lease exactly once."""
+        await self._remove_connection(peer_id)
 
     async def remove_connection(self, peer_id: str) -> None:
         """Remove a specific connection from the pool.
@@ -522,7 +483,6 @@ class PeerConnectionPool:
 
         """
         await self._remove_connection(peer_id)
-        self.semaphore.release()
 
     def get_pool_stats(self) -> dict[str, Any]:
         """Get connection pool statistics.
@@ -587,9 +547,8 @@ class PeerConnectionPool:
             "total_connections": total_connections,
             "healthy_connections": healthy_connections,
             "max_connections": self.max_connections,
-            "available_slots": self.semaphore._value,  # noqa: SLF001
-            "pool_utilization": (self.max_connections - self.semaphore._value)  # noqa: SLF001
-            / self.max_connections,
+            "available_slots": max(0, self.max_connections - len(self._permit_owners)),
+            "pool_utilization": len(self._permit_owners) / max(self.max_connections, 1),
             "average_usage_count": (
                 sum(m.usage_count for m in self.metrics.values())
                 / max(total_connections, 1)
@@ -664,8 +623,6 @@ class PeerConnectionPool:
         """
         # Get connection timeout from config
         try:
-            from ccbt.config.config import get_config
-
             config = get_config()
             timeout = config.network.connection_timeout
         except Exception:
@@ -989,9 +946,15 @@ class PeerConnectionPool:
             peer_id: Peer identifier
 
         """
-        if peer_id in self.pool:
-            connection = self.pool[peer_id]
+        async with self._state_lock:
+            connection = self.pool.pop(peer_id, None)
+            self.metrics.pop(peer_id, None)
+            self._checked_out.discard(peer_id)
+            self._pending_creations.discard(peer_id)
+            self._permit_owners.discard(peer_id)
+            lease = self._live_socket_leases.pop(peer_id, None)
 
+        if connection is not None:
             # Extract connection object if wrapped in dict
 
             conn_obj = connection
@@ -1032,14 +995,10 @@ class PeerConnectionPool:
                 except Exception as e:
                     self.logger.warning("Error closing connection %s: %s", peer_id, e)
 
-            # Remove from pool
-
-            del self.pool[peer_id]
-
-            if peer_id in self.metrics:
-                del self.metrics[peer_id]
-
             self.logger.debug("Removed connection for %s", peer_id)
+
+        if lease is not None:
+            await self.live_socket_limiter.release(lease)
 
     async def _close_all_connections(self) -> None:
         """Close all connections in the pool.
@@ -1267,6 +1226,8 @@ class PeerConnectionPool:
 
         # IMPROVEMENT: Evaluate connections by quality, not just health
         for peer_id, metrics in self.metrics.items():
+            if peer_id in self._checked_out:
+                continue
             # Calculate connection age
             connection_age = current_time - metrics.created_at
 
@@ -1382,7 +1343,6 @@ class PeerConnectionPool:
         # Remove unhealthy connections immediately
         for peer_id in unhealthy_connections:
             await self._remove_connection(peer_id)
-            self.semaphore.release()
 
         # IMPROVEMENT: If pool is near capacity, remove lowest quality connections
         # This maintains a pool of high-quality peers
@@ -1414,7 +1374,6 @@ class PeerConnectionPool:
                     pool_utilization * 100,
                 )
                 await self._remove_connection(peer_id)
-                self.semaphore.release()
                 num_removed += 1
             if num_removed > 0:
                 num_to_remove = num_removed
@@ -1576,6 +1535,8 @@ class PeerConnectionPool:
             )
 
         for peer_id, metrics in list(self.metrics.items()):
+            if peer_id in self._checked_out:
+                continue
             # New connections with no observed activity are still protected briefly,
             # but only until they also exceed the stale threshold based on last usage.
             if (
@@ -1658,7 +1619,6 @@ class PeerConnectionPool:
 
         for peer_id in stale_connections:
             await self._remove_connection(peer_id)
-            self.semaphore.release()
 
         if stale_connections:
             pool_utilization = (

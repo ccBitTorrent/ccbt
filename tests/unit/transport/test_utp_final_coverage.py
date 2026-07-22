@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import pytest_asyncio
 
 from ccbt.transport.utp import (
     UTPConnection,
@@ -98,16 +99,16 @@ class TestConnectionInitialization:
         mock_manager.register_connection = Mock()
         mock_transport = MagicMock()
         mock_manager.get_transport.return_value = mock_transport
-        mock_manager._generate_connection_id.return_value = 54321
+        mock_manager.generate_connection_id.return_value = 54321
         mock_manager._initialized = True  # Ensure manager is initialized
-        conn.utp_socket_manager = mock_manager
+        conn.socket_manager = mock_manager
 
         await conn.initialize_transport()
 
         # Connection ID should be generated
         assert conn.connection_id == 54321
         assert conn._connection_id_generated
-        mock_manager._generate_connection_id.assert_called_once()
+        mock_manager.generate_connection_id.assert_called_once()
         mock_manager.register_connection.assert_called_once()
 
     @pytest.mark.asyncio
@@ -120,15 +121,15 @@ class TestConnectionInitialization:
         mock_transport = MagicMock()
         mock_manager.get_transport.return_value = mock_transport
         mock_manager._initialized = True
-        conn.utp_socket_manager = mock_manager
+        conn.socket_manager = mock_manager
 
         await conn.initialize_transport()
 
         # Connection ID should remain the same
         assert conn.connection_id == 12345
         assert conn._connection_id_generated
-        # Should not call _generate_connection_id
-        mock_manager._generate_connection_id.assert_not_called()
+        # Should not call generate_connection_id
+        mock_manager.generate_connection_id.assert_not_called()
 
 
 class TestRTTUpdate:
@@ -469,9 +470,9 @@ class TestSendMethod:
 class TestReceiveMethod:
     """Tests for receive() method edge cases."""
 
-    @pytest.fixture
-    def connection(self):
-        """Create a connected connection."""
+    @pytest_asyncio.fixture
+    async def connection(self):
+        """Create a connected connection on the active event loop."""
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
         conn.transport = MagicMock()
         conn.state = UTPConnectionState.CONNECTED

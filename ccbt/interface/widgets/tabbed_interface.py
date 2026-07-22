@@ -5,10 +5,17 @@ Provides widgets for the main tabbed interface structure.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
+from ccbt.interface.content_load import (
+    SyncContentLoadGuard,
+    clear_container_children,
+    mount_or_update_static,
+    query_child_by_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +150,8 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         self._active_insight_tab_id: Optional[str] = None
         # Shared selection model for cross-pane communication
         self._selected_torrent_hash: Optional[str] = None
+        self._workflow_load_guard = SyncContentLoadGuard()
+        self._insight_load_guard = SyncContentLoadGuard()
         # Reuse the App's single CommandExecutor / DataProvider when provided so
         # there is one source of truth (R3). Fall back to creating our own only
         # for legacy callers that construct us directly (e.g. some unit tests).
@@ -158,6 +167,22 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             # Pass executor to data provider so it can use executor for commands
             executor_for_provider = self._command_executor._executor if self._command_executor and hasattr(self._command_executor, "_executor") else None
             self._data_provider = create_data_provider(session, executor_for_provider)
+
+    _WORKFLOW_TAB_WIDGET_IDS: ClassVar[dict[str, str]] = {
+        "tab-file-browser": "file-browser-widget",
+        "tab-controls": "torrent-controls-widget",
+    }
+
+    _WORKFLOW_TAB_PLACEHOLDER_IDS: ClassVar[dict[str, str]] = {
+        "tab-file-browser": "file-browser-placeholder",
+        "tab-controls": "controls-placeholder",
+    }
+
+    _INSIGHT_TAB_WIDGET_IDS: ClassVar[dict[str, str]] = {
+        "tab-torrents": "torrents-content",
+        "tab-per-torrent": "per-torrent-content",
+        "tab-per-peer": "per-peer-content",
+    }
 
     def compose(self) -> Any:  # pragma: no cover
         """Compose the main tabs container with side-by-side panes.
@@ -228,6 +253,9 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             # Ensure content area is visible
             if self._torrent_insight_content:
                 self._torrent_insight_content.display = True  # type: ignore[attr-defined]
+            app = getattr(self, "app", None)
+            if app is not None and hasattr(app, "refresh_ui_bindings"):
+                app.call_later(app.refresh_ui_bindings)  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error mounting main tabs container: %s", e, exc_info=True)
 
@@ -289,16 +317,25 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         Args:
             tab_id: ID of the workflow tab to load
         """
+        self._workflow_load_guard.run(self._load_workflow_tab_content_impl, tab_id)
+
+    def _load_workflow_tab_content_impl(self, tab_id: str) -> None:  # pragma: no cover
+        """Load workflow pane content (serialized; do not call directly)."""
         if not self._workflow_content:
             return
-        if tab_id == self._active_workflow_tab_id:
+
+        widget_id = self._WORKFLOW_TAB_WIDGET_IDS.get(tab_id)
+        placeholder_id = self._WORKFLOW_TAB_PLACEHOLDER_IDS.get(tab_id)
+        if tab_id == self._active_workflow_tab_id and (
+            (widget_id and query_child_by_id(self._workflow_content, widget_id) is not None)
+            or (
+                placeholder_id
+                and query_child_by_id(self._workflow_content, placeholder_id) is not None
+            )
+        ):
             return
 
-        # Clear existing content
-        try:
-            self._workflow_content.remove_children()  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        clear_container_children(self._workflow_content)
 
         # Add new content based on tab
         if tab_id == "tab-file-browser":
@@ -321,11 +358,19 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                 except Exception as e:
                     logger.debug("Error mounting FileBrowserWidget: %s", e)
                     # Fallback: use placeholder
-                    placeholder = Static(_("File Browser - Error: {error}").format(error=str(e)), id="file-browser-placeholder")
-                    self._workflow_content.mount(placeholder)  # type: ignore[attr-defined]
+                    mount_or_update_static(
+                        self._workflow_content,
+                        "file-browser-placeholder",
+                        _("File Browser - Error: {error}").format(error=str(e)),
+                        Static,
+                    )
             else:
-                placeholder = Static(_("File Browser - Data provider or executor not available"), id="file-browser-placeholder")
-                self._workflow_content.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._workflow_content,
+                    "file-browser-placeholder",
+                    _("File Browser - Data provider or executor not available"),
+                    Static,
+                )
             self._active_workflow_tab_id = tab_id
         elif tab_id == "tab-controls":
             # Load Controls widget
@@ -353,11 +398,19 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                 except Exception as e:
                     logger.debug("Error mounting TorrentControlsWidget: %s", e)
                     # Fallback: use placeholder
-                    placeholder = Static(_("Torrent Controls - Error: {error}").format(error=str(e)), id="controls-placeholder")
-                    self._workflow_content.mount(placeholder)  # type: ignore[attr-defined]
+                    mount_or_update_static(
+                        self._workflow_content,
+                        "controls-placeholder",
+                        _("Torrent Controls - Error: {error}").format(error=str(e)),
+                        Static,
+                    )
             else:
-                placeholder = Static(_("Torrent Controls - Data provider or executor not available"), id="controls-placeholder")
-                self._workflow_content.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._workflow_content,
+                    "controls-placeholder",
+                    _("Torrent Controls - Data provider or executor not available"),
+                    Static,
+                )
             self._active_workflow_tab_id = tab_id
 
     def _load_insight_tab_content(self, tab_id: str) -> None:  # pragma: no cover
@@ -366,16 +419,22 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         Args:
             tab_id: ID of the insight tab to load
         """
+        self._insight_load_guard.run(self._load_insight_tab_content_impl, tab_id)
+
+    def _load_insight_tab_content_impl(self, tab_id: str) -> None:  # pragma: no cover
+        """Load insight pane content (serialized; do not call directly)."""
         if not self._torrent_insight_content:
             return
-        if tab_id == self._active_insight_tab_id:
+
+        widget_id = self._INSIGHT_TAB_WIDGET_IDS.get(tab_id)
+        if (
+            tab_id == self._active_insight_tab_id
+            and widget_id
+            and query_child_by_id(self._torrent_insight_content, widget_id) is not None
+        ):
             return
 
-        # Clear existing content
-        try:
-            self._torrent_insight_content.remove_children()  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        clear_container_children(self._torrent_insight_content)
 
         # Add new content based on tab
         if tab_id == "tab-torrents":
@@ -398,11 +457,17 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                         id="torrents-content"
                     )
                 self._torrent_insight_content.mount(content)  # type: ignore[attr-defined]
-                # Note: Ensure widget is visible
                 content.display = True  # type: ignore[attr-defined]
+                app = getattr(self, "app", None)
+                if app is not None and hasattr(app, "refresh_ui_bindings"):
+                    app.call_later(app.refresh_ui_bindings)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Torrents tab - Data provider or executor not available"), id="torrents-content")
-                self._torrent_insight_content.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._torrent_insight_content,
+                    "torrents-content",
+                    _("Torrents tab - Data provider or executor not available"),
+                    Static,
+                )
             self._active_insight_tab_id = tab_id
         elif tab_id == "tab-per-torrent":
             # Load PerTorrentTabContent with executor
@@ -427,11 +492,17 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     if hasattr(content, "_selected_info_hash"):
                         content._selected_info_hash = self._selected_torrent_hash
                 self._torrent_insight_content.mount(content)  # type: ignore[attr-defined]
-                # Note: Ensure widget is visible
                 content.display = True  # type: ignore[attr-defined]
+                app = getattr(self, "app", None)
+                if app is not None and hasattr(app, "refresh_ui_bindings"):
+                    app.call_later(app.refresh_ui_bindings)  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Per-Torrent tab - Data provider or executor not available"), id="per-torrent-content")
-                self._torrent_insight_content.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._torrent_insight_content,
+                    "per-torrent-content",
+                    _("Per-Torrent tab - Data provider or executor not available"),
+                    Static,
+                )
             self._active_insight_tab_id = tab_id
         elif tab_id == "tab-per-peer":
             # Load PerPeerTabContent
@@ -446,8 +517,12 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                 # Note: Ensure widget is visible
                 content.display = True  # type: ignore[attr-defined]
             else:
-                placeholder = Static(_("Per-Peer tab - Data provider or executor not available"), id="per-peer-content")
-                self._torrent_insight_content.mount(placeholder)  # type: ignore[attr-defined]
+                mount_or_update_static(
+                    self._torrent_insight_content,
+                    "per-peer-content",
+                    _("Per-Peer tab - Data provider or executor not available"),
+                    Static,
+                )
             self._active_insight_tab_id = tab_id
 
     def _on_torrent_selected_from_controls(self, info_hash: str) -> None:  # pragma: no cover
@@ -457,6 +532,10 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             info_hash: Selected torrent info hash
         """
         self._selected_torrent_hash = info_hash
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "selected_torrent_info_hash"):
+            with contextlib.suppress(Exception):
+                app.selected_torrent_info_hash = info_hash  # type: ignore[attr-defined]
         # Update Per-Torrent tab if it's already mounted
         try:
             per_torrent_content = self._torrent_insight_content.query_one("#per-torrent-content")  # type: ignore[attr-defined]
@@ -480,6 +559,10 @@ class MainTabsContainer(Container):  # type: ignore[misc]
             info_hash: Selected torrent info hash
         """
         self._selected_torrent_hash = info_hash
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "selected_torrent_info_hash"):
+            with contextlib.suppress(Exception):
+                app.selected_torrent_info_hash = info_hash  # type: ignore[attr-defined]
         # Update Per-Torrent tab if it's already mounted
         try:
             per_torrent_content = self._torrent_insight_content.query_one("#per-torrent-content")  # type: ignore[attr-defined]

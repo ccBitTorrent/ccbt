@@ -11,6 +11,7 @@ Tests verify end-to-end behavior of optimizations:
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from unittest.mock import patch
 
@@ -87,9 +88,9 @@ class TestWriteBatchingIntegration:
         await asyncio.gather(*futures)
         write_time = time.time() - start_time
 
-        # NVMe should batch quickly, but allow some overhead for processing
-        # Batching may take longer than timeout due to processing overhead
-        assert write_time < 1.0  # Should be batched reasonably quickly
+        # NVMe should batch quickly; Windows CI runners can be slower than Linux.
+        max_write_time = 3.0 if sys.platform == "win32" else 1.0
+        assert write_time < max_write_time
 
         # Verify file was written
         assert test_file.exists()

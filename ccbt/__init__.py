@@ -115,7 +115,6 @@ except Exception:  # nosec B110 - If asyncio is unavailable or any error occurs,
 # Backward compatibility: Re-export commonly used modules from new locations
 # This allows old imports like "from ccbt.bencode import ..." to continue working
 from ccbt import discovery
-from ccbt.config import config
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
 from ccbt.core import bencode, magnet, torrent
 
@@ -129,7 +128,7 @@ from ccbt.core.magnet import (
 )
 from ccbt.core.torrent import TorrentParser
 from ccbt.discovery import dht, pex, tracker
-from ccbt.peer import async_peer_connection, peer, peer_connection
+from ccbt.peer import async_peer_connection, peer_connection
 from ccbt.piece import (
     async_metadata_exchange,
     async_piece_manager,

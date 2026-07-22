@@ -99,7 +99,7 @@ class PeerQualityDistributionWidget(Static):  # type: ignore[misc]
 
     def watch_peer_quality_distribution(self, value: dict[str, Any]) -> None:  # pragma: no cover
         """Reactive watcher: render distribution from the bound dict (F2.6.4)."""
-        if isinstance(value, dict) and value:
+        if isinstance(value, dict):
             self.update(self._render_distribution(value))
 
     def _render_distribution(self, distribution: dict[str, Any]) -> Panel:

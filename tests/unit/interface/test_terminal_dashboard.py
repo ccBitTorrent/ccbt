@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from types import SimpleNamespace
 from typing import Any
@@ -51,6 +52,7 @@ async def test_poll_once_marks_cached_rows_stale_when_list_torrents_fails() -> N
     dashboard.metrics_collector = None
     dashboard._command_executor = MagicMock()
     dashboard._apply_filter_and_update = MagicMock()
+    dashboard._poll_lock = asyncio.Lock()
     dashboard.query_one = MagicMock(side_effect=Exception("no widget"))
 
     await dashboard._poll_once_impl()
@@ -59,8 +61,8 @@ async def test_poll_once_marks_cached_rows_stale_when_list_torrents_fails() -> N
     assert dashboard._apply_filter_and_update.call_count >= 1
 
 
-def test_poll_once_worker_is_exclusive_in_poll_group() -> None:
-    """_poll_once must be a @work(exclusive=True, group='poll') wrapper (F1)."""
+def test_poll_once_worker_uses_non_exclusive_poll_group() -> None:
+    """_poll_once uses @work(exclusive=False, group='poll') with lock coalescing."""
     assert inspect.iscoroutinefunction(TerminalDashboard._poll_once_impl)
     assert TerminalDashboard._poll_once is not TerminalDashboard._poll_once_impl
 
@@ -89,7 +91,7 @@ def test_poll_once_worker_is_exclusive_in_poll_group() -> None:
     dashboard._poll_once()
 
     assert captured["group"] == "poll"
-    assert captured["exclusive"] is True
+    assert captured["exclusive"] is False
     assert captured["exit_on_error"] is False
     assert captured["name"] == "_poll_once"
 

@@ -32,10 +32,12 @@ def test_torrent_controls_widget_declares_torrents_data_reactive() -> None:
     assert hasattr(TorrentControlsWidget, "torrents_data")
 
 
-def _patch_create_task(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Patch asyncio.create_task with a no-op Mock so sync watchers can be tested."""
+def _patch_run_worker(
+    monkeypatch: pytest.MonkeyPatch, module: str
+) -> MagicMock:
+    """Patch schedule_widget_worker where the widget module imported it."""
     mock = MagicMock()
-    monkeypatch.setattr("asyncio.create_task", mock)
+    monkeypatch.setattr(f"{module}.schedule_widget_worker", mock)
     return mock
 
 
@@ -43,50 +45,47 @@ def test_global_torrents_screen_watch_delegates_to_refresh_with_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """watch_torrents_data schedules refresh_torrents(torrents_override=value) (F2.3.1)."""
-    _patch_create_task(monkeypatch)
+    worker = _patch_run_worker(monkeypatch, "ccbt.interface.screens.torrents_tab")
     screen = GlobalTorrentsScreen.__new__(GlobalTorrentsScreen)
-    screen.refresh_torrents = MagicMock()  # type: ignore[assignment]
     payload = [{"info_hash": "a" * 40, "name": "x"}]
     screen.watch_torrents_data(payload)
-    screen.refresh_torrents.assert_called_once_with(torrents_override=payload)
+    worker.assert_called_once()
 
 
 def test_filtered_torrents_screen_watch_delegates_to_refresh_with_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """watch_torrents_data schedules refresh_torrents(torrents_override=value) (F2.3.2)."""
-    _patch_create_task(monkeypatch)
+    worker = _patch_run_worker(monkeypatch, "ccbt.interface.screens.torrents_tab")
     screen = FilteredTorrentsScreen.__new__(FilteredTorrentsScreen)
-    screen.refresh_torrents = MagicMock()  # type: ignore[assignment]
     payload = [{"info_hash": "a" * 40, "name": "x", "status": "downloading"}]
     screen.watch_torrents_data(payload)
-    screen.refresh_torrents.assert_called_once_with(torrents_override=payload)
+    worker.assert_called_once()
 
 
 def test_torrent_selector_watch_delegates_to_refresh_with_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """watch_torrents_data schedules _refresh_torrent_list(torrents_override=value) (F2.3.3)."""
-    _patch_create_task(monkeypatch)
+    worker = _patch_run_worker(monkeypatch, "ccbt.interface.widgets.torrent_selector")
     selector = TorrentSelector.__new__(TorrentSelector)
-    selector._refresh_torrent_list = MagicMock()  # type: ignore[assignment]
+    selector._select_widget = MagicMock()
     payload = [{"info_hash": "a" * 40, "name": "x"}]
     selector.watch_torrents_data(payload)
-    selector._refresh_torrent_list.assert_called_once_with(torrents_override=payload)
+    worker.assert_called_once()
 
 
 def test_torrent_controls_widget_watch_delegates_to_refresh_with_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """watch_torrents_data schedules _refresh_torrent_list(torrents_override=value) (F2.3.4)."""
-    _patch_create_task(monkeypatch)
+    worker = _patch_run_worker(monkeypatch, "ccbt.interface.widgets.torrent_controls")
     widget = TorrentControlsWidget.__new__(TorrentControlsWidget)
     widget._torrent_selector = MagicMock()
     widget._data_provider = MagicMock()
-    widget._refresh_torrent_list = MagicMock()  # type: ignore[assignment]
     payload = [{"info_hash": "a" * 40, "name": "x"}]
     widget.watch_torrents_data(payload)
-    widget._refresh_torrent_list.assert_called_once_with(torrents_override=payload)
+    worker.assert_called_once()
 
 
 def test_torrent_selector_sets_app_selected_torrent_info_hash_on_selection(
@@ -182,3 +181,46 @@ async def test_filtered_torrents_screen_refresh_filters_override(
     screen._data_provider.list_torrents.assert_not_called()
     # Only the downloading torrent should be added to the table.
     assert screen._torrents_table.add_row.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_torrent_selector_refresh_sets_value_by_info_hash_not_index() -> None:
+    """Textual 8 Select values are option payloads, not integer indices."""
+    selector = TorrentSelector.__new__(TorrentSelector)
+    selector._data_provider = MagicMock()
+    selector._selected_info_hash = "a" * 40
+    select = MagicMock()
+    selector._select_widget = select
+
+    payload = [
+        {
+            "info_hash": "a" * 40,
+            "name": "Example",
+            "status": "downloading",
+        }
+    ]
+    await selector._refresh_torrent_list(torrents_override=payload)
+
+    select.set_options.assert_called_once()
+    select.value = "a" * 40
+    assert select.value == "a" * 40
+
+
+def test_torrent_selector_on_select_changed_accepts_string_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Textual 8 posts the option payload (info_hash) in Select.Changed."""
+    selector = TorrentSelector.__new__(TorrentSelector)
+    selector._torrent_options = [("x (downloading)", "a" * 40)]
+    selector._selected_info_hash = None
+    selector.post_message = MagicMock()  # type: ignore[assignment]
+    app = MagicMock()
+    monkeypatch.setattr(TorrentSelector, "app", app)
+
+    event = MagicMock()
+    event.value = "a" * 40
+    selector.on_select_changed(event)
+
+    assert selector._selected_info_hash == "a" * 40
+    assert app.selected_torrent_info_hash == "a" * 40
+    selector.post_message.assert_called_once()

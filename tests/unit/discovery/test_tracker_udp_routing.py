@@ -454,3 +454,45 @@ class TestUDPTrackerRouting:
         mock_announce.assert_awaited_once()
         assert mock_announce.await_args.args[0]["announce"] == healthy_url
 
+
+class TestHTTPFallbackFromMagnetTrackers:
+    """HTTP fallback must read flat announce_list entries from magnet torrent_data."""
+
+    @pytest.fixture
+    def tracker_client(self):
+        with patch("ccbt.discovery.tracker.get_config"):
+            return AsyncTrackerClient()
+
+    def test_find_http_fallback_url_reads_flat_announce_list(
+        self, tracker_client: AsyncTrackerClient
+    ) -> None:
+        torrent_data = {
+            "announce": "udp://tracker.opentrackr.org:1337/announce",
+            "announce_list": [
+                "udp://tracker.opentrackr.org:1337/announce",
+                "https://tracker.torrent.eu.org:443/announce",
+                "http://tracker.openbittorrent.com:80/announce",
+            ],
+        }
+        fallback = tracker_client._find_http_fallback_url(
+            torrent_data,
+            "udp://tracker.opentrackr.org:1337",
+        )
+        assert fallback == "https://tracker.torrent.eu.org:443/announce"
+
+    def test_find_http_fallback_prefers_same_host(
+        self, tracker_client: AsyncTrackerClient
+    ) -> None:
+        torrent_data = {
+            "announce_list": [
+                "udp://tracker.example.com:1337/announce",
+                "https://tracker.other.org:443/announce",
+                "https://tracker.example.com:443/announce",
+            ],
+        }
+        fallback = tracker_client._find_http_fallback_url(
+            torrent_data,
+            "udp://tracker.example.com:1337",
+        )
+        assert fallback == "https://tracker.example.com:443/announce"
+

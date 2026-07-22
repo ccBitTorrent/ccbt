@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,6 +24,52 @@ def _build_manager(max_peers: int = 2) -> AsyncPeerConnectionManager:
         piece_manager=piece_manager,
         max_peers_per_torrent=max_peers,
     )
+
+
+async def _cancel_reconnection_task(manager: AsyncPeerConnectionManager) -> None:
+    task = manager._reconnection_task
+    if task and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    manager._reconnection_task = None
+
+
+async def _cancel_stray_connect_tasks() -> None:
+    pending = [
+        task
+        for task in asyncio.all_tasks()
+        if not task.done() and task.get_name().startswith("connect_peer:")
+    ]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+def _disable_pool_warmup_for_tests(
+    manager: AsyncPeerConnectionManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager.config.network.connection_pool_warmup_enabled = False
+    monkeypatch.setattr(
+        manager.connection_pool,
+        "warmup_connections",
+        AsyncMock(return_value=None),
+    )
+
+
+async def _start_manager_for_tests(
+    manager: AsyncPeerConnectionManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _disable_pool_warmup_for_tests(manager, monkeypatch)
+    await manager.start()
+    await _cancel_reconnection_task(manager)
+
+
+async def _stop_manager_for_tests(manager: AsyncPeerConnectionManager) -> None:
+    await _cancel_reconnection_task(manager)
+    await _cancel_stray_connect_tasks()
+    await manager.stop()
 
 
 @pytest.mark.asyncio
@@ -92,9 +139,9 @@ async def test_plaintext_fallback_is_bounded_per_peer_window() -> None:
 
 
 @pytest.mark.asyncio
-async def test_inflight_dedup_uses_delayed_pending_retry() -> None:
+async def test_inflight_dedup_uses_delayed_pending_retry(monkeypatch) -> None:
     manager = _build_manager(max_peers=4)
-    await manager.start()
+    await _start_manager_for_tests(manager, monkeypatch)
     try:
         manager._running = True
         manager.max_peers_per_torrent = 4
@@ -113,13 +160,13 @@ async def test_inflight_dedup_uses_delayed_pending_retry() -> None:
             reason="inflight_dedup",
         )
     finally:
-        await manager.stop()
+        await _stop_manager_for_tests(manager)
 
 
 @pytest.mark.asyncio
-async def test_inflight_dedup_retry_backoff_is_bounded_exponential() -> None:
+async def test_inflight_dedup_retry_backoff_is_bounded_exponential(monkeypatch) -> None:
     manager = _build_manager(max_peers=4)
-    await manager.start()
+    await _start_manager_for_tests(manager, monkeypatch)
     try:
         manager._running = True
         manager.max_peers_per_torrent = 4
@@ -138,13 +185,13 @@ async def test_inflight_dedup_retry_backoff_is_bounded_exponential() -> None:
         assert calls[1].kwargs["delay_s"] == 1.0
         assert calls[2].kwargs["delay_s"] == 1.0
     finally:
-        await manager.stop()
+        await _stop_manager_for_tests(manager)
 
 
 @pytest.mark.asyncio
-async def test_resume_pending_batches_prunes_expired_pending_peers() -> None:
+async def test_resume_pending_batches_prunes_expired_pending_peers(monkeypatch) -> None:
     manager = _build_manager(max_peers=4)
-    await manager.start()
+    await _start_manager_for_tests(manager, monkeypatch)
     try:
         manager._running = True
         manager._pending_peer_queue_max_age_s = 1.0
@@ -162,4 +209,4 @@ async def test_resume_pending_batches_prunes_expired_pending_peers() -> None:
         assert manager._pending_peer_queue == []
         assert manager._pending_peer_keys == set()
     finally:
-        await manager.stop()
+        await _stop_manager_for_tests(manager)

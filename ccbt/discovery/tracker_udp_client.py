@@ -26,11 +26,22 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+)
 from urllib.parse import urlparse
 
 from ccbt.config.config import get_config
 from ccbt.session.peer_discovery_telemetry import observe_udp_tracker_pending_window
+from ccbt.utils.shutdown import is_shutting_down
 
 if TYPE_CHECKING:
     from ccbt.models import PeerInfo
@@ -103,6 +114,8 @@ class TrackerSession:
     connection_id: Optional[int] = None
     connection_time: float = 0.0
     last_announce: float = 0.0
+    # Resolved tracker endpoint from last connect response (BEP 15).
+    resolved_addr: Optional[tuple[str, int]] = None
     # Interval suggested by tracker for next announce (seconds)
     interval: Optional[int] = None
     retry_count: int = 0
@@ -134,6 +147,7 @@ class AsyncUDPTrackerClient:
 
         # Tracker sessions
         self.sessions: dict[str, TrackerSession] = {}
+        self._session_connect_locks: dict[str, asyncio.Lock] = {}
 
         # UDP socket
         self.socket: Optional[asyncio.DatagramProtocol] = None
@@ -171,12 +185,14 @@ class AsyncUDPTrackerClient:
         self._tracker_response_timeout_ema: dict[str, float] = {}
         self._tracker_timeout_floor_scale: dict[str, float] = {}
         self._pending_request_host_by_tid: dict[int, str] = {}
+        self._response_addrs: dict[int, tuple[str, int]] = {}
         self._pending_request_soft_cap_per_host: int = 24
         self._udp_wait_pacing_load_ratio: float = 0.5
         self._last_udp_pending_gauge_monotonic: float = 0.0
 
         # Background tasks
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._stopping: bool = False
 
         # Note: Add lock to prevent concurrent socket operations
         # Windows requires serialized access to UDP sockets to prevent WinError 10022
@@ -415,6 +431,9 @@ class AsyncUDPTrackerClient:
         # Queue pressure scaling with congestion floor + hysteresis.
         # Slightly steeper than legacy 0.45 to shorten waits under multiplex load.
         queue_scale = 1.0 - (0.55 * queue_pressure)
+        if pending_count <= 3:
+            # Cold-start / low-load: avoid over-shrinking connect timeouts on Windows UDP.
+            queue_scale = max(queue_scale, 0.9)
         host_key = self._get_tracker_host(tracker_host)
         previous_floor = float(self._tracker_timeout_floor_scale.get(host_key, 0.65))
         target_floor = 0.65 if queue_pressure < 0.7 else 0.8
@@ -596,10 +615,43 @@ class AsyncUDPTrackerClient:
                         e,
                     )
 
-    def _raise_connection_failed(self) -> None:
+    def _raise_connection_failed(self) -> NoReturn:
         """Raise ConnectionError for failed tracker connection."""
         msg = "Failed to connect to tracker"
         raise ConnectionError(msg)
+
+    def _shutdown_abort_requested(self) -> bool:
+        """Return True when tracker I/O should stop immediately."""
+        return self._stopping or is_shutting_down()
+
+    async def _sleep_unless_shutting_down(self, seconds: float) -> bool:
+        """Sleep up to *seconds*, polling shutdown every 100ms.
+
+        Returns:
+            True when shutdown was detected (caller should abort).
+        """
+        if seconds <= 0.0:
+            return self._shutdown_abort_requested()
+        elapsed = 0.0
+        while elapsed < seconds:
+            if self._shutdown_abort_requested():
+                return True
+            step = min(0.1, seconds - elapsed)
+            await asyncio.sleep(step)
+            elapsed += step
+        return self._shutdown_abort_requested()
+
+    def abort_during_shutdown(self) -> None:
+        """Cancel in-flight UDP tracker requests without closing the socket."""
+        self._stopping = True
+        for future in self.pending_requests.values():
+            if not future.done():
+                future.cancel()
+        self.pending_requests.clear()
+        self._pending_request_timestamps.clear()
+        self.pending_immediate_callbacks.clear()
+        self._pending_request_host_by_tid.clear()
+        self._response_addrs.clear()
 
     def _check_socket_health(self) -> bool:
         """Check if socket is healthy and ready for use.
@@ -674,6 +726,7 @@ class AsyncUDPTrackerClient:
         CRITICAL: Socket must be initialized during daemon startup via start_udp_tracker_client().
         Socket recreation is not supported as it breaks session logic.
         """
+        self._stopping = False
         self._refresh_udp_pending_settings_from_config()
         # Note: Assert socket should never be recreated during runtime
         # If socket is already initialized and healthy, return immediately
@@ -994,6 +1047,8 @@ class AsyncUDPTrackerClient:
 
     async def stop(self) -> None:
         """Stop the UDP tracker client."""
+        self._stopping = True
+        self.abort_during_shutdown()
         # Mark socket as not ready first
         self._socket_ready = False
 
@@ -1047,13 +1102,6 @@ class AsyncUDPTrackerClient:
 
                 self.transport = None
                 self.socket = None
-
-        # Cancel pending requests
-        for future in self.pending_requests.values():
-            if not future.done():
-                future.cancel()
-        self.pending_requests.clear()
-        self._pending_request_timestamps.clear()
 
         self.logger.info("UDP tracker client stopped")
 
@@ -1193,67 +1241,31 @@ class AsyncUDPTrackerClient:
 
             session = self.sessions[session_key]
 
-            # Note: Check connection health and refresh if needed
-            # Connection IDs expire after 60 seconds, so refresh before announce
-            # Improved: Refresh earlier (50s) to avoid race conditions and add validation
-            current_time = time.time()
-            connection_expired = (
-                not session.is_connected
-                or session.connection_id is None
-                or session.connection_time == 0.0
-                or (
-                    current_time - session.connection_time > 50.0
-                )  # Refresh 10s before 60s expiry for better reliability
-            )
-
-            if connection_expired:
-                self.logger.info(
-                    "Refreshing tracker connection for %s:%d (expired=%s, age=%.1fs)",
-                    session.host,
-                    session.port,
-                    connection_expired,
-                    current_time - session.connection_time
-                    if session.connection_time > 0
-                    else 0,
-                )
-                try:
-                    await self._connect_to_tracker(session)
-                    if session.is_connected:
-                        self.logger.info(
-                            "Successfully connected to tracker %s:%d",
-                            session.host,
-                            session.port,
-                        )
-                except Exception as e:
+            lock = self._session_connect_locks.setdefault(session_key, asyncio.Lock())
+            async with lock:
+                if not await self._connect_if_needed(session):
                     self.logger.warning(
-                        "Failed to refresh connection to tracker %s:%d: %s",
+                        "Cannot announce to tracker %s:%d - not connected (retry_count: %d, backoff: %.1fs)",
                         session.host,
                         session.port,
-                        e,
+                        session.retry_count,
+                        session.backoff_delay,
                     )
+                    return []
 
-            if not session.is_connected:  # pragma: no cover - Connection failed path, tested via successful connection
-                self.logger.warning(
-                    "Cannot announce to tracker %s:%d - not connected (retry_count: %d, backoff: %.1fs)",
-                    session.host,
-                    session.port,
-                    session.retry_count,
-                    session.backoff_delay,
+                # Send announce
+                # Note: Pass port parameter (client's external port from NAT manager) to use external port
+                # This ensures trackers receive the correct port for routing incoming connections
+                return await self._send_announce(
+                    session,
+                    torrent_data,
+                    port=port,  # Client's external port from NAT manager (not tracker_port)
+                    uploaded=uploaded,
+                    downloaded=downloaded,
+                    left=left,
+                    event=event,
+                    reconnect=False,
                 )
-                return []
-
-            # Send announce
-            # Note: Pass port parameter (client's external port from NAT manager) to use external port
-            # This ensures trackers receive the correct port for routing incoming connections
-            return await self._send_announce(
-                session,
-                torrent_data,
-                port=port,  # Client's external port from NAT manager (not tracker_port)
-                uploaded=uploaded,
-                downloaded=downloaded,
-                left=left,
-                event=event,
-            )
 
         except (
             Exception
@@ -1299,46 +1311,29 @@ class AsyncUDPTrackerClient:
 
             session = self.sessions[session_key]
 
-            # Check connection health and refresh if needed
-            current_time = time.time()
-            connection_expired = (
-                not session.is_connected
-                or session.connection_id is None
-                or session.connection_time == 0.0
-                or (current_time - session.connection_time > 55.0)
-            )
+            lock = self._session_connect_locks.setdefault(session_key, asyncio.Lock())
+            async with lock:
+                if not await self._connect_if_needed(session):
+                    self.logger.debug(
+                        "Failed to connect to tracker %s:%d",
+                        session.host,
+                        session.port,
+                    )
+                    return None
 
-            if connection_expired:
-                self.logger.debug(
-                    "Refreshing tracker connection for %s:%d (expired=%s, age=%.1fs)",
-                    session.host,
-                    session.port,
-                    connection_expired,
-                    current_time - session.connection_time
-                    if session.connection_time > 0
-                    else 0,
+                # Send announce and get full response under the same host lock so
+                # auto-scrape/reconnect paths cannot invalidate the connection_id.
+                return await self._send_announce_full(
+                    session,
+                    torrent_data,
+                    port=port,  # Client's external port from NAT manager (not tracker_port)
+                    uploaded=uploaded,
+                    downloaded=downloaded,
+                    left=left,
+                    event=event,
+                    on_immediate_peers=on_immediate_peers,
+                    reconnect=False,
                 )
-                await self._connect_to_tracker(session)
-
-            if not session.is_connected:
-                self.logger.debug(
-                    "Failed to connect to tracker %s:%d", session.host, session.port
-                )
-                return None
-
-            # Send announce and get full response
-            # Note: Pass port parameter (client's external port from NAT manager) to use external port
-            # This ensures trackers receive the correct port for routing incoming connections
-            return await self._send_announce_full(
-                session,
-                torrent_data,
-                port=port,  # Client's external port from NAT manager (not tracker_port)
-                uploaded=uploaded,
-                downloaded=downloaded,
-                left=left,
-                event=event,
-                on_immediate_peers=on_immediate_peers,
-            )
 
         except (
             Exception
@@ -1444,6 +1439,53 @@ class AsyncUDPTrackerClient:
 
         return host, port
 
+    def _get_session_lock(self, session: TrackerSession) -> asyncio.Lock:
+        """Return the per-host lock serializing connect/announce/scrape."""
+        session_key = f"{session.host}:{session.port}"
+        return self._session_connect_locks.setdefault(session_key, asyncio.Lock())
+
+    def _sendto_addr(self, session: TrackerSession) -> tuple[str, int]:
+        """Return the destination address for UDP sendto (prefer resolved IP)."""
+        if session.resolved_addr is not None:
+            return session.resolved_addr
+        return (session.host, session.port)
+
+    def _remember_response_addr(
+        self,
+        transaction_id: int,
+        addr: tuple[str, int],
+    ) -> None:
+        if addr and addr[0]:
+            self._response_addrs[transaction_id] = addr
+
+    def _apply_response_addr_to_session(
+        self,
+        session: TrackerSession,
+        transaction_id: int,
+    ) -> None:
+        resolved = self._response_addrs.pop(transaction_id, None)
+        if resolved is not None:
+            session.resolved_addr = resolved
+
+    async def _connect_if_needed(self, session: TrackerSession) -> bool:
+        """Connect to a UDP tracker when the session is missing or stale."""
+        current_time = time.time()
+        connection_expired = (
+            not session.is_connected
+            or session.connection_id is None
+            or session.connection_time == 0.0
+            or (current_time - session.connection_time > 55.0)
+        )
+        if not connection_expired:
+            return True
+        await self._connect_to_tracker(session)
+        return bool(session.is_connected and session.connection_id is not None)
+
+    async def _ensure_tracker_connected(self, session: TrackerSession) -> bool:
+        """Connect to a UDP tracker once per host:port under concurrent announces."""
+        async with self._get_session_lock(session):
+            return await self._connect_if_needed(session)
+
     async def _connect_to_tracker(
         self,
         session: TrackerSession,
@@ -1466,7 +1508,24 @@ class AsyncUDPTrackerClient:
         if base_timeout < 0.0:
             base_timeout = 0.1
 
+        if self._shutdown_abort_requested():
+            self.logger.debug(
+                "Skipping tracker connect to %s:%d during shutdown",
+                session.host,
+                session.port,
+            )
+            return
+
         for attempt in range(max_retries):
+            if self._shutdown_abort_requested():
+                self.logger.debug(
+                    "Aborting tracker connect to %s:%d during shutdown (attempt %d/%d)",
+                    session.host,
+                    session.port,
+                    attempt + 1,
+                    max_retries,
+                )
+                return
             try:
                 # Note: Health check - reset connection state if stale
                 if session.connection_time > 0 and (
@@ -1495,214 +1554,80 @@ class AsyncUDPTrackerClient:
                 # Validate socket is ready (already validated at start, but double-check)
                 self._validate_socket_ready()
 
-                # Use lock to serialize socket operations
+                # Wait for response with timeout
+                if self._socket_error_count > 0:
+                    base_timeout = max(
+                        5.0, base_timeout - (self._socket_error_count * 2.0)
+                    )
+
+                timeout = base_timeout + (attempt * 2.0)
+                self.logger.debug(
+                    "Waiting for tracker response from %s:%d (timeout=%.1fs, attempt %d/%d)",
+                    session.host,
+                    session.port,
+                    timeout,
+                    attempt + 1,
+                    max_retries,
+                )
+                pending = await self._begin_pending_request(
+                    transaction_id,
+                    timeout=timeout,
+                    tracker_host=session.host,
+                )
+                if pending is None:
+                    self._raise_connection_failed()
+                pending_req = cast(
+                    "Tuple[asyncio.Future[Any], float, float, int, str]", pending
+                )
+
+                send_addr = self._sendto_addr(session)
                 async with self._socket_lock:
-                    # Log send attempt
                     self.logger.debug(
                         "Sending tracker connect request to %s:%d (transaction_id=%d)",
                         session.host,
                         session.port,
                         transaction_id,
                     )
-
-                    # Send connect request (transport is guaranteed to be non-None after validation)
                     if self.transport is None:
                         msg = "Transport is None after validation"
                         raise RuntimeError(msg)
-
-                    # Note: Check socket health before send operation
                     if not self._check_socket_health():
-                        # Socket appears unhealthy - increment error count
                         self._socket_error_count += 1
                         self._socket_last_error_time = time.time()
-
-                        # If socket is truly invalid, raise error
                         if self.transport is None or self.transport.is_closing():
                             msg = (
                                 "Socket is invalid (transport=None or closing). "
                                 "Socket should have been initialized during daemon startup."
                             )
                             raise RuntimeError(msg)
-
-                        # If socket just appears not ready, log and allow retry
-                        self.logger.debug(
-                            "Socket health check failed before send (error_count: %d, will retry)",
-                            self._socket_error_count,
-                        )
-                        # Don't raise - let retry logic handle it
                         msg = "Socket health check failed"
                         raise ConnectionError(msg)
-
-                    # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
-                    # WinError 10022 can occur if socket state is not properly synchronized
                     loop = asyncio.get_event_loop()
-                    is_proactor = _is_windows_proactor_loop(loop)
-                    if is_proactor:
-                        # Longer delay for ProactorEventLoop to ensure socket state is synchronized
-                        await asyncio.sleep(0.1)  # Increased from 0.01s to 0.1s
-
-                        # Verify transport write buffer is ready
-                        try:
-                            write_limits = self.transport.get_write_buffer_limits()  # type: ignore[attr-defined]
-                            if write_limits is not None:
-                                self.logger.debug(
-                                    "Transport write buffer limits: high=%s, low=%s",
-                                    write_limits[0]
-                                    if isinstance(write_limits, tuple)
-                                    else write_limits,
-                                    write_limits[1]
-                                    if isinstance(write_limits, tuple)
-                                    and len(write_limits) > 1
-                                    else None,
-                                )
-                        except Exception as e:
-                            self.logger.debug(
-                                "Could not check write buffer limits: %s", e
-                            )
-
-                    # Wrap sendto in try/except to catch WinError 10022 and other socket errors
-                    # These will be retried by the outer exception handler
+                    if _is_windows_proactor_loop(loop):
+                        await asyncio.sleep(0.1)
                     try:
-                        self.transport.sendto(
-                            connect_data, (session.host, session.port)
+                        self.transport.sendto(connect_data, send_addr)
+                        self._socket_error_count = min(self._socket_error_count, 0)
+                    except OSError:
+                        await self._complete_pending_request(
+                            transaction_id, pending_req
                         )
-                        # Reset error count on successful send
-                        if self._socket_error_count > 0:
-                            self.logger.debug(
-                                "Socket send succeeded, resetting error count (was: %d)",
-                                self._socket_error_count,
-                            )
-                            self._socket_error_count = 0
-                    except OSError as send_error:
-                        # Note: Improved WinError 10022 detection and handling
-                        error_code = getattr(send_error, "winerror", None) or getattr(
-                            send_error, "errno", None
-                        )
-                        is_winerror_10022 = (
-                            error_code == 10022
-                            or (hasattr(send_error, "errno") and send_error.errno == 22)
-                            or (sys.platform == "win32" and "10022" in str(send_error))
-                        )
-                        if is_winerror_10022:
-                            # WinError 10022 is transient on Windows - add retry with exponential backoff
-                            self._socket_error_count += 1
-                            self._socket_last_error_time = time.time()
+                        raise
 
-                            # Note: Add exponential backoff for WinError 10022
-                            # Wait before retrying to allow socket to recover
-                            backoff_delay = min(
-                                0.1 * (2 ** min(self._socket_error_count - 1, 4)), 1.0
-                            )  # Max 1 second
+                response = await self._complete_pending_request(
+                    transaction_id, pending_req
+                )
 
-                            # Only log at WARNING level if error count is high
-                            if self._socket_error_count <= 3:
-                                self.logger.debug(
-                                    "WinError 10022 during sendto to %s:%d (error_count: %d, retrying after %.2fs): %s",
-                                    session.host,
-                                    session.port,
-                                    self._socket_error_count,
-                                    backoff_delay,
-                                    send_error,
-                                )
-                            else:
-                                self.logger.warning(
-                                    "WinError 10022 during sendto to %s:%d (error_count: %d, retrying after %.2fs): %s. "
-                                    "This may indicate socket state issues on Windows.",
-                                    session.host,
-                                    session.port,
-                                    self._socket_error_count,
-                                    backoff_delay,
-                                    send_error,
-                                )
-
-                            # Note: Wait before retrying to allow socket to recover
-                            await asyncio.sleep(backoff_delay)
-
-                            # Note: Validate socket state before retrying
-                            if (
-                                not self._socket_ready
-                                or self.transport is None
-                                or self.transport.is_closing()
-                            ):
-                                self.logger.exception(
-                                    "Socket is invalid after WinError 10022 (ready=%s, transport=%s, closing=%s). "
-                                    "Cannot retry - socket must be reinitialized.",
-                                    self._socket_ready,
-                                    self.transport is not None,
-                                    self.transport.is_closing()
-                                    if self.transport
-                                    else None,
-                                )
-                                msg = "Socket is invalid after WinError 10022"
-                                raise RuntimeError(msg) from send_error
-
-                            # Retry the send operation
-                            try:
-                                self.transport.sendto(
-                                    connect_data, (session.host, session.port)
-                                )
-                                self.logger.debug(
-                                    "Successfully retried sendto after WinError 10022 to %s:%d",
-                                    session.host,
-                                    session.port,
-                                )
-                                # Reset error count on successful retry
-                                self._socket_error_count = 0
-                            except OSError as retry_error:
-                                # Retry also failed - re-raise to be caught by outer handler
-                                self.logger.debug(
-                                    "Retry sendto after WinError 10022 also failed to %s:%d: %s",
-                                    session.host,
-                                    session.port,
-                                    retry_error,
-                                )
-                                raise
-                        else:
-                            # Other socket errors - increment error count
-                            self._socket_error_count += 1
-                            self._socket_last_error_time = time.time()
-                            self.logger.debug(
-                                "Socket error during sendto to %s:%d (error_count: %d): %s",
-                                session.host,
-                                session.port,
-                                self._socket_error_count,
-                                send_error,
-                            )
-                            # Re-raise to be caught by outer exception handler for retry
-                            raise
-
-                # Wait for response with timeout
-                # Note: Reduce timeout when socket errors are occurring
-                # If socket has recent errors, use shorter timeout to fail faster
-                if self._socket_error_count > 0:
-                    # Reduce timeout when socket is having issues
-                    base_timeout = max(
-                        5.0, base_timeout - (self._socket_error_count * 2.0)
+                if response is None and self._shutdown_abort_requested():
+                    self.logger.debug(
+                        "Tracker connect aborted during shutdown for %s:%d",
+                        session.host,
+                        session.port,
                     )
-
-                timeout = base_timeout + (
-                    attempt * 2.0
-                )  # 10s base (or less if errors), increase by 2s per retry attempt
-                adaptive_timeout = self._get_adaptive_wait_timeout(
-                    timeout=timeout,
-                    tracker_host=session.host,
-                    pending_count=len(self.pending_requests),
-                )
-                self.logger.debug(
-                    "Waiting for tracker response from %s:%d (timeout=%.1fs, attempt %d/%d)",
-                    session.host,
-                    session.port,
-                    adaptive_timeout,
-                    attempt + 1,
-                    max_retries,
-                )
-                response = await self._wait_for_response(
-                    transaction_id,
-                    timeout=adaptive_timeout,
-                    tracker_host=session.host,
-                )
+                    return
 
                 if response and response.action == TrackerAction.CONNECT:
+                    self._apply_response_addr_to_session(session, transaction_id)
                     session.connection_id = response.connection_id
                     session.connection_time = time.time()
                     session.is_connected = True
@@ -1734,7 +1659,8 @@ class AsyncUDPTrackerClient:
                         session.port,
                         timeout,
                     )
-                    await asyncio.sleep(delay)
+                    if await self._sleep_unless_shutting_down(delay):
+                        return
                 else:
                     session.is_connected = False
                     session.retry_count += 1
@@ -1780,7 +1706,8 @@ class AsyncUDPTrackerClient:
                             session.host,
                             session.port,
                         )
-                        await asyncio.sleep(delay)
+                        if await self._sleep_unless_shutting_down(delay):
+                            return
                         continue  # Retry without marking socket as invalid
                     # Max retries reached for WinError 10022
                     self.logger.warning(
@@ -1807,12 +1734,20 @@ class AsyncUDPTrackerClient:
                         session.port,
                         e,
                     )
-                    await asyncio.sleep(delay)
+                    if await self._sleep_unless_shutting_down(delay):
+                        return
                 else:
                     # Protocol errors or max retries: don't retry
                     session.is_connected = False
                     session.retry_count += 1
                     session.backoff_delay = min(session.backoff_delay * 2, 60.0)
+                    if self._shutdown_abort_requested():
+                        self.logger.debug(
+                            "Aborting tracker connect to %s:%d after error during shutdown",
+                            session.host,
+                            session.port,
+                        )
+                        return
                     # Note: Enhanced error logging for connection failures
                     self.logger.warning(
                         "Failed to connect to tracker %s:%d after %d attempts: %s (type: %s, network_error: %s, backoff: %.1fs)",
@@ -1835,8 +1770,12 @@ class AsyncUDPTrackerClient:
         downloaded: int = 0,
         left: int = 0,
         event: TrackerEvent = TrackerEvent.STARTED,
+        *,
+        reconnect: bool = True,
     ) -> list[dict[str, Any]]:
         """Send announce request to tracker."""
+        if self._shutdown_abort_requested():
+            return []
         try:
             # Check if we need to reconnect
             # Note: Check connection_id is None, connection_time is 0, or connection expired (>60s)
@@ -1847,7 +1786,7 @@ class AsyncUDPTrackerClient:
                 or (current_time - session.connection_time > 60.0)
             )
 
-            if connection_expired or not session.is_connected:
+            if reconnect and (connection_expired or not session.is_connected):
                 self.logger.debug(
                     "Reconnecting to tracker %s:%d (connection_id=%s, connection_time=%.1f, expired=%s, is_connected=%s)",
                     session.host,
@@ -1857,11 +1796,14 @@ class AsyncUDPTrackerClient:
                     connection_expired,
                     session.is_connected,
                 )
-                await self._connect_to_tracker(session)
-
-            if (
-                not session.is_connected or session.connection_id is None
-            ):  # pragma: no cover - Reconnection failed path, tested via successful reconnection
+                if not await self._ensure_tracker_connected(session):
+                    self.logger.warning(
+                        "Cannot announce to tracker %s:%d: not connected or connection_id is None",
+                        session.host,
+                        session.port,
+                    )
+                    return []
+            elif not session.is_connected or session.connection_id is None:
                 self.logger.warning(
                     "Cannot announce to tracker %s:%d: not connected or connection_id is None",
                     session.host,
@@ -1924,7 +1866,7 @@ class AsyncUDPTrackerClient:
                 event.value,
                 0,  # IP address (0 = use sender IP)
                 0,  # Key
-                -1,  # num_want (-1 = default)
+                200,  # num_want (match HTTP tracker numwant=200)
                 client_listen_port,  # Port (external port from NAT manager if available)
             )
             announce_data += self._build_bep41_options(session.url)
@@ -2062,14 +2004,9 @@ class AsyncUDPTrackerClient:
 
             start_time = time.time()
             try:
-                adaptive_timeout = self._get_adaptive_wait_timeout(
-                    timeout=announce_timeout,
-                    tracker_host=session.host,
-                    pending_count=len(self.pending_requests),
-                )
                 response = await self._wait_for_response(
                     transaction_id,
-                    timeout=adaptive_timeout,
+                    timeout=announce_timeout,
                     tracker_host=session.host,
                 )  # pragma: no cover - Async network wait, tested separately
                 # Track response time for adaptive timeout
@@ -2084,7 +2021,7 @@ class AsyncUDPTrackerClient:
                     "(3) Firewall blocking responses, or (4) Tracker is overloaded",
                     session.host,
                     session.port,
-                    adaptive_timeout,
+                    announce_timeout,
                     response_time,
                 )
                 raise
@@ -2146,6 +2083,7 @@ class AsyncUDPTrackerClient:
         event: TrackerEvent = TrackerEvent.STARTED,
         *,
         on_immediate_peers: Optional[ImmediatePeersCallback] = None,
+        reconnect: bool = True,
     ) -> Optional[
         tuple[list[dict[str, Any]], Optional[int], Optional[int], Optional[int]]
     ]:
@@ -2164,7 +2102,7 @@ class AsyncUDPTrackerClient:
                 or (current_time - session.connection_time > 60.0)
             )
 
-            if connection_expired or not session.is_connected:
+            if reconnect and (connection_expired or not session.is_connected):
                 self.logger.debug(
                     "Reconnecting to tracker %s:%d (connection_id=%s, connection_time=%.1f, expired=%s, is_connected=%s)",
                     session.host,
@@ -2174,11 +2112,14 @@ class AsyncUDPTrackerClient:
                     connection_expired,
                     session.is_connected,
                 )
-                await self._connect_to_tracker(session)
-
-            if (
-                not session.is_connected or session.connection_id is None
-            ):  # pragma: no cover - Reconnection failed path, tested via successful reconnection
+                if not await self._ensure_tracker_connected(session):
+                    self.logger.warning(
+                        "Cannot announce to tracker %s:%d: not connected or connection_id is None",
+                        session.host,
+                        session.port,
+                    )
+                    return None
+            elif not session.is_connected or session.connection_id is None:
                 self.logger.warning(
                     "Cannot announce to tracker %s:%d: not connected or connection_id is None",
                     session.host,
@@ -2241,137 +2182,48 @@ class AsyncUDPTrackerClient:
                 event.value,
                 0,  # IP address (0 = use sender IP)
                 0,  # Key
-                -1,  # num_want (-1 = default)
+                200,  # num_want (match HTTP tracker numwant=200)
                 client_listen_port,  # Port (external port from NAT manager if available)
             )
             announce_data += self._build_bep41_options(session.url)
 
-            # Send request
-            # Validate socket is ready
+            self.logger.debug(
+                "Sending tracker announce request to %s:%d (transaction_id=%d, payload=%d bytes)",
+                session.host,
+                session.port,
+                transaction_id,
+                len(announce_data),
+            )
+
             self._validate_socket_ready()
 
-            # Use lock to serialize socket operations
+            # Wait for response (register before sendto to avoid response races)
+            announce_timeout = 30.0
+            pending = await self._begin_pending_request(
+                transaction_id,
+                timeout=announce_timeout,
+                tracker_host=session.host,
+                immediate_peers_callback=on_immediate_peers,
+                min_timeout=30.0,
+            )
+            if pending is None:
+                return None
+
+            send_addr = self._sendto_addr(session)
             async with self._socket_lock:
-                # Send announce request (transport is guaranteed to be non-None after validation)
                 if self.transport is None:
                     msg = "Transport is None after validation"
                     raise RuntimeError(msg)
-
-                # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
                 loop = asyncio.get_event_loop()
-                is_proactor = _is_windows_proactor_loop(loop)
-                if is_proactor:
-                    # Small delay to ensure socket state is synchronized on Windows Proactor
+                if _is_windows_proactor_loop(loop):
                     await asyncio.sleep(0.01)
-
-                # Wrap sendto in try/except to catch WinError 10022 and other socket errors
                 try:
-                    self.transport.sendto(
-                        announce_data, (session.host, session.port)
-                    )  # pragma: no cover - Network operation, tested via mocking
-                except OSError as send_error:
-                    # Note: Improved WinError 10022 detection and handling (same as connect)
-                    error_code = getattr(send_error, "winerror", None) or getattr(
-                        send_error, "errno", None
-                    )
-                    is_winerror_10022 = (
-                        error_code == 10022
-                        or (hasattr(send_error, "errno") and send_error.errno == 22)
-                        or (sys.platform == "win32" and "10022" in str(send_error))
-                    )
-                    if is_winerror_10022:
-                        # WinError 10022 is transient on Windows - add retry with exponential backoff
-                        self._socket_error_count += 1
-                        self._socket_last_error_time = time.time()
+                    self.transport.sendto(announce_data, send_addr)
+                except OSError:
+                    await self._complete_pending_request(transaction_id, pending)
+                    raise
 
-                        # Note: Add exponential backoff for WinError 10022
-                        backoff_delay = min(
-                            0.1 * (2 ** min(self._socket_error_count - 1, 4)), 1.0
-                        )  # Max 1 second
-
-                        if self._socket_error_count <= 3:
-                            self.logger.debug(
-                                "WinError 10022 during scrape sendto to %s:%d (error_count: %d, retrying after %.2fs): %s",
-                                session.host,
-                                session.port,
-                                self._socket_error_count,
-                                backoff_delay,
-                                send_error,
-                            )
-                        else:
-                            self.logger.warning(
-                                "WinError 10022 during scrape sendto to %s:%d (error_count: %d, retrying after %.2fs): %s",
-                                session.host,
-                                session.port,
-                                self._socket_error_count,
-                                backoff_delay,
-                                send_error,
-                            )
-
-                        # Wait before retrying
-                        await asyncio.sleep(backoff_delay)
-
-                        # Validate socket state before retrying
-                        if (
-                            not self._socket_ready
-                            or self.transport is None
-                            or self.transport.is_closing()
-                        ):
-                            self.logger.exception(
-                                "Socket is invalid after WinError 10022 during scrape (ready=%s, transport=%s, closing=%s)",
-                                self._socket_ready,
-                                self.transport is not None,
-                                self.transport.is_closing() if self.transport else None,
-                            )
-                            msg = "Socket is invalid after WinError 10022"
-                            raise RuntimeError(msg) from send_error
-
-                        # Retry the send operation
-                        try:
-                            self.transport.sendto(
-                                announce_data, (session.host, session.port)
-                            )
-                            self.logger.debug(
-                                "Successfully retried scrape sendto after WinError 10022 to %s:%d",
-                                session.host,
-                                session.port,
-                            )
-                            self._socket_error_count = 0
-                        except OSError as retry_error:
-                            self.logger.debug(
-                                "Retry scrape sendto after WinError 10022 also failed to %s:%d: %s",
-                                session.host,
-                                session.port,
-                                retry_error,
-                            )
-                            raise
-                    else:
-                        # Other socket errors
-                        self._socket_error_count += 1
-                        self._socket_last_error_time = time.time()
-                        self.logger.debug(
-                            "Socket error during scrape sendto to %s:%d (error_count: %d): %s",
-                            session.host,
-                            session.port,
-                            self._socket_error_count,
-                            send_error,
-                        )
-                        raise
-
-            # Wait for response
-            # Note: Increased timeout from 10s to 30s to match _send_announce
-            # Trackers may be slow, especially on first announce
-            announce_timeout = 30.0  # 30 seconds for announce (matching _send_announce)
-            response = await self._wait_for_response(
-                transaction_id,
-                timeout=self._get_adaptive_wait_timeout(
-                    timeout=announce_timeout,
-                    tracker_host=session.host,
-                    pending_count=len(self.pending_requests),
-                ),
-                tracker_host=session.host,
-                immediate_peers_callback=on_immediate_peers,
-            )  # pragma: no cover - Async network wait, tested separately
+            response = await self._complete_pending_request(transaction_id, pending)
 
             if (
                 response and response.action == TrackerAction.ANNOUNCE
@@ -2521,17 +2373,18 @@ class AsyncUDPTrackerClient:
             )
         return pruned_count
 
-    async def _wait_for_response(
+    async def _begin_pending_request(
         self,
         transaction_id: int,
         timeout: float,
         tracker_host: Optional[str] = None,
         *,
         immediate_peers_callback: Optional[ImmediatePeersCallback] = None,
-    ) -> Optional[TrackerResponse]:
-        """Wait for UDP tracker response."""
+        min_timeout: Optional[float] = None,
+    ) -> Optional[tuple[asyncio.Future[Any], float, float, int, str]]:
+        """Register a pending UDP transaction before sendto (avoids response races)."""
         host = self._get_tracker_host(tracker_host)
-        future = asyncio.Future()
+        future: asyncio.Future[Any] = asyncio.Future()
         now = time.time()
         start_wait = now
         host_pending = sum(
@@ -2549,8 +2402,6 @@ class AsyncUDPTrackerClient:
         pending_pre = len(self.pending_requests)
         pace_threshold = self._udp_wait_pacing_load_ratio * effective_cap_pre
         if effective_cap_pre > 0 and pending_pre > int(pace_threshold):
-            # Pace new waits when the shared UDP client is heavily loaded so responses
-            # can drain before adding more in-flight transactions.
             half_span = max(1.0, pace_threshold)
             pressure = min(
                 1.0,
@@ -2565,6 +2416,8 @@ class AsyncUDPTrackerClient:
             tracker_host=host,
             pending_count=len(self.pending_requests),
         )
+        if min_timeout is not None:
+            adaptive_timeout = max(min_timeout, adaptive_timeout)
         if transaction_id in self.pending_requests:
             stale_future = self.pending_requests.pop(transaction_id, None)
             self._pending_request_timestamps.pop(transaction_id, None)
@@ -2592,9 +2445,17 @@ class AsyncUDPTrackerClient:
             self.pending_immediate_callbacks[transaction_id] = immediate_peers_callback
         else:
             self.pending_immediate_callbacks.pop(transaction_id, None)
-
         self._maybe_emit_udp_pending_gauge()
+        return future, adaptive_timeout, start_wait, pruned_count, host
 
+    async def _complete_pending_request(
+        self,
+        transaction_id: int,
+        pending: tuple[asyncio.Future[Any], float, float, int, str],
+    ) -> Optional[TrackerResponse]:
+        """Await a previously registered pending UDP transaction."""
+        future, adaptive_timeout, start_wait, pruned_count, host = pending
+        now = time.time()
         try:
             response = await asyncio.wait_for(future, timeout=adaptive_timeout)
             elapsed = time.time() - start_wait
@@ -2609,7 +2470,6 @@ class AsyncUDPTrackerClient:
             )
             return None
         except asyncio.TimeoutError:
-            # Note: Enhanced logging for timeouts - this is a common failure mode
             self._record_pending_request_result(stale=True, now=time.time())
             elapsed = time.time() - start_wait
             oldest = (
@@ -2634,7 +2494,29 @@ class AsyncUDPTrackerClient:
             self._pending_request_timestamps.pop(transaction_id, None)
             self.pending_immediate_callbacks.pop(transaction_id, None)
             self._pending_request_host_by_tid.pop(transaction_id, None)
+            self._response_addrs.pop(transaction_id, None)
             self._cleanup_stale_response_transaction_ids(now=time.time())
+
+    async def _wait_for_response(
+        self,
+        transaction_id: int,
+        timeout: float,
+        tracker_host: Optional[str] = None,
+        *,
+        immediate_peers_callback: Optional[ImmediatePeersCallback] = None,
+        min_timeout: Optional[float] = None,
+    ) -> Optional[TrackerResponse]:
+        """Wait for UDP tracker response."""
+        pending = await self._begin_pending_request(
+            transaction_id,
+            timeout,
+            tracker_host,
+            immediate_peers_callback=immediate_peers_callback,
+            min_timeout=min_timeout,
+        )
+        if pending is None:
+            return None
+        return await self._complete_pending_request(transaction_id, pending)
 
     @staticmethod
     def _is_ipv6_address(addr: tuple[str, int]) -> bool:
@@ -2742,15 +2624,24 @@ class AsyncUDPTrackerClient:
 
     @staticmethod
     def _build_bep41_options(tracker_url: str) -> bytes:
-        """Build BEP 41 extension options (URLData) to append after byte 98 of announce request."""
+        """Build BEP 41 extension options (URLData) to append after byte 98 of announce request.
+
+        Most public BEP-15 trackers (including opentrackr) do not implement BEP-41 and
+        silently drop announces when URLData is present. Only emit URLData for non-standard
+        paths or query strings; never for the conventional ``/announce`` suffix alone.
+        """
         if not tracker_url or not tracker_url.strip():
-            return bytes([0x2, 0x0])  # URLData with length 0
+            return b""
         parsed = urlparse(tracker_url)
         path = parsed.path or ""
-        query = ("?" + parsed.query) if parsed.query else ""
-        path_query = (path + query).encode("utf-8")
-        if len(path_query) == 0:
-            return bytes([0x2, 0x0])
+        query = parsed.query or ""
+        if not query:
+            normalized_path = path.strip("/")
+            if normalized_path in ("", "announce"):
+                return b""
+        path_query = (path + ("?" + query if query else "")).encode("utf-8")
+        if not path_query:
+            return b""
         if len(path_query) > 255:
             path_query = path_query[:255]
         return bytes([0x2, len(path_query)]) + path_query
@@ -2865,6 +2756,7 @@ class AsyncUDPTrackerClient:
                 return
 
             future = self.pending_requests[transaction_id]
+            self._remember_response_addr(transaction_id, _addr)
             if future.done():
                 self.logger.debug(
                     "Future for transaction_id=%d already done", transaction_id
@@ -3182,95 +3074,74 @@ class AsyncUDPTrackerClient:
 
             session = self.sessions[session_key]
 
-            # Ensure connection is established
-            if not session.is_connected or time.time() - session.connection_time > 60.0:
-                try:
-                    await self._connect_to_tracker(session)
-                except Exception as e:
+            lock = self._get_session_lock(session)
+            async with lock:
+                if not await self._connect_if_needed(session):
                     self.logger.debug(
-                        "Failed to connect to tracker %s:%s: %s", host, port, e
+                        "Failed to connect to tracker %s:%s for scrape",
+                        host,
+                        port,
                     )
                     return {}
 
-            if not session.is_connected:
-                self.logger.debug(
-                    "Not connected to tracker %s:%s", host, port
-                )  # pragma: no cover - Connection check debug, tested via integration tests
-                return {}  # pragma: no cover - Connection check early return, tested via integration tests
+                if session.connection_id is None:
+                    self.logger.debug("No connection ID for tracker %s:%s", host, port)
+                    return {}
 
-            if session.connection_id is None:
-                self.logger.debug(
-                    "No connection ID for tracker %s:%s", host, port
-                )  # pragma: no cover - Connection ID check debug, tested via integration tests
-                return {}  # pragma: no cover - Connection ID check early return, tested via integration tests
+                # Create scrape request
+                transaction_id = self._get_transaction_id()
+                request_data = self._encode_scrape_request(
+                    session.connection_id, transaction_id, info_hash
+                )
 
-            # Create scrape request
-            transaction_id = self._get_transaction_id()
-            request_data = self._encode_scrape_request(
-                session.connection_id, transaction_id, info_hash
-            )
+                # Send scrape request
+                self._validate_socket_ready()
 
-            # Send scrape request
-            # Validate socket is ready
-            self._validate_socket_ready()
+                async with self._socket_lock:
+                    if self.transport is None:
+                        msg = "Transport is None after validation"
+                        raise RuntimeError(msg)
 
-            # Use lock to serialize socket operations
-            async with self._socket_lock:
-                # Send scrape request (transport is guaranteed to be non-None after validation)
-                if self.transport is None:
-                    msg = "Transport is None after validation"
-                    raise RuntimeError(msg)
+                    loop = asyncio.get_event_loop()
+                    is_proactor = _is_windows_proactor_loop(loop)
+                    if is_proactor:
+                        await asyncio.sleep(0.01)
 
-                # Note: On Windows ProactorEventLoop, ensure socket is fully ready before sendto
-                loop = asyncio.get_event_loop()
-                is_proactor = _is_windows_proactor_loop(loop)
-                if is_proactor:
-                    # Small delay to ensure socket state is synchronized on Windows Proactor
-                    await asyncio.sleep(0.01)
-
-                # Wrap sendto in try/except to catch WinError 10022 and other socket errors
-                try:
-                    self.transport.sendto(request_data, tracker_address)
-                except OSError as send_error:
-                    # Check if this is WinError 10022 (transient on Windows)
-                    error_code = getattr(send_error, "winerror", None) or getattr(
-                        send_error, "errno", None
-                    )
-                    is_winerror_10022 = (
-                        error_code == 10022
-                        or (hasattr(send_error, "errno") and send_error.errno == 22)
-                        or (sys.platform == "win32" and "10022" in str(send_error))
-                    )
-                    if is_winerror_10022:
-                        # WinError 10022 is transient - log and re-raise for caller to handle
-                        self.logger.debug(
-                            "WinError 10022 during sendto to %s:%d (will retry): %s",
-                            tracker_address[0],
-                            tracker_address[1],
-                            send_error,
+                    try:
+                        self.transport.sendto(request_data, tracker_address)
+                    except OSError as send_error:
+                        error_code = getattr(send_error, "winerror", None) or getattr(
+                            send_error, "errno", None
                         )
-                    # Re-raise to be caught by caller's exception handler
-                    raise
+                        is_winerror_10022 = (
+                            error_code == 10022
+                            or (hasattr(send_error, "errno") and send_error.errno == 22)
+                            or (sys.platform == "win32" and "10022" in str(send_error))
+                        )
+                        if is_winerror_10022:
+                            self.logger.debug(
+                                "WinError 10022 during sendto to %s:%d (will retry): %s",
+                                tracker_address[0],
+                                tracker_address[1],
+                                send_error,
+                            )
+                        raise
 
-            # Wait for response
-            response_data = await self._wait_for_response(
-                transaction_id,
-                timeout=self._get_adaptive_wait_timeout(
-                    timeout=10.0,
+                response_data = await self._wait_for_response(
+                    transaction_id,
+                    timeout=self._get_adaptive_wait_timeout(
+                        timeout=10.0,
+                        tracker_host=host,
+                        pending_count=len(self.pending_requests),
+                    ),
                     tracker_host=host,
-                    pending_count=len(self.pending_requests),
-                ),
-                tracker_host=host,
-            )
+                )
 
-            if response_data:
-                # Parse scrape response
-                return self._decode_scrape_response(response_data, info_hash)
+                if response_data:
+                    return self._decode_scrape_response(response_data, info_hash)
 
-            self.logger.debug(
-                "No response from tracker for scrape"
-            )  # pragma: no cover - No response debug, tested via integration tests with timeout
-            return {}  # pragma: no cover - No response early return, tested via integration tests
+                self.logger.debug("No response from tracker for scrape")
+                return {}
 
         except (
             Exception

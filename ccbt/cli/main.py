@@ -290,38 +290,9 @@ def _get_daemon_connection_params(cfg: Any) -> tuple[int, Optional[str], Path]:
     Returns:
         Tuple of (ipc_port, api_key or None, daemon_config_path for diagnostics).
     """
-    from ccbt.daemon.daemon_manager import (
-        DEFAULT_IPC_PORT,
-        get_daemon_config_path,
-        read_daemon_config,
-    )
+    from ccbt.daemon.daemon_manager import resolve_daemon_connection_params
 
-    config_path = get_daemon_config_path()
-    daemon_config = read_daemon_config()
-    logger.debug(
-        _("Daemon connection: config_path=%s, file_exists=%s"),
-        config_path,
-        config_path.exists(),
-    )
-
-    if daemon_config:
-        port = daemon_config.get("ipc_port")
-        port = (
-            int(port)
-            if port is not None
-            else (cfg.daemon and cfg.daemon.ipc_port) or DEFAULT_IPC_PORT
-        )
-        api_key = daemon_config.get("api_key") or (cfg.daemon and cfg.daemon.api_key)
-        logger.debug(
-            _("Using daemon config file: port=%d, api_key_present=%s"),
-            port,
-            bool(api_key),
-        )
-        return (port, api_key, config_path)
-
-    port = _get_daemon_ipc_port(cfg)
-    api_key = cfg.daemon.api_key if cfg.daemon else None
-    return (port, api_key, config_path)
+    return resolve_daemon_connection_params(cfg)
 
 
 async def _route_to_daemon_if_running(

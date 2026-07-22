@@ -134,13 +134,17 @@ class TestBEP15HandleResponseIPv6:
 class TestBEP41BuildOptions:
     """Test _build_bep41_options for URLData extension."""
 
-    def test_empty_url_returns_url_data_zero_length(self):
+    def test_empty_url_returns_no_extension(self):
         result = AsyncUDPTrackerClient._build_bep41_options("")
-        assert result == bytes([0x2, 0x0])
+        assert result == b""
 
-    def test_url_without_path_or_query_returns_zero_length(self):
+    def test_url_without_path_or_query_returns_no_extension(self):
         result = AsyncUDPTrackerClient._build_bep41_options("udp://tracker.example.com:80")
-        assert result == bytes([0x2, 0x0])
+        assert result == b""
+
+    def test_conventional_announce_path_returns_no_extension(self):
+        result = AsyncUDPTrackerClient._build_bep41_options("udp://tracker:80/announce")
+        assert result == b""
 
     def test_url_with_path_and_query(self):
         result = AsyncUDPTrackerClient._build_bep41_options(
@@ -151,8 +155,9 @@ class TestBEP41BuildOptions:
         assert result[1] == len(b"/announce?key=val")
         assert result[2:] == b"/announce?key=val"
 
-    def test_url_path_only(self):
-        result = AsyncUDPTrackerClient._build_bep41_options("udp://tracker:80/announce")
+    def test_nonstandard_path_only(self):
+        result = AsyncUDPTrackerClient._build_bep41_options(
+            "udp://tracker:80/custom/announce/path"
+        )
         assert result[0] == 0x2
-        assert result[1] == 9
-        assert result[2:] == b"/announce"
+        assert result[2:] == b"/custom/announce/path"

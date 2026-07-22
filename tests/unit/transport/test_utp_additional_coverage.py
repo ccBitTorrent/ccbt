@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from ccbt.models import UTPConfig
 from ccbt.transport.utp import (
@@ -586,9 +587,9 @@ class TestSendMethod:
 class TestReceiveMethod:
     """Tests for receive() method."""
 
-    @pytest.fixture
-    def connection(self):
-        """Create a connected UTP connection."""
+    @pytest_asyncio.fixture
+    async def connection(self):
+        """Create a connected UTP connection on the active event loop."""
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
         conn.transport = MagicMock()
         conn.state = UTPConnectionState.CONNECTED
@@ -960,9 +961,9 @@ class TestInitializeTransport:
         mock_socket_manager = MagicMock(spec=UTPSocketManager)
         mock_transport = MagicMock()
         mock_socket_manager.get_transport.return_value = mock_transport
-        mock_socket_manager._generate_connection_id.return_value = 54321
+        mock_socket_manager.generate_connection_id.return_value = 54321
         mock_socket_manager.register_connection = MagicMock()
-        conn.utp_socket_manager = mock_socket_manager
+        conn.socket_manager = mock_socket_manager
 
         await conn.initialize_transport()
 
@@ -984,9 +985,9 @@ class TestInitializeTransport:
         mock_socket_manager = MagicMock(spec=UTPSocketManager)
         mock_transport = MagicMock()
         mock_socket_manager.get_transport.return_value = mock_transport
-        mock_socket_manager._generate_connection_id.return_value = 99999
+        mock_socket_manager.generate_connection_id.return_value = 99999
         mock_socket_manager.register_connection = MagicMock()
-        conn.utp_socket_manager = mock_socket_manager
+        conn.socket_manager = mock_socket_manager
 
         await conn.initialize_transport()
 

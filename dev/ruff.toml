@@ -161,6 +161,14 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "ARG005",
     "PLR2004",
 ]
+"tests/unit/piece/test_multi_peer_piece_selection.py" = [
+    "SLF001",
+    "D101",
+    "D102",
+    "D103",
+    "PLR0913",
+    "PLR2004",
+]
 "tests/unit/session/test_requestable_driven_tick.py" = [
     "SLF001",
     "D103",

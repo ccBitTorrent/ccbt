@@ -56,6 +56,8 @@ def mock_connection():
     connection.peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     connection.stats = MagicMock()
     connection.stats.request_latency = 0.05  # 50ms latency
+    connection.stats.average_block_latency = 0.0
+    connection.stats.download_rate = 0.0
     connection.max_pipeline_depth = 16
     connection.outstanding_requests = []
     connection.request_queue = []
@@ -85,20 +87,17 @@ class TestAdaptivePipelineDepth:
         self, peer_connection_manager, mock_connection
     ):
         """Test pipeline depth for medium latency connections."""
-        # Medium latency connection (10-50ms range)
         mock_connection.stats.request_latency = 0.05  # 50ms
+        mock_connection.stats.average_block_latency = 0.0
+        mock_connection.stats.download_rate = 0.0
 
         depth = peer_connection_manager._calculate_pipeline_depth(mock_connection)
 
-        # For 50ms latency (rtt < 0.05), function returns min(max_depth, int(base_depth * 1.5))
-        # With base_depth=120, this is min(64, 180) = 64
-        # Should return calculated depth capped at max_depth
         assert depth <= peer_connection_manager.config.network.pipeline_max_depth
         assert depth >= peer_connection_manager.config.network.pipeline_min_depth
-        # Verify it's the calculated value (base_depth * 1.5 capped at max_depth)
         expected = min(
             peer_connection_manager.config.network.pipeline_max_depth,
-            int(peer_connection_manager.config.network.pipeline_depth * 1.5),
+            peer_connection_manager.config.network.pipeline_depth,
         )
         assert depth == expected
 
@@ -106,14 +105,18 @@ class TestAdaptivePipelineDepth:
         self, peer_connection_manager, mock_connection
     ):
         """Test pipeline depth for high latency connections."""
-        # High latency connection
         mock_connection.stats.request_latency = 0.2  # 200ms
+        mock_connection.stats.average_block_latency = 0.0
+        mock_connection.stats.download_rate = 0.0
 
         depth = peer_connection_manager._calculate_pipeline_depth(mock_connection)
 
-        # Should return lower depth for high latency
         assert depth >= peer_connection_manager.config.network.pipeline_min_depth
-        assert depth <= peer_connection_manager.config.network.pipeline_depth
+        expected = min(
+            peer_connection_manager.config.network.pipeline_max_depth,
+            int(peer_connection_manager.config.network.pipeline_depth * 1.5),
+        )
+        assert depth == expected
 
     def test_calculate_pipeline_depth_respects_min_max(
         self, peer_connection_manager, mock_connection
@@ -154,7 +157,9 @@ class TestAdaptivePipelineDepth:
         """When in_flight exceeds calculated depth, manager and metrics counter advance."""
         peer_connection_manager.config.network.pipeline_adaptive_depth = True
         mock_connection.stats.request_latency = 0.2
-        mock_connection.outstanding_requests = {(i, 0, 16384): object() for i in range(16)}
+        mock_connection.stats.average_block_latency = 0.0
+        mock_connection.stats.download_rate = 0.0
+        mock_connection.outstanding_requests = {(i, 0, 16384): object() for i in range(32)}
         before = peer_connection_manager._pipeline_depth_clamp_events
         mock_coll = MagicMock()
         mock_coll.running = True
@@ -247,13 +252,12 @@ class TestRequestPrioritization:
 
 
 class TestRequestCoalescing:
-    """Test request coalescing."""
+    """Test request coalescing passthrough (BEP 3 exact block boundaries)."""
 
     def test_coalesce_requests_adjacent(self, peer_connection_manager):
-        """Test coalescing adjacent requests."""
+        """Adjacent requests remain separate wire contracts."""
         from ccbt.peer.async_peer_connection import RequestInfo
 
-        # Create adjacent requests
         requests = [
             RequestInfo(piece_index=0, begin=0, length=16384, timestamp=0.0),
             RequestInfo(piece_index=0, begin=16384, length=16384, timestamp=0.0),
@@ -261,14 +265,11 @@ class TestRequestCoalescing:
 
         coalesced = peer_connection_manager._coalesce_requests(requests)
 
-        # Should coalesce into single request
-        assert len(coalesced) == 1
-        assert coalesced[0].piece_index == 0
-        assert coalesced[0].begin == 0
-        assert coalesced[0].length == 32768  # Combined length
+        assert coalesced == requests
+        assert len(coalesced) == 2
 
     def test_coalesce_requests_within_threshold(self, peer_connection_manager):
-        """Test coalescing requests within threshold."""
+        """Small-gap requests are not merged."""
         from ccbt.peer.async_peer_connection import RequestInfo
 
         threshold = (
@@ -276,7 +277,6 @@ class TestRequestCoalescing:
             * 1024
         )
 
-        # Create requests with small gap (within threshold)
         requests = [
             RequestInfo(piece_index=0, begin=0, length=16384, timestamp=0.0),
             RequestInfo(
@@ -286,9 +286,7 @@ class TestRequestCoalescing:
 
         coalesced = peer_connection_manager._coalesce_requests(requests)
 
-        # Should coalesce if gap is within threshold
-        if len(coalesced) == 1:
-            assert coalesced[0].length >= 32768
+        assert coalesced == requests
 
     def test_coalesce_requests_large_gap(self, peer_connection_manager):
         """Test coalescing doesn't merge requests with large gap."""

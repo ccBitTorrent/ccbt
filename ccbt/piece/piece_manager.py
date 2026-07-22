@@ -313,6 +313,14 @@ class PieceManager:
     def get_download_progress(self) -> float:
         """Get download progress as a fraction (0.0 to 1.0)."""
         if self.num_pieces == 0:
+            if getattr(self, "_metadata_incomplete", False):
+                return 0.0
+            torrent_data = getattr(self, "torrent_data", None)
+            if isinstance(torrent_data, dict):
+                if torrent_data.get("_metadata_incomplete"):
+                    return 0.0
+                if torrent_data.get("file_info") is None:
+                    return 0.0
             return 1.0
         return len(self.verified_pieces) / self.num_pieces
 

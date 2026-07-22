@@ -7,6 +7,7 @@ from either a daemon IPC connection or a local session manager.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import mimetypes
 import time
@@ -119,6 +120,135 @@ def _guess_media_metadata(path: str) -> tuple[Optional[str], bool]:
     return mime_type, is_media
 
 
+def _peer_quality_fallback_from_torrents(
+    torrents: list[dict[str, Any]],
+    peer_rows: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Build peer-quality distribution from torrent summaries when metrics API is empty."""
+    all_peers: dict[str, dict[str, Any]] = {}
+    per_torrent_summaries: list[dict[str, Any]] = []
+    quality_tiers = {"excellent": 0, "good": 0, "fair": 0, "poor": 0}
+
+    if peer_rows:
+        for peer in peer_rows:
+            peer_key = peer.get("peer_key") or f"{peer.get('ip', 'unknown')}:{peer.get('port', 0)}"
+            all_peers[peer_key] = dict(peer)
+            score = float(peer.get("quality_score", 0.35))
+            if score >= 0.7:
+                quality_tiers["excellent"] += 1
+            elif score >= 0.5:
+                quality_tiers["good"] += 1
+            elif score >= 0.3:
+                quality_tiers["fair"] += 1
+            else:
+                quality_tiers["poor"] += 1
+
+    for torrent in torrents:
+        info_hash_hex = str(torrent.get("info_hash") or torrent.get("info_hash_hex") or "")
+        if not info_hash_hex:
+            continue
+        peer_count = _to_int(
+            torrent.get("connected_peers", torrent.get("num_peers", 0)),
+        )
+        per_torrent_summaries.append(
+            {
+                "info_hash": info_hash_hex,
+                "name": torrent.get("name") or info_hash_hex[:12],
+                "total_peers_ranked": peer_count,
+                "average_quality_score": 0.35 if peer_count > 0 else 0.0,
+                "high_quality_peers": 0,
+                "medium_quality_peers": peer_count,
+                "low_quality_peers": 0,
+            }
+        )
+        if peer_rows:
+            continue
+        for index in range(peer_count):
+            peer_key = f"{info_hash_hex[:8]}:peer-{index + 1}"
+            if peer_key in all_peers:
+                continue
+            all_peers[peer_key] = {
+                "peer_key": peer_key,
+                "ip": "unknown",
+                "port": 0,
+                "quality_score": 0.35,
+                "download_rate": float(torrent.get("download_rate", 0.0) or 0.0)
+                / max(peer_count, 1),
+                "upload_rate": float(torrent.get("upload_rate", 0.0) or 0.0)
+                / max(peer_count, 1),
+                "torrents": [info_hash_hex],
+            }
+            quality_tiers["fair"] += 1
+
+    total_peers = len(all_peers)
+    average_quality = (
+        sum(float(p.get("quality_score", 0.0)) for p in all_peers.values()) / total_peers
+        if total_peers > 0
+        else 0.0
+    )
+    top_peers_list = sorted(
+        all_peers.values(),
+        key=lambda p: float(p.get("quality_score", 0.0)),
+        reverse=True,
+    )[:10]
+    return {
+        "total_peers": total_peers,
+        "quality_tiers": quality_tiers,
+        "average_quality": average_quality,
+        "top_peers": top_peers_list,
+        "per_torrent": per_torrent_summaries,
+    }
+
+
+async def _apply_peer_quality_fallback(
+    client: Any,
+    torrents: list[dict[str, Any]],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """Use torrent peers IPC when dedicated peer-quality metrics are empty."""
+    if int(result.get("total_peers", 0) or 0) > 0:
+        return result
+    if not any(
+        _to_int(t.get("connected_peers", t.get("num_peers", 0))) > 0 for t in torrents
+    ):
+        return result
+
+    peer_rows: list[dict[str, Any]] = []
+    get_peers = getattr(client, "get_peers_for_torrent", None)
+    if not callable(get_peers):
+        return _peer_quality_fallback_from_torrents(torrents)
+
+    for torrent in torrents:
+        info_hash_hex = torrent.get("info_hash")
+        if not info_hash_hex:
+            continue
+        try:
+            peer_list = await get_peers(info_hash_hex)
+        except Exception as exc:
+            logger.debug(
+                "Peer quality fallback: peers fetch failed for %s: %s",
+                str(info_hash_hex)[:8],
+                exc,
+            )
+            continue
+        peers = getattr(peer_list, "peers", None) or []
+        for peer in peers:
+            down = float(getattr(peer, "download_rate", 0.0) or 0.0)
+            up = float(getattr(peer, "upload_rate", 0.0) or 0.0)
+            peer_rows.append(
+                {
+                    "peer_key": f"{peer.ip}:{peer.port}",
+                    "ip": peer.ip,
+                    "port": peer.port,
+                    "quality_score": min(1.0, 0.2 + (down + up) / (256 * 1024)),
+                    "download_rate": down,
+                    "upload_rate": up,
+                    "torrents": [info_hash_hex],
+                }
+            )
+    return _peer_quality_fallback_from_torrents(torrents, peer_rows or None)
+
+
 def _normalize_torrent_read_model(
     raw: dict[str, Any],
 ) -> dict[str, Any]:
@@ -134,8 +264,13 @@ def _normalize_torrent_read_model(
     active_peers = _to_int(
         raw.get("active_peers", raw.get("num_seeds", raw.get("seeds", 0))),
     )
+    info_hash_raw = raw.get("info_hash") or raw.get("info_hash_hex") or ""
+    if isinstance(info_hash_raw, bytes):
+        info_hash_str = info_hash_raw.hex()
+    else:
+        info_hash_str = str(info_hash_raw or "")
     normalized = {
-        "info_hash": raw.get("info_hash", ""),
+        "info_hash": info_hash_str,
         "name": raw.get("name", "Unknown"),
         "status": raw.get("status", "unknown"),
         "progress": _to_float(raw.get("progress", 0.0)),
@@ -744,6 +879,7 @@ class DaemonDataProvider(DataProvider):
         self._cache: dict[str, tuple[Any, float]] = {}
         self._cache_ttl = 1.0  # 1.0 second TTL - balanced for responsiveness and reduced redundant requests
         self._cache_lock = asyncio.Lock()
+        self._cache_inflight: dict[str, asyncio.Task[Any]] = {}
         self._cache_invalidation_keys: set[str] = set()
         self._cache_invalidate_all: bool = False
         self._cache_invalidation_task: Optional[asyncio.Task[None]] = None
@@ -761,20 +897,17 @@ class DaemonDataProvider(DataProvider):
     ) -> Any:  # pragma: no cover
         """Get cached value or fetch if expired.
 
-        Args:
-            key: Cache key
-            fetch_func: Async function to fetch data if cache miss
-            ttl: Time to live in seconds (defaults to self._cache_ttl)
-
-        Returns:
-            Cached or freshly fetched data
+        Coalesces concurrent fetches for the same key and never holds the cache
+        lock across IPC/network I/O (avoids blocking all provider reads).
         """
         if ttl is None:
             ttl = self._cache_ttl
+        now = time.time()
+        inflight: Optional[asyncio.Task[Any]] = None
         async with self._cache_lock:
             if key in self._cache:
                 value, timestamp = self._cache[key]
-                age = time.time() - timestamp
+                age = now - timestamp
                 if ttl > 0 and age < ttl:
                     logger.debug(
                         "Cache hit for key=%s (age=%.3fs, ttl=%.3fs)",
@@ -783,18 +916,49 @@ class DaemonDataProvider(DataProvider):
                         ttl,
                     )
                     return value
-                logger.debug(
-                    "Cache miss due expiry for key=%s (age=%.3fs, ttl=%.3fs)",
-                    key,
-                    age,
-                    ttl,
-                )
-            # Cache miss or expired, fetch new data
+            inflight = self._cache_inflight.get(key)
+
+        if inflight is not None:
+            return await inflight
+
+        async def _run_fetch() -> Any:
             logger.debug("Fetching fresh value for cache key=%s", key)
             value = await fetch_func()
-            self._cache[key] = (value, time.time())
+            async with self._cache_lock:
+                self._cache[key] = (value, time.time())
+                self._cache_inflight.pop(key, None)
             logger.debug("Cache updated for key=%s", key)
             return value
+
+        task = asyncio.create_task(_run_fetch())
+        async with self._cache_lock:
+            existing = self._cache_inflight.get(key)
+            if existing is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                return await existing
+            self._cache_inflight[key] = task
+        try:
+            return await task
+        except Exception:
+            async with self._cache_lock:
+                if self._cache_inflight.get(key) is task:
+                    self._cache_inflight.pop(key, None)
+            raise
+
+    def seed_cache(
+        self,
+        key: str,
+        value: Any,
+        *,
+        ttl: Optional[float] = None,
+    ) -> None:
+        """Pre-populate cache (e.g. rate samples from ui/snapshot)."""
+        if ttl is None:
+            ttl = self._cache_ttl
+        self._cache[key] = (value, time.time())
+        logger.debug("Cache seeded for key=%s (ttl=%.3fs)", key, ttl or 0.0)
 
     async def _flush_cache_invalidations(self) -> None:
         """Flush queued cache invalidations under a single lock."""
@@ -1016,7 +1180,7 @@ class DaemonDataProvider(DataProvider):
                     _normalize_torrent_read_model(t) for t in out["torrents"]
                 ]
             return out
-        return await self._get_cached("ui_snapshot", _fetch, ttl=0.0)
+        return await self._get_cached("ui_snapshot", _fetch, ttl=0.5)
 
     async def get_torrent_status(self, info_hash_hex: str) -> Optional[dict[str, Any]]:
         """Get torrent status from daemon."""
@@ -1068,7 +1232,7 @@ class DaemonDataProvider(DataProvider):
             return result
         except Exception as e:
             logger.error("DaemonDataProvider.list_torrents: Error in list_torrents: %s", e, exc_info=True)
-            return []  # Return empty list on error to prevent UI breakage
+            raise
 
     async def list_xet_folders(self) -> list[dict[str, Any]]:
         """List active XET workspaces from the daemon runtime."""
@@ -1287,6 +1451,21 @@ class DaemonDataProvider(DataProvider):
                     logger.warning("DaemonDataProvider: Timeout fetching rate samples after %d attempts", max_retries)
                     return []
                 except Exception as e:
+                    import aiohttp
+
+                    if isinstance(
+                        e,
+                        (
+                            aiohttp.ClientConnectorError,
+                            aiohttp.ServerTimeoutError,
+                            aiohttp.ClientOSError,
+                        ),
+                    ):
+                        logger.debug(
+                            "DaemonDataProvider: IPC unreachable fetching rate samples: %s",
+                            e,
+                        )
+                        return []
                     if attempt < max_retries - 1:
                         logger.debug("DaemonDataProvider: Error fetching rate samples (attempt %d/%d): %s, retrying...",
                                    attempt + 1, max_retries, e)
@@ -1299,7 +1478,7 @@ class DaemonDataProvider(DataProvider):
             return []
 
         cache_key = f"rate_samples_{seconds}"
-        return await self._get_cached(cache_key, _fetch, ttl=1.0)
+        return await self._get_cached(cache_key, _fetch, ttl=3.0)
 
     async def get_disk_io_metrics(self) -> dict[str, Any]:
         """Get disk I/O metrics from daemon."""
@@ -1705,13 +1884,14 @@ class DaemonDataProvider(DataProvider):
                 reverse=True,
             )[:10]
 
-            return {
+            result = {
                 "total_peers": len(all_peers),
                 "quality_tiers": quality_tiers,
                 "average_quality": average_quality,
                 "top_peers": top_peers_list,
                 "per_torrent": per_torrent_summaries,
             }
+            return await _apply_peer_quality_fallback(self._client, torrents, result)
 
         return await self._get_cached("peer_quality_distribution", _fetch, ttl=2.0)
 
@@ -2880,13 +3060,16 @@ class LocalDataProvider(DataProvider):
                 reverse=True,
             )[:10]
 
-            return {
+            result = {
                 "total_peers": len(all_peers),
                 "quality_tiers": quality_tiers,
                 "average_quality": average_quality,
                 "top_peers": top_peers_list,
                 "per_torrent": per_torrent_summaries,
             }
+            if result["total_peers"] == 0:
+                return _peer_quality_fallback_from_torrents(torrents)
+            return result
 
         return await self._get_cached("peer_quality_distribution", _fetch, ttl=2.0)
 
