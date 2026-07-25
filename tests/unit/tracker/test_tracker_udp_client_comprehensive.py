@@ -301,17 +301,15 @@ class TestAsyncUDPTrackerClientConnection:
 
     @pytest.mark.asyncio
     async def test_connect_to_tracker_success_logging(self):
-        """Test connection success logging (lines 315-320)."""
+        """Test connection success logging via pending-request connect path."""
         client = AsyncUDPTrackerClient(test_mode=True)
-        # Don't call start() - it creates a real transport that may conflict
-        # Instead, set up mock transport directly
         mock_transport = Mock()
         mock_transport.sendto = Mock()
         mock_transport.is_closing = Mock(return_value=False)
-        mock_transport.get_extra_info = Mock(return_value=("127.0.0.1", 0))  # Required for _check_socket_health
+        mock_transport.get_extra_info = Mock(return_value=("127.0.0.1", 0))
         client.transport = mock_transport
-        # Ensure socket is marked ready after mocking transport
         client._socket_ready = True
+        client._check_socket_health = Mock(return_value=True)
 
         session = TrackerSession(
             url="udp://tracker.example.com:6969",
@@ -319,34 +317,32 @@ class TestAsyncUDPTrackerClientConnection:
             port=6969,
         )
 
-        # Mock wait_for_response to return successful connect
-        async def mock_wait(
-            tid, timeout, tracker_host=None, *, immediate_peers_callback=None
-        ):
+        async def mock_complete(tid, pending):
             return TrackerResponse(
                 action=TrackerAction.CONNECT,
                 transaction_id=tid,
                 connection_id=0x1234567890ABCDEF,
             )
 
-        client._wait_for_response = mock_wait
+        client._complete_pending_request = mock_complete
 
-        with patch.object(client.logger, "debug") as mock_debug:
-            await client._connect_to_tracker(session)
+        with patch.object(client.logger, "info") as mock_info:
+            with patch.object(client.logger, "debug") as mock_debug:
+                await client._connect_to_tracker(session, max_retries=1)
 
-            # Should log debug messages (multiple calls are expected)
-            assert mock_debug.call_count >= 1
-            # Check that at least one call contains the tracker host/port
-            calls = [str(call) for call in mock_debug.call_args_list]
-            assert any(session.host in str(call) and str(session.port) in str(call) for call in calls)
+                assert mock_debug.call_count >= 1
+                calls = [str(call) for call in mock_debug.call_args_list]
+                assert any(
+                    session.host in str(call) and str(session.port) in str(call)
+                    for call in calls
+                )
+                assert mock_info.call_count >= 1
 
-        # Session should be connected
         assert session.is_connected is True
         assert session.connection_id == 0x1234567890ABCDEF
         assert session.retry_count == 0
         assert session.backoff_delay == 1.0
 
-        # Clean up - no need to call stop() since we didn't call start()
         client.transport = None
         client._socket_ready = False
 

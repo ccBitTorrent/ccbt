@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 # Ensure a default asyncio event loop exists on import for libraries/tests that
 # construct futures outside of a running loop (e.g., asyncio.Future()).

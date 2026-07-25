@@ -733,11 +733,12 @@ class TestSessionManagerAdditionalMethods:
         torrent_data = create_test_torrent_dict(name="test", file_length=1024)
         info_hash_hex = await manager.add_torrent(torrent_data, resume=False)
 
-        # Mock AnnounceController.announce_initial to raise exception
-        # AnnounceController is imported inside force_announce, so patch at the import location
-        with patch("ccbt.session.announce.AnnounceController") as mock_controller_class:
+        # AnnounceController is imported into session.py; patch the bound name there.
+        with patch("ccbt.session.session.AnnounceController") as mock_controller_class:
             mock_controller = AsyncMock()
-            mock_controller.announce_initial = AsyncMock(side_effect=RuntimeError("Announce failed"))
+            mock_controller.announce_initial = AsyncMock(
+                side_effect=RuntimeError("Announce failed")
+            )
             mock_controller_class.return_value = mock_controller
 
             result = await manager.force_announce(info_hash_hex)

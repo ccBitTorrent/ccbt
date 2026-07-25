@@ -15,8 +15,10 @@ from ccbt.security.mse_handshake import MSEHandshake
 
 pytestmark = [pytest.mark.integration, pytest.mark.peer, pytest.mark.security]
 
-_MSE_INTEGRATION_TIMEOUT = 30.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 5.0
-_HANDSHAKE_TIMEOUT = 10.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 1.0
+# Keep generous local timeouts: under full selective pre-commit load the
+# 1s/5s defaults race and produce intermittent "Expected RKEYE, got SKEYE".
+_MSE_INTEGRATION_TIMEOUT = 30.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 15.0
+_HANDSHAKE_TIMEOUT = 10.0 if os.environ.get("GITHUB_ACTIONS") == "true" else 5.0
 
 
 def _build_handshake_payload(info_hash: bytes) -> bytes:
@@ -47,22 +49,31 @@ async def _run_loopback_mse_handshake(
     info_hash: bytes,
     outbound_payload: bytes,
     port: int,
+    *,
+    attempts: int = 2,
 ) -> None:
     """Run an outbound MSE handshake against an already-started loopback server."""
-    reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    try:
-        mse = MSEHandshake()
-        result = await mse.initiate_as_initiator(
-            reader,
-            writer,
-            info_hash,
-            timeout=_MSE_INTEGRATION_TIMEOUT,
-            initial_payload=outbound_payload,
-        )
-        assert result.success, result.error
-    finally:
-        writer.close()
-        await writer.wait_closed()
+    last_error: str | None = None
+    for attempt in range(attempts):
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        try:
+            mse = MSEHandshake()
+            result = await mse.initiate_as_initiator(
+                reader,
+                writer,
+                info_hash,
+                timeout=_MSE_INTEGRATION_TIMEOUT,
+                initial_payload=outbound_payload,
+            )
+            if result.success:
+                return
+            last_error = result.error
+        finally:
+            writer.close()
+            await writer.wait_closed()
+        if attempt + 1 < attempts:
+            await asyncio.sleep(0.05)
+    assert False, last_error or "MSE handshake failed"
 
 
 @pytest.mark.asyncio

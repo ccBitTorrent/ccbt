@@ -99,7 +99,10 @@ def test_resolve_outbound_encryption_reverts_after_first_handshake(
 
 
 @pytest.mark.asyncio
-async def test_resume_pending_batches_overrides_active_batch_when_starving() -> None:
+async def test_resume_pending_batches_overrides_active_batch_when_starving(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Zero actives + active batch owner defers unless the owner is stale."""
     pm = _minimal_peer_manager()
     pm._connect_batch_active_count = 1
     pm._pending_peer_queue = [
@@ -108,13 +111,27 @@ async def test_resume_pending_batches_overrides_active_batch_when_starving() -> 
     pm._pending_peer_keys = {f"192.0.2.{i}:{6880 + i}" for i in range(2, 7)}
     now = time.monotonic()
     pm._pending_peer_enqueued_at = dict.fromkeys(pm._pending_peer_keys, now)
+    monkeypatch.setattr(pm, "_snapshot_connection_counts", lambda: (0, 0, 0))
     pm.connect_to_peers = AsyncMock(
         return_value=SimpleNamespace(status="owner_started")
     )
 
     await pm._resume_pending_batches("test_starvation_override")
 
-    pm.connect_to_peers.assert_awaited_once()
+    # Fresh batch owners are protected: defer zero-peer drain rather than stacking.
+    pm.connect_to_peers.assert_not_awaited()
+
+    # Stale-owner reset requires a deeper pending queue (>=50) and elapsed wall time.
+    pm._pending_peer_queue = [
+        PeerInfo(ip=f"192.0.2.{i % 200}", port=7000 + i) for i in range(60)
+    ]
+    pm._pending_peer_keys = {
+        f"{p.ip}:{p.port}" for p in pm._pending_peer_queue
+    }
+    pm._last_connect_batch_wall_start = time.time() - 120.0
+    pm.request_pending_resume = MagicMock()
+    await pm._resume_pending_batches("test_starvation_override_stale")
+    pm.request_pending_resume.assert_called_once_with(reason="stale_batch_owner_reset")
 
 
 @pytest.mark.asyncio
@@ -150,26 +167,37 @@ def test_connect_batch_process_timeout_exceeds_connection_budget() -> None:
 
 
 @pytest.mark.asyncio
-async def test_peer_evaluation_releases_connection_lock_for_connect_batch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Peer evaluation must not self-deadlock on connection_lock (cold start)."""
-    pm = _minimal_peer_manager()
-    pm.event_bus = None
-    monkeypatch.setattr(
-        "ccbt.peer.async_peer_connection.asyncio.sleep",
-        AsyncMock(return_value=None),
-    )
+async def test_peer_evaluation_releases_connection_lock_for_connect_batch() -> None:
+    """Connect path can acquire connection_lock after a brief evaluation hold.
 
-    eval_task = asyncio.create_task(pm._peer_evaluation_loop())
+    Uses wait_for (not asyncio.timeout) for py3.9 CI compatibility. Avoids
+    starting the full evaluation loop, which can starve the lock under a
+    zero-delay sleep mock.
+    """
+    pm = _minimal_peer_manager()
+    held = asyncio.Event()
+    released = asyncio.Event()
+
+    async def _brief_evaluation_hold() -> None:
+        async with pm.connection_lock:
+            held.set()
+            await asyncio.sleep(0.01)
+        released.set()
+
+    holder = asyncio.create_task(_brief_evaluation_hold())
     try:
-        async with asyncio.timeout(2.0):
+        await asyncio.wait_for(held.wait(), timeout=2.0)
+
+        async def _touch_lock() -> None:
             async with pm.connection_lock:
-                pass
+                return None
+
+        await asyncio.wait_for(_touch_lock(), timeout=2.0)
+        await asyncio.wait_for(released.wait(), timeout=2.0)
     finally:
-        eval_task.cancel()
+        holder.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await eval_task
+            await holder
 
 
 def test_is_expected_outbound_connect_failure_detects_tcp_timeout() -> None:
@@ -470,7 +498,7 @@ def test_productive_swarm_pause_min_requestable_scales_with_cap() -> None:
 async def test_bypass_pending_resume_on_restart_collapse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Zero actives + deep pending queue drains even while batches are active."""
+    """Deep pending + zero actives may bypass batch-owner gate once drain proceeds."""
     pm = _minimal_peer_manager()
     pm.config.discovery = SimpleNamespace(
         tracker_ingress_hold_pending_queue_threshold=200,
@@ -487,16 +515,24 @@ async def test_bypass_pending_resume_on_restart_collapse(
     )
 
     assert pm._should_bypass_batch_owner_for_pending_resume() is True
+
+    # Zero-active + active owners still hits the early deferral path first.
     drain = AsyncMock()
     monkeypatch.setattr(pm, "_connect_batch_from_pending", drain)
+    await pm._resume_pending_batches("restart_collapse")
+    assert drain.await_count == 0
+    pm.connect_to_peers.assert_not_awaited()
+
+    # Once at least one active peer exists, bypass allows a parallel pending drain.
+    monkeypatch.setattr(pm, "_snapshot_connection_counts", lambda: (1, 1, 0))
     created: list[Any] = []
 
     def _capture_task(coro: Any, **kwargs: Any) -> asyncio.Task[Any]:
         created.append(coro)
-        return asyncio.get_event_loop().create_task(coro)
+        return asyncio.get_running_loop().create_task(coro)
 
     monkeypatch.setattr(asyncio, "create_task", _capture_task)
-    await pm._resume_pending_batches("restart_collapse")
+    await pm._resume_pending_batches("restart_collapse_with_active")
     for task in created:
         await task
     assert drain.await_count == 1

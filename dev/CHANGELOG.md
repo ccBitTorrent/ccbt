@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-23
+
 ### Breaking Changes
 
 - Remove top-level ``btbt config-extended``; extended subcommands now live under ``btbt config`` such as ``config schema`` and ``config import`` (Joseph Pollack, ccBitTorrent contributors)
@@ -20,14 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validate ``config set`` with config simulation and JSON/comma-list value parsing before writes (Joseph Pollack, ccBitTorrent contributors)
 - Add ``config import --mode merge|replace`` for partial and full-document imports (Joseph Pollack, ccBitTorrent contributors)
 - Add recursive config option discovery and shared env/CLI list-field parsing constants (Joseph Pollack, ccBitTorrent contributors)
+- Add swarm-health / cold-start connection and pipeline scheduling improvements for sparse swarms (Joseph Pollack, ccBitTorrent contributors)
 
 ### Changed
 
 - Defer session tracker metadata fallback while peer connection batches are active to reduce duplicate metadata churn before TCP settles (Joseph Pollack, ccBitTorrent contributors)
+- Treat BitTorrent peer streams as non-reusable live sockets with exact lease ownership in the connection pool (Joseph Pollack, ccBitTorrent contributors)
 
 ### Internal
 
 - Pre-commit: Ruff, ty, Bandit, and compatibility-linter fixes across discovery, MSE, session, SSL, and peer code (Joseph Pollack, ccBitTorrent contributors)
+- Align CI tests and fixtures with current peer, scrape, magnet, and config surfaces (Joseph Pollack, ccBitTorrent contributors)
 
 ### Fixed 🐞
 
@@ -72,4 +77,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session refactoring with controller-based architecture and dependency injection (Joseph Pollack, ccBitTorrent contributors)
 - Improved tracker, peer, and piece stability checks and async typing/type cleanup for pre-commit readiness (Joseph Pollack, ccBitTorrent contributors)
 
-[0.0.1]: https://github.com/ccBittorrent/ccbt/releases/tag/v0.0.1
+[0.1.0]: https://github.com/ccBitTorrent/ccbt/releases/tag/v0.1.0
+[0.0.1]: https://github.com/ccBitTorrent/ccbt/releases/tag/v0.0.1

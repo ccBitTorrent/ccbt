@@ -989,9 +989,10 @@ class TestAdditionalCoverageGaps:
         piece = piece_manager.pieces[0]
         missing_blocks = piece.get_missing_blocks()
 
-        # Test with no blocks
-        peer_manager = AsyncMock()
+        # get_active_peers is synchronous on the real peer manager.
+        peer_manager = MagicMock()
         peer_manager.request_piece = AsyncMock()
+        peer_manager.get_active_peers = MagicMock(return_value=[peer])
         await piece_manager._request_blocks_normal(
             0, [], [peer], peer_manager
         )
@@ -1002,7 +1003,7 @@ class TestAdditionalCoverageGaps:
         # (would happen with more peers than blocks)
         many_peers = []
         for i in range(100):
-            p = AsyncMock()
+            p = MagicMock()
             p.peer_info = PeerInfo(ip="127.0.0.1", port=6881 + i)
             p.can_request = MagicMock(return_value=True)
             p.get_available_pipeline_slots = MagicMock(return_value=10)
@@ -1010,24 +1011,17 @@ class TestAdditionalCoverageGaps:
             p.max_pipeline_depth = 16
             many_peers.append(p)
 
-        # Configure mock to return a dict mapping peer keys to request lists
-        # The _balance_requests_across_peers method should return a dict
         async def mock_balance_requests(requests, peers, min_allocation_per_peer=None):
-            # Return a dict with at least one peer having requests
-            # IMPORTANT: Always return a dict with at least one peer, even if requests is empty
-            # This ensures the iteration happens and the test can verify behavior
             if peers and requests:
                 peer_key = str(peers[0].peer_info)
                 return {peer_key: requests[:1]}
             if peers:
-                # If no requests but we have peers, return empty list for first peer
                 peer_key = str(peers[0].peer_info)
                 return {peer_key: []}
             return {}
 
         peer_manager._balance_requests_across_peers = AsyncMock(side_effect=mock_balance_requests)
-        # Configure get_active_peers to return the peers so throttling logic works
-        peer_manager.get_active_peers = AsyncMock(return_value=many_peers[:10])  # Return first 10 peers
+        peer_manager.get_active_peers = MagicMock(return_value=many_peers[:10])
 
         await piece_manager._request_blocks_normal(
             0, missing_blocks[:1], many_peers, peer_manager

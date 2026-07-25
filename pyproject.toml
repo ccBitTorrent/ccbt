@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ccbt"
-version = "0.0.1"
+version = "0.1.0"
 description = "The Easiest , Smallest & Fastest High-performance BitTorrent Client With All The Features"
 readme = "dev/README_PyPI.md"
 requires-python = ">=3.9"
@@ -284,7 +284,7 @@ skips = ["B101", "B601"]
 # Commitizen configuration
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.0.1"
+version = "0.1.0"
 tag_format = "v$version"
 version_scheme = "pep440"
 

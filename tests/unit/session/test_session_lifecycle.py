@@ -375,7 +375,12 @@ class TestSessionManagerAddMagnet:
 
             info_hash_hex = await manager.add_magnet(magnet_uri)
             assert info_hash_hex == "00" * 20
-            assert manager.torrents[bytes.fromhex(info_hash_hex)].magnet_uri == magnet_uri
+            stored_magnet = manager.torrents[bytes.fromhex(info_hash_hex)].magnet_uri
+            # add_magnet may enrich the URI with configured default trackers.
+            assert stored_magnet.startswith(
+                "magnet:?xt=urn:btih:0000000000000000000000000000000000000000"
+            )
+            assert "dn=Test" in stored_magnet
 
         await manager.stop()
 

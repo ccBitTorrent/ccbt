@@ -76,7 +76,8 @@ def is_port_listening(
     timeout: float = 0.5,
 ) -> bool:
     """Return True when a TCP listener accepts connections on host:port."""
-    connect_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+    # Compare against wildcard bind addresses; this is not a bind call. # nosec B104
+    connect_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host  # nosec B104
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         sock.settimeout(timeout)

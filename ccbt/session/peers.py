@@ -891,9 +891,7 @@ class PeerConnectionHelper:
                     self.session._queued_peers.append(peer)  # noqa: SLF001
             queued = getattr(self.session, "get_queued_peers", None)
             queued_count = (
-                len(queued())
-                if callable(queued)
-                else len(self.session._queued_peers)  # noqa: SLF001
+                len(queued()) if callable(queued) else len(self.session._queued_peers)  # noqa: SLF001
             )
             self.session.logger.debug(
                 "Queued %d peer(s) for later connection (total queued: %d)",

@@ -51,23 +51,24 @@ async def test_release_connection_recycling(connection_pool):
 
 @pytest.mark.asyncio
 async def test_release_connection_no_metrics(connection_pool):
-    """Test release when metrics don't exist."""
+    """Release closes the stream even when metrics were never recorded."""
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     peer_id = f"{peer_info.ip}:{peer_info.port}"
 
-    # Add connection without metrics
     connection = {
         "peer_info": peer_info,
         "connection": MagicMock(),
-        "created_at": 0
+        "created_at": 0,
     }
     connection_pool.pool[peer_id] = connection
+    connection_pool._checked_out.add(peer_id)
+    connection_pool._permit_owners.add(peer_id)
 
-    # Release should handle missing metrics gracefully
     await connection_pool.release(peer_id, connection)
 
-    # Connection should still be in pool
-    assert peer_id in connection_pool.pool
+    # Protocol streams are not reusable; release removes from the pool
+    assert peer_id not in connection_pool.pool
+    assert peer_id not in connection_pool._checked_out
 
 
 @pytest.mark.asyncio

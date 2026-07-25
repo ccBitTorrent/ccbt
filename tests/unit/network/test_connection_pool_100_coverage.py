@@ -25,46 +25,40 @@ async def connection_pool():
 
 @pytest.mark.asyncio
 async def test_acquire_reuses_existing_healthy_connection(connection_pool):
-    """Test acquire reuses existing healthy connection (lines 146-149)."""
+    """Acquire opens a fresh stream; already-checked-out peers are rejected."""
     peer_info = PeerInfo(ip="127.0.0.1", port=6881)
     peer_id = f"{peer_info.ip}:{peer_info.port}"
 
-    # Create healthy connection with full socket setup
     mock_conn = MagicMock()
-    mock_reader = MagicMock()
-    mock_reader.is_closing.return_value = False
-    mock_reader.closed = False
-    mock_conn.reader = mock_reader
-
-    mock_writer = MagicMock()
-    mock_writer.is_closing.return_value = False
-    mock_writer.closed = False
-
-    # Add transport and socket for socket error check
-    mock_transport = MagicMock()
-    mock_sock = MagicMock()
-    mock_sock.getsockopt.return_value = 0  # No error
-    mock_writer._transport = mock_transport
-    mock_transport._sock = mock_sock
-    mock_conn.writer = mock_writer
-
     connection = {
         "peer_info": peer_info,
         "connection": mock_conn,
-        "created_at": time.time()
+        "created_at": time.time(),
+    }
+    connection_pool.pool[peer_id] = connection
+    connection_pool._checked_out.add(peer_id)
+    connection_pool.metrics[peer_id] = ConnectionMetrics(is_healthy=True)
+
+    # Second acquire while checked out must not create another stream
+    result = await connection_pool.acquire(peer_info)
+    assert result is None
+
+    # Fresh peer path creates via _create_connection
+    peer_info2 = PeerInfo(ip="127.0.0.1", port=6882)
+    created = {
+        "peer_info": peer_info2,
+        "connection": MagicMock(),
+        "created_at": time.time(),
     }
 
-    connection_pool.pool[peer_id] = connection
-    metrics = ConnectionMetrics(is_healthy=True)
-    metrics.last_used = time.time() - 10  # Recently used
-    connection_pool.metrics[peer_id] = metrics
+    async def _fake_create(info: PeerInfo):
+        assert info.port == 6882
+        return created
 
-    # Acquire should reuse
-    result = await connection_pool.acquire(peer_info)
-
-    assert result == connection
-    assert metrics.usage_count == 1
-    assert metrics.last_used > time.time() - 1
+    connection_pool._create_connection = _fake_create
+    result2 = await connection_pool.acquire(peer_info2)
+    assert result2 == created
+    assert f"{peer_info2.ip}:{peer_info2.port}" in connection_pool._checked_out
 
 
 @pytest.mark.asyncio

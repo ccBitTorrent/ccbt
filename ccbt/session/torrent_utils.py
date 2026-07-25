@@ -39,6 +39,35 @@ def _log_conversion_failure_rate_limited(
     logger.debug("Could not convert torrent_data to TorrentInfo (key=%s)", key)
 
 
+def _normalize_announce_list_for_model(
+    announce_list: Any,
+) -> Optional[list[list[str]]]:
+    """Normalize flat or tiered announce lists to BEP 12 ``list[list[str]]``.
+
+    Magnet parsing and tracker merge helpers store a flat ``list[str]`` on
+    ``torrent_data``; ``TorrentInfo`` requires tiered announce lists.
+    """
+    if announce_list is None:
+        return None
+    if not isinstance(announce_list, list) or not announce_list:
+        return None
+
+    # Flat list[str] from magnet/merge_tracker_urls_into_torrent_data.
+    if all(isinstance(entry, str) for entry in announce_list):
+        return [[url] for url in announce_list if url]
+
+    normalized: list[list[str]] = []
+    for tier in announce_list:
+        if isinstance(tier, str):
+            if tier:
+                normalized.append([tier])
+        elif isinstance(tier, list):
+            urls = [url for url in tier if isinstance(url, str) and url]
+            if urls:
+                normalized.append(urls)
+    return normalized or None
+
+
 def get_torrent_info(
     torrent_data: Union[dict[str, Any], TorrentInfoModel],
     logger: Optional[Any] = None,
@@ -118,7 +147,9 @@ def get_torrent_info(
                 info_hash=info_hash,
                 swarm_id=torrent_data.get("swarm_id"),
                 announce=torrent_data.get("announce", ""),
-                announce_list=torrent_data.get("announce_list"),
+                announce_list=_normalize_announce_list_for_model(
+                    torrent_data.get("announce_list")
+                ),
                 is_private=torrent_data.get("is_private", False),
                 files=file_info_list,
                 total_length=torrent_data.get("total_length", 0),

@@ -27,14 +27,20 @@ class TestIPCAuthentication:
         assert API_KEY_HEADER in headers
         assert headers[API_KEY_HEADER] == api_key
 
-    def test_ipc_client_no_api_key(self):
-        """Test that IPCClient handles missing API key gracefully."""
+    def test_ipc_client_no_api_key(self, monkeypatch: pytest.MonkeyPatch):
+        """Test that IPCClient omits auth header when no key is available."""
+        # Constructor resolves from daemon config when api_key is None; isolate that.
+        monkeypatch.setattr(
+            "ccbt.daemon.daemon_manager.resolve_daemon_connection_params",
+            lambda: (8080, None, None),
+        )
         client = IPCClient(api_key=None)
+        client.api_key = None
 
         headers = client._get_headers()
 
-        # Should return empty headers if no API key
         assert headers == {}
+        assert API_KEY_HEADER not in headers
 
     def test_ipc_client_websocket_url(self):
         """Test that IPCClient includes API key in WebSocket URL."""

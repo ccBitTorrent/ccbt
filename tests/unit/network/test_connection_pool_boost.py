@@ -319,28 +319,24 @@ async def test_context_manager():
 
 @pytest.mark.asyncio
 async def test_acquire_reuse_healthy_connection():
-    """Test acquire() reusing existing healthy connection."""
+    """Acquire always creates a fresh protocol stream under a live-socket lease."""
     pool = PeerConnectionPool()
     await pool.start()
     try:
         peer_info = PeerInfo(ip="127.0.0.1", port=6881)
         peer_id = f"{peer_info.ip}:{peer_info.port}"
-
-        # Add healthy connection to pool
         mock_connection = {"peer_info": peer_info, "connection": MagicMock()}
-        pool.pool[peer_id] = mock_connection
-        metrics = ConnectionMetrics(is_healthy=True)
-        pool.metrics[peer_id] = metrics
 
-        # Mock _is_connection_valid to return True
-        pool._is_connection_valid = MagicMock(return_value=True)
-
-        # Acquire should reuse existing connection
+        pool._create_connection = AsyncMock(return_value=mock_connection)
         connection = await pool.acquire(peer_info)
 
-        # Should return existing connection and update metrics
         assert connection == mock_connection
-        assert metrics.usage_count == 1
+        assert peer_id in pool._checked_out
+        assert peer_id in pool.pool
+        pool._create_connection.assert_awaited_once()
+
+        # Concurrent acquire for same peer is rejected while checked out
+        assert await pool.acquire(peer_info) is None
     finally:
         await pool.stop()
 
@@ -371,25 +367,23 @@ async def test_acquire_timeout():
 
 @pytest.mark.asyncio
 async def test_release_normal_path():
-    """Test release() normal path (not recycling)."""
+    """Release closes the protocol stream; pools are not reusable."""
     pool = PeerConnectionPool(max_usage_count=1000)
     await pool.start()
     try:
         peer_info = PeerInfo(ip="127.0.0.1", port=6881)
         peer_id = f"{peer_info.ip}:{peer_info.port}"
 
-        # Create connection and add to pool
         mock_connection = {"peer_info": peer_info, "created_at": time.time()}
         pool.pool[peer_id] = mock_connection
-        metrics = ConnectionMetrics(usage_count=500)  # Below max
-        pool.metrics[peer_id] = metrics
+        pool._checked_out.add(peer_id)
+        pool._permit_owners.add(peer_id)
+        pool.metrics[peer_id] = ConnectionMetrics(usage_count=500)
 
-        # Release connection
         await pool.release(peer_id, mock_connection)
 
-        # Connection should still be in pool (not recycled)
-        assert peer_id in pool.pool
-        assert metrics.last_used > 0
+        assert peer_id not in pool.pool
+        assert peer_id not in pool._checked_out
     finally:
         await pool.stop()
 

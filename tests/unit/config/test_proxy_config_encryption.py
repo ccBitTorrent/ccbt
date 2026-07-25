@@ -144,10 +144,13 @@ class TestProxyPasswordEncryption:
 
         exported = config_manager.export(fmt="toml", encrypt_passwords=True)
 
-        # Password should be encrypted in export
-        assert "plaintext" not in exported
-        # Should contain encrypted value
-        assert config_manager.config.proxy.proxy_password in exported or "proxy_password" in exported
+        # Password should be encrypted in export (avoid substring matches like
+        # metadata_phase_plaintext_connect_attempts in the network section).
+        assert 'proxy_password = "plaintext"' not in exported
+        assert "proxy_password = plaintext" not in exported
+        assert "proxy_password" in exported
+        # Fernet tokens are URL-safe base64 and start with gAAAA when encoded
+        assert "gAAAA" in exported
 
     def test_export_without_encryption(self):
         """Test export without encryption."""
