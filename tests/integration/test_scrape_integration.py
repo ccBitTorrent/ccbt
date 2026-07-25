@@ -50,6 +50,23 @@ def mock_config():
     config.limits = MagicMock()
     config.limits.global_down_kib = 0
     config.limits.global_up_kib = 0
+    # Real ints for announce port validation (1 <= port <= 65535)
+    config.network = MagicMock()
+    config.network.max_global_peers = 100
+    config.network.max_peers_per_torrent = 50
+    config.network.connection_timeout = 30.0
+    config.network.handshake_timeout = 10.0
+    config.network.enable_tcp = True
+    config.network.enable_utp = False
+    config.network.listen_port = 6881
+    config.network.listen_port_tcp = 6881
+    config.network.listen_port_udp = 6881
+    config.network.tracker_udp_port = 6882
+    config.network.xet_multicast_address = "239.255.255.250"
+    config.network.xet_multicast_port = 6882
+    config.discovery.max_tracker_urls_per_torrent = 7
+    config.xet_sync = MagicMock()
+    config.xet_sync.enable_xet = False
     return config
 
 
@@ -223,11 +240,17 @@ class TestAutoScrapeIntegration:
         with patch(
             "ccbt.protocols.bittorrent.BitTorrentProtocol", return_value=mock_protocol
         ):
-            # Add torrent (should trigger auto-scrape)
-            await session_manager.add_torrent(sample_torrent_data, resume=False)
+            # Production auto-scrape defers 45s; run scrape immediately for this check.
+            async def _immediate_auto_scrape(info_hash: str) -> None:
+                await session_manager.force_scrape(info_hash)
 
-            # Wait for auto-scrape delay (2 seconds)
-            await asyncio.sleep(2.5)
+            with patch.object(
+                session_manager,
+                "_auto_scrape_torrent",
+                side_effect=_immediate_auto_scrape,
+            ):
+                await session_manager.add_torrent(sample_torrent_data, resume=False)
+                await asyncio.sleep(0.05)
 
             # Verify scrape result is cached
             result = await session_manager.get_scrape_result(info_hash_hex)
@@ -447,11 +470,17 @@ class TestEndToEndScrapeWorkflow:
         with patch(
             "ccbt.protocols.bittorrent.BitTorrentProtocol", return_value=mock_protocol
         ):
-            # Step 1: Add torrent (should trigger auto-scrape)
-            await session_manager.add_torrent(sample_torrent_data, resume=False)
+            # Step 1: Add torrent (auto-scrape is deferred 45s in production)
+            async def _immediate_auto_scrape(info_hash: str) -> None:
+                await session_manager.force_scrape(info_hash)
 
-            # Wait for auto-scrape
-            await asyncio.sleep(2.5)
+            with patch.object(
+                session_manager,
+                "_auto_scrape_torrent",
+                side_effect=_immediate_auto_scrape,
+            ):
+                await session_manager.add_torrent(sample_torrent_data, resume=False)
+                await asyncio.sleep(0.05)
 
             # Step 2: Verify cache entry exists
             result1 = await session_manager.get_scrape_result(info_hash_hex)

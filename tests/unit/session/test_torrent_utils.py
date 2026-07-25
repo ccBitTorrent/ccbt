@@ -37,6 +37,31 @@ def test_get_torrent_info_returns_none_when_piece_length_non_positive() -> None:
     mock_debug.assert_not_called()
 
 
+def test_get_torrent_info_normalizes_flat_announce_list() -> None:
+    """Flat announce_list from magnet/merge must become BEP 12 tiers."""
+    out = torrent_utils.get_torrent_info(
+        {
+            "info_hash": b"\x04" * 20,
+            "name": "flat-announce",
+            "announce": "http://tracker.example.com/announce",
+            "announce_list": [
+                "http://tracker.example.com/announce",
+                "udp://tracker.example.com:1337/announce",
+            ],
+            "files": [{"name": "a.bin", "length": 16, "path": ["a.bin"]}],
+            "total_length": 16,
+            "piece_length": 16,
+            "pieces": [b"\x01" * 20],
+            "num_pieces": 1,
+        }
+    )
+    assert out is not None
+    assert out.announce_list == [
+        ["http://tracker.example.com/announce"],
+        ["udp://tracker.example.com:1337/announce"],
+    ]
+
+
 def test_get_torrent_info_conversion_fail_debug_rate_limited() -> None:
     """Broad conversion failures should not log every call within the TTL window."""
     logger = logging.getLogger("test_torrent_utils_rate")

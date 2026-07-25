@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -10,6 +11,30 @@ import pytest
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
 from ccbt.session.manager_background import ManagerBackgroundTasks
+
+
+def _torrent_stats_stub(
+    *,
+    downloaded: int,
+    uploaded: int,
+    left: int,
+    peers: int,
+    download_rate: float,
+    upload_rate: float,
+) -> SimpleNamespace:
+    """Build a torrent stub that won't trigger Mock-iteration in live rate helpers."""
+    return SimpleNamespace(
+        downloaded_bytes=downloaded,
+        uploaded_bytes=uploaded,
+        left_bytes=left,
+        peers=[object()] * peers,
+        download_manager=None,
+        peer_manager=None,
+        _cached_status={
+            "download_rate": download_rate,
+            "upload_rate": upload_rate,
+        },
+    )
 
 
 class TestManagerBackgroundTasks:
@@ -182,24 +207,22 @@ class TestManagerBackgroundTasks:
     @pytest.mark.asyncio
     async def test_metrics_loop_aggregates_stats(self, background_tasks, mock_manager):
         """Test metrics loop aggregates torrent statistics."""
-        # Create mock torrents; use _cached_status = {} so peer count from len(peers).
-        torrent1 = Mock()
-        torrent1.downloaded_bytes = 1000
-        torrent1.uploaded_bytes = 500
-        torrent1.left_bytes = 9000
-        torrent1._cached_status = {}
-        torrent1.peers = [Mock(), Mock()]
-        torrent1.download_rate = 100.0
-        torrent1.upload_rate = 50.0
-
-        torrent2 = Mock()
-        torrent2.downloaded_bytes = 2000
-        torrent2.uploaded_bytes = 1000
-        torrent2.left_bytes = 8000
-        torrent2._cached_status = {}
-        torrent2.peers = [Mock()]
-        torrent2.download_rate = 200.0
-        torrent2.upload_rate = 100.0
+        torrent1 = _torrent_stats_stub(
+            downloaded=1000,
+            uploaded=500,
+            left=9000,
+            peers=2,
+            download_rate=100.0,
+            upload_rate=50.0,
+        )
+        torrent2 = _torrent_stats_stub(
+            downloaded=2000,
+            uploaded=1000,
+            left=8000,
+            peers=1,
+            download_rate=200.0,
+            upload_rate=100.0,
+        )
 
         mock_manager.torrents = {b"t1": torrent1, b"t2": torrent2}
         mock_manager._rate_history = []
@@ -290,24 +313,22 @@ class TestManagerBackgroundTasks:
 
     def test_aggregate_torrent_stats(self, background_tasks, mock_manager):
         """Test _aggregate_torrent_stats method."""
-        # Create mock torrents; _cached_status = {} so peer count from len(peers).
-        torrent1 = Mock()
-        torrent1.downloaded_bytes = 1000
-        torrent1.uploaded_bytes = 500
-        torrent1.left_bytes = 9000
-        torrent1._cached_status = {}
-        torrent1.peers = [Mock(), Mock()]
-        torrent1.download_rate = 100.0
-        torrent1.upload_rate = 50.0
-
-        torrent2 = Mock()
-        torrent2.downloaded_bytes = 2000
-        torrent2.uploaded_bytes = 1000
-        torrent2.left_bytes = 8000
-        torrent2._cached_status = {}
-        torrent2.peers = [Mock()]
-        torrent2.download_rate = 200.0
-        torrent2.upload_rate = 100.0
+        torrent1 = _torrent_stats_stub(
+            downloaded=1000,
+            uploaded=500,
+            left=9000,
+            peers=2,
+            download_rate=100.0,
+            upload_rate=50.0,
+        )
+        torrent2 = _torrent_stats_stub(
+            downloaded=2000,
+            uploaded=1000,
+            left=8000,
+            peers=1,
+            download_rate=200.0,
+            upload_rate=100.0,
+        )
 
         mock_manager.torrents = {b"t1": torrent1, b"t2": torrent2}
 

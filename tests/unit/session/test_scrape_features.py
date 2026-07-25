@@ -48,9 +48,23 @@ def mock_config():
     config.limits = MagicMock()
     config.limits.global_down_kib = 0
     config.limits.global_up_kib = 0
+    # Real ints/strings so announce/XET startup paths do not compare against MagicMock.
     config.network = MagicMock()
     config.network.max_global_peers = 100
+    config.network.max_peers_per_torrent = 50
     config.network.connection_timeout = 30.0
+    config.network.handshake_timeout = 10.0
+    config.network.enable_tcp = True
+    config.network.enable_utp = False
+    config.network.listen_port = 6881
+    config.network.listen_port_tcp = 6881
+    config.network.listen_port_udp = 6881
+    config.network.tracker_udp_port = 6882
+    config.network.xet_multicast_address = "239.255.255.250"
+    config.network.xet_multicast_port = 6882
+    config.discovery.max_tracker_urls_per_torrent = 7
+    config.xet_sync = MagicMock()
+    config.xet_sync.enable_xet = False
     return config
 
 
@@ -375,23 +389,31 @@ class TestAutoScrapeOnAdd:
         apply_network_mocks_to_session(session_manager, mock_network_components)
         await session_manager.start()
 
-        # Mock force_scrape
+        # Production auto-scrape defers 45s; run scrape immediately for this check.
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
         ) as mock_force:
             mock_force.return_value = True
 
-            await session_manager.add_torrent(sample_torrent_data, resume=False)
+            async def _immediate_auto_scrape(info_hash: str) -> None:
+                await session_manager.force_scrape(info_hash)
 
-            # Wait for auto-scrape delay (2 seconds) but check periodically
-            # Increased wait time to 5 seconds to account for background task scheduling
-            for _ in range(50):  # 5 seconds total
-                await asyncio.sleep(0.1)
-                if mock_force.called:
-                    break
+            with patch.object(
+                session_manager,
+                "_auto_scrape_torrent",
+                side_effect=_immediate_auto_scrape,
+            ):
+                await session_manager.add_torrent(sample_torrent_data, resume=False)
 
-            # force_scrape should be called once with correct info_hash_hex
-            assert mock_force.called, f"Expected force_scrape to be called within 5 seconds. Called: {mock_force.called}, Call count: {mock_force.call_count}"
+                for _ in range(50):  # 5 seconds total
+                    await asyncio.sleep(0.1)
+                    if mock_force.called:
+                        break
+
+            assert mock_force.called, (
+                f"Expected force_scrape to be called within 5 seconds. "
+                f"Called: {mock_force.called}, Call count: {mock_force.call_count}"
+            )
             mock_force.assert_called_once_with(sample_info_hash_hex)
 
     @pytest.mark.asyncio
@@ -401,22 +423,28 @@ class TestAutoScrapeOnAdd:
         """Test auto-scrape handles errors gracefully."""
         mock_config.discovery.tracker_auto_scrape = True
 
-        # Mock force_scrape to raise exception
+        # Production auto-scrape defers 45s; run scrape immediately for this check.
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
         ) as mock_force:
             mock_force.side_effect = Exception("Scrape error")
 
-            # Should not raise exception
-            await session_manager.add_torrent(sample_torrent_data, resume=False)
+            async def _immediate_auto_scrape(info_hash: str) -> None:
+                await session_manager.force_scrape(info_hash)
 
-            # Wait for auto-scrape delay but with timeout
-            for _ in range(25):  # 2.5 seconds total
-                await asyncio.sleep(0.1)
-                if mock_force.called:
-                    break
+            with patch.object(
+                session_manager,
+                "_auto_scrape_torrent",
+                side_effect=_immediate_auto_scrape,
+            ):
+                # Should not raise exception
+                await session_manager.add_torrent(sample_torrent_data, resume=False)
 
-            # force_scrape should have been called
+                for _ in range(50):  # 5 seconds total
+                    await asyncio.sleep(0.1)
+                    if mock_force.called:
+                        break
+
             mock_force.assert_called_once_with(sample_info_hash_hex)
 
 

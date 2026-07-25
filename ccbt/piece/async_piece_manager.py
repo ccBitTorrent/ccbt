@@ -4468,9 +4468,7 @@ class AsyncPieceManager:
             else list(available_peers)
         )
         active_peer_count = len(active_peers)
-        requestable_peer_count = sum(
-            1 for peer in active_peers if peer.can_request()
-        )
+        requestable_peer_count = sum(1 for peer in active_peers if peer.can_request())
         pipeline_utilization_limit = (
             1.0
             if is_stale_for_pipeline_relaxation
@@ -5445,12 +5443,14 @@ class AsyncPieceManager:
                     for i, (req_begin, req_length, _) in enumerate(requests):
                         if req_begin == begin and req_length == block_length:
                             requests.pop(i)
-                            self._piece_selection_metrics[
-                                "active_block_requests"
-                            ] = max(
-                                0,
-                                self._piece_selection_metrics["active_block_requests"]
-                                - 1,
+                            self._piece_selection_metrics["active_block_requests"] = (
+                                max(
+                                    0,
+                                    self._piece_selection_metrics[
+                                        "active_block_requests"
+                                    ]
+                                    - 1,
+                                )
                             )
                             break
                     if not requests:

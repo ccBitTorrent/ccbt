@@ -7256,8 +7256,7 @@ class AsyncPeerConnectionManager:
                                     async with self.connection_lock:
                                         duplicate = (
                                             peer_key in self.connections
-                                            or peer_key
-                                            in self._connection_reservations
+                                            or peer_key in self._connection_reservations
                                         )
                                     self.logger.debug(
                                         "Skipping connect to %s: duplicate or per-torrent capacity reserved",
@@ -7489,9 +7488,7 @@ class AsyncPeerConnectionManager:
                             # Connection batch: process with timeout and early exit if enough connections succeed
                             async def _process_completed_batch(
                                 task_list: list[
-                                    asyncio.Task[
-                                        tuple[int, ConnectAttemptOutcome]
-                                    ]
+                                    asyncio.Task[tuple[int, ConnectAttemptOutcome]]
                                 ],
                                 batch_peer_list: list[PeerInfo],
                                 results_list: list[Any],
@@ -7732,7 +7729,9 @@ class AsyncPeerConnectionManager:
                                                         f"Batch timeout after {batch_timeout}s"
                                                     ),
                                                 )
-                                                _register_aborted_batch_peer(task_peers[i])
+                                                _register_aborted_batch_peer(
+                                                    task_peers[i]
+                                                )
                                             completed_count += 1
                                     await self._release_cancelled_connect_tasks(
                                         tasks,
@@ -14304,8 +14303,7 @@ class AsyncPeerConnectionManager:
                 )
                 pending_replacements = len(self._pending_peer_queue)
                 replacement_pressure = (
-                    active_for_solo >= choked_reserve_floor
-                    and pending_replacements > 0
+                    active_for_solo >= choked_reserve_floor and pending_replacements > 0
                 ) or active_for_solo >= self.max_peers_per_torrent
                 _bdl = int(getattr(connection.stats, "bytes_downloaded", 0) or 0)
                 _out = len(getattr(connection, "outstanding_requests", {}) or {})

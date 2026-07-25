@@ -414,8 +414,9 @@ class TestMagnetBEP53Integration:
             session = session_manager.torrents.get(info_hash)
         assert session is not None
 
-        # Simulate "metadata just merged": add multi-file file_info to torrent_data
-        # get_torrent_info reads file_info["files"] as list of dicts (name, length, path, full_path)
+        # Simulate "metadata just merged": add multi-file file_info + pieces_info.
+        # get_torrent_info rejects piece_length <= 0 (magnet placeholder), so set a
+        # real piece length as metadata resolution would.
         assert isinstance(session.torrent_data, dict)
         session.torrent_data["file_info"] = {
             "type": "multi",
@@ -427,6 +428,17 @@ class TestMagnetBEP53Integration:
                 {"name": "file4.txt", "length": 16884, "path": ["file4.txt"], "full_path": "file4.txt"},
             ],
         }
+        session.torrent_data["pieces_info"] = {
+            "piece_length": 16384,
+            "num_pieces": 8,
+            "piece_hashes": [b"\x00" * 20] * 8,
+        }
+        session.torrent_data["total_length"] = 115188
+        # Magnet parse stores a flat announce list; TorrentInfo expects BEP 12 tiers.
+        raw_announce = session.torrent_data.get("announce_list") or []
+        session.torrent_data["announce_list"] = [
+            [url] if isinstance(url, str) else url for url in raw_announce
+        ]
 
         # Create file selection manager from updated torrent_data (simulates post-merge)
         assert session.ensure_file_selection_manager() is True

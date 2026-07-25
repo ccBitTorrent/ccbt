@@ -1010,7 +1010,20 @@ def create_mock_config():
     config.limits.global_up_kib = 0
     config.network = MagicMock()
     config.network.max_global_peers = 100
+    config.network.max_peers_per_torrent = 50
     config.network.connection_timeout = 30.0
+    config.network.handshake_timeout = 10.0
+    config.network.enable_tcp = True
+    config.network.enable_utp = False
+    config.network.listen_port = 6881
+    config.network.listen_port_tcp = 6881
+    config.network.listen_port_udp = 6881
+    config.network.tracker_udp_port = 6882
+    config.network.xet_multicast_address = "239.255.255.250"
+    config.network.xet_multicast_port = 6882
+    config.discovery.max_tracker_urls_per_torrent = 7
+    config.xet_sync = MagicMock()
+    config.xet_sync.enable_xet = False
     return config
 
 
