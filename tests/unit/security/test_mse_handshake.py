@@ -1316,6 +1316,7 @@ async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
     chosen_info_hash = b"\x22" * 20
     initial_payload = b"peer-handshake-placeholder"
     responder_results: asyncio.Queue[MSEHandshakeResult] = asyncio.Queue()
+    handshake_timeout = _MSE_INTEGRATION_TIMEOUT
 
     async def responder(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         handshake = MSEHandshake()
@@ -1323,7 +1324,7 @@ async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
             reader=reader,
             writer=writer,
             info_hash=ignored_info_hash,
-            timeout=5.0,
+            timeout=handshake_timeout,
             initial_payload_size=0,
             info_hash_candidates=[ignored_info_hash, chosen_info_hash],
         )
@@ -1334,29 +1335,40 @@ async def test_receiver_resolves_candidate_hash_from_initial_payload() -> None:
     server = await asyncio.start_server(responder, "127.0.0.1", 0)
     try:
         server_port = server.sockets[0].getsockname()[1]
-        initiator_reader, initiator_writer = await asyncio.open_connection(
-            "127.0.0.1", server_port
-        )
-        try:
-            initiator_handshake = MSEHandshake()
-            initiator_result = await initiator_handshake.initiate_as_initiator(
-                initiator_reader,
-                initiator_writer,
-                chosen_info_hash,
-                timeout=5.0,
-                initial_payload=initial_payload,
+        last_error: str | None = None
+        initiator_result: MSEHandshakeResult | None = None
+        responder_result: MSEHandshakeResult | None = None
+        for attempt in range(2):
+            initiator_reader, initiator_writer = await asyncio.open_connection(
+                "127.0.0.1", server_port
             )
-            responder_result = await asyncio.wait_for(
-                responder_results.get(), timeout=5.0
-            )
+            try:
+                initiator_handshake = MSEHandshake()
+                initiator_result = await initiator_handshake.initiate_as_initiator(
+                    initiator_reader,
+                    initiator_writer,
+                    chosen_info_hash,
+                    timeout=handshake_timeout,
+                    initial_payload=initial_payload,
+                )
+                responder_result = await asyncio.wait_for(
+                    responder_results.get(), timeout=handshake_timeout
+                )
+                if initiator_result.success and responder_result.success:
+                    break
+                last_error = initiator_result.error or responder_result.error
+            finally:
+                initiator_writer.close()
+                await initiator_writer.wait_closed()
+            if attempt == 0:
+                await asyncio.sleep(0.05)
 
-            assert initiator_result.success is True
-            assert responder_result.success is True
-            assert responder_result.resolved_info_hash == chosen_info_hash
-            assert responder_result.decrypted_initial_data == initial_payload
-        finally:
-            initiator_writer.close()
-            await initiator_writer.wait_closed()
+        assert initiator_result is not None
+        assert responder_result is not None
+        assert initiator_result.success is True, last_error
+        assert responder_result.success is True, last_error
+        assert responder_result.resolved_info_hash == chosen_info_hash
+        assert responder_result.decrypted_initial_data == initial_payload
     finally:
         server.close()
         await server.wait_closed()

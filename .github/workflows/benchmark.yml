@@ -112,15 +112,24 @@ jobs:
           path.write_text(text, encoding="utf-8")
           print("Injected daemon.api_key into base ccbt.toml for benchmark compatibility")
           PY
-          # Prefer en/ path; fall back to legacy docs/examples on older base trees.
+          # Resolve config relative to the *base* worktree only.
+          # Do not fall back to HEAD's docs/en path — that overwrote the legacy
+          # docs/examples path on older main and made hash_verify produce no JSON.
           CONFIG_FILE="${BENCH_CONFIG_FILE}"
-          if [ ! -f "${BENCH_BASE_DIR}/${CONFIG_FILE}" ] && [ -f "${BENCH_BASE_DIR}/docs/examples/example-config-performance.toml" ]; then
-            CONFIG_FILE="docs/examples/example-config-performance.toml"
+          if [ ! -f "${BENCH_BASE_DIR}/${CONFIG_FILE}" ]; then
+            if [ -f "${BENCH_BASE_DIR}/docs/examples/example-config-performance.toml" ]; then
+              CONFIG_FILE="docs/examples/example-config-performance.toml"
+            elif [ -f "${BENCH_BASE_DIR}/docs/en/examples/example-config-performance.toml" ]; then
+              CONFIG_FILE="docs/en/examples/example-config-performance.toml"
+            fi
           fi
-          if [ ! -f "${CONFIG_FILE}" ] && [ -f "docs/en/examples/example-config-performance.toml" ]; then
-            CONFIG_FILE="docs/en/examples/example-config-performance.toml"
+          if [ ! -f "${BENCH_BASE_DIR}/${CONFIG_FILE}" ]; then
+            echo "ERROR: No performance config found under ${BENCH_BASE_DIR} (tried ${CONFIG_FILE})"
+            exit 1
           fi
+          echo "Using base benchmark config: ${CONFIG_FILE}"
           (cd "${BENCH_BASE_DIR}" && uv sync --dev)
+          # Use HEAD's runner script (has current CLI), but execute benchmarks in base workdir.
           uv run python dev/scripts/run_benchmark_suite.py \
             --output-dir "${BENCH_BASE_DIR}" \
             --workdir "${BENCH_BASE_DIR}" \
