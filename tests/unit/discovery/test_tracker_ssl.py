@@ -169,7 +169,7 @@ class TestTrackerHTTPSDetection:
             response_data = await client._make_request_async(url)
 
             assert response_data == b"response data"
-            mock_session.get.assert_called_once_with(url)
+            mock_session.get.assert_called_once_with(url, allow_redirects=False)
 
     @pytest.mark.asyncio
     async def test_make_request_https_with_ssl_disabled(self):

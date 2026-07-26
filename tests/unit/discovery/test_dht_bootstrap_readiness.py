@@ -29,6 +29,7 @@ def _make_stub_client() -> AsyncDHTClient:
     client._max_empty_table_rebootstrap_attempts = 3
     client._last_empty_table_rebootstrap_at = 0.0
     client._empty_table_rebootstrap_backoff = 1.0
+    client._empty_table_backoff_factor = 1.5
     client._zero_node_rebootstrap_task = None
     return client
 

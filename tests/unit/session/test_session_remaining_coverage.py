@@ -208,6 +208,12 @@ async def test_aggregate_torrent_stats_with_torrents(monkeypatch):
     class _Session:
         def __init__(self, name):
             self.name = name
+            self.download_manager = None
+            self.peer_manager = None
+            self._cached_status = {
+                "download_rate": 100.0,
+                "upload_rate": 50.0,
+            }
 
         @property
         def downloaded_bytes(self):
