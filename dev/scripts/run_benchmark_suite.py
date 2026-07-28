@@ -145,6 +145,8 @@ def _run_benchmark(
 
     completed = _invoke(with_json_out=True)
     if completed.returncode != 0:
+        # Older scripts may reject --json-out; retry without it and look for
+        # legacy artifact paths or an explicit --output-dir write.
         completed = _invoke(with_json_out=False)
 
     if completed.returncode != 0:
@@ -159,7 +161,10 @@ def _run_benchmark(
     else:
         legacy = _find_legacy_artifact(workdir, spec.benchmark_key)
         if legacy is None:
+            detail = (completed.stderr or completed.stdout or "").strip()
             msg = f"Benchmark {spec.benchmark_key} produced no JSON artifact"
+            if detail:
+                msg = f"{msg}: {detail}"
             raise RuntimeError(msg)
         payload = _normalize_payload(_load_json(legacy), spec.benchmark_key, config_name)
 

@@ -5,8 +5,6 @@ Tests fragmentation detection, prevention, and optimization.
 
 from __future__ import annotations
 
-import tempfile
-
 import pytest
 
 from ccbt.storage.xet_deduplication import XetDeduplication
@@ -17,23 +15,6 @@ pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
 class TestXetDefragPrevention:
     """Test XetDefragPrevention class."""
-
-    @pytest.fixture
-    def temp_db_path(self):
-        """Create temporary database path for testing."""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as f:
-            db_path = f.name
-        yield db_path
-        # Cleanup
-        import os
-        import time
-        for _ in range(5):
-            try:
-                if os.path.exists(db_path):
-                    os.unlink(db_path)
-                break
-            except (PermissionError, OSError):
-                time.sleep(0.1)
 
     @pytest.fixture
     def dedup(self, temp_db_path):
