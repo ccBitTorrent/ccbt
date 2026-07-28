@@ -182,12 +182,7 @@ class MSEHandshake:
                     None,
                     f"Failed to read RKEYE message ({rke_failure.value})",
                 )
-            legacy_type = None
-            if len(rke_message) > 0:
-                try:
-                    legacy_type = MSEHandshakeType(rke_message[0])
-                except ValueError:
-                    legacy_type = None
+            legacy_type = self._legacy_message_type(rke_message)
             if legacy_type in {
                 MSEHandshakeType.SKEYE,
                 MSEHandshakeType.CRYPTO,
@@ -254,12 +249,7 @@ class MSEHandshake:
                     None,
                     f"Failed to read CRYPTO message ({crypto_failure.value})",
                 )
-            legacy_crypto_type = None
-            if len(crypto_response) > 0:
-                try:
-                    legacy_crypto_type = MSEHandshakeType(crypto_response[0])
-                except ValueError:
-                    legacy_crypto_type = None
+            legacy_crypto_type = self._legacy_message_type(crypto_response)
             if (
                 legacy_crypto_type is not None
                 and legacy_crypto_type != MSEHandshakeType.CRYPTO
@@ -352,12 +342,7 @@ class MSEHandshake:
                     None,
                     f"Failed to read SKEYE message ({ske_failure.value})",
                 )
-            legacy_type = None
-            if len(ske_message) > 0:
-                try:
-                    legacy_type = MSEHandshakeType(ske_message[0])
-                except ValueError:
-                    legacy_type = None
+            legacy_type = self._legacy_message_type(ske_message)
             if legacy_type in {
                 MSEHandshakeType.RKEYE,
                 MSEHandshakeType.CRYPTO,
@@ -413,12 +398,7 @@ class MSEHandshake:
                     None,
                     f"Failed to read CRYPTO message ({crypto_failure.value})",
                 )
-            legacy_crypto_type = None
-            if len(crypto_message) > 0:
-                try:
-                    legacy_crypto_type = MSEHandshakeType(crypto_message[0])
-                except ValueError:
-                    legacy_crypto_type = None
+            legacy_crypto_type = self._legacy_message_type(crypto_message)
             if (
                 legacy_crypto_type is not None
                 and legacy_crypto_type != MSEHandshakeType.CRYPTO
@@ -619,6 +599,29 @@ class MSEHandshake:
 
     def _dh_public_key_length(self) -> int:
         return self._dh_public_key_length_for_size(self.dh_exchange.key_size)
+
+    def _legacy_message_type(self, payload: bytes) -> Optional[MSEHandshakeType]:
+        """Return a legacy MSE type only for short type-prefixed payloads.
+
+        Modern BEP-style frames carry raw DH key material or RC4 ciphertext
+        without a leading type byte. Their first byte can coincidentally match
+        ``SKEYE``/``RKEYE``/``CRYPTO`` enum values and must not be rejected.
+        """
+        if not payload:
+            return None
+        try:
+            msg_type = MSEHandshakeType(payload[0])
+        except ValueError:
+            return None
+        if msg_type == MSEHandshakeType.CRYPTO:
+            # Legacy CRYPTO is exactly type (1) + cipher (1).
+            return msg_type if len(payload) == 2 else None
+        if msg_type in {MSEHandshakeType.SKEYE, MSEHandshakeType.RKEYE}:
+            # Legacy SKEYE/RKEYE is type + DH key (+ optional leading 0x00).
+            dh_len = self._dh_public_key_length()
+            if len(payload) in {dh_len + 1, dh_len + 2}:
+                return msg_type
+        return None
 
     @staticmethod
     def _select_handshake_padding() -> bytes:

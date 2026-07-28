@@ -50,7 +50,7 @@ async def _run_loopback_mse_handshake(
     outbound_payload: bytes,
     port: int,
     *,
-    attempts: int = 2,
+    attempts: int = 3,
     accept_mock: AsyncMock | None = None,
 ) -> None:
     """Run an outbound MSE handshake against an already-started loopback server."""
@@ -72,6 +72,8 @@ async def _run_loopback_mse_handshake(
         finally:
             writer.close()
             await writer.wait_closed()
+        # Only stop retrying once the server has accepted — a failed initiator
+        # attempt that never reached accept should be retried.
         if accept_mock is not None and accept_mock.await_count > 0:
             break
         if attempt + 1 < attempts:

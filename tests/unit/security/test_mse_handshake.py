@@ -63,6 +63,22 @@ class TestMSEHandshakeInit:
         assert CipherType.AES not in handshake.allowed_ciphers
 
 
+class TestMSEHandshakeLegacyTypeDetection:
+    """Legacy type detection must not misfire on modern BEP payloads."""
+
+    def test_modern_ciphertext_starting_with_skeye_byte_is_not_legacy(self):
+        """RC4 crypto-select blobs may start with 0x02 without being SKEYE."""
+        handshake = MSEHandshake()
+        modern_payload = bytes([int(MSEHandshakeType.SKEYE)]) + b"\x00" * 32
+        assert handshake._legacy_message_type(modern_payload) is None
+
+    def test_legacy_crypto_two_byte_payload_is_detected(self):
+        """Legacy CRYPTO remains type + cipher byte."""
+        handshake = MSEHandshake()
+        payload = bytes([int(MSEHandshakeType.CRYPTO), int(CipherType.RC4)])
+        assert handshake._legacy_message_type(payload) == MSEHandshakeType.CRYPTO
+
+
 class TestMSEHandshakeMessageEncoding:
     """Tests for message encoding/decoding."""
 
