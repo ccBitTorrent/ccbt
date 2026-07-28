@@ -728,6 +728,11 @@ class AsyncUDPTrackerClient:
         """
         self._stopping = False
         self._refresh_udp_pending_settings_from_config()
+        # Tests inject a mock transport; never bind a real UDP socket in test mode
+        # (Windows CI often rejects binding to the configured tracker port).
+        if self._test_mode and self.transport is not None:
+            self._socket_ready = True
+            return
         # Note: Assert socket should never be recreated during runtime
         # If socket is already initialized and healthy, return immediately
         # Socket recreation breaks session logic and causes WinError 10022 on Windows

@@ -59,7 +59,25 @@ class XetDeduplication:
         self.dht_client = dht_client
         # Serialize DB access: SQLite connection is not thread-safe; run blocking
         # DB and disk I/O in thread pool so the event loop stays responsive.
-        self._db_lock = asyncio.Lock()
+        # Lazily bound to the running loop — Python 3.9 locks capture the loop at
+        # construction, which breaks under pytest-asyncio's per-test loops.
+        self._db_lock: Optional[asyncio.Lock] = None
+
+    def _get_db_lock(self) -> asyncio.Lock:
+        """Return an ``asyncio.Lock`` bound to the current running loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            if self._db_lock is None:
+                self._db_lock = asyncio.Lock()
+            return self._db_lock
+
+        lock = self._db_lock
+        bound_loop = getattr(lock, "_loop", None) if lock is not None else None
+        if lock is None or (bound_loop is not None and bound_loop is not loop):
+            self._db_lock = asyncio.Lock()
+            return self._db_lock
+        return lock
 
     def _init_database(self) -> sqlite3.Connection:
         """Initialize SQLite cache database.
@@ -250,7 +268,7 @@ class XetDeduplication:
             Path to stored chunk if exists, None otherwise
 
         """
-        async with self._db_lock:
+        async with self._get_db_lock():
             return await to_thread_compat(
                 self._check_chunk_exists_sync,
                 chunk_hash,
@@ -326,7 +344,7 @@ class XetDeduplication:
             Path to stored chunk (may be existing or new)
 
         """
-        async with self._db_lock:
+        async with self._get_db_lock():
             existing = await to_thread_compat(
                 self._check_chunk_exists_sync,
                 chunk_hash,
@@ -408,7 +426,7 @@ class XetDeduplication:
 
         """
         try:
-            async with self._db_lock:
+            async with self._get_db_lock():
                 skipped = await to_thread_compat(
                     self._add_file_chunk_reference_sync,
                     file_path,
@@ -656,7 +674,7 @@ class XetDeduplication:
             metadata_dict["xorb_refs"] = [h.hex() for h in metadata.xorb_refs]
             metadata_json = json.dumps(metadata_dict)
 
-            async with self._db_lock:
+            async with self._get_db_lock():
                 await to_thread_compat(
                     self._store_file_metadata_sync,
                     metadata,
@@ -698,7 +716,7 @@ class XetDeduplication:
 
         """
         try:
-            async with self._db_lock:
+            async with self._get_db_lock():
                 metadata_dict = await to_thread_compat(
                     self._get_file_metadata_sync,
                     file_path,
@@ -1112,7 +1130,7 @@ class XetDeduplication:
 
     async def aclose(self) -> None:
         """Close database connection under the DB lock (idempotent)."""
-        async with self._db_lock:
+        async with self._get_db_lock():
             self.close()
 
     def __enter__(self):
