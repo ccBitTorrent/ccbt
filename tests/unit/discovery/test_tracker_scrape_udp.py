@@ -43,8 +43,10 @@ def torrent_data():
 @pytest_asyncio.fixture
 async def started_client(client):
     """Create and start AsyncUDPTrackerClient."""
-    # Mock transport
-    client.transport = Mock()
+    # Mock transport — avoid real UDP bind (WinError 10013 on CI).
+    transport = Mock()
+    transport.is_closing = Mock(return_value=False)
+    client.transport = transport
     await client.start()
     yield client
     await client.stop()
@@ -207,7 +209,7 @@ class TestScrapeMethod:
         self, started_client, torrent_data
     ):
         """Test scrape when connection fails."""
-        # Mock _connect_to_tracker to raise exception
+        started_client._connect_if_needed = AsyncMock(return_value=False)
         started_client._connect_to_tracker = AsyncMock(
             side_effect=Exception("Connection failed")
         )
@@ -225,11 +227,12 @@ class TestScrapeMethod:
         session = started_client.sessions[session_key]
         session.is_connected = True
         session.connection_id = 0x1234567890ABCDEF
-        session.connection_time = 0.0
+        session.connection_time = time.time()
         session.host = "tracker.example.com"
         session.port = 6969
 
         # Mock wait_for_response to return None
+        started_client._connect_if_needed = AsyncMock(return_value=True)
         started_client._wait_for_response = AsyncMock(return_value=None)
 
         result = await started_client.scrape(torrent_data)
@@ -245,7 +248,7 @@ class TestScrapeMethod:
         session = started_client.sessions[session_key]
         session.is_connected = True
         session.connection_id = 0x1234567890ABCDEF
-        session.connection_time = 0.0
+        session.connection_time = time.time()
         session.host = "tracker.example.com"
         session.port = 6969
 
@@ -257,6 +260,7 @@ class TestScrapeMethod:
             downloaded=500,
             incomplete=30,
         )
+        started_client._connect_if_needed = AsyncMock(return_value=True)
         started_client._wait_for_response = AsyncMock(return_value=response)
 
         result = await started_client.scrape(torrent_data)
@@ -272,6 +276,7 @@ class TestScrapeMethod:
     async def test_scrape_connection_timeout(self, started_client, torrent_data):
         """Test scrape with connection timeout."""
         # Mock _connect_to_tracker to simulate timeout
+        started_client._connect_if_needed = AsyncMock(return_value=False)
         started_client._connect_to_tracker = AsyncMock(
             side_effect=TimeoutError("Connection timeout")
         )
@@ -284,7 +289,18 @@ class TestScrapeMethod:
     async def test_scrape_generic_exception(self, started_client, torrent_data):
         """Test scrape handles generic exceptions."""
         # Cause exception during scrape
+        started_client._connect_if_needed = AsyncMock(return_value=True)
         started_client.transport.sendto = Mock(side_effect=Exception("Send error"))
+
+        # Fresh connected session so scrape reaches sendto
+        session_key = "tracker.example.com:6969"
+        started_client.sessions[session_key] = Mock()
+        session = started_client.sessions[session_key]
+        session.is_connected = True
+        session.connection_id = 0x1234567890ABCDEF
+        session.connection_time = time.time()
+        session.host = "tracker.example.com"
+        session.port = 6969
 
         result = await started_client.scrape(torrent_data)
 
@@ -299,14 +315,16 @@ class TestScrapeMethod:
         session = started_client.sessions[session_key]
         session.is_connected = True
         session.connection_id = None  # No connection ID
-        session.connection_time = 0.0
+        session.connection_time = time.time()
         session.host = "tracker.example.com"
         session.port = 6969
+
+        # Force connect path to keep connection_id None
+        started_client._connect_if_needed = AsyncMock(return_value=False)
 
         result = await started_client.scrape(torrent_data)
 
         assert result == {}
-
 
 class TestHandleResponseScrape:
     """Test handle_response parsing for scrape responses."""

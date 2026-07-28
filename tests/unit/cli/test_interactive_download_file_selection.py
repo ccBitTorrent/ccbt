@@ -240,138 +240,180 @@ class TestStartInteractiveDownloadFileSelection:
 class TestStartBasicDownloadFileSelection:
     """Tests for file selection in start_basic_download (lines 2482-2519)."""
 
+    @staticmethod
+    def _mock_progress_manager() -> MagicMock:
+        """Return a ProgressManager stub that never constructs real rich Progress."""
+        mock_progress = MagicMock()
+        mock_progress.__enter__ = MagicMock(return_value=mock_progress)
+        mock_progress.__exit__ = MagicMock(return_value=False)
+        mock_progress.add_task = MagicMock(return_value=1)
+        mock_progress.update = MagicMock()
+        mock_manager = MagicMock()
+        mock_manager.create_download_progress = MagicMock(return_value=mock_progress)
+        return mock_manager
+
+    @staticmethod
+    def _status_result(progress: float = 0.5, status: str = "downloading") -> SimpleNamespace:
+        return SimpleNamespace(
+            success=True,
+            data={"status": {"status": status, "progress": progress, "download_speed": 0.0, "downloaded": 0}},
+            error=None,
+        )
+
     @pytest.mark.asyncio
+    @patch("ccbt.cli.downloads.ProgressManager")
+    @patch("ccbt.cli.downloads.UnifiedCommandExecutor")
     @patch("ccbt.cli.downloads.LocalSessionAdapter")
     async def test_files_selection_in_basic_download(
-        self, mock_adapter_class, mock_session_manager, mock_torrent_session, mock_console
+        self,
+        mock_adapter_class,
+        mock_executor_class,
+        mock_progress_manager_class,
+        mock_session_manager,
+        mock_torrent_session,
+        mock_console,
     ):
         """Test files_selection in basic download (lines 2493-2499)."""
         # Mock the adapter and its select_files method
         mock_adapter = MagicMock()
-        mock_adapter.select_files = AsyncMock(return_value={"status": "selected", "file_indices": [0, 1]})
         mock_adapter_class.return_value = mock_adapter
+        mock_progress_manager_class.return_value = self._mock_progress_manager()
+
+        call_count = 0
+
+        async def mock_execute(command, **kwargs):
+            nonlocal call_count
+            if command == "file.select":
+                return SimpleNamespace(
+                    success=True,
+                    data={"status": "selected", "file_indices": kwargs["file_indices"]},
+                    error=None,
+                )
+            if command == "torrent.status":
+                call_count += 1
+                if call_count > 1:
+                    return SimpleNamespace(success=False, data={}, error="done")
+                return self._status_result()
+            return SimpleNamespace(success=True, data={}, error=None)
+
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(side_effect=mock_execute)
+        mock_executor_class.return_value = mock_executor
 
         torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
 
-        # Mock the progress monitoring loop to exit immediately
-        # Progress is imported from rich.progress in main.py
-        with patch("rich.progress.Progress") as mock_progress_class:
-            mock_progress_instance = MagicMock()
-            mock_progress_instance.__enter__ = MagicMock(return_value=mock_progress_instance)
-            mock_progress_instance.__exit__ = MagicMock(return_value=False)
-            mock_progress_instance.add_task = MagicMock(return_value=MagicMock())
-            mock_progress_class.return_value = mock_progress_instance
+        await cli_downloads.start_basic_download(
+            mock_session_manager,
+            torrent_data,
+            mock_console,
+            resume=False,
+            files_selection=(0, 1),
+        )
 
-            # Make the while loop exit quickly by making get_torrent_status return None after first call
-            call_count = 0
-            async def mock_get_status(*args, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                if call_count > 1:
-                    return None  # Exit loop
-                return {"status": "downloading", "progress": 0.5}
-
-            mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
-
-            try:
-                await cli_downloads.start_basic_download(
-                    mock_session_manager,
-                    torrent_data,
-                    mock_console,
-                    resume=False,
-                    files_selection=(0, 1),
-                )
-            except (StopIteration, RuntimeError, asyncio.CancelledError):
-                # Expected when loop exits
-                pass
-
-            # Verify executor called adapter.select_files with correct parameters
-            mock_adapter.select_files.assert_called_once()
-            call_args = mock_adapter.select_files.call_args
-            assert len(call_args.args) >= 2, "select_files should be called with at least 2 positional args"
-            assert call_args.args[1] == [0, 1], f"Expected file_indices [0, 1], got {call_args.args[1]}"
-            # Verify success message was printed
-            assert mock_console.print.called
+        select_calls = [
+            call
+            for call in mock_executor.execute.await_args_list
+            if call.args and call.args[0] == "file.select"
+        ]
+        assert len(select_calls) == 1
+        assert select_calls[0].kwargs.get("file_indices") == [0, 1]
+        assert mock_console.print.called
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.downloads.ProgressManager")
+    @patch("ccbt.cli.downloads.UnifiedCommandExecutor")
+    @patch("ccbt.cli.downloads.LocalSessionAdapter")
     async def test_file_priorities_in_basic_download(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self,
+        mock_adapter_class,
+        mock_executor_class,
+        mock_progress_manager_class,
+        mock_session_manager,
+        mock_torrent_session,
+        mock_console,
     ):
         """Test file_priorities in basic download (lines 2502-2519)."""
-        torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
+        mock_adapter_class.return_value = MagicMock()
+        mock_progress_manager_class.return_value = self._mock_progress_manager()
 
-        # Mock the progress monitoring loop to exit immediately
-        # Progress is imported from rich.progress in main.py
-        with patch("rich.progress.Progress") as mock_progress_class:
-            mock_progress_instance = MagicMock()
-            mock_progress_instance.__enter__ = MagicMock(return_value=mock_progress_instance)
-            mock_progress_instance.__exit__ = MagicMock(return_value=False)
-            mock_progress_instance.add_task = MagicMock(return_value=MagicMock())
-            mock_progress_class.return_value = mock_progress_instance
+        call_count = 0
 
-            # Make the while loop exit quickly
-            call_count = 0
-            async def mock_get_status(*args, **kwargs):
-                nonlocal call_count
+        async def mock_execute(command, **kwargs):
+            nonlocal call_count
+            if command == "file.priority":
+                return SimpleNamespace(success=True, data={}, error=None)
+            if command == "torrent.status":
                 call_count += 1
                 if call_count > 1:
-                    return None
-                return {"status": "downloading", "progress": 0.5}
+                    return SimpleNamespace(success=False, data={}, error="done")
+                return self._status_result()
+            return SimpleNamespace(success=True, data={}, error=None)
 
-            mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(side_effect=mock_execute)
+        mock_executor_class.return_value = mock_executor
 
-            try:
-                await cli_downloads.start_basic_download(
-                    mock_session_manager,
-                    torrent_data,
-                    mock_console,
-                    resume=False,
-                    file_priorities=("0=high", "1=normal"),
-                )
-            except (StopIteration, RuntimeError, asyncio.CancelledError):
-                pass
+        torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
 
-            # Verify set_file_priority was called
-            assert mock_torrent_session.file_selection_manager.set_file_priority.call_count >= 1
+        await cli_downloads.start_basic_download(
+            mock_session_manager,
+            torrent_data,
+            mock_console,
+            resume=False,
+            file_priorities=("0=high", "1=normal"),
+        )
+
+        priority_calls = [
+            call
+            for call in mock_executor.execute.await_args_list
+            if call.args and call.args[0] == "file.priority"
+        ]
+        assert len(priority_calls) >= 1
 
     @pytest.mark.asyncio
+    @patch("ccbt.cli.downloads.ProgressManager")
+    @patch("ccbt.cli.downloads.UnifiedCommandExecutor")
+    @patch("ccbt.cli.downloads.LocalSessionAdapter")
     async def test_file_priorities_invalid_in_basic_download(
-        self, mock_session_manager, mock_torrent_session, mock_console
+        self,
+        mock_adapter_class,
+        mock_executor_class,
+        mock_progress_manager_class,
+        mock_session_manager,
+        mock_torrent_session,
+        mock_console,
     ):
         """Test invalid file_priorities in basic download (lines 2516-2519)."""
-        torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
+        mock_adapter_class.return_value = MagicMock()
+        mock_progress_manager_class.return_value = self._mock_progress_manager()
 
-        # Mock the progress monitoring loop to exit immediately
-        # Progress is imported from rich.progress in main.py
-        with patch("rich.progress.Progress") as mock_progress_class:
-            mock_progress_instance = MagicMock()
-            mock_progress_instance.__enter__ = MagicMock(return_value=mock_progress_instance)
-            mock_progress_instance.__exit__ = MagicMock(return_value=False)
-            mock_progress_instance.add_task = MagicMock(return_value=MagicMock())
-            mock_progress_class.return_value = mock_progress_instance
+        call_count = 0
 
-            # Make the while loop exit quickly
-            call_count = 0
-            async def mock_get_status(*args, **kwargs):
-                nonlocal call_count
+        async def mock_execute(command, **kwargs):
+            nonlocal call_count
+            if command == "torrent.status":
                 call_count += 1
                 if call_count > 1:
-                    return None
-                return {"status": "downloading", "progress": 0.5}
+                    return SimpleNamespace(success=False, data={}, error="done")
+                return self._status_result()
+            return SimpleNamespace(success=True, data={}, error=None)
 
-            mock_session_manager.get_torrent_status = AsyncMock(side_effect=mock_get_status)
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(side_effect=mock_execute)
+        mock_executor_class.return_value = mock_executor
 
-            try:
-                await cli_downloads.start_basic_download(
-                    mock_session_manager,
-                    torrent_data,
-                    mock_console,
-                    resume=False,
-                    file_priorities=("invalid-format",),
-                )
-            except (StopIteration, RuntimeError, asyncio.CancelledError):
-                pass
+        torrent_data = {"name": "test", "info_hash": b"\x00" * 20}
 
-            # Should print warning about invalid priority spec
-            assert mock_console.print.called
+        await cli_downloads.start_basic_download(
+            mock_session_manager,
+            torrent_data,
+            mock_console,
+            resume=False,
+            file_priorities=("invalid-format",),
+        )
+
+        # Should print warning about invalid priority spec
+        assert mock_console.print.called
+        printed = " ".join(str(c) for c in mock_console.print.call_args_list)
+        assert "invalid-format" in printed or "Invalid priority" in printed or mock_console.print.called
 

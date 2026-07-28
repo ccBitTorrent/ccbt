@@ -95,6 +95,17 @@ def _find_legacy_artifact(workdir: Path, benchmark_key: str) -> Path | None:
     return matches[-1] if matches else None
 
 
+def _find_output_dir_artifact(output_dir: Path, benchmark_key: str) -> Path | None:
+    """Find a JSON file written via legacy ``--output-dir``."""
+    if not output_dir.is_dir():
+        return None
+    matches = sorted(output_dir.glob(f"{benchmark_key}-*.json"))
+    if matches:
+        return matches[-1]
+    matches = sorted(output_dir.glob("*.json"))
+    return matches[-1] if matches else None
+
+
 def _run_benchmark(
     spec: BenchmarkSpec,
     *,
@@ -131,10 +142,19 @@ def _run_benchmark(
     if quick:
         cmd.append("--quick")
 
-    def _invoke(with_json_out: bool) -> subprocess.CompletedProcess[str]:
+    legacy_dir = output_dir / f"_legacy_{spec.benchmark_key}"
+
+    def _invoke(
+        *,
+        with_json_out: bool,
+        with_legacy_output_dir: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
         run_cmd = [*cmd]
         if with_json_out:
             run_cmd.extend(["--json-out", str(output_path)])
+        elif with_legacy_output_dir:
+            legacy_dir.mkdir(parents=True, exist_ok=True)
+            run_cmd.extend(["--output-dir", str(legacy_dir)])
         return subprocess.run(
             run_cmd,
             cwd=workdir,
@@ -144,13 +164,14 @@ def _run_benchmark(
         )
 
     completed = _invoke(with_json_out=True)
-    if completed.returncode != 0:
-        # Older scripts may reject --json-out; retry without it and look for
-        # legacy artifact paths or an explicit --output-dir write.
-        completed = _invoke(with_json_out=False)
+    if completed.returncode != 0 or not output_path.is_file():
+        # Older scripts reject --json-out; ask them to write via --output-dir.
+        completed = _invoke(with_json_out=False, with_legacy_output_dir=True)
 
     if completed.returncode != 0:
         legacy = _find_legacy_artifact(workdir, spec.benchmark_key)
+        if legacy is None:
+            legacy = _find_output_dir_artifact(legacy_dir, spec.benchmark_key)
         if legacy is None:
             stderr = completed.stderr.strip() or completed.stdout.strip()
             msg = f"Benchmark {spec.benchmark_key} failed ({completed.returncode}): {stderr}"
@@ -159,7 +180,9 @@ def _run_benchmark(
     elif output_path.is_file():
         payload = _normalize_payload(_load_json(output_path), spec.benchmark_key, config_name)
     else:
-        legacy = _find_legacy_artifact(workdir, spec.benchmark_key)
+        legacy = _find_output_dir_artifact(legacy_dir, spec.benchmark_key)
+        if legacy is None:
+            legacy = _find_legacy_artifact(workdir, spec.benchmark_key)
         if legacy is None:
             detail = (completed.stderr or completed.stdout or "").strip()
             msg = f"Benchmark {spec.benchmark_key} produced no JSON artifact"
