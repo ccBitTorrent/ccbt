@@ -11,6 +11,8 @@ MagicMock
 scripts
 !dev/scripts/
 !dev/scripts/**
+!.github/scripts/
+!.github/scripts/**
 compatibility_tests/
 lint_outputs/
 locales
