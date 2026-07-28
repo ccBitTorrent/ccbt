@@ -281,28 +281,31 @@ class TestDownloadRate:
     """Test download rate calculation."""
 
     @pytest.mark.asyncio
-    async def test_get_download_rate(self, piece_manager):
+    async def test_get_download_rate(self, piece_manager, monkeypatch):
         """Test download rate calculation."""
         # Initially no download
         rate = piece_manager.get_download_rate()
         assert rate == 0.0
 
-        # Simulate some download
+        # Freeze wall clock so elapsed time is exact (CI load otherwise skews rate).
+        fixed_now = 1_000_000.0
+        monkeypatch.setattr("ccbt.piece.async_piece_manager.time.time", lambda: fixed_now)
         piece_manager.bytes_downloaded = 1024 * 1024  # 1MB
-        piece_manager.download_start_time -= 1.0  # 1 second ago
+        piece_manager.download_start_time = fixed_now - 1.0  # exactly 1 second ago
 
         rate = piece_manager.get_download_rate()
         assert rate > 0
         assert rate == pytest.approx(1024 * 1024, rel=0.1)  # ~1MB/s
 
     @pytest.mark.asyncio
-    async def test_get_download_rate_zero_time(self, piece_manager):
+    async def test_get_download_rate_zero_time(self, piece_manager, monkeypatch):
         """Test download rate with zero elapsed time."""
-        import time
+        fixed_now = 1_000_000.0
+        monkeypatch.setattr("ccbt.piece.async_piece_manager.time.time", lambda: fixed_now)
 
         # Set start time to now and bytes downloaded to some value
         piece_manager.bytes_downloaded = 1024
-        piece_manager.download_start_time = time.time()  # Set to now (zero elapsed)
+        piece_manager.download_start_time = fixed_now  # zero elapsed
 
         rate = piece_manager.get_download_rate()
         # With zero elapsed time, should return 0.0 (division by zero protection)
