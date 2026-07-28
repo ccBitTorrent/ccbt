@@ -92,12 +92,14 @@ Workflows that run on **PR to main** use the environment **`approval-required`**
 - **Triggers**: PR to `main` (runs after approval), `workflow_dispatch`
 - **Purpose**: Build documentation for testing and verification
 - **Runs**:
+  - Waits for CI/CD Pipeline and Test workflow runs to succeed for the PR head SHA
   - Generate coverage report (for docs embedding)
   - Generate Bandit security report (for docs embedding)
   - Build documentation using patched build script
   - Upload documentation artifacts
 - **Rationale**:
   - PRs to `main` trigger the workflow but require approval; or run manually from any branch
+  - Validation gate polls instead of failing while Test/CI are still in progress
 
 ---
 
@@ -166,7 +168,7 @@ Workflows that run on **PR to main** use the environment **`approval-required`**
 - **Triggers**: PR to `main` (runs after approval), `workflow_dispatch`
 - **Purpose**: Publish to PyPI as nightly builds
 - **Runs**:
-  - Validates CI/CD Pipeline and Test checks have passed (for PR to main)
+  - Waits for CI/CD Pipeline and Test workflow runs to succeed for the PR head SHA (polls; does not fail while they are still running)
   - Builds package and publishes to PyPI using `uv publish`
   - Requires `PYPI_API_TOKEN` secret
 - **Rationale**:
