@@ -22,22 +22,6 @@ class TestXetDeduplication:
     """Test XetDeduplication class."""
 
     @pytest.fixture
-    def temp_db_path(self):
-        """Create temporary database path for testing."""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as f:
-            db_path = f.name
-        yield db_path
-        # Cleanup - try multiple times on Windows
-        import time
-        for _ in range(5):
-            try:
-                if os.path.exists(db_path):
-                    os.unlink(db_path)
-                break
-            except (PermissionError, OSError):
-                time.sleep(0.1)
-
-    @pytest.fixture
     def dedup(self, temp_db_path):
         """Create XetDeduplication instance for testing."""
         dedup = XetDeduplication(cache_db_path=temp_db_path)
@@ -48,20 +32,22 @@ class TestXetDeduplication:
     def test_initialization(self, temp_db_path):
         """Test deduplication cache initialization."""
         dedup = XetDeduplication(cache_db_path=temp_db_path)
+        try:
+            # Database should be created
+            assert os.path.exists(temp_db_path)
 
-        # Database should be created
-        assert os.path.exists(temp_db_path)
+            # Check table exists
+            conn = sqlite3.connect(temp_db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'"
+            )
+            result = cursor.fetchone()
+            conn.close()
 
-        # Check table exists
-        conn = sqlite3.connect(temp_db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'"
-        )
-        result = cursor.fetchone()
-        conn.close()
-
-        assert result is not None
+            assert result is not None
+        finally:
+            dedup.close()
 
     @pytest.mark.asyncio
     async def test_check_chunk_not_exists(self, dedup):

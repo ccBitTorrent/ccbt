@@ -25,13 +25,17 @@ class TestResilienceTimeout:
 
     def test_sync_function_timeout_failure(self):
         """Test synchronous function with timeout - timeout case."""
+        gate = threading.Event()
+
         @with_timeout(0.1)
         def slow_sync_function():
-            time.sleep(0.2)  # Longer than timeout
+            gate.wait(timeout=1.0)
             return "should_not_reach_here"
 
         with pytest.raises(TimeoutError, match="Operation timed out after 0.1 seconds"):
             slow_sync_function()
+
+        gate.set()
 
     def test_sync_function_timeout_exception(self):
         """Test synchronous function with timeout - exception case."""

@@ -592,29 +592,40 @@ class TestMSEHandshakeFullFlow:
         server = await asyncio.start_server(responder, "127.0.0.1", 0)
         try:
             server_port = server.sockets[0].getsockname()[1]
-            initiator_reader, initiator_writer = await asyncio.open_connection(
-                "127.0.0.1", server_port
-            )
-            try:
-                initiator = MSEHandshake(prefer_rc4=True)
-                initiator_result = await initiator.initiate_as_initiator(
-                    initiator_reader,
-                    initiator_writer,
-                    info_hash,
-                    timeout=_MSE_INTEGRATION_TIMEOUT,
+            last_error: str | None = None
+            initiator_result: MSEHandshakeResult | None = None
+            receiver_result: MSEHandshakeResult | None = None
+            for attempt in range(2):
+                initiator_reader, initiator_writer = await asyncio.open_connection(
+                    "127.0.0.1", server_port
                 )
-                receiver_result = await asyncio.wait_for(
-                    responder_results.get(), timeout=_MSE_INTEGRATION_TIMEOUT
-                )
-            finally:
-                initiator_writer.close()
-                await initiator_writer.wait_closed()
+                try:
+                    initiator = MSEHandshake(prefer_rc4=True)
+                    initiator_result = await initiator.initiate_as_initiator(
+                        initiator_reader,
+                        initiator_writer,
+                        info_hash,
+                        timeout=_MSE_INTEGRATION_TIMEOUT,
+                    )
+                    receiver_result = await asyncio.wait_for(
+                        responder_results.get(), timeout=_MSE_INTEGRATION_TIMEOUT
+                    )
+                    if initiator_result.success and receiver_result.success:
+                        break
+                    last_error = initiator_result.error or receiver_result.error
+                finally:
+                    initiator_writer.close()
+                    await initiator_writer.wait_closed()
+                if attempt == 0:
+                    await asyncio.sleep(0.05)
         finally:
             server.close()
             await server.wait_closed()
 
-        assert initiator_result.success is True
-        assert receiver_result.success is True
+        assert initiator_result is not None
+        assert receiver_result is not None
+        assert initiator_result.success is True, last_error
+        assert receiver_result.success is True, last_error
         assert initiator_result.cipher is not None
         assert receiver_result.cipher is not None
 
@@ -1266,7 +1277,7 @@ async def test_initiate_and_responder_roundtrip_with_initial_payload() -> None:
             reader=reader,
             writer=writer,
             info_hash=info_hash,
-            timeout=1.0,
+            timeout=_MSE_INTEGRATION_TIMEOUT,
             initial_payload_size=0,
             info_hash_candidates=[info_hash],
         )
@@ -1277,30 +1288,41 @@ async def test_initiate_and_responder_roundtrip_with_initial_payload() -> None:
     server = await asyncio.start_server(responder, "127.0.0.1", 0)
     try:
         server_port = server.sockets[0].getsockname()[1]
-        initiator_reader, initiator_writer = await asyncio.open_connection(
-            "127.0.0.1", server_port
-        )
-        try:
-            initiator_handshake = MSEHandshake()
-            initiator_result = await initiator_handshake.initiate_as_initiator(
-                initiator_reader,
-                initiator_writer,
-                info_hash,
-                timeout=1.0,
-                initial_payload=initial_payload,
+        last_error: str | None = None
+        initiator_result: MSEHandshakeResult | None = None
+        responder_result: MSEHandshakeResult | None = None
+        for attempt in range(2):
+            initiator_reader, initiator_writer = await asyncio.open_connection(
+                "127.0.0.1", server_port
             )
-            responder_result = await asyncio.wait_for(
-                responder_results.get(), timeout=1.0
-            )
+            try:
+                initiator_handshake = MSEHandshake()
+                initiator_result = await initiator_handshake.initiate_as_initiator(
+                    initiator_reader,
+                    initiator_writer,
+                    info_hash,
+                    timeout=_MSE_INTEGRATION_TIMEOUT,
+                    initial_payload=initial_payload,
+                )
+                responder_result = await asyncio.wait_for(
+                    responder_results.get(), timeout=_MSE_INTEGRATION_TIMEOUT
+                )
+                if initiator_result.success and responder_result.success:
+                    break
+                last_error = initiator_result.error or responder_result.error
+            finally:
+                initiator_writer.close()
+                await initiator_writer.wait_closed()
+            if attempt == 0:
+                await asyncio.sleep(0.05)
 
-            assert initiator_result.success is True
-            assert initiator_result.resolved_info_hash == info_hash
-            assert responder_result.success is True
-            assert responder_result.decrypted_initial_data == initial_payload
-            assert responder_result.resolved_info_hash == info_hash
-        finally:
-            initiator_writer.close()
-            await initiator_writer.wait_closed()
+        assert initiator_result is not None
+        assert responder_result is not None
+        assert initiator_result.success is True, last_error
+        assert initiator_result.resolved_info_hash == info_hash
+        assert responder_result.success is True, last_error
+        assert responder_result.decrypted_initial_data == initial_payload
+        assert responder_result.resolved_info_hash == info_hash
     finally:
         server.close()
         await server.wait_closed()

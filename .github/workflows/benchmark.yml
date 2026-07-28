@@ -129,6 +129,12 @@ jobs:
           fi
           echo "Using base benchmark config: ${CONFIG_FILE}"
           (cd "${BENCH_BASE_DIR}" && uv sync --dev)
+          # Older main lacks --json-out / json_out support on bench scripts.
+          # Overlay HEAD's tests/performance harness into the base worktree so
+          # measurements still import base ccbt (__file__ under base) but emit
+          # CI JSON artifacts the suite runner expects.
+          mkdir -p "${BENCH_BASE_DIR}/tests/performance"
+          cp -a "${{ github.workspace }}/tests/performance/." "${BENCH_BASE_DIR}/tests/performance/"
           # Use HEAD's runner script (has current CLI), but execute benchmarks in base workdir.
           uv run python dev/scripts/run_benchmark_suite.py \
             --output-dir "${BENCH_BASE_DIR}" \

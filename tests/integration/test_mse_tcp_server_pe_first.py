@@ -51,6 +51,7 @@ async def _run_loopback_mse_handshake(
     port: int,
     *,
     attempts: int = 2,
+    accept_mock: AsyncMock | None = None,
 ) -> None:
     """Run an outbound MSE handshake against an already-started loopback server."""
     last_error: str | None = None
@@ -71,6 +72,8 @@ async def _run_loopback_mse_handshake(
         finally:
             writer.close()
             await writer.wait_closed()
+        if accept_mock is not None and accept_mock.await_count > 0:
+            break
         if attempt + 1 < attempts:
             await asyncio.sleep(0.05)
     assert False, last_error or "MSE handshake failed"
@@ -107,7 +110,9 @@ async def test_tcp_server_routes_pe_initial_payload_to_single_session() -> None:
     try:
         await asyncio.sleep(0.05)
         port = tcp_server.sockets[0].getsockname()[1]
-        await _run_loopback_mse_handshake(info_hash, outbound_payload, port)
+        await _run_loopback_mse_handshake(
+            info_hash, outbound_payload, port, accept_mock=accept_incoming_encrypted
+        )
 
         assert accept_incoming_encrypted.await_count == 1
         accepted = accept_incoming_encrypted.await_args.args
@@ -156,7 +161,12 @@ async def test_tcp_server_resolves_multi_hash_for_pe_first_handshake() -> None:
     try:
         await asyncio.sleep(0.05)
         port = tcp_server.sockets[0].getsockname()[1]
-        await _run_loopback_mse_handshake(target_info_hash, outbound_payload, port)
+        await _run_loopback_mse_handshake(
+            target_info_hash,
+            outbound_payload,
+            port,
+            accept_mock=accept_incoming_target,
+        )
 
         accept_incoming_ignored.assert_not_awaited()
         accept_incoming_target.assert_awaited_once()

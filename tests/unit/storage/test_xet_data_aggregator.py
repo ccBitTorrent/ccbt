@@ -5,7 +5,7 @@ Tests batch chunk operations, aggregation, and parallel processing.
 
 from __future__ import annotations
 
-import tempfile
+import hashlib
 
 import pytest
 
@@ -17,28 +17,11 @@ pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
 def _chunk_hash(label: bytes) -> bytes:
     """Build a deterministic 32-byte chunk hash for tests."""
-    return (label * 16)[:32]
+    return hashlib.sha256(label).digest()
 
 
 class TestXetDataAggregator:
     """Test XetDataAggregator class."""
-
-    @pytest.fixture
-    def temp_db_path(self):
-        """Create temporary database path for testing."""
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as f:
-            db_path = f.name
-        yield db_path
-        # Cleanup
-        import os
-        import time
-        for _ in range(5):
-            try:
-                if os.path.exists(db_path):
-                    os.unlink(db_path)
-                break
-            except (PermissionError, OSError):
-                time.sleep(0.1)
 
     @pytest.fixture
     def dedup(self, temp_db_path):
