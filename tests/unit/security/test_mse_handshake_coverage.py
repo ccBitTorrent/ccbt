@@ -89,9 +89,10 @@ class TestMSEHandshakeInitiationCoverage:
         """Test initiate when wrong message type received instead of RKEYE."""
         handshake = MSEHandshake()
 
-        # Create valid SKEYE message instead of RKEYE
-        payload = b"peer_key_data"
-        wrong_message = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, payload)
+        # Legacy SKEYE is type + DH key; short transcript frames are ignored.
+        dh_len = handshake._dh_public_key_length()
+        wrong_payload = bytes([int(MSEHandshakeType.SKEYE)]) + (b"\x01" * dh_len)
+        wrong_message = handshake._build_handshake_message(wrong_payload)
 
         async def mock_readexactly(n):
             if n == 4:
@@ -180,10 +181,12 @@ class TestMSEHandshakeInitiationCoverage:
         """Test initiate when wrong message type received instead of CRYPTO."""
         handshake = MSEHandshake()
 
-        # Mock RKEYE success, but wrong message type for CRYPTO
+        # Mock RKEYE success, but wrong legacy message type for CRYPTO
         rkeye_payload = b"peer_key" * 10
         rkeye_msg = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, rkeye_payload)
-        wrong_crypto = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, b"\x01")
+        dh_len = handshake._dh_public_key_length()
+        wrong_payload = bytes([int(MSEHandshakeType.SKEYE)]) + (b"\x01" * dh_len)
+        wrong_crypto = handshake._build_handshake_message(wrong_payload)
 
         call_count = 0
 
@@ -337,9 +340,10 @@ class TestMSEHandshakeReceiverCoverage:
         """Test respond when wrong message type received instead of SKEYE."""
         handshake = MSEHandshake()
 
-        # Create RKEYE message instead of SKEYE
-        payload = b"peer_key_data"
-        wrong_message = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, payload)
+        # Legacy RKEYE is type + DH key; short transcript frames are ignored.
+        dh_len = handshake._dh_public_key_length()
+        wrong_payload = bytes([int(MSEHandshakeType.RKEYE)]) + (b"\x01" * dh_len)
+        wrong_message = handshake._build_handshake_message(wrong_payload)
 
         async def mock_readexactly(n):
             if n == 4:
@@ -427,7 +431,9 @@ class TestMSEHandshakeReceiverCoverage:
 
         skeye_payload = b"peer_key" * 10
         skeye_msg = handshake._encode_transcript_message(MSEHandshakeType.SKEYE, skeye_payload)
-        wrong_crypto = handshake._encode_transcript_message(MSEHandshakeType.RKEYE, b"\x01")
+        dh_len = handshake._dh_public_key_length()
+        wrong_payload = bytes([int(MSEHandshakeType.RKEYE)]) + (b"\x01" * dh_len)
+        wrong_crypto = handshake._build_handshake_message(wrong_payload)
 
         call_count = 0
 
