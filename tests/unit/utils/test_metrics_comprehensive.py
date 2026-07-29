@@ -16,24 +16,23 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit]
 
 from ccbt.utils.metrics import (
-    MetricType,
     MetricsCollector,
+    MetricType,
     PeerMetrics,
     TorrentMetrics,
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock config for testing."""
     config = MagicMock()
@@ -57,9 +56,9 @@ class TestMetricsCollectorInitialization:
 
     def test_get_config_function(self):
         """Test _get_config() function returns get_config (lines 37-39)."""
-        from ccbt.utils.metrics import _get_config
         from ccbt.config.config import get_config as real_get_config
-        
+        from ccbt.utils.metrics import _get_config
+
         result = _get_config()
         # _get_config should return the get_config function
         assert result is real_get_config
@@ -73,7 +72,7 @@ class TestMetricsCollectorInitialization:
              patch("ccbt.utils.metrics.CollectorRegistry") as mock_registry, \
              patch("ccbt.utils.metrics.Gauge") as mock_gauge, \
              patch("ccbt.utils.metrics.Counter") as mock_counter:
-            
+
             mock_get_config.return_value = lambda: mock_config
             mock_registry.return_value = MagicMock()
             mock_gauge.return_value = MagicMock()
@@ -97,7 +96,7 @@ class TestMetricsCollectorInitialization:
 
         with patch("ccbt.utils.metrics._get_config") as mock_get_config, \
              patch("ccbt.utils.metrics.HAS_PROMETHEUS", True):
-            
+
             mock_get_config.return_value = lambda: mock_config
 
             collector = MetricsCollector()
@@ -109,20 +108,20 @@ class TestMetricsCollectorInitialization:
         """Test initialization when Prometheus is not available (metrics-14)."""
         with patch("ccbt.utils.metrics._get_config") as mock_get_config, \
              patch("ccbt.utils.metrics.HAS_PROMETHEUS", False):
-            
+
             mock_get_config.return_value = lambda: mock_config
 
             collector = MetricsCollector()
 
             assert collector.config == mock_config
             assert not hasattr(collector, "registry")
-    
+
     def test_setup_prometheus_metrics_without_prometheus(self, mock_config):
         """Test _setup_prometheus_metrics() when HAS_PROMETHEUS is False (line 137)."""
         with patch("ccbt.utils.metrics._get_config") as mock_get_config, \
              patch("ccbt.utils.metrics.HAS_PROMETHEUS", False), \
              patch("ccbt.utils.metrics.CollectorRegistry") as mock_registry:
-            
+
             mock_get_config.return_value = lambda: mock_config
 
             collector = MetricsCollector()
@@ -132,25 +131,23 @@ class TestMetricsCollectorInitialization:
             # Should return early without setting up registry
             mock_registry.assert_not_called()
             assert not hasattr(collector, "registry")
-    
+
     def test_prometheus_import_error_path(self):
         """Test ImportError path when prometheus_client is not available (lines 29-30)."""
         # Temporarily patch the import to raise ImportError
-        import sys
         original_import = __import__
-        
+
         def mock_import(name, *args, **kwargs):
             if name == "prometheus_client":
                 raise ImportError("No module named 'prometheus_client'")
             return original_import(name, *args, **kwargs)
-        
+
         # We need to reload the module to test the import error path
         # This is complex and may not work well, so we'll skip direct testing
         # Instead, we'll verify the code path exists and note it as a defensive check
         # The actual ImportError path (lines 29-30) would require prometheus_client
         # to not be installed, which is hard to test in a unit test environment.
         # This is a good candidate for a pragma: no cover comment.
-        pass
 
 
 class TestMetricsCollectorLifecycle:
@@ -179,7 +176,7 @@ class TestMetricsCollectorLifecycle:
              patch("ccbt.utils.metrics.Gauge") as mock_gauge, \
              patch("ccbt.utils.metrics.Counter") as mock_counter, \
              patch("ccbt.utils.metrics.start_http_server") as mock_start_server:
-            
+
             mock_get_config.return_value = lambda: mock_config
             mock_registry.return_value = MagicMock()
             mock_gauge.return_value = MagicMock()
@@ -207,7 +204,7 @@ class TestMetricsCollectorLifecycle:
              patch("ccbt.utils.metrics.Counter") as mock_counter, \
              patch("ccbt.utils.metrics.start_http_server") as mock_start_server, \
              patch("ccbt.utils.metrics.logging.getLogger") as mock_get_logger:
-            
+
             mock_get_config.return_value = lambda: mock_config
             mock_registry.return_value = MagicMock()
             mock_gauge.return_value = MagicMock()
@@ -260,7 +257,7 @@ class TestMetricsCollectorPrometheusIntegration:
              patch("ccbt.utils.metrics.CollectorRegistry") as mock_registry, \
              patch("ccbt.utils.metrics.Gauge") as mock_gauge, \
              patch("ccbt.utils.metrics.Counter") as mock_counter:
-            
+
             mock_get_config.return_value = lambda: mock_config
             mock_registry.return_value = MagicMock()
             mock_gauge.return_value = MagicMock()
@@ -305,12 +302,12 @@ class TestMetricsCollectorRateHistory:
         """Test _update_metrics() appends to rate_history (metrics-6)."""
         # Note: _calculate_global_rates() sets rates to 0.0, so we need to set after
         initial_length = len(metrics_collector.rate_history)
-        
+
         # Set rates after _calculate_global_rates would have run
         # We'll mock _calculate_global_rates to not reset the rates
         async def mock_calculate_rates():
             pass
-        
+
         with patch.object(metrics_collector, "_calculate_global_rates", mock_calculate_rates):
             metrics_collector.global_download_rate = 100.0
             metrics_collector.global_upload_rate = 50.0
@@ -379,17 +376,17 @@ class TestMetricsCollectorCleanup:
         # This simplifies to: -metrics.last_activity > -3600, or metrics.last_activity < 3600
         # So it removes peers where last_activity < 3600 (absolute timestamp in seconds since epoch)
         # A timestamp of 3600 would be from Jan 1, 1970 00:01:00, which is very old.
-        
+
         # To ensure lines 274 and 277 are covered, we need a peer that gets removed
         # Let's use a timestamp < 3600 to trigger the removal logic
         very_old_peer = PeerMetrics(peer_key="very_old_peer", last_activity=100.0)  # Very old timestamp
         metrics_collector.peer_metrics["very_old_peer"] = very_old_peer
-        
+
         # Use a fixed current_time to ensure the comparison works
         fixed_current_time = 10000.0  # A reasonable timestamp
         with patch("time.time", return_value=fixed_current_time):
             await metrics_collector._cleanup_old_metrics()
-        
+
         # Very old peer (last_activity=100 < 3600) should be removed
         # Recent peer (last_activity=current_time-100=9900 > 3600) should remain
         # Note: The logic appears to have a bug (should compare age > 3600, not last_activity < 3600),
@@ -421,12 +418,12 @@ class TestMetricsCollectorBackgroundLoops:
         # Replace the logger attribute on the instance
         mock_logger = MagicMock()
         metrics_collector.logger = mock_logger
-        
+
         with patch.object(metrics_collector, "_update_metrics") as mock_update, \
              patch.object(metrics_collector, "config") as mock_config:
-            
+
             mock_config.observability.metrics_interval = 0.01  # Fast interval
-            
+
             # First call raises error, second call raises CancelledError to break loop
             call_count = 0
             async def mock_update_side_effect():
@@ -434,9 +431,9 @@ class TestMetricsCollectorBackgroundLoops:
                 call_count += 1
                 if call_count == 1:
                     raise RuntimeError("Test error")
-                elif call_count == 2:
+                if call_count == 2:
                     raise asyncio.CancelledError()
-            
+
             mock_update.side_effect = mock_update_side_effect
 
             # Start the loop
@@ -462,12 +459,12 @@ class TestMetricsCollectorBackgroundLoops:
         # Replace the logger attribute on the instance
         mock_logger = MagicMock()
         metrics_collector.logger = mock_logger
-        
+
         with patch.object(metrics_collector, "_cleanup_old_metrics") as mock_cleanup, \
              patch("asyncio.sleep") as mock_sleep:
             # First call raises error, second call raises CancelledError to break loop
             call_count = 0
-            
+
             async def mock_sleep_side_effect(delay):
                 # Skip the 60 second sleep on first call, then cancel
                 nonlocal call_count
@@ -478,11 +475,11 @@ class TestMetricsCollectorBackgroundLoops:
                 else:
                     # Cancel on subsequent iterations
                     raise asyncio.CancelledError()
-            
+
             async def mock_cleanup_side_effect():
                 # First cleanup call raises error
                 raise RuntimeError("Test error")
-            
+
             mock_cleanup.side_effect = mock_cleanup_side_effect
             mock_sleep.side_effect = mock_sleep_side_effect
 
@@ -568,6 +565,126 @@ class TestMetricsCollectorUpdateMethods:
         metrics_collector.update_torrent_status(torrent_id, status)
 
         assert metrics_collector.torrent_metrics[torrent_id].bytes_downloaded == 2000
+
+    def test_update_torrent_status_swarm_health_with_active_peers(self, metrics_collector):
+        """Swarm health uses availability vs active peers when peers are connected."""
+        torrent_id = "t1"
+        status = {
+            "active_peers": 4,
+            "piece_availability": [2, 2, 4, 4],
+        }
+        metrics_collector.update_torrent_status(torrent_id, status)
+        m = metrics_collector.torrent_metrics[torrent_id]
+        assert m.average_piece_availability == 3.0
+        assert m.rarest_piece_availability == 2
+        assert 0.0 < m.swarm_health_score <= 1.0
+
+    def test_update_torrent_status_swarm_health_uses_connected_when_active_zero(
+        self, metrics_collector
+    ):
+        """When active_peers is 0 but connected_peers > 0, denominator uses connected count."""
+        torrent_id = "t_connected_denom"
+        status = {
+            "active_peers": 0,
+            "connected_peers": 2,
+            "piece_availability": [2, 2, 2, 2],
+        }
+        metrics_collector.update_torrent_status(torrent_id, status)
+        m = metrics_collector.torrent_metrics[torrent_id]
+        assert m.average_piece_availability == 2.0
+        # ratio = 2.0 / max(0, 2, 1) = 1.0, penalized if rarest > 0 -> still high
+        assert m.swarm_health_score > 0.5
+
+    def test_update_torrent_status_swarm_health_stale_availability_no_peers(
+        self, metrics_collector
+    ):
+        """Zero active peers but non-empty availability snapshot yields capped health."""
+        torrent_id = "t2"
+        status = {
+            "active_peers": 0,
+            "piece_availability": [3, 3, 3],
+        }
+        metrics_collector.update_torrent_status(torrent_id, status)
+        m = metrics_collector.torrent_metrics[torrent_id]
+        assert m.swarm_health_score > 0.0
+        assert m.swarm_health_score <= 0.35
+
+    def test_update_torrent_status_swarm_health_zero_peers_dead_swarm(
+        self, metrics_collector
+    ):
+        """No peers and rarest availability zero keeps health at zero."""
+        torrent_id = "t3"
+        status = {
+            "active_peers": 0,
+            "piece_availability": [0, 1, 2],
+        }
+        metrics_collector.update_torrent_status(torrent_id, status)
+        m = metrics_collector.torrent_metrics[torrent_id]
+        assert m.swarm_health_score == 0.0
+
+    def test_update_torrent_status_swarm_health_blends_productive_and_requestable_signals(
+        self, metrics_collector
+    ):
+        """Swarm health increases when productive/requestable/rate signals are present."""
+        torrent_id = "t_health_blend"
+        base_status = {
+            "active_peers": 4,
+            "piece_availability": [2, 2, 2, 2],
+        }
+        boosted_status = {
+            **base_status,
+            "download_rate": 120.0,
+            "upload_rate": 80.0,
+            "productive_peers": 4,
+            "requestable_peers": 4,
+        }
+
+        metrics_collector.update_torrent_status(f"{torrent_id}_base", base_status)
+        metrics_collector.update_torrent_status(f"{torrent_id}_boosted", boosted_status)
+
+        base = metrics_collector.torrent_metrics[f"{torrent_id}_base"]
+        boosted = metrics_collector.torrent_metrics[f"{torrent_id}_boosted"]
+
+        # Formula: base_health = (avg_avail/peer_denom) * (1 - 0.2 rarest>0);
+        # score = base_health*0.75 + requestability_ratio*0.15 + throughput_ratio*0.10
+        peer_denom = 4
+        base_health = (2.0 / peer_denom) * (1.0 - 0.2)  # 0.4
+        expected_base = base_health * 0.75
+        throughput_ratio = min(1.0, 200.0 / (peer_denom * 20000.0))
+        expected_boosted = (
+            base_health * 0.75 + 1.0 * 0.15 + throughput_ratio * 0.10
+        )
+
+        assert base.swarm_health_score == pytest.approx(expected_base)
+        assert boosted.swarm_health_score == pytest.approx(expected_boosted)
+        assert boosted.swarm_health_score > base.swarm_health_score
+
+    def test_update_torrent_status_swarm_health_uses_throughput_when_requestable_is_low(
+        self, metrics_collector
+    ):
+        """Throughput contributes to health even when requestable peers is low."""
+        torrent_id = "t_health_throughput"
+        low_request_status = {
+            "active_peers": 2,
+            "piece_availability": [2, 2, 2, 2],
+            "download_rate": 1.0,
+            "upload_rate": 1.0,
+        }
+        healthy_request_status = {
+            **low_request_status,
+            "productive_peers": 1,
+            "requestable_peers": 0,
+            "download_rate": 40000.0,
+            "upload_rate": 1000.0,
+        }
+
+        metrics_collector.update_torrent_status(f"{torrent_id}_low", low_request_status)
+        metrics_collector.update_torrent_status(f"{torrent_id}_throughput", healthy_request_status)
+
+        low = metrics_collector.torrent_metrics[f"{torrent_id}_low"]
+        throughput = metrics_collector.torrent_metrics[f"{torrent_id}_throughput"]
+
+        assert throughput.swarm_health_score > low.swarm_health_score
 
     def test_update_peer_metrics_creates_new_entry(self, metrics_collector):
         """Test update_peer_metrics() creates new PeerMetrics (metrics-17)."""
@@ -748,13 +865,21 @@ class TestMetricsCollectorCalculateRates:
 
     @pytest.mark.asyncio
     async def test_calculate_global_rates(self, metrics_collector):
-        """Test _calculate_global_rates() sets placeholder values."""
-        metrics_collector.global_download_rate = 100.0
-        metrics_collector.global_upload_rate = 50.0
+        """Test _calculate_global_rates() sets placeholder values when no rate_history."""
+        from collections import deque
+
+        # Ensure rate_history is empty or has less than 2 entries
+        metrics_collector.rate_history = deque()
+
+        # Delete attributes to test the initialization path (lines 342-345)
+        if hasattr(metrics_collector, "global_download_rate"):
+            delattr(metrics_collector, "global_download_rate")
+        if hasattr(metrics_collector, "global_upload_rate"):
+            delattr(metrics_collector, "global_upload_rate")
 
         await metrics_collector._calculate_global_rates()
 
-        # Implementation sets to 0.0 (placeholder)
+        # Implementation sets to 0.0 when rate_history has less than 2 entries and attributes don't exist (lines 340-346)
         assert metrics_collector.global_download_rate == 0.0
         assert metrics_collector.global_upload_rate == 0.0
 

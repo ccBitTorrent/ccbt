@@ -1,13 +1,15 @@
 """Tests for session edge cases and error paths."""
 
-import pytest
-import time
 import asyncio
+import time
 
-from ccbt.models import TorrentCheckpoint, TorrentInfo
+import pytest
+
+from ccbt.models import TorrentCheckpoint
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_pause_handles_checkpoint_save_error(monkeypatch, tmp_path):
     """Test pause handles checkpoint save errors gracefully."""
     from ccbt.session.session import AsyncTorrentSession
@@ -49,6 +51,7 @@ async def test_pause_handles_checkpoint_save_error(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_pause_stops_pex_manager(monkeypatch, tmp_path):
     """Test pause stops pex_manager when present."""
     from ccbt.session.session import AsyncTorrentSession
@@ -91,6 +94,7 @@ async def test_pause_stops_pex_manager(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_resume_propagates_exception(monkeypatch, tmp_path):
     """Test resume propagates exceptions from start."""
     from ccbt.session.session import AsyncTorrentSession
@@ -115,10 +119,10 @@ async def test_resume_propagates_exception(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
     """Test _announce_loop handles TorrentInfoModel torrent_data."""
     from ccbt.session.session import AsyncTorrentSession
-    from ccbt.models import TorrentInfo
 
     announce_called = []
     announce_data = []
@@ -130,7 +134,8 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
         async def stop(self):
             pass
 
-        async def announce(self, td):
+        # Note: Mock announce() method with correct signature
+        async def announce(self, td, port=None, event=""):
             announce_called.append(1)
             announce_data.append(td)
 
@@ -140,6 +145,7 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
             self.info_hash = b"1" * 20
             self.name = "model-torrent"
             self.announce = "http://tracker.example.com/announce"
+            self.total_length = 0  # Add total_length for file_info mapping
 
     td_model = _TorrentInfoModel()
 
@@ -149,10 +155,19 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
     session._stop_event = asyncio.Event()
     session.config.network.announce_interval = 0.01
 
+    # Note: Ensure session.info exists for announce loop
+    if not hasattr(session, "info") or session.info is None:
+        from ccbt.session.session import TorrentSessionInfo
+        session.info = TorrentSessionInfo(
+            info_hash=b"1" * 20,
+            name="model-torrent",
+            status="downloading"
+        )
+
     task = asyncio.create_task(session._announce_loop())
-    await asyncio.sleep(0.02)
+    await asyncio.sleep(0.1)  # Allow more time for loop to run
+    session._stop_event.set()  # Stop the loop
     task.cancel()
-    session._stop_event.set()
 
     try:
         await task
@@ -164,6 +179,7 @@ async def test_announce_loop_with_torrent_info_model(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_resume_from_checkpoint_with_validation_failure(monkeypatch, tmp_path):
     """Test _resume_from_checkpoint handles validation failure."""
     from ccbt.session.session import AsyncTorrentSession
@@ -216,6 +232,7 @@ async def test_resume_from_checkpoint_with_validation_failure(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_resume_from_checkpoint_with_missing_files_only(monkeypatch, tmp_path):
     """Test _resume_from_checkpoint handles missing files but valid pieces."""
     from ccbt.session.session import AsyncTorrentSession
@@ -267,6 +284,7 @@ async def test_resume_from_checkpoint_with_missing_files_only(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_resume_from_checkpoint_with_corrupted_pieces_only(monkeypatch, tmp_path):
     """Test _resume_from_checkpoint handles corrupted pieces but no missing files."""
     from ccbt.session.session import AsyncTorrentSession
@@ -318,6 +336,7 @@ async def test_resume_from_checkpoint_with_corrupted_pieces_only(monkeypatch, tm
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_resume_from_checkpoint_without_file_assembler(monkeypatch, tmp_path):
     """Test _resume_from_checkpoint works when file_assembler is None."""
     from ccbt.session.session import AsyncTorrentSession
@@ -359,6 +378,7 @@ async def test_resume_from_checkpoint_without_file_assembler(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout_fast
 async def test_checkpoint_loop_handles_save_error(monkeypatch, tmp_path):
     """Test _checkpoint_loop handles save errors gracefully."""
     from ccbt.session.session import AsyncTorrentSession

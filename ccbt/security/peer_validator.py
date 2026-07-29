@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import PeerInfo
@@ -42,7 +42,7 @@ class ValidationMetrics:
     bytes_sent: int
     bytes_received: int
     error_count: int
-    protocol_violations: int = 0  # Count of specific protocol violations
+    protocol_violations: int = 0  # Incremented on handshake/message validation failures (invalid length, protocol string, reserved bytes, info_hash, peer_id; empty message, too large, invalid format)
     last_activity: float = 0.0
     connection_quality: float = 0.0  # 0.0 to 1.0
     protocol_compliance: float = 0.0  # 0.0 to 1.0
@@ -97,26 +97,41 @@ class PeerValidator:
         try:
             # Check handshake length (68 bytes for BitTorrent)
             if len(handshake_data) != 68:
+                self._update_validation_metrics(
+                    peer_info, False, len(handshake_data), is_protocol_violation=True
+                )
                 return False, f"Invalid handshake length: {len(handshake_data)}"
 
             # Check protocol string (first 19 bytes should be "BitTorrent protocol")
             protocol_string = handshake_data[:19]
             if protocol_string != b"BitTorrent protocol":
+                self._update_validation_metrics(
+                    peer_info, False, len(handshake_data), is_protocol_violation=True
+                )
                 return False, f"Invalid protocol string: {protocol_string}"
 
             # Check reserved bytes (next 8 bytes)
             reserved_bytes = handshake_data[19:27]
             if not self._validate_reserved_bytes(reserved_bytes):
+                self._update_validation_metrics(
+                    peer_info, False, len(handshake_data), is_protocol_violation=True
+                )
                 return False, "Invalid reserved bytes"
 
             # Check info hash (next 20 bytes)
             info_hash = handshake_data[27:47]
             if not self._validate_info_hash(info_hash):
+                self._update_validation_metrics(
+                    peer_info, False, len(handshake_data), is_protocol_violation=True
+                )
                 return False, "Invalid info hash"
 
             # Check peer ID (last 20 bytes)
             peer_id = handshake_data[47:67]
             if not self._validate_peer_id(peer_id):
+                self._update_validation_metrics(
+                    peer_info, False, len(handshake_data), is_protocol_violation=True
+                )
                 return False, "Invalid peer ID"
 
             # Update validation metrics
@@ -146,13 +161,22 @@ class PeerValidator:
         try:
             # Check message length
             if len(message) == 0:
+                self._update_validation_metrics(
+                    peer_info, False, 0, is_protocol_violation=True
+                )
                 return False, "Empty message"
 
             if len(message) > 1024 * 1024:  # 1MB limit
+                self._update_validation_metrics(
+                    peer_info, False, len(message), is_protocol_violation=True
+                )
                 return False, "Message too large"
 
             # Check message format
             if not self._validate_message_format(message):
+                self._update_validation_metrics(
+                    peer_info, False, len(message), is_protocol_violation=True
+                )
                 return False, "Invalid message format"
 
             # Update validation metrics
@@ -226,7 +250,7 @@ class PeerValidator:
 
         return quality_score, assessment_details
 
-    def get_validation_metrics(self, peer_id: str) -> ValidationMetrics | None:
+    def get_validation_metrics(self, peer_id: str) -> Optional[ValidationMetrics]:
         """Get validation metrics for a peer."""
         return self.validation_metrics.get(peer_id)
 
@@ -321,8 +345,14 @@ class PeerValidator:
         peer_info: PeerInfo,
         success: bool,
         bytes_count: int,
+        is_protocol_violation: bool = False,
     ) -> None:
-        """Update validation metrics for a peer."""
+        """Update validation metrics for a peer.
+
+        When success=False and is_protocol_violation=True (e.g. handshake or
+        message format/length validation failure), both protocol_violations and
+        error_count are incremented for backward compatibility.
+        """
         peer_id = peer_info.peer_id.hex() if peer_info.peer_id else ""
 
         if peer_id not in self.validation_metrics:
@@ -347,6 +377,8 @@ class PeerValidator:
             metrics.bytes_received += bytes_count
         else:
             metrics.error_count += 1
+            if is_protocol_violation:
+                metrics.protocol_violations += 1
 
     def _assess_handshake_time(self, handshake_time: float) -> float:
         """Assess handshake time quality."""
@@ -407,9 +439,11 @@ class PeerValidator:
     def _assess_protocol_compliance(self, metrics: ValidationMetrics) -> float:
         """Assess protocol compliance based on error count and protocol violations.
 
-        Protocol violations are specific BitTorrent protocol errors (invalid message
-        formats, wrong sequence, etc.), while error_count includes all errors.
-        This method combines both metrics for comprehensive compliance assessment.
+        protocol_violations is populated from handshake and message validation
+        failures. Protocol violations are specific BitTorrent protocol errors
+        (invalid message formats, wrong sequence, etc.), while error_count
+        includes all errors. This method combines both metrics for comprehensive
+        compliance assessment.
 
         Args:
             metrics: Validation metrics for the peer

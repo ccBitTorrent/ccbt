@@ -42,19 +42,24 @@ def validate_po_file(po_path: Path) -> tuple[bool, list[str]]:
     in_msgstr = False
 
     while i < len(lines):
-        line = lines[i].strip()
+        line = lines[i]
+        line_stripped = line.strip()
 
-        if msgid_pattern.match(line):
+        # Continuation line (multi-line msgid/msgstr): starts with " and continues string
+        if line_stripped.startswith('"') and not msgid_pattern.match(line_stripped):
+            i += 1
+            continue
+        if msgid_pattern.match(line_stripped):
             if in_msgid:
                 errors.append(f"Line {i + 1}: Nested msgid found")
             in_msgid = True
             in_msgstr = False
-        elif msgstr_pattern.match(line):
+        elif msgstr_pattern.match(line_stripped):
             if not in_msgid:
                 errors.append(f"Line {i + 1}: msgstr without msgid")
             in_msgstr = True
             in_msgid = False
-        elif line == "":
+        elif line_stripped == "":
             in_msgid = False
             in_msgstr = False
 
@@ -68,13 +73,17 @@ def validate_po_file(po_path: Path) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
-def validate_all() -> None:
-    """Validate all .po files."""
+def validate_all() -> int:
+    """Validate all .po files.
+    
+    Returns:
+        0 if all files are valid, 1 if any have errors
+    """
     base_dir = Path(__file__).parent.parent / "locales"
 
     if not base_dir.exists():
         print(f"Locales directory not found: {base_dir}")
-        return None
+        return 1
 
     print("PO File Validation\n" + "=" * 50)
 
@@ -93,17 +102,17 @@ def validate_all() -> None:
 
         print(f"\n{lang_dir.name.upper()}:")
         if is_valid:
-            print("  ✓ Valid")
+            print("  [OK] Valid")
         else:
-            print("  ✗ Invalid")
+            print("  [ERROR] Invalid")
             all_valid = False
             for error in errors:
                 print(f"    - {error}")
 
     if all_valid:
-        print("\n✓ All .po files are valid")
+        print("\n[OK] All .po files are valid")
         return 0
-    print("\n✗ Some .po files have errors")
+    print("\n[ERROR] Some .po files have errors")
     return 1
 
 

@@ -16,7 +16,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -387,16 +387,16 @@ class AdaptiveLimiter:
         self,
         peer_id: str,
         limiter_type: LimiterType,
-    ) -> RateLimit | None:
+    ) -> Optional[RateLimit]:
         """Get rate limit for a peer."""
         limiter_key = f"{peer_id}_{limiter_type.value}"
         return self.rate_limits.get(limiter_key)
 
-    def get_bandwidth_estimate(self, peer_id: str) -> BandwidthEstimate | None:
+    def get_bandwidth_estimate(self, peer_id: str) -> Optional[BandwidthEstimate]:
         """Get bandwidth estimate for a peer."""
         return self.bandwidth_estimates.get(peer_id)
 
-    def get_congestion_state(self, peer_id: str) -> CongestionState | None:
+    def get_congestion_state(self, peer_id: str) -> Optional[CongestionState]:
         """Get congestion state for a peer."""
         return self.congestion_states.get(peer_id)
 

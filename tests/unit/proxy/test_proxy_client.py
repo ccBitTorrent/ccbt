@@ -7,7 +7,7 @@ Target: 95%+ code coverage for ccbt/proxy/client.py.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -20,7 +20,6 @@ from ccbt.proxy.exceptions import (
     ProxyError,
     ProxyTimeoutError,
 )
-from ccbt.proxy.client import ProxyStats
 
 # Check for aiohttp ProxyConnector availability
 try:
@@ -32,7 +31,9 @@ except (ImportError, AttributeError):
 
 # Check for aiohttp-socks
 try:
-    from aiohttp_socks import ProxyConnector as SocksProxyConnector  # type: ignore[import-untyped]
+    from aiohttp_socks import (
+        ProxyConnector as SocksProxyConnector,  # type: ignore[import-untyped]
+    )
 
     HAS_SOCKS = True
 except ImportError:
@@ -231,20 +232,20 @@ class TestProxySessionManagement:
     async def test_get_proxy_session_pooling(self):
         """Test proxy session pooling."""
         client = ProxyClient()
-        
+
         session1 = await client.get_proxy_session(
             proxy_host="proxy.example.com",
             proxy_port=8080,
         )
-        
+
         session2 = await client.get_proxy_session(
             proxy_host="proxy.example.com",
             proxy_port=8080,
         )
-        
+
         # Should return same session (pooled)
         assert session1 is session2
-        
+
         await client.cleanup()
 
     @pytest.mark.skipif(not HAS_PROXY_CONNECTOR, reason="ProxyConnector not available")
@@ -252,20 +253,20 @@ class TestProxySessionManagement:
     async def test_get_proxy_session_different_proxies(self):
         """Test that different proxies get different sessions."""
         client = ProxyClient()
-        
+
         session1 = await client.get_proxy_session(
             proxy_host="proxy1.example.com",
             proxy_port=8080,
         )
-        
+
         session2 = await client.get_proxy_session(
             proxy_host="proxy2.example.com",
             proxy_port=8080,
         )
-        
+
         # Should be different sessions
         assert session1 is not session2
-        
+
         await client.cleanup()
 
     @pytest.mark.skipif(not HAS_PROXY_CONNECTOR, reason="ProxyConnector not available")
@@ -273,16 +274,16 @@ class TestProxySessionManagement:
     async def test_cleanup(self):
         """Test cleaning up proxy connection pools."""
         client = ProxyClient()
-        
+
         # Create some sessions
         await client.get_proxy_session("proxy1.example.com", 8080)
         await client.get_proxy_session("proxy2.example.com", 8080)
-        
+
         assert len(client._pools) == 2
-        
+
         # Cleanup
         await client.cleanup()
-        
+
         assert len(client._pools) == 0
 
 
@@ -333,7 +334,7 @@ class TestConnectViaChain:
     async def test_connect_via_chain_single_proxy(self):
         """Test connecting through single proxy."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
         mock_reader.readline = AsyncMock(
@@ -342,28 +343,27 @@ class TestConnectViaChain:
                 b"\r\n",
             ]
         )
-        
+
         with patch.object(
             client, "_connect_to_proxy", return_value=(mock_reader, mock_writer)
+        ), patch.object(
+            client, "_read_connect_response", return_value=mock_reader
         ):
-            with patch.object(
-                client, "_read_connect_response", return_value=mock_reader
-            ):
-                reader, writer = await client.connect_via_chain(
-                    target_host="target.example.com",
-                    target_port=80,
-                    proxy_chain=[
-                        {
-                            "host": "proxy.example.com",
-                            "port": 8080,
-                            "type": "http",
-                        }
-                    ],
-                    timeout=5.0,
-                )
-                
-                assert reader is not None
-                assert writer is not None
+            reader, writer = await client.connect_via_chain(
+                target_host="target.example.com",
+                target_port=80,
+                proxy_chain=[
+                    {
+                        "host": "proxy.example.com",
+                        "port": 8080,
+                        "type": "http",
+                    }
+                ],
+                timeout=5.0,
+            )
+
+            assert reader is not None
+            assert writer is not None
 
 
 class TestConnectToProxy:
@@ -373,10 +373,10 @@ class TestConnectToProxy:
     async def test_connect_to_proxy_success(self):
         """Test successful proxy connection."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
-        
+
         with patch(
             "asyncio.open_connection", return_value=(mock_reader, mock_writer)
         ):
@@ -387,7 +387,7 @@ class TestConnectToProxy:
                 _password=None,
                 timeout=5.0,
             )
-            
+
             assert reader is mock_reader
             assert writer is mock_writer
 
@@ -395,7 +395,7 @@ class TestConnectToProxy:
     async def test_connect_to_proxy_timeout(self):
         """Test proxy connection timeout."""
         client = ProxyClient()
-        
+
         with patch(
             "asyncio.open_connection",
             side_effect=asyncio.TimeoutError(),
@@ -408,14 +408,14 @@ class TestConnectToProxy:
                     _password=None,
                     timeout=1.0,
                 )
-            
+
             assert client.stats.timeouts > 0
 
     @pytest.mark.asyncio
     async def test_connect_to_proxy_connection_error(self):
         """Test proxy connection error."""
         client = ProxyClient()
-        
+
         with patch(
             "asyncio.open_connection",
             side_effect=ConnectionError("Connection refused"),
@@ -428,7 +428,7 @@ class TestConnectToProxy:
                     _password=None,
                     timeout=5.0,
                 )
-            
+
             assert client.stats.connections_failed > 0
 
 
@@ -439,10 +439,10 @@ class TestSendConnectRequest:
     async def test_send_connect_request_no_auth(self):
         """Test sending CONNECT request without authentication."""
         client = ProxyClient()
-        
+
         mock_writer = AsyncMock()
         mock_writer.drain = AsyncMock()
-        
+
         await client._send_connect_request(
             writer=mock_writer,
             target_host="target.example.com",
@@ -450,10 +450,10 @@ class TestSendConnectRequest:
             username=None,
             password=None,
         )
-        
+
         mock_writer.write.assert_called_once()
         mock_writer.drain.assert_called_once()
-        
+
         # Verify request format
         call_args = mock_writer.write.call_args[0][0]
         request = call_args.decode("utf-8")
@@ -465,10 +465,10 @@ class TestSendConnectRequest:
     async def test_send_connect_request_with_auth(self):
         """Test sending CONNECT request with authentication."""
         client = ProxyClient()
-        
+
         mock_writer = AsyncMock()
         mock_writer.drain = AsyncMock()
-        
+
         await client._send_connect_request(
             writer=mock_writer,
             target_host="target.example.com",
@@ -476,10 +476,10 @@ class TestSendConnectRequest:
             username="user",
             password="pass",
         )
-        
+
         mock_writer.write.assert_called_once()
         mock_writer.drain.assert_called_once()
-        
+
         # Verify request format
         call_args = mock_writer.write.call_args[0][0]
         request = call_args.decode("utf-8")
@@ -493,7 +493,7 @@ class TestReadConnectResponse:
     async def test_read_connect_response_success(self):
         """Test reading successful CONNECT response."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(
             side_effect=[
@@ -502,7 +502,7 @@ class TestReadConnectResponse:
                 b"\r\n",
             ]
         )
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is not None
 
@@ -510,16 +510,16 @@ class TestReadConnectResponse:
     async def test_read_connect_response_auth_required(self):
         """Test reading 407 Proxy Authentication Required response."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(
             side_effect=[
                 b"HTTP/1.1 407 Proxy Authentication Required\r\n",
-                b"Proxy-Authenticate: Basic realm=\"Proxy\"\r\n",
+                b'Proxy-Authenticate: Basic realm="Proxy"\r\n',
                 b"\r\n",
             ]
         )
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is None
         assert client.stats.auth_failures > 0
@@ -528,7 +528,7 @@ class TestReadConnectResponse:
     async def test_read_connect_response_forbidden(self):
         """Test reading 403 Forbidden response."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(
             side_effect=[
@@ -536,7 +536,7 @@ class TestReadConnectResponse:
                 b"\r\n",
             ]
         )
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is None
         assert client.stats.connections_failed > 0
@@ -545,10 +545,10 @@ class TestReadConnectResponse:
     async def test_read_connect_response_empty(self):
         """Test reading empty response."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(return_value=b"")
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is None
 
@@ -556,10 +556,10 @@ class TestReadConnectResponse:
     async def test_read_connect_response_invalid_format(self):
         """Test reading invalid response format."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(return_value=b"Invalid\r\n")
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is None
 
@@ -567,10 +567,10 @@ class TestReadConnectResponse:
     async def test_read_connect_response_exception(self):
         """Test exception handling in _read_connect_response."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(side_effect=Exception("Read error"))
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is None
         assert client.stats.connections_failed > 0
@@ -582,29 +582,32 @@ class TestTestConnection:
     @pytest.mark.asyncio
     async def test_test_connection_success(self):
         """Test successful connection test."""
-        from tests.unit.proxy.conftest import AsyncContextManagerMock, create_async_response_mock
-        
+        from tests.unit.proxy.conftest import (
+            AsyncContextManagerMock,
+            create_async_response_mock,
+        )
+
         client = ProxyClient()
-        
+
         # Create properly configured async response mock
         mock_response = create_async_response_mock(status=200)
-        
+
         # Create async session mock with proper context manager
         # The key is that session.get() must return an object that works with async with
         mock_session = AsyncMock()
         # Return the async context manager directly (not wrapped)
         mock_session.get = MagicMock(return_value=AsyncContextManagerMock(mock_response))
-        
+
         # Mock get_proxy_session to return the session (async function)
         async def get_session(*args, **kwargs):
             return mock_session
-        
+
         with patch.object(client, "get_proxy_session", side_effect=get_session):
             result = await client.test_connection(
                 proxy_host="proxy.example.com",
                 proxy_port=8080,
             )
-            
+
             assert result is True
             assert client.stats.connections_successful > 0
 
@@ -612,7 +615,7 @@ class TestTestConnection:
     async def test_test_connection_failure(self):
         """Test failed connection test."""
         client = ProxyClient()
-        
+
         # Mock response with proper async context manager
         mock_response = AsyncMock()
         mock_response.status = 500
@@ -622,16 +625,16 @@ class TestTestConnection:
             return None
         mock_response.__aenter__ = async_enter
         mock_response.__aexit__ = async_exit
-        
+
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(return_value=mock_response)
-        
+
         with patch.object(client, "get_proxy_session", return_value=mock_session):
             result = await client.test_connection(
                 proxy_host="proxy.example.com",
                 proxy_port=8080,
             )
-            
+
             assert result is False
             assert client.stats.connections_failed > 0
 
@@ -639,7 +642,7 @@ class TestTestConnection:
     async def test_test_connection_timeout(self):
         """Test connection test timeout."""
         client = ProxyClient()
-        
+
         with patch.object(
             client, "get_proxy_session", side_effect=asyncio.TimeoutError()
         ):
@@ -647,7 +650,7 @@ class TestTestConnection:
                 proxy_host="proxy.example.com",
                 proxy_port=8080,
             )
-            
+
             assert result is False
             assert client.stats.timeouts > 0
 
@@ -655,7 +658,7 @@ class TestTestConnection:
     async def test_test_connection_auth_error(self):
         """Test connection test with auth error."""
         client = ProxyClient()
-        
+
         with patch.object(
             client, "get_proxy_session", side_effect=ProxyAuthError("Auth failed")
         ):
@@ -663,7 +666,7 @@ class TestTestConnection:
                 proxy_host="proxy.example.com",
                 proxy_port=8080,
             )
-            
+
             assert result is False
             assert client.stats.auth_failures > 0
 
@@ -676,7 +679,7 @@ class TestGetStats:
         client = ProxyClient()
         client.stats.connections_total = 10
         client.stats.connections_successful = 8
-        
+
         stats = client.get_stats()
         assert stats.connections_total == 10
         assert stats.connections_successful == 8
@@ -689,16 +692,16 @@ class TestProxyClientEdgeCases:
     async def test_cleanup_with_exception(self):
         """Test cleanup handles exceptions gracefully."""
         client = ProxyClient()
-        
+
         # Create a mock session that raises on close
         mock_session = AsyncMock()
         mock_session.close = AsyncMock(side_effect=Exception("Close error"))
-        
+
         client._pools["test:8080"] = mock_session
-        
+
         # Should handle exception and continue
         await client.cleanup()
-        
+
         # Pool should be removed even if close failed
         assert "test:8080" not in client._pools
 
@@ -714,13 +717,13 @@ class TestProxyClientEdgeCases:
     async def test_get_proxy_session_concurrent(self):
         """Test concurrent access to get_proxy_session."""
         client = ProxyClient()
-        
+
         async def get_session():
             return await client.get_proxy_session("proxy.example.com", 8080)
-        
+
         # Get multiple sessions concurrently
         sessions = await asyncio.gather(*[get_session() for _ in range(5)])
-        
+
         # All should be the same (pooled)
         assert all(s is sessions[0] for s in sessions)
 
@@ -755,7 +758,7 @@ class TestProxyClientEdgeCases:
     async def test_connect_via_chain_single_proxy_with_auth(self):
         """Test connecting through single proxy with authentication."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
         mock_reader.readline = AsyncMock(
@@ -764,60 +767,58 @@ class TestProxyClientEdgeCases:
                 b"\r\n",
             ]
         )
-        
+
         with patch.object(
             client, "_connect_to_proxy", return_value=(mock_reader, mock_writer)
+        ), patch.object(
+            client, "_read_connect_response", return_value=mock_reader
         ):
-            with patch.object(
-                client, "_read_connect_response", return_value=mock_reader
-            ):
-                reader, writer = await client.connect_via_chain(
-                    target_host="target.example.com",
-                    target_port=80,
-                    proxy_chain=[
-                        {
-                            "host": "proxy.example.com",
-                            "port": 8080,
-                            "type": "http",
-                            "username": "user",
-                            "password": "pass",
-                        }
-                    ],
-                    timeout=5.0,
-                )
-                
-                assert reader is not None
-                assert writer is not None
-                
-                # Verify CONNECT was called with auth
-                assert mock_writer.write.called
+            reader, writer = await client.connect_via_chain(
+                target_host="target.example.com",
+                target_port=80,
+                proxy_chain=[
+                    {
+                        "host": "proxy.example.com",
+                        "port": 8080,
+                        "type": "http",
+                        "username": "user",
+                        "password": "pass",
+                    }
+                ],
+                timeout=5.0,
+            )
+
+            assert reader is not None
+            assert writer is not None
+
+            # Verify CONNECT was called with auth
+            assert mock_writer.write.called
 
     @pytest.mark.asyncio
     async def test_connect_via_chain_connection_lost(self):
         """Test handling connection loss in chain."""
         client = ProxyClient()
-        
+
         with patch.object(
             client, "_connect_to_proxy", return_value=(None, None)
-        ):
-            with pytest.raises(ProxyConnectionError):
-                await client.connect_via_chain(
-                    target_host="target.example.com",
-                    target_port=80,
-                    proxy_chain=[
-                        {
-                            "host": "proxy.example.com",
-                            "port": 8080,
-                            "type": "http",
-                        }
-                    ],
-                )
+        ), pytest.raises(ProxyConnectionError):
+            await client.connect_via_chain(
+                target_host="target.example.com",
+                target_port=80,
+                proxy_chain=[
+                    {
+                        "host": "proxy.example.com",
+                        "port": 8080,
+                        "type": "http",
+                    }
+                ],
+            )
 
     @pytest.mark.asyncio
     async def test_read_connect_response_500_error(self):
         """Test reading 500 Internal Server Error response."""
         client = ProxyClient()
-        
+
         mock_reader = AsyncMock()
         mock_reader.readline = AsyncMock(
             side_effect=[
@@ -825,7 +826,7 @@ class TestProxyClientEdgeCases:
                 b"\r\n",
             ]
         )
-        
+
         result = await client._read_connect_response(mock_reader)
         assert result is None
         assert client.stats.connections_failed > 0
@@ -834,11 +835,11 @@ class TestProxyClientEdgeCases:
     async def test_send_connect_request_exception(self):
         """Test exception handling in _send_connect_request."""
         client = ProxyClient()
-        
+
         mock_writer = AsyncMock()
         mock_writer.write = MagicMock(side_effect=Exception("Write error"))
         mock_writer.drain = AsyncMock()
-        
+
         with pytest.raises(Exception):
             await client._send_connect_request(
                 writer=mock_writer,

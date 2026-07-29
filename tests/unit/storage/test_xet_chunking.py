@@ -9,12 +9,11 @@ from __future__ import annotations
 import pytest
 
 from ccbt.storage.xet_chunking import (
-    GearhashChunker,
     MAX_CHUNK_SIZE,
     MIN_CHUNK_SIZE,
     TARGET_CHUNK_SIZE,
+    GearhashChunker,
 )
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
@@ -260,7 +259,7 @@ class TestGearhashChunker:
     def test_chunk_buffer_with_rolling_hash_window(self):
         """Test chunk_buffer with rolling hash window building."""
         chunker = GearhashChunker()
-        
+
         # Create data that will trigger window building
         # First 48 bytes will build the window
         data = b"A" * 10000
@@ -275,7 +274,7 @@ class TestGearhashChunker:
     def test_chunk_buffer_no_boundary_found(self):
         """Test chunk_buffer when no boundary is found."""
         chunker = GearhashChunker()
-        
+
         # Create data with pattern unlikely to hit boundary
         # Use repeated pattern that might not trigger boundary
         data = b"X" * (MAX_CHUNK_SIZE + 1000)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import gzip
 import time
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -61,11 +61,11 @@ class FastResumeData(BaseModel):
     )
 
     # Queue state
-    queue_position: int | None = Field(
+    queue_position: Optional[int] = Field(
         default=None,
         description="Torrent position in queue",
     )
-    queue_priority: str | None = Field(
+    queue_priority: Optional[str] = Field(
         default=None,
         description="Torrent queue priority",
     )
@@ -241,7 +241,7 @@ class FastResumeData(BaseModel):
         self.queue_priority = priority
         self.updated_at = time.time()
 
-    def get_queue_state(self) -> tuple[int | None, str | None]:
+    def get_queue_state(self) -> tuple[Optional[int], Optional[str]]:
         """Retrieve queue state.
 
         Returns:

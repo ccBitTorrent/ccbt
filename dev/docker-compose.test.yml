@@ -11,7 +11,7 @@ services:
       - .:/app
       - test-cache:/root/.cache
     working_dir: /app
-    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    command: uv run pytest -c dev/pytest.ini tests/unit/ -v
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -27,7 +27,7 @@ services:
       - .:/app
       - test-cache:/root/.cache
     working_dir: /app
-    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    command: uv run pytest -c dev/pytest.ini tests/unit/ -v
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -43,7 +43,7 @@ services:
       - .:/app
       - test-cache:/root/.cache
     working_dir: /app
-    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    command: uv run pytest -c dev/pytest.ini tests/unit/ -v
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -59,7 +59,7 @@ services:
       - .:/app
       - test-cache:/root/.cache
     working_dir: /app
-    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    command: uv run pytest -c dev/pytest.ini tests/unit/ -v
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -75,7 +75,7 @@ services:
       - .:/app
       - test-cache:/root/.cache
     working_dir: /app
-    command: /root/.cargo/bin/uv run pytest -c dev/pytest.ini tests/unit/ -v
+    command: uv run pytest -c dev/pytest.ini tests/unit/ -v
     environment:
       - PYTHONUNBUFFERED=1
     networks:

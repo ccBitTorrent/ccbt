@@ -1,0 +1,691 @@
+"""Per-Torrent tab screen implementation.
+
+Implements the Per-Torrent tab with nested sub-tabs for detailed torrent information.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from ccbt.i18n import _
+from ccbt.interface.content_load import (
+    clear_container_children,
+    mount_or_update_static,
+    query_child_by_id,
+)
+
+if TYPE_CHECKING:
+    from ccbt.interface.commands.executor import CommandExecutor
+    from ccbt.interface.data_provider import DataProvider
+else:
+    try:
+        from ccbt.interface.commands.executor import CommandExecutor
+        from ccbt.interface.data_provider import DataProvider
+    except ImportError:
+        CommandExecutor = None  # type: ignore[assignment, misc]
+        DataProvider = None  # type: ignore[assignment, misc]
+
+try:
+    from textual.containers import Container
+    from textual.widgets import Select, Static, Tab, Tabs
+except ImportError:
+    # Fallback for when textual is not available
+    class Container:  # type: ignore[no-redef]
+        pass
+
+    class Select:  # type: ignore[no-redef]
+        pass
+
+    class Static:  # type: ignore[no-redef]
+        pass
+
+    class Tabs:  # type: ignore[no-redef]
+        pass
+
+    class Tab:  # type: ignore[no-redef]
+        pass
+
+logger = logging.getLogger(__name__)
+
+
+class PerTorrentTabContent(Container):  # type: ignore[misc]
+    """Main content container for Per-Torrent tab with nested sub-tabs."""
+
+    DEFAULT_CSS = """
+    PerTorrentTabContent {
+        height: 1fr;
+        layout: vertical;
+        overflow: hidden;
+    }
+    
+    #torrent-selector {
+        height: auto;
+        min-height: 3;
+        display: block;
+        margin: 1;
+    }
+    
+    #per-torrent-sub-tabs {
+        height: auto;
+        min-height: 3;
+    }
+    
+    #per-torrent-sub-content {
+        height: 1fr;
+        min-height: 10;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+    
+    #file-tree {
+        height: 1fr;
+        width: 1fr;
+    }
+    
+    DirectoryTree {
+        height: 1fr;
+        width: 1fr;
+    }
+    """
+
+    def __init__(
+        self,
+        data_provider: DataProvider,
+        command_executor: CommandExecutor,
+        selected_info_hash: Optional[str] = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize per-torrent tab content.
+
+        Args:
+            data_provider: DataProvider instance
+            command_executor: CommandExecutor instance for executing commands
+            selected_info_hash: Optional pre-selected torrent info hash
+        """
+        super().__init__(*args, **kwargs)
+        self._data_provider = data_provider
+        self._command_executor = command_executor
+        self._selected_info_hash: Optional[str] = selected_info_hash
+        self._sub_tabs: Optional[Tabs] = None
+        self._content_area: Optional[Container] = None
+        self._sub_tab_load_lock = asyncio.Lock()
+        self._active_sub_tab_id: Optional[str] = None
+        self._content_loaded_for_hash: Optional[str] = None
+
+    _SUB_TAB_WIDGET_IDS: ClassVar[dict[str, str]] = {
+        "sub-tab-files": "files-screen",
+        "sub-tab-file-explorer": "torrent-file-explorer",
+        "sub-tab-media": "media-playback-widget",
+        "sub-tab-info": "info-screen",
+        "sub-tab-peers": "peers-screen",
+        "sub-tab-trackers": "trackers-screen",
+        "sub-tab-graphs": "per-torrent-graph",
+        "sub-tab-config": "torrent-config-wrapper",
+    }
+
+    def compose(self) -> Any:  # pragma: no cover
+        """Compose the per-torrent tab with nested sub-tabs."""
+        # Torrent selector
+        from ccbt.interface.widgets.torrent_selector import TorrentSelector
+        yield TorrentSelector(self._data_provider, id="torrent-selector")
+
+        # Sub-tabs for different views
+        yield Tabs(
+            Tab(_("Files"), id="sub-tab-files"),
+            Tab(_("File Explorer"), id="sub-tab-file-explorer"),
+            Tab(_("Media"), id="sub-tab-media"),
+            Tab(_("Info"), id="sub-tab-info"),
+            Tab(_("Peers"), id="sub-tab-peers"),
+            Tab(_("Trackers"), id="sub-tab-trackers"),
+            Tab(_("Graphs"), id="sub-tab-graphs"),
+            Tab(_("Config"), id="sub-tab-config"),
+            id="per-torrent-sub-tabs",
+        )
+
+        # Content area for sub-tab content
+        with Container(id="per-torrent-sub-content"):
+            yield Static(_("Select a torrent and sub-tab to view details"), id="sub-content-placeholder")
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Mount the per-torrent tab content."""
+        try:
+            self._sub_tabs = self.query_one("#per-torrent-sub-tabs", Tabs)  # type: ignore[attr-defined]
+            self._content_area = self.query_one("#per-torrent-sub-content", Container)  # type: ignore[attr-defined]
+            # Note: Ensure content area is visible
+            if self._content_area:
+                self._content_area.display = True  # type: ignore[attr-defined]
+            # Tab activation is handled by on_tabs_tab_activated (Textual message handler).
+            # Torrent selection is handled by on_torrent_selector_torrent_selected.
+            try:
+                selector = self.query_one("#torrent-selector")  # type: ignore[attr-defined]
+                from ccbt.interface.reactive_bridge import request_lazy_bind
+
+                request_lazy_bind(selector)
+                app = getattr(self, "app", None)
+                if app is not None and hasattr(selector, "watch_torrents_data"):
+                    torrents = list(getattr(app, "torrents_data", []) or [])
+                    if torrents:
+                        selector.watch_torrents_data(torrents)  # type: ignore[attr-defined]
+                # Set pre-selected hash if provided
+                if self._selected_info_hash:
+                    try:
+                        if hasattr(selector, "set_value"):
+                            selector.set_value(self._selected_info_hash)  # type: ignore[attr-defined]
+                        # Load initial sub-tab content
+                        import asyncio
+                        try:
+                            if hasattr(self.app, "loop"):
+                                self.app.loop.create_task(self._load_sub_tab_content("sub-tab-files"))  # type: ignore[attr-defined]
+                            else:
+                                asyncio.create_task(self._load_sub_tab_content("sub-tab-files"))
+                        except Exception:
+                            self.call_later(self._load_sub_tab_content, "sub-tab-files")  # type: ignore[attr-defined]
+                    except Exception:
+                        # If selector doesn't support set_value, just load content directly
+                        import asyncio
+                        try:
+                            if hasattr(self.app, "loop"):
+                                self.app.loop.create_task(self._load_sub_tab_content("sub-tab-files"))  # type: ignore[attr-defined]
+                            else:
+                                asyncio.create_task(self._load_sub_tab_content("sub-tab-files"))
+                        except Exception:
+                            self.call_later(self._load_sub_tab_content, "sub-tab-files")  # type: ignore[attr-defined]
+            except Exception:
+                # If selector not available but we have a pre-selected hash, load content anyway
+                if self._selected_info_hash:
+                    import asyncio
+                    try:
+                        if hasattr(self.app, "loop"):
+                            self.app.loop.create_task(self._load_sub_tab_content("sub-tab-files"))  # type: ignore[attr-defined]
+                        else:
+                            asyncio.create_task(self._load_sub_tab_content("sub-tab-files"))
+                    except Exception:
+                        self.call_later(self._load_sub_tab_content, "sub-tab-files")  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.error("Error mounting per-torrent tab content: %s", e, exc_info=True)
+
+    def on_torrent_selector_torrent_selected(self, event: Any) -> None:  # pragma: no cover
+        """Handle torrent selection from TorrentSelector (Textual message handler)."""
+        self._on_torrent_selected(event)
+
+    def _on_torrent_selected(self, event: Any) -> None:  # pragma: no cover
+        """Handle torrent selection event.
+
+        Args:
+            event: TorrentSelector.TorrentSelected event
+        """
+        logger.debug("PerTorrentTabContent: Torrent selected: %s", event.info_hash)
+        self._selected_info_hash = event.info_hash
+        # Note: Don't reset _active_sub_tab_id - keep current tab or default to first
+        # Reload current sub-tab content with new selection
+        if self._sub_tabs:
+            try:
+                active_tab = self._sub_tabs.active  # type: ignore[attr-defined]
+                if active_tab:
+                    tab_id = getattr(active_tab, "id", None)
+                    if tab_id:
+                        self._active_sub_tab_id = tab_id
+                        logger.debug("PerTorrentTabContent: Loading sub-tab %s for torrent %s", tab_id, event.info_hash)
+                        # Note: Use async task instead of call_later for async method
+                        import asyncio
+                        try:
+                            if hasattr(self.app, "loop"):
+                                self.app.loop.create_task(self._load_sub_tab_content(tab_id))  # type: ignore[attr-defined]
+                            else:
+                                asyncio.create_task(self._load_sub_tab_content(tab_id))
+                        except Exception:
+                            # Fallback to call_later
+                            self.call_later(self._load_sub_tab_content, tab_id)  # type: ignore[attr-defined]
+                        return
+            except Exception as e:
+                logger.debug("PerTorrentTabContent: Error getting active tab: %s", e)
+
+        # Note: If no active tab, default to first tab (sub-tab-files)
+        if not self._active_sub_tab_id:
+            self._active_sub_tab_id = "sub-tab-files"
+            logger.debug("PerTorrentTabContent: No active tab, defaulting to sub-tab-files for torrent %s", event.info_hash)
+            import asyncio
+            try:
+                if hasattr(self.app, "loop"):
+                    self.app.loop.create_task(self._load_sub_tab_content("sub-tab-files"))  # type: ignore[attr-defined]
+                else:
+                    asyncio.create_task(self._load_sub_tab_content("sub-tab-files"))
+            except Exception:
+                # Fallback to call_later
+                self.call_later(self._load_sub_tab_content, "sub-tab-files")  # type: ignore[attr-defined]
+
+    def set_selected_info_hash(self, info_hash: Optional[str]) -> None:  # pragma: no cover
+        """Update the selected torrent info hash externally.
+        
+        Args:
+            info_hash: New info hash to select, or None to clear
+        """
+        if self._selected_info_hash == info_hash:
+            return
+        self._selected_info_hash = info_hash
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "selected_torrent_info_hash"):
+            with contextlib.suppress(Exception):
+                app.selected_torrent_info_hash = info_hash  # type: ignore[attr-defined]
+        # Update selector if mounted
+        try:
+            selector = self.query_one("#torrent-selector")  # type: ignore[attr-defined]
+            if hasattr(selector, "set_value") and info_hash:
+                selector.set_value(info_hash)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        # Reload current sub-tab if one is active
+        if self._active_sub_tab_id:
+            self._schedule_sub_tab_load(self._active_sub_tab_id)
+
+    def _schedule_sub_tab_load(self, sub_tab_id: str) -> None:  # pragma: no cover
+        """Schedule async sub-tab content load on the app event loop."""
+        try:
+            loop = getattr(self.app, "loop", None)  # type: ignore[attr-defined]
+            if loop is not None:
+                loop.create_task(self._load_sub_tab_content(sub_tab_id))
+                return
+            asyncio.create_task(self._load_sub_tab_content(sub_tab_id))
+        except Exception:
+            self.call_later(self._schedule_sub_tab_load, sub_tab_id)  # type: ignore[attr-defined]
+
+    def _clear_content_area(self) -> None:  # pragma: no cover
+        """Remove all widgets from the per-torrent sub-tab content area."""
+        clear_container_children(self._content_area)
+
+    def _show_no_torrent_placeholder(self, sub_tab_id: str) -> None:  # pragma: no cover
+        """Show or reuse the empty-state placeholder (avoids duplicate widget IDs)."""
+        if not self._content_area:
+            return
+        mount_or_update_static(
+            self._content_area,
+            "no-torrent-placeholder",
+            _("Please select a torrent first"),
+            Static,
+        )
+        self._active_sub_tab_id = sub_tab_id
+        self._content_loaded_for_hash = None
+
+    def _mark_sub_tab_loaded(self, sub_tab_id: str) -> None:  # pragma: no cover
+        """Record which sub-tab content is currently shown for the selected torrent."""
+        self._active_sub_tab_id = sub_tab_id
+        self._content_loaded_for_hash = self._selected_info_hash
+
+    def _after_mount_sub_screen(self, widget: Any) -> None:  # pragma: no cover
+        """Bind and hydrate a lazily mounted per-torrent sub-screen."""
+        if widget is None:
+            return
+        with contextlib.suppress(Exception):
+            widget.display = True  # type: ignore[attr-defined]
+        from ccbt.interface.reactive_bridge import request_lazy_bind
+
+        request_lazy_bind(widget)
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        if hasattr(app, "refresh_ui_bindings"):
+            app.call_later(app.refresh_ui_bindings)  # type: ignore[attr-defined]
+        if not self._selected_info_hash:
+            return
+        with contextlib.suppress(Exception):
+            current = getattr(app, "selected_torrent_info_hash", None)
+            if current != self._selected_info_hash:
+                app.selected_torrent_info_hash = self._selected_info_hash  # type: ignore[attr-defined]
+            elif hasattr(app, "_refresh_selected_torrent"):
+                app._refresh_selected_torrent()  # type: ignore[attr-defined]
+
+    async def _load_sub_tab_content(self, sub_tab_id: str) -> None:  # pragma: no cover
+        """Load content for a specific sub-tab.
+
+        Args:
+            sub_tab_id: ID of the sub-tab to load
+        """
+        async with self._sub_tab_load_lock:
+            # Note: Ensure content area is visible and attached
+            if not self._content_area:
+                logger.warning("PerTorrentTabContent: Content area not available")
+                return
+
+            if not self._content_area.is_attached or not self._content_area.display:  # type: ignore[attr-defined]
+                logger.debug("PerTorrentTabContent: Content area not attached or not visible")
+                # Try to make it visible
+                self._content_area.display = True  # type: ignore[attr-defined]
+
+            if not self._selected_info_hash:
+                self._show_no_torrent_placeholder(sub_tab_id)
+                return
+
+            # Skip reload when the same sub-tab widget is already mounted for this torrent.
+            if (
+                sub_tab_id == self._active_sub_tab_id
+                and self._selected_info_hash == self._content_loaded_for_hash
+            ):
+                widget_id = self._SUB_TAB_WIDGET_IDS.get(sub_tab_id, f"{sub_tab_id}-content")
+                if query_child_by_id(self._content_area, widget_id) is not None:
+                    logger.debug(
+                        "PerTorrentTabContent: Content already loaded for %s, skipping",
+                        sub_tab_id,
+                    )
+                    return
+
+            self._clear_content_area()
+
+            # Load appropriate screen based on sub-tab
+            if sub_tab_id == "sub-tab-files":
+                from ccbt.interface.screens.per_torrent_files import TorrentFilesScreen
+                # Note: Check if widget with this ID already exists in app registry and remove it
+                try:
+                    # Check in the app's registry
+                    app = self.app  # type: ignore[attr-defined]
+                    if app and hasattr(app, "_registry"):
+                        widget_id = "files-screen"
+                        # Remove from registry if it exists
+                        if widget_id in app._registry:  # type: ignore[attr-defined]
+                            existing_widget = app._registry[widget_id]  # type: ignore[attr-defined]
+                            if existing_widget and hasattr(existing_widget, "remove"):
+                                try:
+                                    existing_widget.remove()  # type: ignore[attr-defined]
+                                except Exception:
+                                    pass
+                except Exception:
+                    # Registry check failed, continue anyway
+                    pass
+
+                screen = TorrentFilesScreen(
+                    self._data_provider,
+                    self._command_executor,
+                    self._selected_info_hash,
+                    id="files-screen"
+                )
+                self._content_area.mount(screen)  # type: ignore[attr-defined]
+                # Note: Ensure screen is visible
+                screen.display = True  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+                self._after_mount_sub_screen(screen)
+                # Trigger initial refresh after mount
+                self.call_later(screen.refresh_files)  # type: ignore[attr-defined]
+            elif sub_tab_id == "sub-tab-file-explorer":
+                from ccbt.interface.widgets.torrent_file_explorer import (
+                    TorrentFileExplorerWidget,
+                )
+
+                try:
+                    explorer = TorrentFileExplorerWidget(
+                        self._selected_info_hash,
+                        self._data_provider,
+                        self._command_executor,
+                        id="torrent-file-explorer",
+                    )
+                    self._content_area.mount(explorer)  # type: ignore[attr-defined]
+                    self._after_mount_sub_screen(explorer)
+                except Exception as e:
+                    logger.debug("Error mounting file explorer widget: %s", e)
+                    error_msg = Static(
+                        f"Error loading file explorer: {e!s}",
+                        id="file-explorer-error",
+                    )
+                    self._content_area.mount(error_msg)  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+            elif sub_tab_id == "sub-tab-media":
+                from ccbt.interface.widgets.media_playback_widget import (
+                    MediaPlaybackWidget,
+                )
+
+                widget = MediaPlaybackWidget(
+                    self._selected_info_hash,
+                    self._data_provider,
+                    self._command_executor,
+                    id="media-playback-widget",
+                )
+                self._content_area.mount(widget)  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+                self._after_mount_sub_screen(widget)
+            elif sub_tab_id == "sub-tab-info":
+                from ccbt.interface.screens.per_torrent_info import TorrentInfoScreen
+                screen = TorrentInfoScreen(
+                    self._data_provider,
+                    self._command_executor,
+                    self._selected_info_hash,
+                    id="info-screen"
+                )
+                self._content_area.mount(screen)  # type: ignore[attr-defined]
+                # Note: Ensure screen is visible
+                screen.display = True  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+                self._after_mount_sub_screen(screen)
+            elif sub_tab_id == "sub-tab-peers":
+                from ccbt.interface.screens.per_torrent_peers import TorrentPeersScreen
+                screen = TorrentPeersScreen(
+                    self._data_provider,
+                    self._command_executor,
+                    self._selected_info_hash,
+                    id="peers-screen"
+                )
+                self._content_area.mount(screen)  # type: ignore[attr-defined]
+                # Note: Ensure screen is visible
+                screen.display = True  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+                self._after_mount_sub_screen(screen)
+                # Trigger initial refresh after mount
+                self.call_later(screen.refresh_peers)  # type: ignore[attr-defined]
+            elif sub_tab_id == "sub-tab-trackers":
+                from ccbt.interface.screens.per_torrent_trackers import (
+                    TorrentTrackersScreen,
+                )
+                screen = TorrentTrackersScreen(
+                    self._data_provider,
+                    self._command_executor,
+                    self._selected_info_hash,
+                    id="trackers-screen"
+                )
+                self._content_area.mount(screen)  # type: ignore[attr-defined]
+                # Note: Ensure screen is visible
+                screen.display = True  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+                self._after_mount_sub_screen(screen)
+                # Trigger initial refresh after mount
+                self.call_later(screen.refresh_trackers)  # type: ignore[attr-defined]
+            elif sub_tab_id == "sub-tab-graphs":
+                from ccbt.interface.widgets.graph_widget import PerTorrentGraphWidget
+                graph = PerTorrentGraphWidget(
+                    self._selected_info_hash,
+                    self._data_provider,
+                    id="per-torrent-graph"
+                )
+                self._content_area.mount(graph)  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+                self._after_mount_sub_screen(graph)
+            elif sub_tab_id == "sub-tab-config":
+                # Use per-torrent config wrapper
+                # CRITICAL: Use DataProvider/Executor instead of direct session access
+                if self._data_provider and self._command_executor and self._selected_info_hash:
+                    from ccbt.interface.widgets.config_wrapper import (
+                        ConfigScreenWrapper,
+                    )
+                    wrapper = ConfigScreenWrapper(
+                        "torrent",
+                        self._data_provider,
+                        self._command_executor,
+                        info_hash=self._selected_info_hash,
+                        id="torrent-config-wrapper"
+                    )
+                    self._content_area.mount(wrapper)  # type: ignore[attr-defined]
+                    self._mark_sub_tab_loaded(sub_tab_id)
+                    self._after_mount_sub_screen(wrapper)
+                else:
+                    mount_or_update_static(
+                        self._content_area,
+                        "torrent-config-placeholder",
+                        _(
+                            "Per-torrent configuration - Data provider/Executor or torrent not available"
+                        ),
+                        Static,
+                    )
+                    self._mark_sub_tab_loaded(sub_tab_id)
+            else:
+                # Placeholder for other sub-tabs
+                placeholder = Static(_("{sub_tab} content for torrent {hash}... - Coming soon").format(sub_tab=sub_tab_id, hash=self._selected_info_hash[:8]), id=f"{sub_tab_id}-content")
+                self._content_area.mount(placeholder)  # type: ignore[attr-defined]
+                self._mark_sub_tab_loaded(sub_tab_id)
+
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:  # pragma: no cover
+        """Handle activation events for the per-torrent sub-tabs."""
+        tab = getattr(event, "tab", None)
+        tab_id = getattr(tab, "id", None)
+        if tab_id:
+            logger.debug("PerTorrentTabContent: Tab activated: %s", tab_id)
+            self._schedule_sub_tab_load(tab_id)
+
+    def refresh(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover
+        """Refresh all active sub-tab screens with latest data.
+        
+        Args:
+            *args: Positional arguments (for Textual compatibility)
+            **kwargs: Keyword arguments like 'layout', 'repaint' (for Textual compatibility)
+        """
+        # Note: Ensure widget is visible and attached before refreshing
+        if not self.is_attached or not self.display:  # type: ignore[attr-defined]
+            logger.debug("PerTorrentTabContent: Widget not attached or not visible, skipping refresh")
+            return
+
+        # Call parent's refresh method first (handles layout/repaint)
+        try:
+            super().refresh(*args, **kwargs)
+        except (AttributeError, TypeError):
+            # Parent doesn't have refresh or signature mismatch, continue
+            pass
+
+        # Then refresh our custom content
+        if not self._selected_info_hash or not self._active_sub_tab_id:
+            logger.debug("PerTorrentTabContent: No torrent selected or no active sub-tab, skipping refresh")
+            return
+
+        # Schedule async refresh as a task
+        # Note: Use asyncio.create_task to ensure it runs in the correct event loop
+        import asyncio
+        try:
+            if hasattr(self.app, "loop"):
+                self.app.loop.create_task(self._refresh_content())  # type: ignore[attr-defined]
+            else:
+                asyncio.create_task(self._refresh_content())
+        except Exception as e:
+            logger.debug("PerTorrentTabContent: Error scheduling refresh task: %s", e)
+            # Fallback to call_later
+            self.call_later(self._refresh_content)  # type: ignore[attr-defined]
+
+    async def _refresh_content(self) -> None:  # pragma: no cover
+        """Internal async method to refresh content."""
+        if not self._selected_info_hash or not self._active_sub_tab_id:
+            return
+
+        try:
+            # Refresh based on active sub-tab
+            if self._active_sub_tab_id == "sub-tab-files":
+                try:
+                    from ccbt.interface.screens.per_torrent_files import (
+                        TorrentFilesScreen,
+                    )
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
+                    try:
+                        files_screen = self.query_one(TorrentFilesScreen)  # type: ignore[attr-defined]
+                        if files_screen and hasattr(files_screen, "refresh_files"):
+                            await files_screen.refresh_files()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            elif self._active_sub_tab_id == "sub-tab-peers":
+                try:
+                    from ccbt.interface.screens.per_torrent_peers import (
+                        TorrentPeersScreen,
+                    )
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
+                    try:
+                        peers_screen = self.query_one(TorrentPeersScreen)  # type: ignore[attr-defined]
+                        if peers_screen and hasattr(peers_screen, "refresh_peers"):
+                            await peers_screen.refresh_peers()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            elif self._active_sub_tab_id == "sub-tab-trackers":
+                try:
+                    from ccbt.interface.screens.per_torrent_trackers import (
+                        TorrentTrackersScreen,
+                    )
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
+                    try:
+                        trackers_screen = self.query_one(TorrentTrackersScreen)  # type: ignore[attr-defined]
+                        if trackers_screen and hasattr(trackers_screen, "refresh_trackers"):
+                            await trackers_screen.refresh_trackers()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+            elif self._active_sub_tab_id == "sub-tab-info":
+                try:
+                    from ccbt.interface.screens.per_torrent_info import (
+                        TorrentInfoScreen,
+                    )
+                    # Note: query_one() doesn't accept can_be_none parameter in Textual
+                    try:
+                        info_screen = self.query_one(TorrentInfoScreen)  # type: ignore[attr-defined]
+                        if info_screen and hasattr(info_screen, "refresh_info"):
+                            await info_screen.refresh_info()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("Error refreshing per-torrent tab: %s", e)
+
+    async def refresh_active_sub_tab(self) -> None:  # pragma: no cover
+        """Refresh the currently active sub-tab content."""
+        if not self._active_sub_tab_id:
+            return
+        # Reload the sub-tab content to ensure it's up-to-date
+        await self._load_sub_tab_content(self._active_sub_tab_id)
+
+    def get_selected_info_hash(self) -> Optional[str]:  # pragma: no cover
+        """Get the currently selected torrent info hash.
+        
+        Returns:
+            The selected info hash, or None if no torrent is selected
+        """
+        return self._selected_info_hash
+
+    def on_unmount(self) -> None:  # pragma: no cover
+        """Handle widget unmounting - cancel all pending async tasks.
+        
+        Note: This prevents the "Callback is still pending after 3 seconds" warning
+        by properly cleaning up all async tasks when the widget is removed.
+        """
+        # Cancel any pending refresh tasks
+        # Note: We can't directly track tasks created with create_task, but we can
+        # set a flag to prevent new tasks from being created
+        self._content_loaded_for_hash = None
+
+        # Clear content area to prevent any pending operations
+        if self._content_area:
+            try:
+                # Cancel any pending operations on child widgets
+                for child in list(self._content_area.children):  # type: ignore[attr-defined]
+                    try:
+                        # If child has cleanup method, call it
+                        if hasattr(child, "on_unmount"):
+                            child.on_unmount()  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # Call parent's on_unmount if it exists
+        try:
+            super().on_unmount()  # type: ignore[attr-defined]
+        except (AttributeError, TypeError):
+            pass
+

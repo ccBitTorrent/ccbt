@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     # TYPE_CHECKING block is only evaluated by static type checkers, not at runtime.
@@ -61,8 +61,8 @@ class WebRTCConnectionManager:
 
     def __init__(
         self,
-        stun_servers: list[str] | None = None,
-        turn_servers: list[str] | None = None,
+        stun_servers: Optional[list[str]] = None,
+        turn_servers: Optional[list[str]] = None,
         max_connections: int = 100,
     ):
         """Initialize WebRTC connection manager.
@@ -132,7 +132,7 @@ class WebRTCConnectionManager:
     async def create_peer_connection(
         self,
         peer_id: str,
-        ice_candidate_callback: Any | None = None,
+        ice_candidate_callback: Optional[Any] = None,
     ) -> Any:  # RTCPeerConnection, but type checker needs help
         """Create a new RTCPeerConnection instance.
 
@@ -181,7 +181,9 @@ class WebRTCConnectionManager:
 
         # Set up ICE candidate handler
         @pc.on("icecandidate")
-        async def on_ice_candidate(candidate: Any | None):  # RTCIceCandidate | None
+        async def on_ice_candidate(
+            candidate: Optional[Any],
+        ):  # Optional[RTCIceCandidate]
             if candidate is None:
                 # End of candidates
                 if ice_candidate_callback:
@@ -397,7 +399,7 @@ class WebRTCConnectionManager:
         message_size = len(message) if isinstance(message, bytes) else "N/A"
         logger.debug("Received message from peer %s, size: %s", peer_id, message_size)
 
-    def get_connection_stats(self, peer_id: str) -> dict[str, Any] | None:
+    def get_connection_stats(self, peer_id: str) -> Optional[dict[str, Any]]:
         """Get connection statistics for a peer.
 
         Args:

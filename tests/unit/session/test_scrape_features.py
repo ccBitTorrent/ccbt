@@ -16,21 +16,20 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 pytestmark = [pytest.mark.unit, pytest.mark.session]
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock configuration."""
     config = MagicMock()
     config.discovery = MagicMock()
     config.discovery.tracker_auto_scrape = False
     config.discovery.tracker_scrape_interval = 300.0  # 5 minutes
-    config.discovery.enable_dht = False  # Disable DHT to avoid network operations
+    config.discovery.enable_dht = False  # Will be mocked via network mocks
     config.nat = MagicMock()
-    config.nat.auto_map_ports = False  # Disable NAT to avoid network operations
+    config.nat.auto_map_ports = False  # Will be mocked via network mocks
     config.security = MagicMock()
     config.security.ip_filter = MagicMock()
     config.security.ip_filter.filter_update_interval = 3600.0  # Long interval to avoid updates
@@ -45,26 +44,28 @@ def mock_config():
     from ccbt.models import CheckpointFormat
     config.disk.checkpoint_format = CheckpointFormat.BINARY  # Real enum value
     config.disk.checkpoint_enabled = True
+    # Note: Add limits attribute to prevent TypeError
+    config.limits = MagicMock()
+    config.limits.global_down_kib = 0
+    config.limits.global_up_kib = 0
+    # Real ints/strings so announce/XET startup paths do not compare against MagicMock.
+    config.network = MagicMock()
+    config.network.max_global_peers = 100
+    config.network.max_peers_per_torrent = 50
+    config.network.connection_timeout = 30.0
+    config.network.handshake_timeout = 10.0
+    config.network.enable_tcp = True
+    config.network.enable_utp = False
+    config.network.listen_port = 6881
+    config.network.listen_port_tcp = 6881
+    config.network.listen_port_udp = 6881
+    config.network.tracker_udp_port = 6882
+    config.network.xet_multicast_address = "239.255.255.250"
+    config.network.xet_multicast_port = 6882
+    config.discovery.max_tracker_urls_per_torrent = 7
+    config.xet_sync = MagicMock()
+    config.xet_sync.enable_xet = False
     return config
-
-
-@pytest_asyncio.fixture
-async def session_manager(mock_config):
-    """Create AsyncSessionManager instance for testing."""
-    from ccbt.session.session import AsyncSessionManager
-
-    with patch("ccbt.session.session.get_config") as mock_get_config:
-        mock_get_config.return_value = mock_config
-
-        session = AsyncSessionManager(".")
-        await session.start()
-        try:
-            yield session
-        finally:
-            # Ensure all background tasks are stopped
-            await session.stop()
-            # Give a moment for cleanup
-            await asyncio.sleep(0.1)
 
 
 @pytest.fixture
@@ -203,7 +204,6 @@ class TestScrapeCache:
         sample_info_hash_hex,
     ):
         """Test scrape_count increments on multiple scrapes."""
-        from ccbt.models import ScrapeResult
         from ccbt.session.session import AsyncTorrentSession
 
         # Add torrent session
@@ -374,27 +374,46 @@ class TestAutoScrapeOnAdd:
             mock_force.assert_not_called()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_auto_scrape_enabled(
-        self, session_manager, mock_config, sample_torrent_data, sample_info_hash_hex
+        self, session_manager, mock_config, sample_torrent_data, sample_info_hash_hex, mock_network_components
     ):
         """Test auto-scrape runs when enabled."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+
         mock_config.discovery.tracker_auto_scrape = True
 
-        # Mock force_scrape
+        # Ensure clean state before test - restart session manager to apply new config
+        await session_manager.stop()
+        await asyncio.sleep(0.1)  # Allow cleanup to complete
+        apply_network_mocks_to_session(session_manager, mock_network_components)
+        await session_manager.start()
+
+        # Production auto-scrape defers 45s; run scrape immediately for this check.
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
         ) as mock_force:
             mock_force.return_value = True
 
-            await session_manager.add_torrent(sample_torrent_data, resume=False)
+            async def _immediate_auto_scrape(info_hash: str) -> None:
+                await session_manager.force_scrape(info_hash)
 
-            # Wait for auto-scrape delay (2 seconds) but check periodically
-            for _ in range(25):  # 2.5 seconds total
-                await asyncio.sleep(0.1)
-                if mock_force.called:
-                    break
+            with patch.object(
+                session_manager,
+                "_auto_scrape_torrent",
+                side_effect=_immediate_auto_scrape,
+            ):
+                await session_manager.add_torrent(sample_torrent_data, resume=False)
 
-            # force_scrape should be called once
+                for _ in range(50):  # 5 seconds total
+                    await asyncio.sleep(0.1)
+                    if mock_force.called:
+                        break
+
+            assert mock_force.called, (
+                f"Expected force_scrape to be called within 5 seconds. "
+                f"Called: {mock_force.called}, Call count: {mock_force.call_count}"
+            )
             mock_force.assert_called_once_with(sample_info_hash_hex)
 
     @pytest.mark.asyncio
@@ -404,22 +423,28 @@ class TestAutoScrapeOnAdd:
         """Test auto-scrape handles errors gracefully."""
         mock_config.discovery.tracker_auto_scrape = True
 
-        # Mock force_scrape to raise exception
+        # Production auto-scrape defers 45s; run scrape immediately for this check.
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
         ) as mock_force:
             mock_force.side_effect = Exception("Scrape error")
 
-            # Should not raise exception
-            await session_manager.add_torrent(sample_torrent_data, resume=False)
+            async def _immediate_auto_scrape(info_hash: str) -> None:
+                await session_manager.force_scrape(info_hash)
 
-            # Wait for auto-scrape delay but with timeout
-            for _ in range(25):  # 2.5 seconds total
-                await asyncio.sleep(0.1)
-                if mock_force.called:
-                    break
+            with patch.object(
+                session_manager,
+                "_auto_scrape_torrent",
+                side_effect=_immediate_auto_scrape,
+            ):
+                # Should not raise exception
+                await session_manager.add_torrent(sample_torrent_data, resume=False)
 
-            # force_scrape should have been called
+                for _ in range(50):  # 5 seconds total
+                    await asyncio.sleep(0.1)
+                    if mock_force.called:
+                        break
+
             mock_force.assert_called_once_with(sample_info_hash_hex)
 
 
@@ -427,34 +452,60 @@ class TestPeriodicScrapeLoop:
     """Test periodic scrape loop."""
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_periodic_scrape_loop_starts(
-        self, session_manager, mock_config
+        self, session_manager, mock_config, mock_network_components
     ):
         """Test periodic scrape loop starts when auto-scrape enabled."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+
         mock_config.discovery.tracker_auto_scrape = True
 
-        await session_manager.stop()
-        await session_manager.start()
+        # Ensure previous scrape_task is cancelled and cleaned up
+        if session_manager.scrape_task and not session_manager.scrape_task.done():
+            session_manager.scrape_task.cancel()
+            try:
+                await asyncio.wait_for(session_manager.scrape_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass  # Expected when cancelling
 
-        assert session_manager.scrape_task is not None
-        assert not session_manager.scrape_task.done()
+        await session_manager.stop()
+        await asyncio.sleep(0.1)  # Allow cleanup to complete
+        apply_network_mocks_to_session(session_manager, mock_network_components)
+        await session_manager.start()
+        await asyncio.sleep(0.1)  # Allow task to be created
+
+        # Verify scrape_task was created and is running
+        # Wait up to 1 second for task to be created (in case of async scheduling delay)
+        for _ in range(10):  # Check every 0.1s for up to 1 second
+            if session_manager.scrape_task is not None:
+                break
+            await asyncio.sleep(0.1)
+
+        assert session_manager.scrape_task is not None, "Expected scrape_task to be created when auto-scrape is enabled"
+        assert not session_manager.scrape_task.done(), "Expected scrape_task to be running, not done"
 
         await session_manager.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_periodic_scrape_loop_not_started_when_disabled(
-        self, session_manager, mock_config
+        self, session_manager, mock_config, mock_network_components
     ):
         """Test periodic scrape loop doesn't start when disabled."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+
         mock_config.discovery.tracker_auto_scrape = False
 
         await session_manager.stop()
+        apply_network_mocks_to_session(session_manager, mock_network_components)
         await session_manager.start()
 
         # scrape_task should be None when disabled
         assert session_manager.scrape_task is None
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_periodic_scrape_loop_scrapes_stale_torrents(
         self,
         session_manager,
@@ -462,6 +513,7 @@ class TestPeriodicScrapeLoop:
         sample_torrent_data,
         sample_info_hash,
         sample_info_hash_hex,
+        mock_network_components,
     ):
         """Test periodic scrape loop scrapes stale torrents."""
         from ccbt.models import ScrapeResult
@@ -496,7 +548,7 @@ class TestPeriodicScrapeLoop:
         # The periodic loop needs auto-scrape enabled and started
         # Stop and restart to apply new config with auto-scrape enabled
         await session_manager.stop()
-        
+
         # Mock force_scrape before restarting
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
@@ -504,6 +556,8 @@ class TestPeriodicScrapeLoop:
             mock_force.return_value = True
 
             # Restart with auto-scrape enabled to start periodic loop
+            from tests.fixtures.network_mocks import apply_network_mocks_to_session
+            apply_network_mocks_to_session(session_manager, mock_network_components)
             await session_manager.start()
 
             # Re-add torrent after restart (it was cleared during stop)
@@ -530,6 +584,7 @@ class TestPeriodicScrapeLoop:
             session_manager.torrents.pop(sample_info_hash, None)
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_periodic_scrape_loop_skips_fresh_torrents(
         self,
         session_manager,
@@ -537,6 +592,7 @@ class TestPeriodicScrapeLoop:
         sample_torrent_data,
         sample_info_hash,
         sample_info_hash_hex,
+        mock_network_components,
     ):
         """Test periodic scrape loop skips fresh torrents."""
         from ccbt.models import ScrapeResult
@@ -573,6 +629,8 @@ class TestPeriodicScrapeLoop:
             mock_force.return_value = True
 
             await session_manager.stop()
+            from tests.fixtures.network_mocks import apply_network_mocks_to_session
+            apply_network_mocks_to_session(session_manager, mock_network_components)
             await session_manager.start()
 
             # Re-add torrent after restart
@@ -591,12 +649,16 @@ class TestPeriodicScrapeLoop:
         await session_manager.stop()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_periodic_scrape_loop_cancelled_on_stop(
-        self, session_manager, mock_config
+        self, session_manager, mock_config, mock_network_components
     ):
         """Test periodic scrape loop is cancelled on stop."""
+        from tests.fixtures.network_mocks import apply_network_mocks_to_session
+
         mock_config.discovery.tracker_auto_scrape = True
 
+        apply_network_mocks_to_session(session_manager, mock_network_components)
         await session_manager.start()
 
         assert session_manager.scrape_task is not None
@@ -608,8 +670,9 @@ class TestPeriodicScrapeLoop:
         assert session_manager.scrape_task.done()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout_medium
     async def test_periodic_scrape_loop_error_recovery(
-        self, session_manager, mock_config, sample_torrent_data, sample_info_hash
+        self, session_manager, mock_config, sample_torrent_data, sample_info_hash, mock_network_components
     ):
         """Test periodic scrape loop recovers from errors."""
         mock_config.discovery.tracker_auto_scrape = True
@@ -626,7 +689,7 @@ class TestPeriodicScrapeLoop:
 
         # Stop and restart to apply new config and start periodic loop
         await session_manager.stop()
-        
+
         # Mock force_scrape to raise exception
         with patch.object(
             session_manager, "force_scrape", new_callable=AsyncMock
@@ -634,6 +697,8 @@ class TestPeriodicScrapeLoop:
             mock_force.side_effect = Exception("Scrape error")
 
             # Restart with auto-scrape enabled to start periodic loop
+            from tests.fixtures.network_mocks import apply_network_mocks_to_session
+            apply_network_mocks_to_session(session_manager, mock_network_components)
             await session_manager.start()
 
             # Re-add torrent after restart (it was cleared during stop)
@@ -1035,8 +1100,9 @@ class TestScrapeResultModel:
 
     def test_scrape_result_all_fields(self):
         """Test ScrapeResult with all fields."""
-        from ccbt.models import ScrapeResult
         import time
+
+        from ccbt.models import ScrapeResult
 
         result = ScrapeResult(
             info_hash=b"y" * 20,
@@ -1056,8 +1122,9 @@ class TestScrapeResultModel:
 
     def test_scrape_result_validation_negative_values(self):
         """Test ScrapeResult validation rejects negative values."""
-        from ccbt.models import ScrapeResult
         from pydantic import ValidationError
+
+        from ccbt.models import ScrapeResult
 
         # Should raise ValidationError for negative seeders
         with pytest.raises(ValidationError):

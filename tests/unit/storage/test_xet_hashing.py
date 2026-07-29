@@ -12,7 +12,6 @@ import pytest
 
 from ccbt.storage.xet_hashing import XetHasher
 
-
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
 

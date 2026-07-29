@@ -385,6 +385,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -422,6 +423,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -455,6 +457,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -488,6 +491,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -526,6 +530,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -599,6 +604,7 @@ class TestApplyMagnetFileSelection:
         manager = MockFileSelectionManager()
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -632,6 +638,7 @@ class TestApplyMagnetFileSelection:
         # Note: This shouldn't happen since parsing validates, but test the error handling
         magnet_info = MagnetInfo(
             info_hash=b"\x00" * 20,
+            swarm_id=(b"\x00" * 20).hex(),
             display_name="test",
             trackers=[],
             web_seeds=[],
@@ -655,10 +662,101 @@ class TestApplyMagnetFileSelection:
         from ccbt.core.magnet import build_minimal_torrent_data
 
         info_hash = bytes.fromhex("0123456789abcdef0123456789abcdef01234567")
-        result = build_minimal_torrent_data(info_hash, "test", [])
+        result = build_minimal_torrent_data(
+            info_hash, "test", [], add_default_trackers=False
+        )
         assert result["announce"] == ""
         assert result["announce_list"] == []
         assert result["info_hash"] == info_hash
+        assert result["_metadata_incomplete"] is True
+
+    def test_build_minimal_torrent_data_adds_default_trackers(self):
+        """Test build_minimal_torrent_data injects configured default trackers."""
+        from ccbt.core.magnet import build_minimal_torrent_data
+
+        info_hash = bytes.fromhex("0123456789abcdef0123456789abcdef01234567")
+        result = build_minimal_torrent_data(info_hash, "test", [])
+        assert result["announce_list"]
+        assert result["announce"] == result["announce_list"][0]
+        assert any("tracker" in url for url in result["announce_list"])
+
+    def test_merge_tracker_urls_into_torrent_data(self):
+        """Test merging checkpoint tracker URLs into empty torrent_data."""
+        from ccbt.core.magnet import merge_tracker_urls_into_torrent_data
+
+        torrent_data = {
+            "announce": "",
+            "announce_list": [],
+            "info_hash": b"\x01" * 20,
+        }
+        merged = merge_tracker_urls_into_torrent_data(
+            torrent_data,
+            ["http://tracker.example/announce", "udp://tracker.example:1337/announce"],
+        )
+        assert merged is True
+        assert torrent_data["announce"] == "http://tracker.example/announce"
+        assert len(torrent_data["announce_list"]) == 2
+
+        unchanged = merge_tracker_urls_into_torrent_data(
+            torrent_data,
+            ["http://tracker.example/announce", "udp://tracker.example:1337/announce"],
+        )
+        assert unchanged is False
+
+        supplemented = merge_tracker_urls_into_torrent_data(
+            torrent_data,
+            ["http://other.example/announce"],
+        )
+        assert supplemented is True
+        assert torrent_data["announce_list"] == [
+            "http://tracker.example/announce",
+            "udp://tracker.example:1337/announce",
+            "http://other.example/announce",
+        ]
+
+    def test_magnet_info_from_minimal_torrent_data(self):
+        """Test magnet_info_from_minimal_torrent_data builds MagnetInfo from dict."""
+        from ccbt.core.magnet import (
+            MagnetInfo,
+            magnet_info_from_minimal_torrent_data,
+        )
+
+        info_hash = bytes.fromhex("0123456789abcdef0123456789abcdef01234567")
+        torrent_data = {
+            "info_hash": info_hash,
+            "name": "my-torrent",
+            "announce_list": ["http://t1/announce", "http://t2/announce"],
+            "web_seeds": ["http://ws/"],
+        }
+        mi = magnet_info_from_minimal_torrent_data(torrent_data)
+        assert isinstance(mi, MagnetInfo)
+        assert mi.info_hash == info_hash
+        assert mi.display_name == "my-torrent"
+        assert mi.trackers == ["http://t1/announce", "http://t2/announce"]
+        assert mi.web_seeds == ["http://ws/"]
+        assert mi.selected_indices is None
+        assert mi.prioritized_indices is None
+
+    def test_magnet_info_from_minimal_torrent_data_hex_info_hash(self):
+        """Test magnet_info_from_minimal_torrent_data accepts hex info_hash."""
+        from ccbt.core.magnet import magnet_info_from_minimal_torrent_data
+
+        torrent_data = {
+            "info_hash": "0123456789abcdef0123456789abcdef01234567",
+            "name": "x",
+            "announce_list": [],
+        }
+        mi = magnet_info_from_minimal_torrent_data(torrent_data)
+        assert mi.info_hash == bytes.fromhex(
+            "0123456789abcdef0123456789abcdef01234567"
+        )
+
+    def test_magnet_info_from_minimal_torrent_data_missing_info_hash_raises(self):
+        """Test magnet_info_from_minimal_torrent_data raises when info_hash missing."""
+        from ccbt.core.magnet import magnet_info_from_minimal_torrent_data
+
+        with pytest.raises(ValueError, match="info_hash"):
+            magnet_info_from_minimal_torrent_data({"name": "x"})
 
     def test_validate_indices_with_debug_logged(self, caplog):
         """Test that validation logs debug messages for invalid indices."""

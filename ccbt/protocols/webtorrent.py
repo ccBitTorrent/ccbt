@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import aiohttp
 from aiohttp import web
@@ -40,7 +40,7 @@ class WebRTCConnection:
     """WebRTC connection information."""
 
     peer_id: str
-    data_channel: Any | None = None  # RTCDataChannel
+    data_channel: Optional[Any] = None  # RTCDataChannel
     connection_state: str = "new"
     ice_connection_state: str = "new"
     last_activity: float = 0.0
@@ -51,7 +51,7 @@ class WebRTCConnection:
 class WebTorrentProtocol(Protocol):
     """WebTorrent protocol implementation."""
 
-    def __init__(self, session_manager: Any | None = None):
+    def __init__(self, session_manager: Optional[Any] = None):
         """Initialize WebTorrent protocol.
 
         Args:
@@ -60,7 +60,7 @@ class WebTorrentProtocol(Protocol):
         """
         super().__init__(ProtocolType.WEBTORRENT)
 
-        # CRITICAL FIX: Store session manager reference
+        # Note: Store session manager reference
         # This allows protocol to use shared components (WebSocket server, WebRTC manager)
         self.session_manager = session_manager
 
@@ -90,27 +90,27 @@ class WebTorrentProtocol(Protocol):
         self._pending_messages: dict[str, list[bytes]] = {}
 
         # Background task for retrying pending messages
-        self._retry_task: asyncio.Task | None = None
+        self._retry_task: Optional[asyncio.Task] = None
 
-        # CRITICAL FIX: WebSocket server is now managed at daemon startup
+        # Note: WebSocket server is now managed at daemon startup
         # Use shared server from session manager instead of creating new one
         # This prevents port conflicts and socket recreation issues
-        self.websocket_server: Application | None = None
+        self.websocket_server: Optional[Application] = None
         self.websocket_connections: set[WebSocketResponse] = set()
         self.websocket_connections_by_peer: dict[str, WebSocketResponse] = {}
 
-        # CRITICAL FIX: WebRTC connection manager is now initialized at daemon startup
+        # Note: WebRTC connection manager is now initialized at daemon startup
         # Use shared manager from session manager instead of creating new one
         # This ensures proper resource management and prevents duplicate managers
-        self.webrtc_manager: Any | None = None
+        self.webrtc_manager: Optional[Any] = None
 
         # Tracker URLs for WebTorrent
         self.tracker_urls: list[str] = []
 
-    def _get_webrtc_manager(self) -> Any | None:
+    def _get_webrtc_manager(self) -> Optional[Any]:
         """Get WebRTC manager from session manager.
 
-        CRITICAL FIX: WebRTC manager should be initialized at daemon startup.
+        Note: WebRTC manager should be initialized at daemon startup.
         This method ensures we use the shared manager from session manager.
 
         Returns:
@@ -142,7 +142,7 @@ class WebTorrentProtocol(Protocol):
     async def start(self) -> None:
         """Start WebTorrent protocol."""
         try:
-            # CRITICAL FIX: Use shared WebSocket server from session manager
+            # Note: Use shared WebSocket server from session manager
             # WebSocket server should have been initialized at daemon startup
             # If not available, log warning but continue (may be disabled)
             if self.session_manager and hasattr(
@@ -168,7 +168,7 @@ class WebTorrentProtocol(Protocol):
                     "WebTorrent signaling may not work."
                 )
 
-            # CRITICAL FIX: Use shared WebRTC manager from session manager
+            # Note: Use shared WebRTC manager from session manager
             # WebRTC manager should have been initialized at daemon startup
             if self.session_manager and hasattr(self.session_manager, "webrtc_manager"):
                 self.webrtc_manager = self.session_manager.webrtc_manager
@@ -188,17 +188,14 @@ class WebTorrentProtocol(Protocol):
                     "WebTorrent WebRTC features may not work."
                 )
 
-            # CRITICAL FIX: Register this protocol instance with session manager
+            # Note: Register this protocol instance with session manager
             # The shared WebSocket handler will route connections to registered protocols
             if self.websocket_server and self.session_manager:
                 # Register this protocol instance for WebSocket routing
-                if not hasattr(self.session_manager, "_webtorrent_protocols"):
-                    self.session_manager._webtorrent_protocols = []  # type: ignore[attr-defined]
-                if self not in self.session_manager._webtorrent_protocols:  # type: ignore[attr-defined]
-                    self.session_manager._webtorrent_protocols.append(self)  # type: ignore[attr-defined]
-                    logger.debug(
-                        "Registered WebTorrent protocol instance with session manager for WebSocket routing"
-                    )
+                self.session_manager.add_webtorrent_protocol(self)
+                logger.debug(
+                    "Registered WebTorrent protocol instance with session manager for WebSocket routing"
+                )
 
             # Set state to connected
             self.set_state(ProtocolState.CONNECTED)
@@ -235,17 +232,17 @@ class WebTorrentProtocol(Protocol):
             # Clear pending messages
             self._pending_messages.clear()
 
-            # CRITICAL FIX: Unregister this protocol instance from session manager
-            if self.session_manager and hasattr(
-                self.session_manager, "_webtorrent_protocols"
+            # Note: Unregister this protocol instance from session manager
+            if (
+                self.session_manager
+                and self in self.session_manager.get_webtorrent_protocols()
             ):
-                if self in self.session_manager._webtorrent_protocols:  # type: ignore[attr-defined]
-                    self.session_manager._webtorrent_protocols.remove(self)  # type: ignore[attr-defined]
-                    logger.debug(
-                        "Unregistered WebTorrent protocol instance from session manager"
-                    )
+                self.session_manager.remove_webtorrent_protocol(self)
+                logger.debug(
+                    "Unregistered WebTorrent protocol instance from session manager"
+                )
 
-            # CRITICAL FIX: Don't close shared WebSocket server
+            # Note: Don't close shared WebSocket server
             # The server is managed at daemon level, not per-protocol instance
             # Just clear our connections but leave the server running
             self.websocket_connections.clear()
@@ -272,11 +269,11 @@ class WebTorrentProtocol(Protocol):
     async def _start_websocket_server(self) -> None:
         """Start WebSocket server for signaling.
 
-        CRITICAL FIX: This method is deprecated - WebSocket server should be initialized
+        Note: This method is deprecated - WebSocket server should be initialized
         at daemon startup via start_webtorrent_components(). This method now uses the
         shared server from session manager if available, or logs a warning.
         """
-        # CRITICAL FIX: Use shared WebSocket server from session manager
+        # Note: Use shared WebSocket server from session manager
         # Server should have been initialized at daemon startup
         if self.session_manager and hasattr(
             self.session_manager, "webtorrent_websocket_server"
@@ -312,7 +309,7 @@ class WebTorrentProtocol(Protocol):
         await ws.prepare(request)
 
         self.websocket_connections.add(ws)
-        peer_id: str | None = None
+        peer_id: Optional[str] = None
 
         try:
             async for msg in ws:
@@ -407,7 +404,7 @@ class WebTorrentProtocol(Protocol):
                 await ws.send_json({"type": "error", "message": "Missing peer_id"})
                 return
 
-            # CRITICAL FIX: Use shared WebRTC manager from session manager
+            # Note: Use shared WebRTC manager from session manager
             self.webrtc_manager = self._get_webrtc_manager()
 
             # Type check: webrtc_manager should not be None here
@@ -559,9 +556,9 @@ class WebTorrentProtocol(Protocol):
                 logger.warning("Invalid answer type")
                 return
 
-            # CRITICAL FIX: Use shared WebRTC manager from session manager
+            # Note: Use shared WebRTC manager from session manager
             self.webrtc_manager = self._get_webrtc_manager()
-            # CRITICAL FIX: Use shared WebRTC manager from session manager
+            # Note: Use shared WebRTC manager from session manager
             self.webrtc_manager = self._get_webrtc_manager()
             if self.webrtc_manager is None:
                 logger.error("WebRTC manager not initialized")
@@ -632,7 +629,7 @@ class WebTorrentProtocol(Protocol):
                 logger.debug("ICE candidate for unknown peer: %s", peer_id)
                 return
 
-            # CRITICAL FIX: Use shared WebRTC manager from session manager
+            # Note: Use shared WebRTC manager from session manager
             self.webrtc_manager = self._get_webrtc_manager()
             if self.webrtc_manager is None:
                 logger.error("WebRTC manager not initialized")
@@ -715,7 +712,7 @@ class WebTorrentProtocol(Protocol):
             return False
 
         try:
-            # CRITICAL FIX: Use shared WebRTC manager from session manager
+            # Note: Use shared WebRTC manager from session manager
             # Manager should have been initialized at daemon startup
             if self.webrtc_manager is None:
                 if self.session_manager and hasattr(
@@ -743,7 +740,7 @@ class WebTorrentProtocol(Protocol):
 
             # Create ICE candidate callback to send via WebSocket
             async def ice_candidate_callback(
-                peer_id: str, candidate: dict[str, Any] | None
+                peer_id: str, candidate: Optional[dict[str, Any]]
             ):
                 """Send ICE candidate via WebSocket."""
                 if candidate is None:
@@ -1136,7 +1133,7 @@ class WebTorrentProtocol(Protocol):
         # Update buffer even if no messages extracted
         self._message_buffer[peer_id] = buffer
 
-    async def receive_message(self, peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
         """Receive message from WebTorrent peer.
 
         Args:
@@ -1340,7 +1337,7 @@ class WebTorrentProtocol(Protocol):
         """Get WebRTC connections."""
         return self.webrtc_connections.copy()
 
-    def get_connection_stats(self, peer_id: str) -> dict[str, Any] | None:
+    def get_connection_stats(self, peer_id: str) -> Optional[dict[str, Any]]:
         """Get connection statistics for a peer.
 
         Args:

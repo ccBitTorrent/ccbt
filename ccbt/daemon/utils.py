@@ -8,9 +8,12 @@ Provides helper functions for API key generation and validation.
 from __future__ import annotations
 
 import secrets
-from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 
 from ccbt.utils.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = get_logger(__name__)
 
@@ -47,7 +50,7 @@ def validate_api_key(api_key: str) -> bool:
         return False
 
 
-def migrate_api_key_to_ed25519(key_dir: Path | str | None = None) -> bool:
+def migrate_api_key_to_ed25519(key_dir: Optional[Path | str] = None) -> bool:
     """Migrate from api_key to Ed25519 keys.
 
     Generates Ed25519 keys if they don't exist and api_key does.

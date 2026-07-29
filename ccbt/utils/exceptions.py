@@ -8,13 +8,13 @@ and debugging throughout the application.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 
 class CCBTError(Exception):
     """Base exception for all ccBitTorrent errors."""
 
-    def __init__(self, message: str, details: dict[str, Any] | None = None):
+    def __init__(self, message: str, details: Optional[dict[str, Any]] = None):
         """Initialize CCBT error."""
         super().__init__(message)
         self.message = message
@@ -33,6 +33,16 @@ class NetworkError(CCBTError):
 
 class TrackerError(NetworkError):
     """Tracker communication errors."""
+
+    def __init__(
+        self,
+        message: str,
+        details: Optional[dict[str, Any]] = None,
+        tracker_failure_handled: bool = False,
+    ):
+        """Initialize tracker error with explicit handled flag."""
+        super().__init__(message, details)
+        self.tracker_failure_handled = tracker_failure_handled
 
 
 class PeerConnectionError(NetworkError):

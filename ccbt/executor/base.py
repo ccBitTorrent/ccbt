@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 
-from ccbt.executor.session_adapter import SessionAdapter
+if TYPE_CHECKING:
+    from ccbt.executor.session_adapter import SessionAdapter
 
 
 @dataclass
@@ -20,7 +21,7 @@ class CommandContext:
     """
 
     adapter: SessionAdapter
-    config: Any | None = None
+    config: Optional[Any] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -38,7 +39,7 @@ class CommandResult:
 
     success: bool
     data: Any = None
-    error: str | None = None
+    error: Optional[str] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

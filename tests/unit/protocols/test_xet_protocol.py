@@ -6,14 +6,13 @@ and hybrid integration.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from ccbt.models import PeerInfo, TorrentInfo
 from ccbt.protocols.base import ProtocolState, ProtocolType
 from ccbt.protocols.xet import XetProtocol
-
 
 pytestmark = [pytest.mark.unit, pytest.mark.protocols]
 
@@ -36,27 +35,17 @@ class TestXetProtocol:
     @pytest.mark.asyncio
     async def test_protocol_start(self, protocol):
         """Test protocol start."""
-        # Mock DHT client so cas_client gets initialized
         mock_dht = AsyncMock()
         protocol.dht_client = mock_dht
-        
-        with patch("ccbt.protocols.xet.P2PCASClient") as mock_cas_class:
-            mock_cas = AsyncMock()
-            mock_cas_class.return_value = mock_cas
 
-            await protocol.start()
+        await protocol.start()
 
-            assert protocol.state == ProtocolState.CONNECTED
-            # cas_client may be None if no dht/tracker client
-            # Just verify protocol started successfully
-            assert protocol.state == ProtocolState.CONNECTED
+        assert protocol.state == ProtocolState.CONNECTED
 
     @pytest.mark.asyncio
     async def test_protocol_stop(self, protocol):
         """Test protocol stop."""
-        # Start protocol first
-        with patch("ccbt.protocols.xet.P2PCASClient"):
-            await protocol.start()
+        await protocol.start()
 
         # Stop protocol
         await protocol.stop()
@@ -111,8 +100,6 @@ class TestXetProtocol:
         """Test announcing torrent with Xet metadata."""
         # Create torrent info with Xet metadata
         from ccbt.models import XetTorrentMetadata
-
-        from ccbt.models import XetPieceMetadata
 
         xet_metadata = XetTorrentMetadata(
             chunk_hashes=[b"A" * 32, b"B" * 32],
@@ -244,12 +231,9 @@ class TestXetProtocol:
     @pytest.mark.asyncio
     async def test_protocol_lifecycle(self, protocol):
         """Test full protocol lifecycle."""
-        # Start
-        with patch("ccbt.protocols.xet.P2PCASClient"):
-            await protocol.start()
-            assert protocol.state == ProtocolState.CONNECTED
+        await protocol.start()
+        assert protocol.state == ProtocolState.CONNECTED
 
-        # Stop
         await protocol.stop()
         assert protocol.state == ProtocolState.DISCONNECTED
 
@@ -432,16 +416,16 @@ class TestXetProtocol:
             pieces=[b"T" * 20],
         )
 
-        # Mock AsyncUDPTrackerClient (imported inside method)
-        with patch("ccbt.discovery.tracker_udp_client.AsyncUDPTrackerClient") as mock_tracker_class:
-            mock_tracker = AsyncMock()
-            mock_tracker.start = AsyncMock()
-            mock_tracker.stop = AsyncMock()
-            mock_tracker.scrape = AsyncMock(
-                return_value={"seeders": 8, "leechers": 3, "completed": 80}
-            )
-            mock_tracker_class.return_value = mock_tracker
-
+        mock_tracker = AsyncMock()
+        mock_tracker.start = AsyncMock()
+        mock_tracker.stop = AsyncMock()
+        mock_tracker.scrape = AsyncMock(
+            return_value={"seeders": 8, "leechers": 3, "completed": 80}
+        )
+        with patch(
+            "ccbt.discovery.tracker_udp_client.get_udp_tracker_client",
+            return_value=mock_tracker,
+        ):
             stats = await protocol._scrape_from_trackers(torrent_info)
 
             assert stats["seeders"] == 8
@@ -588,7 +572,7 @@ class TestXetProtocol:
     @pytest.mark.asyncio
     async def test_scrape_from_dht_with_xet_metadata(self, protocol):
         """Test scraping from DHT with Xet metadata."""
-        from ccbt.models import XetTorrentMetadata, XetPieceMetadata
+        from ccbt.models import XetTorrentMetadata
 
         xet_metadata = XetTorrentMetadata(
             chunk_hashes=[b"C" * 32, b"D" * 32],

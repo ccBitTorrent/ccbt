@@ -1,13 +1,12 @@
 """Structured logging configuration for ccBitTorrent.
 
-from __future__ import annotations
-
 Provides comprehensive logging setup with correlation IDs, structured output,
 and configurable log levels.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import logging.config
@@ -16,7 +15,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from ccbt.utils.exceptions import CCBTError
 from ccbt.utils.rich_logging import (
@@ -30,10 +29,51 @@ if TYPE_CHECKING:  # pragma: no cover
 
 # Context variable for correlation ID
 # Help type checker understand the ContextVar generic with a None default
-correlation_id: ContextVar[str | None] = cast(
-    "ContextVar[str | None]",
+correlation_id: ContextVar[Optional[str]] = cast(
+    "ContextVar[Optional[str]]",
     ContextVar("correlation_id", default=None),
 )
+
+# When set by the CLI (or tests), ConfigManager re-applies this level on every
+# init_config()/reload so a later ConfigManager() does not drop -v/-vv/-vvv.
+_cli_session_log_level_override: ContextVar[Optional[Any]] = cast(
+    "ContextVar[Optional[Any]]",
+    ContextVar("ccbt_cli_session_log_level", default=None),
+)
+
+
+def get_cli_session_log_level_override() -> Optional[Any]:
+    """Return the active CLI session log level override, if any."""
+    return _cli_session_log_level_override.get()
+
+
+def set_cli_session_log_level_override(level: Optional[Any]) -> None:
+    """Store override used when ConfigManager configures logging (None = use config file)."""
+    _cli_session_log_level_override.set(level)
+
+
+TRACE_LOG_LEVEL = 5
+TRACE_LOG_LEVEL_NAME = "TRACE"
+
+
+def _register_trace_level() -> None:
+    """Register a dedicated TRACE logging level."""
+    if logging.getLevelName(TRACE_LOG_LEVEL) == "Level 5":
+        logging.addLevelName(TRACE_LOG_LEVEL, TRACE_LOG_LEVEL_NAME)
+
+    if not hasattr(logging, "TRACE"):
+        cast("Any", logging).TRACE = TRACE_LOG_LEVEL
+
+        def log_trace(
+            self: logging.Logger, msg: Any, *args: Any, **kwargs: Any
+        ) -> None:
+            if self.isEnabledFor(TRACE_LOG_LEVEL):
+                self._log(TRACE_LOG_LEVEL, msg, args, **kwargs)
+
+        logging.Logger.trace = log_trace  # type: ignore[method-assign, attr-defined]
+
+
+_register_trace_level()
 
 
 class CorrelationFilter(logging.Filter):
@@ -104,7 +144,7 @@ class StructuredFormatter(logging.Formatter):
 
             return json.dumps(log_entry, default=str)
         except Exception:
-            # CRITICAL FIX: Fallback to simple format if JSON serialization fails
+            # Note: Fallback to simple format if JSON serialization fails
             # This prevents "Logging error" messages from circular failures
             try:
                 return f"{record.levelname} {record.name}: {record.getMessage()}"
@@ -112,55 +152,100 @@ class StructuredFormatter(logging.Formatter):
                 return f"Logging error: {record.levelname} {record.name}"
 
 
-class ColoredFormatter(logging.Formatter):
-    """Colored formatter for console output (legacy, uses Rich now).
+def _generate_timestamped_log_filename(base_path: Optional[str]) -> str:
+    """Generate a unique timestamped log file name.
 
-    Deprecated: Use RichHandler instead. Kept for backward compatibility.
+    Args:
+        base_path: Base log file path (directory or file path)
+
+    Returns:
+        Timestamped log file path
+
+    Format: ccbt-YYYYMMDD-HHMMSS-<random>.log
+
     """
+    import random
+    import string
+    from datetime import datetime
 
-    COLORS: ClassVar[dict[str, str]] = {
-        "DEBUG": "\033[36m",  # Cyan
-        "INFO": "\033[32m",  # Green
-        "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",  # Red
-        "CRITICAL": "\033[35m",  # Magenta
+    if base_path is None:
+        # Default to .ccbt/logs directory
+        log_dir = Path.home() / ".ccbt" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        base_dir = log_dir
+    else:
+        base_path_obj = Path(base_path)
+        if base_path_obj.is_dir():
+            base_dir = base_path_obj
+        else:
+            # It's a file path, use its directory
+            base_dir = base_path_obj.parent
+            base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate timestamp: YYYYMMDD-HHMMSS
+    from datetime import timezone
+
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+    # Generate random suffix (4 characters) to ensure uniqueness
+    random_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+
+    # Create filename: ccbt-YYYYMMDD-HHMMSS-<random>.log
+    log_filename = f"ccbt-{timestamp}-{random_suffix}.log"
+
+    return str(base_dir / log_filename)
+
+
+def _resolve_log_level(level: Union[int, str, Any]) -> int:
+    """Resolve a logging level value into a numeric constant."""
+    if isinstance(level, int):
+        return level
+
+    if hasattr(level, "value"):
+        level = level.value
+
+    if not isinstance(level, str):
+        return logging.INFO
+
+    level_name = level.upper()
+    level_map = {
+        "TRACE": TRACE_LOG_LEVEL,
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
     }
-    RESET: ClassVar[str] = "\033[0m"
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format log record with color coding."""
-        try:
-            # Add color to level name
-            if record.levelname in self.COLORS:
-                record.levelname = (
-                    f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
-                )
-
-            # Add correlation ID if available
-            if hasattr(record, "correlation_id"):
-                record.correlation_id = f"[{record.correlation_id}]"
-            else:
-                record.correlation_id = ""
-
-            return super().format(record)
-        except Exception:
-            # CRITICAL FIX: Fallback to simple format if formatting fails
-            try:
-                return f"{record.levelname} {record.name}: {record.getMessage()}"
-            except Exception:
-                return f"Logging error: {record.levelname} {record.name}"
+    return level_map.get(level_name, logging.INFO)
 
 
-def setup_logging(config: ObservabilityConfig) -> None:
-    """Set up logging configuration with Rich support."""
-    # Create log directory if needed
+def setup_logging(
+    config: ObservabilityConfig,
+    effective_log_level: Optional[Union[int, str]] = None,
+) -> None:
+    """Set up logging configuration with Rich support.
+
+    Log files are automatically timestamped with format: ccbt-YYYYMMDD-HHMMSS-<random>.log.
+
+    Args:
+        config: Observability configuration
+        effective_log_level: Optional logging level override (verbosity-aware)
+
+    """
+    configured_log_level = _resolve_log_level(
+        effective_log_level if effective_log_level is not None else config.log_level
+    )
+
+    # Generate timestamped log file name if log_file is specified
+    actual_log_file = config.log_file
     if config.log_file:
-        log_path = Path(config.log_file)
+        actual_log_file = _generate_timestamped_log_filename(config.log_file)
+        log_path = Path(actual_log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Try to use RichHandler for console output
     try:
-        rich_handler = create_rich_handler(level=config.log_level.value)
+        rich_handler = create_rich_handler(level=configured_log_level)
         use_rich = True
     except Exception:
         # Fallback to standard handler if Rich not available
@@ -172,9 +257,9 @@ def setup_logging(config: ObservabilityConfig) -> None:
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "colored": {
-                "()": ColoredFormatter,
-                "format": "%(asctime)s %(levelname)s %(correlation_id)s %(name)s: %(message)s",
+            "plain": {
+                "()": logging.Formatter,
+                "format": "%(asctime)s %(levelname)s %(correlation_id)s %(name)s.%(funcName)s: %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
             "structured": {
@@ -182,7 +267,7 @@ def setup_logging(config: ObservabilityConfig) -> None:
             },
             "simple": {
                 "()": FileFormatter,
-                "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+                "format": "%(asctime)s %(levelname)s %(name)s.%(funcName)s: %(message)s",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
         },
@@ -194,13 +279,13 @@ def setup_logging(config: ObservabilityConfig) -> None:
         "handlers": {},
         "loggers": {
             "ccbt": {
-                "level": config.log_level.value,
+                "level": configured_log_level,
                 "handlers": [],
                 "propagate": False,
             },
         },
         "root": {
-            "level": config.log_level.value,
+            "level": configured_log_level,
             "handlers": [],
         },
     }
@@ -210,8 +295,8 @@ def setup_logging(config: ObservabilityConfig) -> None:
         # Use RichHandler for console - we'll add it directly after dictConfig
         logging_config["handlers"]["console"] = {
             "class": "logging.StreamHandler",
-            "level": config.log_level.value,
-            "formatter": "colored",
+            "level": configured_log_level,
+            "formatter": "plain",
             "filters": ["correlation"],
             "stream": sys.stdout,
         }
@@ -219,27 +304,55 @@ def setup_logging(config: ObservabilityConfig) -> None:
         # Fallback to standard StreamHandler
         logging_config["handlers"]["console"] = {
             "class": "logging.StreamHandler",
-            "level": config.log_level.value,
-            "formatter": "colored" if not config.structured_logging else "structured",
+            "level": configured_log_level,
+            "formatter": "plain" if not config.structured_logging else "structured",
             "filters": ["correlation"],
             "stream": sys.stdout,
+            # Note: Disable buffering for real-time log output
+            # This ensures logs appear immediately instead of only on interrupt
         }
 
     logging_config["loggers"]["ccbt"]["handlers"].append("console")
     logging_config["root"]["handlers"].append("console")
 
     # Add file handler if log file is specified
+    # Use timestamped filename for unique log files per session
     if config.log_file:
         logging_config["handlers"]["file"] = {
             "class": "logging.handlers.RotatingFileHandler",
-            "level": config.log_level.value,
+            "level": configured_log_level,
             "formatter": "structured" if config.structured_logging else "simple",
             "filters": ["correlation"],
-            "filename": config.log_file,
+            "filename": actual_log_file,  # Use timestamped filename
             "maxBytes": 10 * 1024 * 1024,  # 10MB
             "backupCount": 5,
         }
         logging_config["loggers"]["ccbt"]["handlers"].append("file")
+
+    import os
+
+    if "PYTHONUNBUFFERED" not in os.environ:
+        os.environ["PYTHONUNBUFFERED"] = "1"
+
+    # Reconfigure stdout to use line buffering (flush after each line)
+    try:
+        # Python 3.7+ supports reconfigure
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)  # type: ignore[call-non-callable]
+        # Fallback: wrap stdout in a line-buffered TextIOWrapper
+        elif hasattr(sys.stdout, "buffer"):
+            import io
+
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer,
+                encoding=sys.stdout.encoding,
+                errors=sys.stdout.errors,
+                newline=sys.stdout.newlines,
+                line_buffering=True,  # CRITICAL: Flush after each line
+            )
+    except Exception:
+        # If reconfiguration fails, continue with default (better than crashing)
+        pass
 
     # Apply configuration
     logging.config.dictConfig(logging_config)
@@ -267,6 +380,80 @@ def setup_logging(config: ObservabilityConfig) -> None:
         root_logger.addHandler(rich_handler)
         ccbt_logger.addHandler(rich_handler)
 
+        # Wrap emit to force flush after each log message
+        if hasattr(rich_handler, "console"):
+            # Rich Console - ensure it flushes
+            original_emit = rich_handler.emit
+
+            def make_emit_with_flush(original: Any, console: Any) -> Any:
+                """Create an emit function that flushes Rich Console after each log."""
+
+                def emit_with_flush(record: logging.LogRecord) -> None:
+                    with contextlib.suppress(OSError, ValueError, RuntimeError):
+                        original(record)
+                    try:
+                        # Force Rich Console to flush
+                        console_file = getattr(console, "_file", None)
+                        if console_file and hasattr(console_file, "flush"):
+                            console_file.flush()
+                        elif hasattr(console, "file") and hasattr(
+                            console.file, "flush"
+                        ):
+                            console.file.flush()
+                    except Exception:
+                        pass  # Ignore flush errors
+
+                return emit_with_flush
+
+            rich_handler.emit = make_emit_with_flush(
+                original_emit, rich_handler.console
+            )  # type: ignore[method-assign,attr-defined]
+        elif hasattr(rich_handler, "stream") and hasattr(rich_handler.stream, "flush"):
+            # Standard StreamHandler - ensure it flushes
+            original_emit = rich_handler.emit
+
+            def make_emit_with_flush(original: Any, stream: Any) -> Any:
+                """Create an emit function that flushes stream after each log."""
+
+                def emit_with_flush(record: logging.LogRecord) -> None:
+                    with contextlib.suppress(OSError, ValueError, RuntimeError):
+                        original(record)
+                    with contextlib.suppress(Exception):
+                        stream.flush()  # Ignore flush errors
+
+                return emit_with_flush
+
+            rich_handler.emit = make_emit_with_flush(original_emit, rich_handler.stream)  # type: ignore[method-assign]
+
+    # this is for standard StreamHandlers
+    for logger_name in [None, "ccbt"]:  # root logger and ccbt logger
+        logger = logging.getLogger(logger_name)
+        for handler in logger.handlers:
+            # Skip RichHandler (already handled above) and handlers without stdout stream
+            if (
+                isinstance(handler, logging.StreamHandler)
+                and handler.stream == sys.stdout
+            ):
+                # Check if this is a RichHandler (has console attribute) - skip if already handled
+                if hasattr(handler, "console"):
+                    continue  # RichHandler already handled above
+
+                # Create a wrapper that flushes after each emit
+                original_emit = handler.emit
+
+                def make_emit_with_flush(original: Any, stream: Any) -> Any:
+                    """Create an emit function that flushes after each log."""
+
+                    def emit_with_flush(record: logging.LogRecord) -> None:
+                        with contextlib.suppress(OSError, ValueError, RuntimeError):
+                            original(record)
+                        with contextlib.suppress(Exception):
+                            stream.flush()  # Ignore flush errors
+
+                    return emit_with_flush
+
+                handler.emit = make_emit_with_flush(original_emit, handler.stream)  # type: ignore[method-assign]
+
     # Set up correlation ID for main thread
     if config.log_correlation_id:
         correlation_id.set(str(uuid.uuid4()))
@@ -277,7 +464,7 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"ccbt.{name}")
 
 
-def set_correlation_id(corr_id: str | None = None) -> str:
+def set_correlation_id(corr_id: Optional[str] = None) -> str:
     """Set correlation ID for the current context."""
     if corr_id is None:
         corr_id = str(uuid.uuid4())
@@ -285,26 +472,95 @@ def set_correlation_id(corr_id: str | None = None) -> str:
     return corr_id
 
 
-def get_correlation_id() -> str | None:
+def get_correlation_id() -> Optional[str]:
     """Get the current correlation ID."""
     return correlation_id.get()
 
 
 class LoggingContext:
-    """Context manager for logging operations."""
+    """Context manager for logging operations with verbosity support."""
 
-    def __init__(self, operation: str, **kwargs):
-        """Initialize operation context manager."""
+    def __init__(
+        self,
+        operation: str,
+        log_level: Optional[int] = None,
+        slow_threshold: float = 1.0,
+        verbosity_manager: Optional[Any] = None,
+        **kwargs,
+    ):
+        """Initialize operation context manager.
+
+        Args:
+            operation: Name of the operation
+            log_level: Logging level (default: DEBUG for most operations, INFO for slow ones)
+            slow_threshold: Duration in seconds above which to log at INFO level (default: 1.0s)
+            verbosity_manager: Optional VerbosityManager instance for verbosity-aware logging
+            **kwargs: Additional context to include in logs
+
+        """
         self.operation = operation
         self.kwargs = kwargs
         self.logger = get_logger(self.__class__.__module__)
         self.start_time = None
+        self.log_level = log_level
+        self.slow_threshold = slow_threshold
+        self.verbosity_manager = verbosity_manager
+        # Operations that should always log at INFO level (even at NORMAL verbosity)
+        self.info_operations = {
+            "torrent_add",
+            "torrent_remove",
+            "torrent_complete",
+            "session_start",
+            "session_stop",
+            "daemon_start",
+            "daemon_stop",
+        }
+        # Operations that should only log at VERBOSE or higher
+        self.verbose_operations = {
+            "config_load",
+            "config_save",
+            "peer_connect",
+            "peer_disconnect",
+            "piece_request",
+            "piece_received",
+            "tracker_announce",
+            "dht_query",
+        }
+
+    def _should_log(self, level: int) -> bool:
+        """Check if should log at this level based on verbosity.
+
+        Args:
+            level: Logging level
+
+        Returns:
+            True if should log
+
+        """
+        if self.verbosity_manager is None:
+            return True  # No verbosity manager, log everything
+        return self.verbosity_manager.should_log(level)
 
     def __enter__(self):
         """Enter the context manager."""
         self.start_time = time.time()
         set_correlation_id()
-        self.logger.info("Starting %s", self.operation, extra=self.kwargs)
+
+        # Determine log level
+        level = self.log_level
+        if level is None:
+            if self.operation in self.info_operations:
+                level = logging.INFO
+            elif self.operation in self.verbose_operations:
+                # Verbose operations need -v flag
+                level = logging.INFO  # But will be filtered by verbosity
+            else:
+                level = logging.DEBUG
+
+        # Check if should log based on verbosity
+        if self._should_log(level):
+            self.logger.log(level, "Starting %s", self.operation, extra=self.kwargs)
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -312,13 +568,30 @@ class LoggingContext:
         duration = time.time() - self.start_time if self.start_time else 0
 
         if exc_type is None:
-            self.logger.info(
-                "Completed %s in %.3fs",
-                self.operation,
-                duration,
-                extra=self.kwargs,
-            )
+            # Log at INFO if operation was slow or is important, otherwise DEBUG
+            level = self.log_level
+            if level is None:
+                if (
+                    self.operation in self.info_operations
+                    or duration >= self.slow_threshold
+                ):
+                    level = logging.INFO
+                elif self.operation in self.verbose_operations:
+                    level = logging.INFO  # Verbose operations
+                else:
+                    level = logging.DEBUG
+
+            # Check if should log based on verbosity
+            if self._should_log(level):
+                self.logger.log(
+                    level,
+                    "Completed %s in %.3fs",
+                    self.operation,
+                    duration,
+                    extra=self.kwargs,
+                )
         else:
+            # Always log errors
             self.logger.error(
                 "Failed %s in %.3fs: %s",
                 self.operation,
@@ -343,3 +616,102 @@ def log_exception(logger: logging.Logger, exc: Exception, context: str = "") -> 
         )
     else:
         logger.exception("%s: %s", context, exc)
+
+
+def log_with_verbosity(
+    logger: logging.Logger,
+    verbosity_manager: Optional[Any],
+    level: int,
+    message: str,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    """Log a message respecting verbosity level.
+
+    Args:
+        logger: Logger instance
+        verbosity_manager: VerbosityManager instance (None = always log)
+        level: Logging level (logging.INFO, logging.DEBUG, etc.)
+        message: Message to log
+        *args: Format arguments
+        **kwargs: Additional logging kwargs
+
+    """
+    if verbosity_manager is None:
+        # No verbosity manager, log everything
+        logger.log(level, message, *args, **kwargs)
+        return
+
+    if level == TRACE_LOG_LEVEL and kwargs.get("exc_info") is None:
+        should_show_stack_trace = bool(
+            getattr(verbosity_manager, "should_show_stack_trace", lambda: False)()
+        )
+        if should_show_stack_trace and level >= logging.WARNING:
+            kwargs["exc_info"] = True
+
+    # Check if should log based on verbosity
+    if verbosity_manager.should_log(level):
+        if level == TRACE_LOG_LEVEL:
+            trace_fn = getattr(logger, "trace", None)
+            if callable(trace_fn):
+                trace_fn(message, *args, **kwargs)
+                return
+        logger.log(level, message, *args, **kwargs)
+
+
+def log_info_verbose(
+    logger: logging.Logger,
+    verbosity_manager: Optional[Any],
+    message: str,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    """Log at INFO level, but only if verbosity is VERBOSE or higher.
+
+    Use this for detailed INFO messages that should not appear at NORMAL verbosity.
+
+    Args:
+        logger: Logger instance
+        verbosity_manager: VerbosityManager instance
+        message: Message to log
+        *args: Format arguments
+        **kwargs: Additional logging kwargs
+
+    """
+    if verbosity_manager is None:
+        # No verbosity manager, log everything
+        logger.info(message, *args, **kwargs)
+        return
+
+    # Only log if verbosity is VERBOSE or higher
+    if verbosity_manager.is_verbose() or verbosity_manager.is_debug():
+        logger.info(message, *args, **kwargs)
+
+
+def log_info_normal(
+    logger: logging.Logger,
+    verbosity_manager: Optional[Any],
+    message: str,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    """Log at INFO level, but only if verbosity is NORMAL or higher.
+
+    Use this for important INFO messages that should appear at NORMAL verbosity.
+
+    Args:
+        logger: Logger instance
+        verbosity_manager: VerbosityManager instance (None = always log)
+        message: Message to log
+        *args: Format arguments
+        **kwargs: Additional logging kwargs
+
+    """
+    if verbosity_manager is None:
+        # No verbosity manager, log everything
+        logger.info(message, *args, **kwargs)
+        return
+
+    # Log if verbosity is NORMAL or higher (always log at NORMAL)
+    if verbosity_manager.verbosity_count >= 0:  # NORMAL or higher
+        logger.info(message, *args, **kwargs)

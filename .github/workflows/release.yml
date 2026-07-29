@@ -4,18 +4,89 @@ on:
   push:
     tags:
       - 'v*'
+    branches: [main]  # Available on push to main but not automatic
+  pull_request:
+    branches: [main]  # Available on PRs to main but not automatic
   workflow_dispatch:
     inputs:
       version:
         description: 'Version to release (e.g., 0.1.0)'
-        required: true
+        required: false  # Optional, will auto-bump if not provided
         type: string
+  workflow_run:  # Trigger after validation workflows pass
+    workflows: ["CI/CD Pipeline", "Test", "Build"]
+    types:
+      - completed
+    branches: [main]
+
+concurrency:
+  group: main-release
+  cancel-in-progress: false
 
 jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Check if validation workflows passed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // For PRs, check if required workflows have passed
+            if (context.eventName === 'pull_request') {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.payload.pull_request.head.sha,
+              });
+              const requiredChecks = ['CI/CD Pipeline', 'Test', 'Build'];
+              const passedChecks = checks.check_runs.filter(
+                check => requiredChecks.includes(check.name) && check.conclusion === 'success'
+              );
+              if (passedChecks.length < requiredChecks.length) {
+                core.setFailed('Required validation workflows must pass first');
+              }
+            }
+            // For push to main, check if build workflow passed
+            if (context.eventName === 'push' && context.ref === 'refs/heads/main') {
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'build.yml',
+                branch: 'main',
+                status: 'success',
+                per_page: 1,
+              });
+              if (runs.workflow_runs.length === 0 || runs.workflow_runs[0].head_sha !== context.sha) {
+                core.setFailed('Build workflow must pass first');
+              }
+            }
+            // For tags, validation already done
+            // For workflow_run, validation already passed
+            // For workflow_dispatch, allow manual override
+  
   pre-release-checks:
     name: pre-release-checks
+    needs: check-validation
     runs-on: ubuntu-latest
-    
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check-validation.result == 'success')
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,6 +106,66 @@ jobs:
         run: |
           uv sync --dev
       
+      - name: Bump version for main (if needed)
+        id: bump_version
+        if: |
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
+          (github.event.inputs.version == '' || github.event.inputs.version == null)
+        run: |
+          # Extract current version
+          CURRENT=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          
+          # Calculate new version: {major}.{minor+1}.0 (reset patch to 0)
+          NEW_MINOR=$((MINOR + 1))
+          NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+          
+          # Update version in both files
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+          sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" ccbt/__init__.py
+          
+          # Validate using script
+          uv run python dev/scripts/validate_version.py || exit 1
+          
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Bumped version from $CURRENT to $NEW_VERSION"
+      
+      - name: Use provided version (if given)
+        id: use_version
+        if: |
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.version != '' &&
+          github.event.inputs.version != null
+        run: |
+          NEW_VERSION="${{ github.event.inputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+          sed -i "s/^__version__ = \".*\"/__version__ = \"$NEW_VERSION\"/" ccbt/__init__.py
+          uv run python dev/scripts/validate_version.py || exit 1
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Validate version using script
+        run: |
+          uv run python dev/scripts/validate_version.py || exit 1
+      
+      - name: Extract version
+        id: get_version
+        run: |
+          BUMP_VER="${{ steps.bump_version.outputs.version }}"
+          USE_VER="${{ steps.use_version.outputs.version }}"
+          if [ -n "$BUMP_VER" ]; then
+            VERSION="$BUMP_VER"
+          elif [ -n "$USE_VER" ]; then
+            VERSION="$USE_VER"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
       - name: Run linting
         run: |
           uv run ruff --config dev/ruff.toml check ccbt/
@@ -73,7 +204,11 @@ jobs:
       
       - name: Build documentation
         run: |
-          uv run mkdocs build --strict -f dev/mkdocs.yml
+          mkdir -p site/reports/htmlcov
+          if [ ! -f site/reports/htmlcov/index.html ]; then
+            echo '<html><body><h1>Coverage Report</h1><p>Placeholder for mkdocs-coverage during release build.</p></body></html>' > site/reports/htmlcov/index.html
+          fi
+          MKDOCS_STRICT=true uv run python dev/build_docs_patched_clean.py
       
       - name: Build package
         run: |
@@ -96,7 +231,8 @@ jobs:
     needs: pre-release-checks
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write
+      contents: write  # Required to create GitHub releases
+      actions: read
     
     steps:
       - uses: actions/checkout@v4
@@ -110,48 +246,35 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
       
-      - name: Generate release notes
+      - name: Generate release notes using GitHub API
         id: release_notes
-        run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          RELEASE_NOTES=""
-          
-          # Try to get commits since last tag
-          if LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null); then
-            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" 2>/dev/null || echo "")
-            if [ -n "$COMMITS" ]; then
-              RELEASE_NOTES="## Changes since ${LAST_TAG}
-
-${COMMITS}"
-            fi
-          fi
-          
-          # Try to read CHANGELOG.md if it exists
-          if [ -f CHANGELOG.md ]; then
-            # Extract version section from CHANGELOG
-            CHANGELOG_SECTION=$(awk -v version="$VERSION" '
-              /^## \[/ { in_section = ($0 ~ "\\[" version "\\]") }
-              in_section { print }
-              /^## \[/ && !in_section && prev_in_section { exit }
-              { prev_in_section = in_section }
-            ' CHANGELOG.md)
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const tagName = context.ref.replace('refs/tags/', '');
             
-            if [ -n "$CHANGELOG_SECTION" ]; then
-              RELEASE_NOTES="$CHANGELOG_SECTION"
-            fi
-          fi
-          
-          # Fallback if no changelog found
-          if [ -z "$RELEASE_NOTES" ]; then
-            RELEASE_NOTES="## Release v${VERSION}
-
-See [CHANGELOG.md](CHANGELOG.md) for details."
-          fi
-          
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        continue-on-error: true
+            // Get previous tag
+            let previousTag = null;
+            try {
+              const { execSync } = require('child_process');
+              const result = execSync('git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo ""', { encoding: 'utf-8' });
+              previousTag = result.trim() || null;
+            } catch (e) {
+              // No previous tag, this is the first release
+            }
+            
+            // Generate release notes using GitHub API
+            const { data } = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              previous_tag_name: previousTag,
+              generate_release_notes: true,
+            });
+            
+            core.setOutput('notes', data.body);
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

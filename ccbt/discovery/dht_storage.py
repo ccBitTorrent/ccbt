@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional, Union
 
 try:
     from cryptography.hazmat.primitives import hashes as crypto_hashes
@@ -153,6 +153,29 @@ def _detect_key_type(public_key_bytes: bytes) -> str:
     return "ed25519"
 
 
+def _bep44_signature_message(data: bytes, seq: int, salt: bytes = b"") -> bytes:
+    """Build the message buffer used for BEP 44 mutable signing/verification.
+
+    BEP 44: buffer = (optional "4:salt" + len(salt) + ":" + salt) + "3:seqi" + seq + "e" + "1:v" + len(v) + ":" + v.
+    See BEP 44 Signature Verification and test vector (mutable, seq=1, v="Hello World!").
+
+    Args:
+        data: The value (v) bytes
+        seq: Sequence number
+        salt: Optional salt (if non-empty, prepended in bencoded form)
+
+    Returns:
+        Bytes to be signed or verified
+    """
+    parts: list[bytes] = []
+    if salt:
+        # BEP 44: "4:salt" + length + ":" + salt
+        parts.append(b"4:salt" + str(len(salt)).encode("ascii") + b":" + salt)
+    parts.append(b"3:seqi" + str(seq).encode("ascii") + b"e")
+    parts.append(b"1:v" + str(len(data)).encode("ascii") + b":" + data)
+    return b"".join(parts)
+
+
 def sign_mutable_data(
     data: bytes,
     public_key: bytes,
@@ -181,9 +204,8 @@ def sign_mutable_data(
         msg = "Cryptography library not available for signing"
         raise RuntimeError(msg)
 
-    # Build message to sign: salt + seq + v (data)
-    # BEP 44: sig = sign(salt + seq + v)
-    message = salt + seq.to_bytes(8, "big") + data
+    # Build message to sign per BEP 44: bencoded-style buffer (salt + seq + v)
+    message = _bep44_signature_message(data, seq, salt)
 
     key_type = _detect_key_type(public_key)
 
@@ -240,8 +262,8 @@ def verify_mutable_data_signature(
         logger.warning("Cryptography library not available, cannot verify signature")
         return False
 
-    # Build message that was signed: salt + seq + v (data)
-    message = salt + seq.to_bytes(8, "big") + data
+    # Build message that was signed per BEP 44 (bencoded-style buffer)
+    message = _bep44_signature_message(data, seq, salt)
 
     key_type = _detect_key_type(public_key)
 
@@ -276,7 +298,7 @@ def verify_mutable_data_signature(
 
 
 def encode_storage_value(
-    data: DHTImmutableData | DHTMutableData,
+    data: Union[DHTImmutableData, DHTMutableData],
 ) -> dict[bytes, Any]:
     """Encode storage value for DHT message (BEP 44).
 
@@ -325,7 +347,7 @@ def encode_storage_value(
 def decode_storage_value(
     value_dict: dict[bytes, Any],
     key_type: DHTStorageKeyType,
-) -> DHTImmutableData | DHTMutableData:
+) -> Union[DHTImmutableData, DHTMutableData]:
     """Decode storage value from DHT message (BEP 44).
 
     Args:
@@ -389,7 +411,7 @@ class DHTStorageCacheEntry:
     """Cache entry for stored DHT data."""
 
     key: bytes
-    value: DHTImmutableData | DHTMutableData
+    value: Union[DHTImmutableData, DHTMutableData]
     stored_at: float = field(default_factory=time.time)
     expires_at: float = field(default_factory=lambda: time.time() + 3600.0)
 
@@ -407,7 +429,7 @@ class DHTStorageCache:
         self.cache: dict[bytes, DHTStorageCacheEntry] = {}
         self.default_ttl = default_ttl
 
-    def get(self, key: bytes) -> DHTImmutableData | DHTMutableData | None:
+    def get(self, key: bytes) -> Optional[Union[DHTImmutableData, DHTMutableData]]:
         """Get cached value.
 
         Args:
@@ -431,8 +453,8 @@ class DHTStorageCache:
     def put(
         self,
         key: bytes,
-        value: DHTImmutableData | DHTMutableData,
-        ttl: int | None = None,
+        value: Union[DHTImmutableData, DHTMutableData],
+        ttl: Optional[int] = None,
     ) -> None:
         """Store value in cache.
 

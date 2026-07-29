@@ -1,16 +1,167 @@
+"""Download management commands for the CLI.
+
+This module provides commands for managing torrent downloads, including
+starting downloads, handling magnet links, and managing download queues.
+"""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-
-from rich.console import Console
+import contextlib
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.cli.interactive import InteractiveCLI
 from ccbt.cli.progress import ProgressManager
 from ccbt.executor.executor import UnifiedCommandExecutor
 from ccbt.executor.session_adapter import LocalSessionAdapter
 from ccbt.i18n import _
-from ccbt.session.session import AsyncSessionManager
+
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from ccbt.session.session import AsyncSessionManager
+
+
+def _format_size_cli(bytes_count: int) -> str:
+    """Format bytes as human-readable size for CLI output."""
+    size = float(bytes_count)
+    for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+        if size < 1024.0:
+            return f"{size:.2f} {unit}"
+        size /= 1024.0
+    return f"{size:.2f} PiB"
+
+
+async def run_magnet_file_selection_step(
+    executor: Any,
+    info_hash_hex: str,
+    console: Console,
+    timeout: float = 120.0,
+    poll_interval: float = 2.5,
+) -> None:
+    """Wait for metadata, show file list, prompt for selection, apply file.select.
+
+    Polls file.list until files are available or timeout. Then prints a table,
+    prompts for [a]ll, [n]one, or comma/range indices, and calls file.select
+    (or file.deselect for none).
+
+    Args:
+        executor: UnifiedCommandExecutor (or any with execute(command, **kwargs))
+        info_hash_hex: Torrent info hash (hex)
+        console: Rich console for output
+        timeout: Max seconds to wait for file list
+        poll_interval: Seconds between file.list polls
+
+    """
+    from rich.prompt import Prompt
+    from rich.table import Table
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    file_items: list[Any] = []
+    while asyncio.get_event_loop().time() < deadline:
+        result = await executor.execute("file.list", info_hash=info_hash_hex)
+        if result.success and result.data:
+            raw = result.data.get("files")
+            if hasattr(raw, "files"):
+                file_items = list(raw.files)
+            elif isinstance(raw, list):
+                file_items = raw
+            else:
+                file_items = []
+            if file_items:
+                break
+        await asyncio.sleep(poll_interval)
+
+    if not file_items:
+        console.print(
+            _(
+                "[yellow]No file list available within {timeout}s, continuing with default selection.[/yellow]"
+            ).format(timeout=timeout)
+        )
+        return
+
+    # Build table
+    table = Table(title=_("Files in torrent {hash}...").format(hash=info_hash_hex[:16]))
+    table.add_column(_("Index"), style="cyan", justify="right")
+    table.add_column(_("Name"), style="green")
+    table.add_column(_("Size"), justify="right", style="magenta")
+    indices: list[int] = []
+    for item in file_items:
+        idx = getattr(item, "index", len(indices))
+        name = getattr(item, "name", getattr(item, "path", "?"))
+        size = getattr(item, "size", 0)
+        indices.append(idx)
+        table.add_row(str(idx), str(name), _format_size_cli(size))
+    console.print(table)
+
+    prompt_msg = _("Select files: [a]ll, [n]one, or indices (e.g. 0,2-5)")
+    try:
+        choice = Prompt.ask(prompt_msg, default="a").strip().lower()
+    except Exception:
+        choice = "a"
+
+    if choice == "n":
+        # Deselect all: select no files (deselect all indices)
+        result = await executor.execute(
+            "file.deselect",
+            info_hash=info_hash_hex,
+            file_indices=indices,
+        )
+        if result.success:
+            console.print(_("[green]Deselected all files.[/green]"))
+        else:
+            console.print(
+                _("[yellow]Could not deselect: {error}[/yellow]").format(
+                    error=result.error or _("Unknown error")
+                )
+            )
+        return
+
+    if choice == "a" or not choice:
+        selected = indices
+    else:
+        # Parse comma-separated indices and ranges (e.g. 0,2-5,8)
+        selected = []
+        for part in choice.split(","):
+            stripped = part.strip()
+            if "-" in stripped:
+                try:
+                    a, b = stripped.split("-", 1)
+                    lo, hi = int(a.strip()), int(b.strip())
+                    for i in range(lo, hi + 1):
+                        if i in indices:
+                            selected.append(i)
+                except (ValueError, TypeError):
+                    pass
+            else:
+                try:
+                    i = int(stripped)
+                    if i in indices:
+                        selected.append(i)
+                except (ValueError, TypeError):
+                    pass
+        selected = sorted(set(selected))
+
+    if not selected:
+        console.print(
+            _("[yellow]No valid indices, keeping default selection.[/yellow]")
+        )
+        return
+    result = await executor.execute(
+        "file.select",
+        info_hash=info_hash_hex,
+        file_indices=selected,
+    )
+    if result.success:
+        console.print(
+            _("[green]Selected {count} file(s).[/green]").format(count=len(selected))
+        )
+    else:
+        console.print(
+            _("[yellow]Select failed: {error}[/yellow]").format(
+                error=result.error or _("Unknown error")
+            )
+        )
 
 
 async def start_interactive_download(
@@ -18,10 +169,22 @@ async def start_interactive_download(
     torrent_data: dict[str, Any],
     console: Console,
     resume: bool = False,
-    queue_priority: str | None = None,
-    files_selection: tuple[int, ...] | None = None,
-    file_priorities: tuple[str, ...] | None = None,
+    queue_priority: Optional[str] = None,
+    files_selection: Optional[tuple[int, ...]] = None,
+    file_priorities: Optional[tuple[str, ...]] = None,
 ) -> None:
+    """Start an interactive download session with user prompts.
+
+    Args:
+        session: The session manager instance
+        torrent_data: Torrent metadata dictionary
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+        queue_priority: Optional queue priority
+        files_selection: Optional tuple of file indices to download
+        file_priorities: Optional tuple of file priority strings
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         await session.start()
@@ -40,7 +203,7 @@ async def start_interactive_download(
             resume=resume,
         )
         if not result.success:
-            raise RuntimeError(result.error or "Failed to add torrent")
+            raise RuntimeError(result.error or _("Failed to add torrent"))
         info_hash_hex = result.data["info_hash"]
     else:
         # Fallback to session method for dict data (not a file path)
@@ -108,10 +271,22 @@ async def start_basic_download(
     torrent_data: dict[str, Any],
     console: Console,
     resume: bool = False,
-    queue_priority: str | None = None,
-    files_selection: tuple[int, ...] | None = None,
-    file_priorities: tuple[str, ...] | None = None,
+    queue_priority: Optional[str] = None,
+    files_selection: Optional[tuple[int, ...]] = None,
+    file_priorities: Optional[tuple[str, ...]] = None,
 ) -> None:
+    """Start a basic download session without interactive prompts.
+
+    Args:
+        session: The session manager instance
+        torrent_data: Torrent metadata dictionary
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+        queue_priority: Optional queue priority
+        files_selection: Optional tuple of file indices to download
+        file_priorities: Optional tuple of file priority strings
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         await session.start()
@@ -122,14 +297,19 @@ async def start_basic_download(
 
     progress_manager = ProgressManager(console)
 
-    with progress_manager.create_progress() as progress:
-        torrent_name = (
-            torrent_data.get("name", "Unknown")
-            if isinstance(torrent_data, dict)
-            else getattr(torrent_data, "name", "Unknown")
-        )
+    torrent_name = (
+        torrent_data.get("name", "Unknown")
+        if isinstance(torrent_data, dict)
+        else getattr(torrent_data, "name", "Unknown")
+    )
+
+    # Use enhanced download progress with speed, ETA, and peer count
+    with progress_manager.create_download_progress({}) as progress:
         task = progress.add_task(
-            _("Downloading {name}").format(name=torrent_name), total=100
+            _("Downloading {name}").format(name=torrent_name),
+            total=100,
+            downloaded="0 B",
+            speed="0 B/s",
         )
 
         # Add torrent using executor
@@ -142,7 +322,7 @@ async def start_basic_download(
                 resume=resume,
             )
             if not result.success:
-                raise RuntimeError(result.error or "Failed to add torrent")
+                raise RuntimeError(result.error or _("Failed to add torrent"))
             info_hash_hex = result.data["info_hash"]
         else:
             # Fallback to session method for dict data (not a file path)
@@ -229,7 +409,41 @@ async def start_basic_download(
                 else "unknown"
             )
 
-            progress.update(task, completed=progress_val * 100)
+            # Extract additional metrics for enhanced progress display
+            download_speed = (
+                getattr(torrent_status, "download_speed", 0.0)
+                if hasattr(torrent_status, "download_speed")
+                else torrent_status.get("download_speed", 0.0)
+                if isinstance(torrent_status, dict)
+                else 0.0
+            )
+            downloaded_bytes = (
+                getattr(torrent_status, "downloaded", 0)
+                if hasattr(torrent_status, "downloaded")
+                else torrent_status.get("downloaded", 0)
+                if isinstance(torrent_status, dict)
+                else 0
+            )
+
+            # Format speed and downloaded bytes
+            def format_bytes(bytes_val: float) -> str:
+                """Format bytes to human-readable format."""
+                for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+                    if bytes_val < 1024.0:
+                        return f"{bytes_val:.1f} {unit}"
+                    bytes_val /= 1024.0
+                return f"{bytes_val:.1f} PiB"
+
+            speed_str = format_bytes(download_speed) + "/s"
+            downloaded_str = format_bytes(downloaded_bytes)
+
+            # Update progress with all metrics
+            progress.update(
+                task,
+                completed=progress_val * 100,
+                downloaded=downloaded_str,
+                speed=speed_str,
+            )
 
             if status_str == "seeding":
                 console.print(
@@ -248,6 +462,15 @@ async def start_basic_magnet_download(
     console: Console,
     resume: bool = False,
 ) -> None:
+    """Start a basic magnet link download without interactive prompts.
+
+    Args:
+        session: The session manager instance
+        magnet_link: Magnet URI string
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         console.print(_("[cyan]Initializing session components...[/cyan]"))
@@ -283,7 +506,7 @@ async def start_basic_magnet_download(
                 resume=resume,
             )
             if not result.success:
-                raise RuntimeError(result.error or "Failed to add magnet link")
+                raise RuntimeError(result.error or _("Failed to add magnet link"))
             info_hash_hex = result.data["info_hash"]
             console.print(
                 _("[green]Magnet added successfully: {hash}...[/green]").format(
@@ -336,14 +559,12 @@ async def start_basic_magnet_download(
                 if hasattr(torrent_status, "status"):
                     current_status = torrent_status.status
                     current_progress = getattr(torrent_status, "progress", 0.0)
-                    connected_peers = getattr(torrent_status, "num_peers", 0)
+                    connected_peers = int(getattr(torrent_status, "connected_peers", 0))
                     download_rate = getattr(torrent_status, "download_rate", 0.0)
                 elif isinstance(torrent_status, dict):
                     current_status = torrent_status.get("status", "unknown")
                     current_progress = torrent_status.get("progress", 0.0)
-                    connected_peers = torrent_status.get(
-                        "connected_peers", torrent_status.get("num_peers", 0)
-                    )
+                    connected_peers = int(torrent_status.get("connected_peers", 0) or 0)
                     download_rate = torrent_status.get("download_rate", 0.0)
                 else:
                     current_status = "unknown"
@@ -359,12 +580,11 @@ async def start_basic_magnet_download(
                         console.print(status_msg)
                         last_status_message = status_msg
                 elif current_status in ("downloading", "seeding"):
-                    if not metadata_fetched:
-                        if current_progress > 0:
-                            metadata_fetched = True
-                            console.print(
-                                _("[green]Metadata fetched successfully![/green]")
-                            )
+                    if not metadata_fetched and current_progress > 0:
+                        metadata_fetched = True
+                        console.print(
+                            _("[green]Metadata fetched successfully![/green]")
+                        )
 
                     if connected_peers > 0 and not peers_discovered:
                         peers_discovered = True
@@ -374,7 +594,7 @@ async def start_basic_magnet_download(
                             )
                         )
 
-                # CRITICAL FIX: Add user-facing warning if no peers connect after reasonable time
+                # Note: Add user-facing warning if no peers connect after reasonable time
                 if current_status == "downloading" and connected_peers == 0:
                     import time
 
@@ -429,7 +649,42 @@ async def start_basic_magnet_download(
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
             console.print(_("\n[yellow]Download interrupted by user[/yellow]"))
-            # CRITICAL FIX: Ensure session is properly stopped on KeyboardInterrupt
+            # CRITICAL: Save checkpoints before stopping
+            try:
+                if (
+                    hasattr(session, "config")
+                    and session.config.disk.checkpoint_enabled
+                ):
+                    # Save checkpoint for the torrent if it exists
+                    async with session.lock:
+                        for _info_hash, torrent_session in list(
+                            session.torrents.items()
+                        ):
+                            try:
+                                if (
+                                    hasattr(torrent_session, "checkpoint_controller")
+                                    and torrent_session.checkpoint_controller
+                                ):
+                                    await torrent_session.checkpoint_controller.save_checkpoint_state(
+                                        torrent_session
+                                    )
+                                    console.print(
+                                        _("[green]Checkpoint saved for torrent[/green]")
+                                    )
+                            except Exception as e:
+                                console.print(
+                                    _(
+                                        "[yellow]Warning: Failed to save checkpoint: {error}[/yellow]"
+                                    ).format(error=e)
+                                )
+            except Exception as e:
+                console.print(
+                    _(
+                        "[yellow]Warning: Error saving checkpoint: {error}[/yellow]"
+                    ).format(error=e)
+                )
+
+            # Note: Ensure session is properly stopped on KeyboardInterrupt
             # This prevents "Unclosed client session" warnings
             try:
                 await session.stop()
@@ -441,7 +696,7 @@ async def start_basic_magnet_download(
                 )
             raise
         finally:
-            # CRITICAL FIX: Always try to stop session in finally block
+            # Note: Always try to stop session in finally block
             # This ensures cleanup even if an exception occurs
             try:
                 result = await executor.execute(
@@ -470,50 +725,62 @@ async def start_basic_magnet_download(
                     pass
             except KeyboardInterrupt:
                 # If KeyboardInterrupt occurs in finally, just stop session
-                try:
+                with contextlib.suppress(Exception):
                     await session.stop()
-                except Exception:
-                    pass
                 raise
             except Exception:
                 # Best-effort cleanup
-                try:
+                with contextlib.suppress(Exception):
                     await session.stop()
-                except Exception:
-                    pass
 
 
 async def start_interactive_magnet_download(
     session: AsyncSessionManager,
     magnet_link: str,
+    info_hash_hex: str,
     console: Console,
     resume: bool = False,
+    output_dir: Optional[Any] = None,
 ) -> None:
+    """Start interactive CLI for a magnet already added via executor.
+
+    The magnet must have been added with executor so add_magnet() ran and
+    magnet_info is set (BEP 53). This only runs the InteractiveCLI download
+    loop and optional file selection.
+
+    Args:
+        session: The session manager instance
+        magnet_link: Magnet URI string (for display / parse_magnet name)
+        info_hash_hex: Info hash from torrent.add result
+        console: Rich console for output
+        resume: Whether to resume from checkpoint
+        output_dir: Optional output directory (for display)
+
+    """
     cleanup_task = getattr(session, "_cleanup_task", None)
     if cleanup_task is None:
         console.print(_("[cyan]Initializing session components...[/cyan]"))
         await session.start()
 
-    # Wait for session to be ready (best effort)
-    # Note: is_ready method may not exist on all session implementations
-
-    # Create executor with local adapter
     adapter = LocalSessionAdapter(session)
     executor = UnifiedCommandExecutor(adapter)
 
-    result = await executor.execute(
-        "torrent.add",
-        path_or_magnet=magnet_link,
-        resume=resume,
-    )
-    if not result.success:
-        raise RuntimeError(result.error or "Failed to add magnet link")
-    info_hash_hex = result.data["info_hash"]
+    from ccbt.core.magnet import parse_magnet
 
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-
-    app = TerminalDashboard(session)
     try:
-        app.run()  # type: ignore[attr-defined]
-    except KeyboardInterrupt:
-        console.print(_("[yellow]Download interrupted by user[/yellow]"))
+        magnet_info = parse_magnet(magnet_link)
+        name = magnet_info.display_name or "Unknown"
+    except Exception:
+        name = "Unknown"
+
+    torrent_data = {
+        "name": name,
+        "info_hash": info_hash_hex,
+        "download_path": output_dir,
+    }
+    interactive_cli = InteractiveCLI(executor, adapter, console, session=session)
+    await interactive_cli.download_torrent(
+        torrent_data,
+        resume=resume,
+        already_added_info_hash=info_hash_hex,
+    )

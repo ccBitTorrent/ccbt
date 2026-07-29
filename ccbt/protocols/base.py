@@ -14,7 +14,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -106,7 +106,7 @@ class Protocol(ABC):
         """Send message to peer."""
 
     @abstractmethod
-    async def receive_message(self, peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
         """Receive message from peer."""
 
     @abstractmethod
@@ -129,7 +129,7 @@ class Protocol(ABC):
         """Get connected peers."""
         return self.peers.copy()
 
-    def get_peer(self, peer_id: str) -> PeerInfo | None:
+    def get_peer(self, peer_id: str) -> Optional[PeerInfo]:
         """Get specific peer."""
         return self.peers.get(peer_id)
 
@@ -240,7 +240,7 @@ class Protocol(ABC):
         return self.state in [ProtocolState.CONNECTED, ProtocolState.ACTIVE]
 
     def is_healthy(self) -> bool:
-        """Synchronous health check wrapper."""
+        """Perform synchronous health check."""
         return self.state in [ProtocolState.CONNECTED, ProtocolState.ACTIVE]
 
     async def __aenter__(self):
@@ -343,7 +343,7 @@ class ProtocolManager:
                     ),
                 )
 
-    def get_protocol(self, protocol_type: ProtocolType) -> Protocol | None:
+    def get_protocol(self, protocol_type: ProtocolType) -> Optional[Protocol]:
         """Get protocol by type."""
         return self.protocols.get(protocol_type)
 
@@ -460,7 +460,7 @@ class ProtocolManager:
         return stats
 
     async def connect_peers_batch(
-        self, peers: list[PeerInfo], preferred_protocol: ProtocolType | None = None
+        self, peers: list[PeerInfo], preferred_protocol: Optional[ProtocolType] = None
     ) -> dict[ProtocolType, list[PeerInfo]]:
         """Connect to multiple peers using the best available protocols.
 
@@ -522,7 +522,7 @@ class ProtocolManager:
         return connected_peers
 
     def _group_peers_by_protocol(
-        self, peers: list[PeerInfo], preferred_protocol: ProtocolType | None
+        self, peers: list[PeerInfo], preferred_protocol: Optional[ProtocolType]
     ) -> dict[ProtocolType, list[PeerInfo]]:
         """Group peers by their preferred protocol."""
         groups: dict[ProtocolType, list[PeerInfo]] = {}
@@ -542,8 +542,8 @@ class ProtocolManager:
     def _select_best_protocol_for_peer(
         self,
         _peer: PeerInfo,
-        preferred_protocol: ProtocolType | None,
-    ) -> ProtocolType | None:
+        preferred_protocol: Optional[ProtocolType],
+    ) -> Optional[ProtocolType]:
         """Select the best protocol for a peer."""
         # Use preferred protocol if available and healthy
         if preferred_protocol and self._is_protocol_available(preferred_protocol):
@@ -756,5 +756,18 @@ class ProtocolManager:
         return results
 
 
-# Singleton pattern removed - ProtocolManager is now managed via AsyncSessionManager.protocol_manager
-# This ensures proper lifecycle management and prevents conflicts between multiple session managers
+# Global protocol manager instance
+_protocol_manager: Optional[ProtocolManager] = None
+
+
+def get_protocol_manager() -> ProtocolManager:
+    """Get the global protocol manager singleton.
+
+    Returns:
+        ProtocolManager: Global protocol manager instance.
+
+    """
+    global _protocol_manager
+    if _protocol_manager is None:
+        _protocol_manager = ProtocolManager()
+    return _protocol_manager

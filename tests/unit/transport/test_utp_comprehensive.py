@@ -1,7 +1,7 @@
 """Comprehensive unit tests for uTP covering all methods and edge cases."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -42,23 +42,21 @@ class TestConnectionLifecycle:
     @pytest.mark.asyncio
     async def test_initialize_transport(self, connection):
         """Test initializing transport via socket manager."""
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance"
-        ) as mock_get_instance:
-            mock_manager = MagicMock()
-            mock_transport = MagicMock()
-            mock_manager.get_transport.return_value = mock_transport
-            mock_manager._generate_connection_id.return_value = 12345
-            mock_get_instance.return_value = mock_manager
+        mock_manager = MagicMock()
+        mock_transport = MagicMock()
+        mock_manager.get_transport.return_value = mock_transport
+        mock_manager.generate_connection_id.return_value = 12345
+        mock_manager.register_connection = MagicMock()
+        connection.socket_manager = mock_manager
 
-            await connection.initialize_transport()
+        await connection.initialize_transport()
 
-            # Transport should be set
-            assert connection.transport is not None
-            # Connection should be registered
-            mock_manager.register_connection.assert_called_once()
-            # Connection ID should be set
-            assert connection.connection_id == 12345
+        # Transport should be set
+        assert connection.transport is not None
+        # Connection should be registered
+        mock_manager.register_connection.assert_called_once()
+        # Connection ID should be set
+        assert connection.connection_id == 12345
 
     def test_get_timestamp_microseconds(self, connection):
         """Test timestamp calculation."""
@@ -149,7 +147,7 @@ class TestPacketHandling:
         """Test handling RESET packet."""
         connection.state = UTPConnectionState.CONNECTED
         connection.transport = MagicMock()
-        
+
         reset_packet = UTPPacket(
             type=UTPPacketType.ST_RESET,
             connection_id=12345,
@@ -162,7 +160,7 @@ class TestPacketHandling:
 
         # Should transition to RESET
         assert connection.state == UTPConnectionState.RESET
-        
+
         # Give async close task time to complete
         await asyncio.sleep(0.1)
 
@@ -182,10 +180,10 @@ class TestPacketHandling:
 
         # Should handle gracefully (possible collision)
         connection._handle_reset_packet(reset_packet)
-        
+
         # Should transition to RESET state
         assert connection.state == UTPConnectionState.RESET
-        
+
         # Give async close task time to complete
         await asyncio.sleep(0.1)
 
@@ -253,7 +251,6 @@ class TestSendRateCalculation:
         connection.last_timestamp_diff = 30000  # 30ms (below target)
 
         # Mock time
-        import time
 
         with patch("time.perf_counter", return_value=0.2):
             rate = connection._calculate_send_rate()
@@ -303,26 +300,22 @@ class TestSocketManager:
         return manager
 
     @pytest.mark.asyncio
-    async def test_get_instance_singleton(self):
-        """Test get_instance returns singleton."""
-        # Reset singleton for clean test
-        old_instance = UTPSocketManager._instance
-        UTPSocketManager._instance = None
-        
-        try:
-            manager1 = await UTPSocketManager.get_instance()
-            manager2 = await UTPSocketManager.get_instance()
-            assert manager1 is manager2
-            
-            # Cleanup - stop the manager
-            if manager1._initialized:
-                await manager1.stop()
-        except Exception:
-            # If stop fails, try to reset
-            pass
-        finally:
-            # Restore original instance or reset
-            UTPSocketManager._instance = old_instance
+    async def test_get_instance_returns_independent_managers(self, monkeypatch):
+        """Test get_instance returns independent manager instances."""
+        from ccbt.config.config import get_config
+
+        config = get_config()
+        monkeypatch.setattr(config.network, "listen_port", 0)
+
+        manager1 = await UTPSocketManager.get_instance()
+        manager2 = await UTPSocketManager.get_instance()
+        assert manager1 is not manager2
+
+        # Cleanup managers started by compatibility path
+        if manager1._initialized:
+            await manager1.stop()
+        if manager2._initialized:
+            await manager2.stop()
 
     def test_get_statistics(self, socket_manager):
         """Test getting statistics."""
@@ -456,7 +449,7 @@ class TestSequenceNumberHandling:
         assert connection._is_sequence_acked(50, 100) is True
         # Normal case - seq after ack_nr
         assert connection._is_sequence_acked(150, 100) is False
-        
+
         # Test wraparound logic
         # When ack_nr is 0x0001, sequences 0xFFFF and 0x0000 are acked
         # (wrapped around)
@@ -532,7 +525,10 @@ class TestExtensionNegotiation:
 
     def test_process_extension_not_supported(self, connection):
         """Test processing extension we don't support."""
-        from ccbt.transport.utp_extensions import WindowScalingExtension, UTPExtensionType
+        from ccbt.transport.utp_extensions import (
+            UTPExtensionType,
+            WindowScalingExtension,
+        )
 
         # Remove window scaling from supported
         connection.supported_extensions.discard(UTPExtensionType.WINDOW_SCALING)
@@ -540,10 +536,10 @@ class TestExtensionNegotiation:
         assert UTPExtensionType.WINDOW_SCALING not in connection.supported_extensions
 
         peer_extensions = [WindowScalingExtension(scale_factor=2)]
-        
+
         # Store initial negotiated extensions
         initial_negotiated = connection.negotiated_extensions.copy()
-        
+
         connection._process_extension_negotiation(peer_extensions)
 
         # Should not negotiate (we don't support it)

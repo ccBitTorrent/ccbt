@@ -2,15 +2,15 @@
 
 This script orchestrates the entire translation workflow:
 1. Extract strings from codebase
-2. Update template file
-3. Merge into existing translations
-4. Check completeness
+2. Merge the English template (.pot) into each locale's ccbt.po via GNU msgmerge
+3. Check completeness
+4. Validate .po files
 5. Compile .mo files
-6. Validate translations
 """
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -56,7 +56,7 @@ def workflow_extract() -> bool:
     )
 
     try:
-        result = subprocess.run(
+        subprocess.run(
             [
                 sys.executable,
                 str(extract_script),
@@ -75,12 +75,61 @@ def workflow_extract() -> bool:
 
 
 def workflow_update() -> bool:
-    """Step 2: Update translation files."""
+    """Step 2: Merge template (.pot) into each locale catalog using msgmerge."""
     print("\n" + "=" * 70)
-    print("STEP 2: Update translation files")
+    print("STEP 2: Merge template into locale catalogs (msgmerge)")
     print("=" * 70)
 
-    return run_script("update_translations.py")
+    locales_root = Path(__file__).resolve().parent.parent / "locales"
+    pot_path = locales_root / "en" / "LC_MESSAGES" / "ccbt.pot"
+
+    msgmerge = shutil.which("msgmerge")
+    if not msgmerge:
+        print(
+            "✗ msgmerge not found on PATH. Install GNU gettext, for example:\n"
+            "  Linux: sudo apt install gettext\n"
+            "  macOS: brew install gettext\n"
+            "  Windows: install gettext binaries or use WSL"
+        )
+        return False
+
+    if not pot_path.is_file():
+        print(f"✗ POT file not found: {pot_path}")
+        print("  Run extract first: python -m ccbt.i18n.scripts.translation_workflow --step extract")
+        return False
+
+    po_paths = sorted(locales_root.glob("*/LC_MESSAGES/ccbt.po"))
+    if not po_paths:
+        print(f"✗ No ccbt.po files under {locales_root}")
+        return False
+
+    merged_langs: list[str] = []
+    for po_path in po_paths:
+        try:
+            subprocess.run(
+                [
+                    msgmerge,
+                    "--update",
+                    "--backup=none",
+                    "--sort-output",
+                    str(po_path),
+                    str(pot_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"✗ msgmerge failed for {po_path}:")
+            if e.stdout:
+                print(e.stdout)
+            if e.stderr:
+                print(e.stderr)
+            return False
+        merged_langs.append(po_path.parent.parent.name)
+
+    print(f"✓ Merged POT into locales: {', '.join(merged_langs)}")
+    return True
 
 
 def workflow_check() -> bool:
@@ -173,10 +222,10 @@ def main() -> None:
 Examples:
   # Run full workflow
   python -m ccbt.i18n.scripts.translation_workflow
-  
+
   # Skip extraction (if .pot is already up to date)
   python -m ccbt.i18n.scripts.translation_workflow --skip-extract
-  
+
   # Run specific step
   python -m ccbt.i18n.scripts.translation_workflow --step check
         """,

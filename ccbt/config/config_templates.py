@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional, Union
 
 from ccbt.models import Config
 
@@ -37,6 +37,37 @@ class ConfigTemplates:
                     "handshake_timeout": 10,
                     "keep_alive_interval": 30,
                     "peer_timeout": 60,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 10.0,
+                    "handshake_timeout_desperation_max": 20.0,  # CRITICAL: Reduced from 60.0 to 20.0 for better connection health
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
+                    # Connection health and validation settings (BitTorrent spec compliant)
+                    "metadata_exchange_timeout": 60.0,
+                    "metadata_piece_timeout": 15.0,
+                    "connection_health_check_interval": 30.0,
+                    "connection_validation_enabled": True,
+                    "connection_retry_max_attempts": 3,
+                    "connection_retry_backoff_base": 2.0,
+                    "connection_retry_backoff_max": 60.0,
+                    "peer_validation_enabled": True,
+                    "peer_validation_timeout": 5.0,
+                    "connection_state_validation_enabled": True,
+                    "connection_state_timeout": 120.0,
+                    "send_bitfield_after_metadata": True,
+                    "send_interested_after_metadata": True,
+                    "graceful_disconnect_enabled": True,
+                    "connection_cleanup_delay": 2.0,
+                    "max_concurrent_connection_attempts": 20,  # Windows-safe limit to prevent socket exhaustion
+                    "connection_failure_threshold": 3,
+                    "connection_failure_backoff_base": 2.0,
+                    "connection_failure_backoff_max": 300.0,
+                    "enable_fail_fast_dht": True,
+                    "fail_fast_dht_timeout": 30.0,
                     "max_upload_slots": 8,
                     "unchoke_interval": 10,
                     "optimistic_unchoke_interval": 30,
@@ -123,6 +154,14 @@ class ConfigTemplates:
                     # BEP 51: DHT Infohash Indexing
                     "dht_enable_indexing": True,
                     "dht_index_samples_per_key": 8,
+                    # Adaptive DHT timeout settings
+                    "dht_adaptive_timeout_enabled": True,
+                    "dht_timeout_desperation_min": 30.0,
+                    "dht_timeout_desperation_max": 60.0,
+                    "dht_timeout_normal_min": 5.0,
+                    "dht_timeout_normal_max": 15.0,
+                    "dht_timeout_healthy_min": 10.0,
+                    "dht_timeout_healthy_max": 30.0,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -165,7 +204,7 @@ class ConfigTemplates:
                 },
                 "security": {
                     "enable_encryption": True,
-                    "encryption_preference": "prefer_encrypted",
+                    "encryption_mode": "preferred",
                     "validate_peers": True,
                     "peer_validation_timeout": 30,
                     "rate_limit_enabled": True,
@@ -190,6 +229,19 @@ class ConfigTemplates:
                         "ssl_protocol_version": "TLSv1.2",
                         "ssl_cipher_suites": [],
                         "ssl_allow_insecure_peers": True,
+                        "ssl_tracker_pins": {},
+                    },
+                    "authenticated_swarms": {
+                        "mode": "off",
+                        "discovery_mode": "trackers_only",
+                        "discovery_strict_for_strict_mode": True,
+                        "trusted_swarm_ids": [],
+                        "strict_ltep_handshake_timeout_s": 30.0,
+                        "fail_closed_on_parse_errors": False,
+                        "trust_store_path": None,
+                        "trust_store_refresh_interval_s": 60.0,
+                        "revocation_profile_path": None,
+                        "revocation_refresh_interval_s": 300.0,
                     },
                 },
                 "proxy": {
@@ -244,6 +296,15 @@ class ConfigTemplates:
                     "handshake_timeout": 15,
                     "keep_alive_interval": 60,
                     "peer_timeout": 120,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 30.0,
+                    "handshake_timeout_desperation_max": 60.0,
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
                     "max_upload_slots": 2,
                     "unchoke_interval": 30,
                     "optimistic_unchoke_interval": 60,
@@ -364,7 +425,7 @@ class ConfigTemplates:
                 },
                 "security": {
                     "enable_encryption": False,
-                    "encryption_preference": "allow_plaintext",
+                    "encryption_mode": "preferred",
                     "validate_peers": False,
                     "peer_validation_timeout": 60,
                     "rate_limit_enabled": True,
@@ -389,6 +450,19 @@ class ConfigTemplates:
                         "ssl_protocol_version": "TLSv1.2",
                         "ssl_cipher_suites": [],
                         "ssl_allow_insecure_peers": True,
+                        "ssl_tracker_pins": {},
+                    },
+                    "authenticated_swarms": {
+                        "mode": "off",
+                        "discovery_mode": "trackers_only",
+                        "discovery_strict_for_strict_mode": True,
+                        "trusted_swarm_ids": [],
+                        "strict_ltep_handshake_timeout_s": 30.0,
+                        "fail_closed_on_parse_errors": False,
+                        "trust_store_path": None,
+                        "trust_store_refresh_interval_s": 60.0,
+                        "revocation_profile_path": None,
+                        "revocation_refresh_interval_s": 300.0,
                     },
                 },
                 "proxy": {
@@ -443,6 +517,15 @@ class ConfigTemplates:
                     "handshake_timeout": 10,
                     "keep_alive_interval": 30,
                     "peer_timeout": 60,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 30.0,
+                    "handshake_timeout_desperation_max": 60.0,
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
                     "max_upload_slots": 4,
                     "unchoke_interval": 15,
                     "optimistic_unchoke_interval": 30,
@@ -526,6 +609,14 @@ class ConfigTemplates:
                     # BEP 51: DHT Infohash Indexing
                     "dht_enable_indexing": True,
                     "dht_index_samples_per_key": 8,
+                    # Adaptive DHT timeout settings
+                    "dht_adaptive_timeout_enabled": True,
+                    "dht_timeout_desperation_min": 30.0,
+                    "dht_timeout_desperation_max": 60.0,
+                    "dht_timeout_normal_min": 5.0,
+                    "dht_timeout_normal_max": 15.0,
+                    "dht_timeout_healthy_min": 10.0,
+                    "dht_timeout_healthy_max": 30.0,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -568,7 +659,7 @@ class ConfigTemplates:
                 },
                 "security": {
                     "enable_encryption": True,
-                    "encryption_preference": "prefer_encrypted",
+                    "encryption_mode": "preferred",
                     "validate_peers": True,
                     "peer_validation_timeout": 30,
                     "rate_limit_enabled": True,
@@ -593,6 +684,19 @@ class ConfigTemplates:
                         "ssl_protocol_version": "TLSv1.2",
                         "ssl_cipher_suites": [],
                         "ssl_allow_insecure_peers": True,
+                        "ssl_tracker_pins": {},
+                    },
+                    "authenticated_swarms": {
+                        "mode": "off",
+                        "discovery_mode": "trackers_only",
+                        "discovery_strict_for_strict_mode": True,
+                        "trusted_swarm_ids": [],
+                        "strict_ltep_handshake_timeout_s": 30.0,
+                        "fail_closed_on_parse_errors": False,
+                        "trust_store_path": None,
+                        "trust_store_refresh_interval_s": 60.0,
+                        "revocation_profile_path": None,
+                        "revocation_refresh_interval_s": 300.0,
                     },
                 },
                 "ml": {
@@ -635,6 +739,15 @@ class ConfigTemplates:
                     "handshake_timeout": 10,
                     "keep_alive_interval": 30,
                     "peer_timeout": 60,
+                    "dht_timeout": 4.0,
+                    # Adaptive handshake timeout settings
+                    "handshake_adaptive_timeout_enabled": True,
+                    "handshake_timeout_desperation_min": 30.0,
+                    "handshake_timeout_desperation_max": 60.0,
+                    "handshake_timeout_normal_min": 15.0,
+                    "handshake_timeout_normal_max": 30.0,
+                    "handshake_timeout_healthy_min": 20.0,
+                    "handshake_timeout_healthy_max": 40.0,
                     "max_upload_slots": 12,  # More upload slots
                     "unchoke_interval": 10,
                     "optimistic_unchoke_interval": 30,
@@ -721,6 +834,14 @@ class ConfigTemplates:
                     # BEP 51: DHT Infohash Indexing
                     "dht_enable_indexing": True,
                     "dht_index_samples_per_key": 8,
+                    # Adaptive DHT timeout settings
+                    "dht_adaptive_timeout_enabled": True,
+                    "dht_timeout_desperation_min": 30.0,
+                    "dht_timeout_desperation_max": 60.0,
+                    "dht_timeout_normal_min": 5.0,
+                    "dht_timeout_normal_max": 15.0,
+                    "dht_timeout_healthy_min": 10.0,
+                    "dht_timeout_healthy_max": 30.0,
                 },
                 "limits": {
                     "global_down_kib": 0,  # Unlimited
@@ -763,7 +884,7 @@ class ConfigTemplates:
                 },
                 "security": {
                     "enable_encryption": True,
-                    "encryption_preference": "prefer_encrypted",
+                    "encryption_mode": "preferred",
                     "validate_peers": True,
                     "peer_validation_timeout": 30,
                     "rate_limit_enabled": True,
@@ -788,6 +909,19 @@ class ConfigTemplates:
                         "ssl_protocol_version": "TLSv1.2",
                         "ssl_cipher_suites": [],
                         "ssl_allow_insecure_peers": True,
+                        "ssl_tracker_pins": {},
+                    },
+                    "authenticated_swarms": {
+                        "mode": "off",
+                        "discovery_mode": "trackers_only",
+                        "discovery_strict_for_strict_mode": True,
+                        "trusted_swarm_ids": [],
+                        "strict_ltep_handshake_timeout_s": 30.0,
+                        "fail_closed_on_parse_errors": False,
+                        "trust_store_path": None,
+                        "trust_store_refresh_interval_s": 60.0,
+                        "revocation_profile_path": None,
+                        "revocation_refresh_interval_s": 300.0,
                     },
                 },
                 "ml": {
@@ -833,7 +967,7 @@ class ConfigTemplates:
         ]
 
     @staticmethod
-    def get_template(template_name: str) -> dict[str, Any] | None:
+    def get_template(template_name: str) -> Optional[dict[str, Any]]:
         """Get a specific configuration template.
 
         Args:
@@ -1085,7 +1219,7 @@ class ConfigProfiles:
         ]
 
     @staticmethod
-    def get_profile(profile_name: str) -> dict[str, Any] | None:
+    def get_profile(profile_name: str) -> Optional[dict[str, Any]]:
         """Get a specific configuration profile.
 
         Args:
@@ -1154,7 +1288,7 @@ class ConfigProfiles:
         description: str,
         templates: list[str],
         overrides: dict[str, Any],
-        profile_file: Path | str | None = None,
+        profile_file: Optional[Union[Path, str]] = None,
     ) -> dict[str, Any]:
         """Create a custom configuration profile.
 
@@ -1196,7 +1330,7 @@ class ConfigProfiles:
         return profile
 
     @staticmethod
-    def load_custom_profile(profile_file: Path | str) -> dict[str, Any]:
+    def load_custom_profile(profile_file: Union[Path, str]) -> dict[str, Any]:
         """Load a custom profile from file.
 
         Args:

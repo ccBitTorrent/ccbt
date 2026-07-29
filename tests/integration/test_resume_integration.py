@@ -19,10 +19,10 @@ import pytest
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.config import get_config
 from ccbt.models import DownloadStats, FileCheckpoint, TorrentCheckpoint
 from ccbt.session import AsyncSessionManager
+from ccbt.storage.checkpoint import CheckpointManager
 
 
 class TestResumeIntegration:
@@ -100,22 +100,22 @@ class TestResumeIntegration:
                 session_manager = AsyncSessionManager(str(temp_path))
                 session_manager.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
 
-                # Test validate_checkpoint
-                is_valid = await session_manager.validate_checkpoint(checkpoint)
+                # Test validate_checkpoint (via checkpoint_ops)
+                is_valid = await session_manager.checkpoint_ops.validate(checkpoint)
                 assert is_valid
 
-                # Test list_resumable_checkpoints
-                resumable = await session_manager.list_resumable_checkpoints()
+                # Test list_resumable_checkpoints (via checkpoint_ops)
+                resumable = await session_manager.checkpoint_ops.list_resumable()
                 assert len(resumable) >= 1
 
-                # Test find_checkpoint_by_name
-                found_checkpoint = await session_manager.find_checkpoint_by_name(
+                # Test find_checkpoint_by_name (via checkpoint_ops)
+                found_checkpoint = await session_manager.checkpoint_ops.find_by_name(
                     "test_torrent",
                 )
                 assert found_checkpoint is not None
 
-                # Test get_checkpoint_info
-                checkpoint_info = await session_manager.get_checkpoint_info(
+                # Test get_checkpoint_info (via checkpoint_ops)
+                checkpoint_info = await session_manager.checkpoint_ops.get_info(
                     b"test_hash_1234567890",
                 )
                 assert checkpoint_info is not None
@@ -149,13 +149,14 @@ class TestResumeIntegration:
             files=[],
         )
 
-        # Test validation - checkpoint is valid but missing source
-        await session_manager.validate_checkpoint(valid_checkpoint)
+        # Test validation - checkpoint is valid but missing source (via checkpoint_ops)
+        is_valid = await session_manager.checkpoint_ops.validate(valid_checkpoint)
+        assert is_valid
         # The checkpoint itself is valid, but it's missing torrent source for resume
 
-        # Test resume with missing source
+        # Test resume with missing source (via checkpoint_ops)
         try:
-            await session_manager.resume_from_checkpoint(
+            await session_manager.checkpoint_ops.resume_from_checkpoint(
                 b"invalid_hash_1234567",
                 valid_checkpoint,
             )
@@ -233,11 +234,12 @@ class TestResumeIntegration:
         )
 
         # Test priority order with explicit torrent path
-        with patch("ccbt.session.session.Path") as mock_path_class:
+        with patch("ccbt.session.checkpoint_operations.Path") as mock_path_class:
             mock_path_instance = Mock()
             mock_path_instance.exists.return_value = True
             mock_path_class.return_value = mock_path_instance
-            
+            mock_path_class.side_effect = lambda *args, **kwargs: mock_path_instance
+
             with patch("ccbt.session.session.TorrentParser") as mock_parser_class:
                 mock_parser = Mock()
                 mock_parser.parse.return_value = {
@@ -245,19 +247,20 @@ class TestResumeIntegration:
                     "name": "priority_test",
                 }
                 mock_parser_class.return_value = mock_parser
-                
-                with patch.object(session_manager, "add_torrent") as mock_add_torrent:
-                    mock_add_torrent.return_value = "0123456789ABCDEF0123456789ABCDEF01234567"
 
-                    result = await session_manager.resume_from_checkpoint(
-                        bytes.fromhex("0123456789ABCDEF0123456789ABCDEF01234567"),
-                        checkpoint,
-                        torrent_path="/explicit/path.torrent",
-                    )
+                # Make add_torrent async mock
+                mock_add_torrent = AsyncMock(return_value="0123456789ABCDEF0123456789ABCDEF01234567")
+                session_manager.add_torrent = mock_add_torrent
 
-                    # Should use explicit path
-                    mock_add_torrent.assert_called_once_with("/explicit/path.torrent", resume=True)
-                    assert result == "0123456789ABCDEF0123456789ABCDEF01234567"
+                result = await session_manager.checkpoint_ops.resume_from_checkpoint(
+                    bytes.fromhex("0123456789ABCDEF0123456789ABCDEF01234567"),
+                    checkpoint,
+                    torrent_path="/explicit/path.torrent",
+                )
+
+                # Should use explicit path
+                mock_add_torrent.assert_called_once_with("/explicit/path.torrent", resume=True)
+                assert result == "0123456789ABCDEF0123456789ABCDEF01234567"
 
 
 if __name__ == "__main__":

@@ -13,9 +13,9 @@ import pytest
 pytestmark = [pytest.mark.unit]
 
 from ccbt.utils.exceptions import (
+    BencodeError,
     CCBTError,
     CCBTTimeoutError,
-    BencodeError,
     CheckpointCorruptedError,
     CheckpointError,
     CheckpointNotFoundError,
@@ -46,7 +46,7 @@ class TestCCBTError:
     def test_init_with_message_only(self):
         """Test CCBTError.__init__() with message only (lines 17-20)."""
         error = CCBTError("Test error message")
-        
+
         assert error.message == "Test error message"
         assert error.details == {}
 
@@ -54,21 +54,21 @@ class TestCCBTError:
         """Test CCBTError.__init__() with message and details dict (lines 17-21)."""
         details = {"key1": "value1", "key2": 42}
         error = CCBTError("Test error message", details=details)
-        
+
         assert error.message == "Test error message"
         assert error.details == details
 
     def test_init_with_details_none(self):
         """Test CCBTError.__init__() with details=None (defaults to empty dict)."""
         error = CCBTError("Test error message", details=None)
-        
+
         assert error.message == "Test error message"
         assert error.details == {}
 
     def test_str_without_details(self):
         """Test CCBTError.__str__() without details (returns message only, lines 23-27)."""
         error = CCBTError("Test error message")
-        
+
         str_repr = str(error)
         assert str_repr == "Test error message"
 
@@ -76,14 +76,14 @@ class TestCCBTError:
         """Test CCBTError.__str__() with details (formats correctly, lines 23-26)."""
         details = {"key1": "value1", "key2": 42}
         error = CCBTError("Test error message", details=details)
-        
+
         str_repr = str(error)
         assert str_repr == "Test error message (Details: {'key1': 'value1', 'key2': 42})"
 
     def test_str_with_empty_details(self):
         """Test CCBTError.__str__() with empty details dict (returns message only)."""
         error = CCBTError("Test error message", details={})
-        
+
         str_repr = str(error)
         assert str_repr == "Test error message"
 
@@ -213,7 +213,7 @@ class TestExceptionHierarchy:
         # Test with details
         network_err = NetworkError("Net error", details={"code": 500})
         assert "(Details: {'code': 500})" in str(network_err)
-        
+
         # Test without details
         disk_err = DiskError("Disk error")
         assert str(disk_err) == "Disk error"

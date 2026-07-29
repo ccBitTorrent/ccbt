@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.protocols import (
     WebTorrentProtocol,  # Import from protocols __init__ which handles the module/package conflict
@@ -60,7 +60,9 @@ class HybridProtocol(Protocol):
     """Hybrid protocol combining multiple protocols."""
 
     def __init__(
-        self, strategy: HybridStrategy | None = None, session_manager: Any | None = None
+        self,
+        strategy: Optional[HybridStrategy] = None,
+        session_manager: Optional[Any] = None,
     ):
         """Initialize hybrid protocol.
 
@@ -71,7 +73,7 @@ class HybridProtocol(Protocol):
         """
         super().__init__(ProtocolType.HYBRID)
 
-        # CRITICAL FIX: Store session manager reference
+        # Note: Store session manager reference
         # This allows protocols to use shared components (UDP tracker, DHT, WebRTC manager, etc.)
         self.session_manager = session_manager
 
@@ -102,7 +104,7 @@ class HybridProtocol(Protocol):
     def _initialize_sub_protocols(self) -> None:
         """Initialize sub-protocols based on strategy.
 
-        CRITICAL FIX: Pass session_manager to protocol constructors to ensure
+        Note: Pass session_manager to protocol constructors to ensure
         they use shared components (UDP tracker, DHT, WebRTC manager, etc.)
         """
         if self.strategy.use_bittorrent:
@@ -117,7 +119,7 @@ class HybridProtocol(Protocol):
             if WebTorrentProtocol is None:
                 msg = "WebTorrentProtocol is not available. Install aiortc: uv sync --extra webrtc"
                 raise ImportError(msg)
-            # CRITICAL FIX: Pass session_manager to WebTorrentProtocol
+            # Note: Pass session_manager to WebTorrentProtocol
             # This ensures it uses shared WebSocket server and WebRTC manager
             self.sub_protocols[ProtocolType.WEBTORRENT] = WebTorrentProtocol(
                 session_manager=self.session_manager
@@ -127,7 +129,7 @@ class HybridProtocol(Protocol):
             )
 
         if self.strategy.use_ipfs:
-            # CRITICAL FIX: Pass session_manager to IPFSProtocol
+            # Note: Pass session_manager to IPFSProtocol
             # This ensures consistency and allows IPFS to use shared components if needed
             self.sub_protocols[ProtocolType.IPFS] = IPFSProtocol(
                 session_manager=self.session_manager
@@ -138,7 +140,7 @@ class HybridProtocol(Protocol):
             try:
                 from ccbt.protocols.xet import XetProtocol
 
-                # CRITICAL FIX: Pass session_manager to XetProtocol if it supports it
+                # Note: Pass session_manager to XetProtocol if it supports it
                 self.sub_protocols[ProtocolType.XET] = XetProtocol()
                 self.protocol_weights[ProtocolType.XET] = self.strategy.xet_weight
             except ImportError:
@@ -333,7 +335,7 @@ class HybridProtocol(Protocol):
         else:
             return success
 
-    async def receive_message(self, peer_id: str) -> bytes | None:
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
         """Receive message from peer using the best available protocol."""
         # Find which protocol has this peer
         best_protocol = self._find_protocol_for_peer(peer_id)
@@ -444,7 +446,7 @@ class HybridProtocol(Protocol):
 
         return combined_stats
 
-    def _select_best_protocol(self, _peer_info: PeerInfo) -> Protocol | None:
+    def _select_best_protocol(self, _peer_info: PeerInfo) -> Optional[Protocol]:
         """Select the best protocol for a peer."""
         # Calculate scores for each protocol
         protocol_scores = {}
@@ -467,7 +469,7 @@ class HybridProtocol(Protocol):
 
         return None
 
-    def _find_protocol_for_peer(self, peer_id: str) -> Protocol | None:
+    def _find_protocol_for_peer(self, peer_id: str) -> Optional[Protocol]:
         """Find which protocol has a specific peer."""
         for protocol in self.sub_protocols.values():
             if protocol.is_connected(peer_id):

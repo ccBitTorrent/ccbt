@@ -25,7 +25,7 @@ class TestFastExtensionCoverage:
         extension = FastExtension()
         # Use wrong message type
         invalid_data = struct.pack("!BI", FastMessageType.HAVE_ALL, 123)
-        
+
         with pytest.raises(ValueError, match="Invalid message type for Suggest"):
             extension.decode_suggest(invalid_data)
 
@@ -46,7 +46,7 @@ class TestFastExtensionCoverage:
         extension = FastExtension()
         # Use wrong message type
         invalid_data = struct.pack("!BIII", FastMessageType.HAVE_ALL, 0, 0, 1024)
-        
+
         with pytest.raises(ValueError, match="Invalid message type for Reject"):
             extension.decode_reject(invalid_data)
 
@@ -61,7 +61,7 @@ class TestFastExtensionCoverage:
         extension = FastExtension()
         # Use wrong message type
         invalid_data = struct.pack("!BI", FastMessageType.HAVE_ALL, 123)
-        
+
         with pytest.raises(ValueError, match="Invalid message type for Allow Fast"):
             extension.decode_allow_fast(invalid_data)
 

@@ -1,16 +1,30 @@
+"""Status display commands for the CLI.
+
+This module provides commands for displaying torrent status information,
+including progress, peer connections, and download statistics.
+"""
+
 from __future__ import annotations
 
-from rich.console import Console
+from typing import TYPE_CHECKING, cast
+
 from rich.table import Table
 
-from ccbt.executor.session_adapter import LocalSessionAdapter
+if TYPE_CHECKING:
+    from rich.console import Console
+
 from ccbt.i18n import _
 
+if TYPE_CHECKING:
+    from ccbt.session.session import AsyncSessionManager
 
-async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
+
+async def show_status(session: AsyncSessionManager, console: Console) -> None:
     """Show client status."""
-    # Get session from adapter (for local sessions)
-    session = adapter.session_manager
+    # Handle LocalSessionAdapter by extracting underlying session manager
+    if hasattr(session, "session_manager"):
+        # It's a LocalSessionAdapter, get the underlying session manager
+        session = cast("AsyncSessionManager", session.session_manager)
 
     table = Table(title=_("ccBitTorrent Status"))  # pragma: no cover - UI setup
     table.add_column(_("Component"), style="cyan")  # pragma: no cover
@@ -22,21 +36,23 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
         _("Running"),
         _("Port: {port}").format(port=session.config.network.listen_port),
     )  # pragma: no cover
+    # Handle peers - may not exist on all session types
+    peers_count = len(getattr(session, "peers", []))
     table.add_row(
         _("Peers"),
         _("Connected"),
-        _("Active: {count}").format(count=len(session.peers)),
+        _("Active: {count}").format(count=peers_count),
     )  # pragma: no cover
 
-    # Get IP filter stats via executor (if available)
+    # Get IP filter stats directly from session
     try:
-        from ccbt.executor.executor import UnifiedCommandExecutor
-
-        executor = UnifiedCommandExecutor(adapter)
-        result = await executor.execute("security.get_ip_filter_stats")
-
-        if result.success and result.data.get("enabled"):
-            stats = result.data.get("stats", {})
+        security_manager = getattr(session, "security_manager", None)
+        if (
+            security_manager
+            and security_manager.ip_filter
+            and security_manager.ip_filter.enabled
+        ):
+            stats = security_manager.ip_filter.get_filter_statistics()
             filter_status = _("Enabled")
             filter_details = _(
                 "Rules: {rules}, IPv4: {ipv4}, IPv6: {ipv6}, Blocks: {blocks}"
@@ -59,12 +75,31 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
         )  # pragma: no cover
 
     try:
-        scrape_cache_size = len(session.scrape_cache)
+        if not hasattr(session, "scrape_cache"):
+            scrape_cache_size = 0
+        else:
+            scrape_cache_size = len(session.scrape_cache)
         if scrape_cache_size > 0:
-            async with session.scrape_cache_lock:
+            # Ensure scrape_cache_lock exists before using it
+            if hasattr(session, "scrape_cache_lock"):
+                async with session.scrape_cache_lock:
+                    total_seeders = sum(
+                        r.seeders for r in session.scrape_cache.values()
+                    )
+                    total_leechers = sum(
+                        r.leechers for r in session.scrape_cache.values()
+                    )
+            else:
+                # Fallback if lock doesn't exist (shouldn't happen, but be defensive)
                 total_seeders = sum(r.seeders for r in session.scrape_cache.values())
                 total_leechers = sum(r.leechers for r in session.scrape_cache.values())
-            scrape_details = f"Cached: {scrape_cache_size}, Total Seeders: {total_seeders}, Total Leechers: {total_leechers}"
+            scrape_details = _(
+                "Cached: {cache_size}, Total Seeders: {seeders}, Total Leechers: {leechers}"
+            ).format(
+                cache_size=scrape_cache_size,
+                seeders=total_seeders,
+                leechers=total_leechers,
+            )
         else:
             scrape_details = _("No cached results")
 
@@ -123,7 +158,12 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
 
     if hasattr(session, "scrape_cache"):
         try:
-            async with session.scrape_cache_lock:
+            # Ensure scrape_cache_lock exists before using it
+            if hasattr(session, "scrape_cache_lock"):
+                async with session.scrape_cache_lock:
+                    scrape_results = list(session.scrape_cache.values())
+            else:
+                # Fallback if lock doesn't exist
                 scrape_results = list(session.scrape_cache.values())
             if scrape_results:
                 console.print(_("\n[yellow]Tracker Scrape Statistics:[/yellow]"))
@@ -155,86 +195,112 @@ async def show_status(adapter: LocalSessionAdapter, console: Console) -> None:
 
     if session.config.network.enable_utp:
         try:
-            from ccbt.transport.utp_socket import UTPSocketManager
-
-            socket_manager = await UTPSocketManager.get_instance()
+            socket_manager = getattr(session, "utp_socket_manager", None) or getattr(
+                getattr(session, "session_manager", None), "utp_socket_manager", None
+            )
+            if socket_manager is None:
+                _utp_socket_manager_not_initialized = (
+                    "uTP socket manager not initialized"
+                )
+                raise RuntimeError(_utp_socket_manager_not_initialized)
             stats = socket_manager.get_statistics()
-            utp_status = "Enabled"
-            utp_details = (
-                f"Connections: {stats['active_connections']} | "
-                f"Packets: {stats['total_packets_sent']}/{stats['total_packets_received']} | "
-                f"Bytes: {stats['total_bytes_sent']}/{stats['total_bytes_received']}"
+            utp_status = _("Enabled")
+            utp_details = _(
+                "Connections: {connections} | "
+                "Packets: {sent}/{received} | "
+                "Bytes: {bytes_sent}/{bytes_received}"
+            ).format(
+                connections=stats["active_connections"],
+                sent=stats["total_packets_sent"],
+                received=stats["total_packets_received"],
+                bytes_sent=stats["total_bytes_sent"],
+                bytes_received=stats["total_bytes_received"],
             )
         except Exception:
-            utp_status = "Enabled"
-            utp_details = "Socket manager not initialized"
+            utp_status = _("Enabled")
+            utp_details = _("Socket manager not initialized")
     else:
-        utp_status = "Disabled"
-        utp_details = "Not configured"
-    table.add_row("uTP", utp_status, utp_details)  # pragma: no cover
+        utp_status = _("Disabled")
+        utp_details = _("Not configured")
+    table.add_row(_("uTP"), utp_status, utp_details)  # pragma: no cover
 
     protocol_v2_config = session.config.network.protocol_v2
     if protocol_v2_config.enable_protocol_v2:
-        v2_status = "Enabled"
-        v2_details = f"Prefer v2: {protocol_v2_config.prefer_protocol_v2} | Hybrid: {protocol_v2_config.support_hybrid} | Timeout: {protocol_v2_config.v2_handshake_timeout}s"
+        v2_status = _("Enabled")
+        v2_details = _(
+            "Prefer v2: {prefer_v2} | Hybrid: {hybrid} | Timeout: {timeout}s"
+        ).format(
+            prefer_v2=protocol_v2_config.prefer_protocol_v2,
+            hybrid=protocol_v2_config.support_hybrid,
+            timeout=protocol_v2_config.v2_handshake_timeout,
+        )
     else:
-        v2_status = "Disabled"
-        v2_details = "Not enabled"
-    table.add_row("Protocol v2 (BEP 52)", v2_status, v2_details)  # pragma: no cover
+        v2_status = _("Disabled")
+        v2_details = _("Not enabled")
+    table.add_row(_("Protocol v2 (BEP 52)"), v2_status, v2_details)  # pragma: no cover
 
     webtorrent_config = session.config.network.webtorrent
     if webtorrent_config.enable_webtorrent:
-        webtorrent_status = "Disabled"
-        webtorrent_details = "Not initialized"
+        webtorrent_status = _("Disabled")
+        webtorrent_details = _("Not initialized")
         try:
             from ccbt.protocols.webtorrent import (
                 WebTorrentProtocol,  # type: ignore[attr-defined]
             )
 
             webrtc_connections = 0
-            signaling_status = "Stopped"
+            signaling_status = _("Stopped")
             if hasattr(session, "protocols"):
                 for protocol in (
                     session.protocols.values()
                     if isinstance(session.protocols, dict)
                     else []
                 ):
-                    if (
-                        isinstance(protocol, WebTorrentProtocol)
-                        and WebTorrentProtocol is not None
+                    if WebTorrentProtocol is not None and isinstance(
+                        protocol, WebTorrentProtocol
                     ):
                         webtorrent_protocol = protocol  # type: ignore[assignment]
                         webrtc_connections = len(webtorrent_protocol.webrtc_connections)  # type: ignore[attr-defined]
                         signaling_status = (
-                            "Running"
+                            _("Running")
                             if webtorrent_protocol.websocket_server is not None  # type: ignore[attr-defined]
-                            else "Stopped"
+                            else _("Stopped")
                         )
-                        webtorrent_status = "Enabled"
-                        webtorrent_details = (
-                            f"Connections: {webrtc_connections}, "
-                            f"Signaling: {signaling_status} "
-                            f"({webtorrent_config.webtorrent_host}:{webtorrent_config.webtorrent_port})"
+                        webtorrent_status = _("Enabled")
+                        webtorrent_details = _(
+                            "Connections: {connections}, "
+                            "Signaling: {signaling} "
+                            "({host}:{port})"
+                        ).format(
+                            connections=webrtc_connections,
+                            signaling=signaling_status,
+                            host=webtorrent_config.webtorrent_host,
+                            port=webtorrent_config.webtorrent_port,
                         )
                         break
 
-            if webtorrent_status == "Enabled":
+            if webtorrent_status == _("Enabled"):
                 table.add_row(
-                    "WebTorrent", webtorrent_status, webtorrent_details
+                    _("WebTorrent"), webtorrent_status, webtorrent_details
                 )  # pragma: no cover
             else:
                 table.add_row(
-                    "WebTorrent",
-                    "Enabled (Not Started)",
-                    f"Port: {webtorrent_config.webtorrent_port}, STUN: {len(webtorrent_config.webtorrent_stun_servers)} server(s)",
+                    _("WebTorrent"),
+                    _("Enabled (Not Started)"),
+                    _("Port: {port}, STUN: {stun_count} server(s)").format(
+                        port=webtorrent_config.webtorrent_port,
+                        stun_count=len(webtorrent_config.webtorrent_stun_servers),
+                    ),
                 )  # pragma: no cover
         except (ImportError, AttributeError):
             table.add_row(
-                "WebTorrent", "Enabled (Dependency Missing)", "aiortc not installed"
+                _("WebTorrent"),
+                _("Enabled (Dependency Missing)"),
+                _("aiortc not installed"),
             )  # pragma: no cover
     else:
         table.add_row(
-            "WebTorrent", "Disabled", "Not enabled in configuration"
+            _("WebTorrent"), _("Disabled"), _("Not enabled in configuration")
         )  # pragma: no cover
 
     console.print(table)  # pragma: no cover

@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -39,21 +39,21 @@ class TestCredentialStoreKeyGeneration:
     def test_get_or_create_key_read_error_then_generate(self, temp_config_dir):
         """Test _get_or_create_key when read fails, then generates new key."""
         store = CredentialStore(config_dir=temp_config_dir)
-        
+
         # Create a corrupted key file
         store.key_file.write_bytes(b"corrupted key data")
-        
+
         # Mock read_bytes to raise exception first time
         read_called = [False]
         original_read = Path.read_bytes
         key_file_str = str(store.key_file)
-        
+
         def mock_read(self):
             if not read_called[0] and str(self) == key_file_str:
                 read_called[0] = True
-                raise IOError("Read failed")
+                raise OSError("Read failed")
             return original_read(self)
-        
+
         with patch("pathlib.Path.read_bytes", side_effect=mock_read, autospec=False):
             # Should generate new key after read failure
             key = store._get_or_create_key()
@@ -63,19 +63,19 @@ class TestCredentialStoreKeyGeneration:
     def test_get_or_create_key_write_error_raises(self, temp_config_dir):
         """Test _get_or_create_key when write fails raises error."""
         store = CredentialStore(config_dir=temp_config_dir)
-        
+
         # Ensure key file doesn't exist
         if store.key_file.exists():
             store.key_file.unlink()
-        
+
         # Mock write_bytes to raise exception using conditional side_effect
         original_write = Path.write_bytes
         key_file_str = str(store.key_file)
         def conditional_write(self, data):
             if str(self) == key_file_str:
-                raise IOError("Write failed")
+                raise OSError("Write failed")
             return original_write(self, data)
-        
+
         with patch("pathlib.Path.write_bytes", side_effect=conditional_write, autospec=False):
             with patch("pathlib.Path.mkdir"), patch("pathlib.Path.chmod"):
                 with pytest.raises(ProxyConfigurationError):
@@ -130,7 +130,7 @@ class TestProxyAuthAdditionalCoverage:
     async def test_handle_challenge_no_username_password(self):
         """Test handle_challenge when no credentials provided (coverage line 194-196)."""
         auth = ProxyAuth()
-        result = await auth.handle_challenge("Basic realm=\"Proxy\"")
+        result = await auth.handle_challenge('Basic realm="Proxy"')
         assert result is None
 
     @pytest.mark.asyncio

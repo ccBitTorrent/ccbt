@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 import ipfshttpclient
 import multiaddr
@@ -70,7 +70,7 @@ class IPFSContent:
 class IPFSProtocol(Protocol):
     """IPFS protocol implementation."""
 
-    def __init__(self, session_manager: Any | None = None):
+    def __init__(self, session_manager: Optional[Any] = None):
         """Initialize IPFS protocol.
 
         Args:
@@ -79,12 +79,12 @@ class IPFSProtocol(Protocol):
         """
         super().__init__(ProtocolType.IPFS)
 
-        # CRITICAL FIX: Store session manager reference for consistency
+        # Note: Store session manager reference for consistency
         # This allows protocol to use shared components if needed in the future
         self.session_manager = session_manager
 
         # Configuration will be set by session manager
-        self.config: Any | None = None
+        self.config: Optional[Any] = None
 
         # IPFS-specific capabilities
         self.capabilities = ProtocolCapabilities(
@@ -116,7 +116,7 @@ class IPFSProtocol(Protocol):
         ]
 
         # IPFS client and connection state
-        self._ipfs_client: ipfshttpclient.Client | None = None
+        self._ipfs_client: Optional[ipfshttpclient.Client] = None
         self._ipfs_connected: bool = False
         self._connection_retries: int = 0
         self._last_connection_attempt: float = 0.0
@@ -483,8 +483,8 @@ class IPFSProtocol(Protocol):
         self,
         peer_id: str,
         message: bytes,
-        want_list: list[str] | None = None,
-        blocks: dict[str, bytes] | None = None,
+        want_list: Optional[list[str]] = None,
+        blocks: Optional[dict[str, bytes]] = None,
     ) -> bool:
         """Send message to IPFS peer.
 
@@ -556,7 +556,7 @@ class IPFSProtocol(Protocol):
 
     async def receive_message(
         self, peer_id: str, parse_bitswap: bool = True
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Receive message from IPFS peer.
 
         Args:
@@ -618,8 +618,8 @@ class IPFSProtocol(Protocol):
     def _format_bitswap_message(
         self,
         message: bytes,
-        want_list: list[str] | None = None,
-        blocks: dict[str, bytes] | None = None,
+        want_list: Optional[list[str]] = None,
+        blocks: Optional[dict[str, bytes]] = None,
     ) -> bytes:
         """Format message according to Bitswap protocol.
 
@@ -745,7 +745,7 @@ class IPFSProtocol(Protocol):
             return {"payload": b"", "want_list": [], "blocks": {}}
 
     async def _setup_message_listener(self, peer_id: str) -> None:
-        """Setup pubsub subscription for receiving messages from a peer."""
+        """Set up pubsub subscription for receiving messages from a peer."""
         if not self._ipfs_connected or self._ipfs_client is None:
             return
 
@@ -874,30 +874,30 @@ class IPFSProtocol(Protocol):
             # For now, we create metadata structure and reference piece hashes
 
             # Create blocks list from piece hashes (for reference)
-            # These are placeholders until actual piece data is available
-            blocks = [
-                {
-                    "hash": piece.hex(),
-                    "index": i,
-                    "size": min(
-                        torrent_info.piece_length,
-                        torrent_info.total_length - i * torrent_info.piece_length,
-                    ),
-                }
-                for i, piece in enumerate(torrent_info.pieces)
-            ]
-
-            # Links will be populated when pieces are converted to blocks
+            # These are placeholder CIDs until actual piece data is available
+            # Note: blocks list contains placeholder CIDs derived from piece hashes
             # For full DAG creation with piece data, use:
             # 1. Convert pieces to blocks: piece_blocks = [await _piece_to_block(piece_data, i, piece_length) for i, piece_data in enumerate(pieces)]
             # 2. Create DAG: root_cid = await _create_ipfs_dag_from_pieces(piece_blocks)
+            blocks: list[str] = []
+            for _i, piece in enumerate(torrent_info.pieces):
+                # Create placeholder CID from piece hash
+                # Format: Qm + first 44 chars of SHA256 hash of piece hash
+                piece_hash = hashlib.sha256(piece).hexdigest()
+                placeholder_cid = f"Qm{piece_hash[:44]}"
+                blocks.append(placeholder_cid)
+
+            # Links will be populated when pieces are converted to blocks.
+            # Real links could be filled later via object.get(metadata_cid) if desired.
             links: list[dict[str, Any]] = []
 
             # Create IPFS content record
+            # Note: blocks contain placeholder CIDs derived from piece hashes
+            # These will be updated with actual CIDs when pieces are converted to IPFS blocks
             ipfs_content = IPFSContent(
                 cid=cid,
                 size=torrent_info.total_length,
-                blocks=blocks,  # Will be updated with actual CIDs when pieces are converted
+                blocks=blocks,  # Placeholder CIDs for each piece
                 links=links,  # Will be populated from DAG structure
             )
 
@@ -1257,7 +1257,7 @@ class IPFSProtocol(Protocol):
 
     def _get_cached_discovery_result(
         self, cid: str, ttl: int = 300
-    ) -> list[str] | None:
+    ) -> Optional[list[str]]:
         """Get cached discovery result if valid.
 
         Args:
@@ -1382,6 +1382,37 @@ class IPFSProtocol(Protocol):
             self.logger.warning("Unexpected error getting content stats: %s", e)
             return {"seeders": 0, "leechers": 0, "completed": 0}
 
+    async def _extract_blocks_and_links(
+        self, cid: str
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """Extract blocks (child CIDs) and links from IPFS object.get(cid).
+
+        Returns ([], []) when not connected, object has no Links, or on error
+        (e.g. raw block or object.get fails).
+        """
+        if not self._ipfs_connected or self._ipfs_client is None:
+            return ([], [])
+        try:
+            obj = await to_thread(
+                self._ipfs_client.object.get,  # type: ignore[attr-defined]
+                cid,
+            )
+        except Exception as e:
+            self.logger.debug("Could not get object structure for CID %s: %s", cid, e)
+            return ([], [])
+        if not isinstance(obj, dict):
+            return ([], [])
+        links_raw = obj.get("Links", [])
+        if not isinstance(links_raw, (list, tuple)):
+            return ([], [])
+        links = list(links_raw)
+        blocks = [
+            link.get("Hash", "")
+            for link in links
+            if isinstance(link, dict) and link.get("Hash")
+        ]
+        return (blocks, links)
+
     async def add_content(self, data: bytes) -> str:
         """Add content to IPFS and return CID."""
         if not self._ipfs_connected or self._ipfs_client is None:
@@ -1408,12 +1439,12 @@ class IPFSProtocol(Protocol):
             # Pin content if enabled (handled by add_bytes with pin parameter if needed)
             # For now, we track it separately
 
-            # Create IPFS content record
+            blocks, links = await self._extract_blocks_and_links(cid)
             ipfs_content = IPFSContent(
                 cid=cid,
                 size=len(data),
-                blocks=[],  # Would need to extract from IPFS object
-                links=[],
+                blocks=blocks,
+                links=links,
             )
 
             self.ipfs_content[cid] = ipfs_content
@@ -1462,7 +1493,7 @@ class IPFSProtocol(Protocol):
             )
             return ""
 
-    async def get_content(self, cid: str) -> bytes | None:
+    async def get_content(self, cid: str) -> Optional[bytes]:
         """Get content from IPFS by CID.
 
         First tries to retrieve from IPFS daemon, then falls back to peer-based retrieval.
@@ -1485,11 +1516,12 @@ class IPFSProtocol(Protocol):
                         content = self.ipfs_content[cid]
                         content.last_accessed = time.time()
                     else:
+                        blocks, links = await self._extract_blocks_and_links(cid)
                         ipfs_content = IPFSContent(
                             cid=cid,
                             size=len(content_data),
-                            blocks=[],
-                            links=[],
+                            blocks=blocks,
+                            links=links,
                             last_accessed=time.time(),
                         )
                         self.ipfs_content[cid] = ipfs_content
@@ -1556,11 +1588,12 @@ class IPFSProtocol(Protocol):
                 content = self.ipfs_content[cid]
                 content.last_accessed = time.time()
             else:
+                blocks, links = await self._extract_blocks_and_links(cid)
                 ipfs_content = IPFSContent(
                     cid=cid,
                     size=len(content_data),
-                    blocks=[],
-                    links=[],
+                    blocks=blocks,
+                    links=links,
                     last_accessed=time.time(),
                 )
                 self.ipfs_content[cid] = ipfs_content
@@ -1620,7 +1653,9 @@ class IPFSProtocol(Protocol):
         timeout_per_block = 30  # seconds
 
         # Request blocks from peers in parallel
-        async def request_from_peer(peer_id: str, cid: str) -> tuple[str, bytes | None]:
+        async def request_from_peer(
+            peer_id: str, cid: str
+        ) -> tuple[str, Optional[bytes]]:
             """Request a single block from a peer."""
             for attempt in range(max_retries):
                 try:
@@ -1700,7 +1735,7 @@ class IPFSProtocol(Protocol):
         return blocks
 
     async def _reconstruct_content_from_blocks(
-        self, blocks: dict[str, bytes], dag_structure: dict[str, Any] | None = None
+        self, blocks: dict[str, bytes], dag_structure: Optional[dict[str, Any]] = None
     ) -> bytes:
         """Reconstruct content from IPFS blocks following DAG structure.
 
@@ -1960,7 +1995,7 @@ class IPFSProtocol(Protocol):
         """Get IPFS content."""
         return self.ipfs_content.copy()
 
-    def get_content_stats(self, cid: str) -> dict[str, Any] | None:
+    def get_content_stats(self, cid: str) -> Optional[dict[str, Any]]:
         """Get content statistics."""
         if cid not in self.ipfs_content:
             return None

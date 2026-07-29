@@ -9,7 +9,7 @@ for cryptographic authentication and signing.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 try:
     from cryptography.fernet import Fernet
@@ -53,7 +53,7 @@ class Ed25519KeyManager:
     authentication. Private keys are encrypted using Fernet before storage.
     """
 
-    def __init__(self, key_dir: Path | str | None = None):
+    def __init__(self, key_dir: Optional[Path | str] = None):
         """Initialize key manager.
 
         Args:
@@ -87,8 +87,8 @@ class Ed25519KeyManager:
         self.cipher = self._get_or_create_encryption_key()
 
         # Key pair (loaded on demand)
-        self._private_key: Ed25519PrivateKey | None = None
-        self._public_key: Ed25519PublicKey | None = None
+        self._private_key: Optional[Ed25519PrivateKey] = None
+        self._public_key: Optional[Ed25519PublicKey] = None
 
     def _get_or_create_encryption_key(self) -> Fernet:
         """Get or create encryption key for private key storage.
@@ -161,8 +161,8 @@ class Ed25519KeyManager:
 
     def save_keypair(
         self,
-        private_key: Ed25519PrivateKey | None = None,
-        public_key: Ed25519PublicKey | None = None,
+        private_key: Optional[Ed25519PrivateKey] = None,
+        public_key: Optional[Ed25519PublicKey] = None,
     ) -> None:
         """Save key pair to secure storage.
 
@@ -244,7 +244,8 @@ class Ed25519KeyManager:
 
                 public_key = load_pem_public_key(public_key_bytes)
                 if not isinstance(public_key, ed25519.Ed25519PublicKey):
-                    raise ValueError("Not an Ed25519 public key")
+                    msg = "Not an Ed25519 public key"
+                    raise TypeError(msg)
             except Exception as pem_error:
                 # Fall back to raw bytes (32 bytes) for backward compatibility
                 # This handles the case where the key was saved in raw format
@@ -255,16 +256,18 @@ class Ed25519KeyManager:
                         )
                     else:
                         # If neither PEM nor raw 32 bytes, re-raise the original PEM error
-                        raise ValueError(
+                        msg = (
                             f"Invalid public key format: {len(public_key_bytes)} bytes. "
                             f"PEM load error: {pem_error}"
-                        ) from pem_error
+                        )
+                        raise ValueError(msg) from pem_error
                 except Exception as raw_error:
                     # If raw loading also fails, raise with both errors
-                    raise ValueError(
+                    msg = (
                         f"Failed to load public key as PEM or raw bytes. "
                         f"PEM error: {pem_error}, Raw error: {raw_error}"
-                    ) from raw_error
+                    )
+                    raise ValueError(msg) from raw_error
 
             self._private_key = private_key
             self._public_key = public_key

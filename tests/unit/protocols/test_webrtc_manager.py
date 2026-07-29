@@ -8,18 +8,19 @@ Target: 95%+ code coverage.
 
 from __future__ import annotations
 
-import asyncio
+from typing import Optional
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 # Try to import aiortc, skip tests if not available
 try:
     from aiortc import (
-        RTCPeerConnection,
         RTCConfiguration,
-        RTCIceServer,
         RTCDataChannel,
         RTCIceCandidate,
+        RTCIceServer,
+        RTCPeerConnection,
     )
 
     HAS_AIORTC = True
@@ -200,7 +201,7 @@ class TestWebRTCConnectionManagerConnectionCreation:
         peer_id = "test_peer_1"
         callback_called = []
 
-        async def ice_callback(peer_id: str, candidate: dict | None):
+        async def ice_callback(peer_id: str, candidate: Optional[dict]):
             callback_called.append((peer_id, candidate))
 
         from ccbt.protocols.webtorrent import webrtc_manager as webrtc_manager_module

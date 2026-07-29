@@ -8,7 +8,7 @@ Provides Ed25519-based cryptographic authentication for BitTorrent peer handshak
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.utils.logging_config import get_logger
 
@@ -81,7 +81,7 @@ class Ed25519Handshake:
         peer_id: bytes,
         peer_public_key: bytes,
         peer_signature: bytes,
-        timestamp: int | None = None,
+        timestamp: Optional[int] = None,
     ) -> bool:
         """Verify peer's handshake signature.
 
@@ -149,7 +149,7 @@ class Ed25519Handshake:
 
     def parse_handshake_extension(
         self, extension_data: dict[str, Any]
-    ) -> tuple[bytes, bytes, int] | None:
+    ) -> Optional[tuple[bytes, bytes, int]]:
         """Parse handshake extension data.
 
         Args:

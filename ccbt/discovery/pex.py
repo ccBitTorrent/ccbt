@@ -14,9 +14,11 @@ import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
 
 from ccbt.config import get_config
+from ccbt.models import PeerInfo
+from ccbt.utils.shutdown import is_shutting_down
 
 
 @dataclass
@@ -25,7 +27,8 @@ class PexPeer:
 
     ip: str
     port: int
-    peer_id: bytes | None = None
+    peer_id: Optional[bytes] = None
+    flags: int = 0
     added_time: float = field(default_factory=time.time)
     source: str = "pex"  # Source of this peer (pex, tracker, dht, etc.)
     reliability_score: float = 1.0
@@ -36,7 +39,7 @@ class PexSession:
     """PEX session with a single peer."""
 
     peer_key: str
-    ut_pex_id: int | None = None
+    ut_pex_id: Optional[int] = None
     last_pex_time: float = 0.0
     pex_interval: float = 30.0
     is_supported: bool = False
@@ -67,19 +70,19 @@ class AsyncPexManager:
         self.throttle_interval = 10.0
 
         # Background tasks
-        self._pex_task: asyncio.Task | None = None
-        self._cleanup_task: asyncio.Task | None = None
+        self._pex_task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         # Callback for sending PEX messages via extension protocol
         # Signature: (peer_key: str, peer_data: bytes, is_added: bool) -> bool
-        self.send_pex_callback: Callable[[str, bytes, bool], Awaitable[bool]] | None = (
-            None
-        )
+        self.send_pex_callback: Optional[
+            Callable[[str, bytes, bool], Awaitable[bool]]
+        ] = None
 
         # Callback to get connected peers for PEX messages
-        self.get_connected_peers_callback: (
-            Callable[[], Awaitable[list[tuple[str, int]]]] | None
-        ) = None
+        self.get_connected_peers_callback: Optional[
+            Callable[[], Awaitable[list[tuple[str, int]]]]
+        ] = None
 
         # Track peers we've already sent to each session (to avoid duplicates)
         self.peers_sent_to_session: dict[str, set[tuple[str, int]]] = defaultdict(set)
@@ -88,6 +91,19 @@ class AsyncPexManager:
         self.previous_connected_peers: dict[str, set[tuple[str, int]]] = defaultdict(
             set
         )
+
+        # XET chunk tracking: chunk_hash -> set of (ip, port)
+        self.known_chunks: dict[bytes, set[tuple[str, int]]] = {}
+        self.previous_known_chunks: dict[str, set[bytes]] = defaultdict(
+            set
+        )  # peer_key -> chunks
+        self.chunks_sent_to_session: dict[str, set[bytes]] = defaultdict(
+            set
+        )  # peer_key -> chunks
+        # (chunk_hashes, optional peer_ip, optional peer_port) for discovery
+        self.chunk_callbacks: list[
+            Callable[[list[bytes], Optional[str], Optional[int]], None]
+        ] = []
 
         self.logger = logging.getLogger(__name__)
 
@@ -112,10 +128,65 @@ class AsyncPexManager:
         self.logger.info("PEX manager stopped")
 
     async def _pex_loop(self) -> None:
-        """Background task for PEX operations."""
+        """Background task for PEX operations.
+
+        Note: Adaptive PEX interval based on peer count.
+        When peer count is low, exchange peers more frequently.
+        """
+        base_pex_interval = (
+            60.0  # Base interval: 60 seconds (BEP 11 compliant: max 1 per minute)
+        )
+        pex_interval = base_pex_interval
+
         while True:  # pragma: no cover - Background loop, tested via cancellation
             try:
-                await asyncio.sleep(30)  # Run every 30 seconds
+                if is_shutting_down():
+                    break
+                # Note: Adaptive PEX interval based on connected peer count
+                # BEP 11 compliant: max 1 message per minute (60s), but allow 30s minimum for low peer counts
+                # If we have callback to get peer count, use it to adjust interval
+                if self.get_connected_peers_callback:
+                    try:
+                        connected_peers = await self.get_connected_peers_callback()
+                        peer_count = len(connected_peers) if connected_peers else 0
+
+                        if peer_count < 3:
+                            # Ultra-low peer count - exchange peers every 30 seconds (BEP 11 compliant minimum)
+                            pex_interval = 30.0
+                            self.logger.info(
+                                "PEX loop: Ultra-low peer count (%d), using aggressive interval: %.1fs (BEP 11 compliant: min 30s)",
+                                peer_count,
+                                pex_interval,
+                            )
+                        elif peer_count < 5:
+                            # Critically low peer count - exchange peers every 30 seconds
+                            pex_interval = 30.0
+                            self.logger.debug(
+                                "PEX loop: Low peer count (%d), using aggressive interval: %.1fs (BEP 11 compliant: min 30s)",
+                                peer_count,
+                                pex_interval,
+                            )
+                        elif peer_count < 10:
+                            # Low peer count - exchange peers every 30 seconds
+                            pex_interval = 30.0
+                        else:
+                            # Normal peer count - use base interval (60s, BEP 11 compliant)
+                            pex_interval = base_pex_interval
+                    except Exception as e:
+                        # Fallback to base interval if callback fails
+                        self.logger.debug(
+                            "Failed to get peer count for PEX interval: %s", e
+                        )
+                        pex_interval = base_pex_interval
+                else:
+                    pex_interval = base_pex_interval
+
+                if is_shutting_down():
+                    break
+
+                await asyncio.sleep(pex_interval)
+                if is_shutting_down():
+                    break
                 await (
                     self._send_pex_messages()
                 )  # pragma: no cover - Tested via direct calls
@@ -175,9 +246,19 @@ class AsyncPexManager:
         added_success = False
         dropped_success = False
 
+        from ccbt.extensions.pex import PeerExchange
+
         # Send added peers if any
-        added_count = len(added_peers) // 6 if added_peers else 0
+        added_count = 0
+        dropped_count = 0
+        pex_exchange = PeerExchange()
+
         if added_peers:
+            with contextlib.suppress(Exception):
+                decoded = pex_exchange.decode_bep11_payload(added_peers)
+                added_count = len(decoded[0]) + len(decoded[1])
+            if added_count == 0:
+                added_count = len(added_peers) // 6
             self.logger.info(
                 "PEX: Sending %d added peer(s) to %s",
                 added_count,
@@ -205,7 +286,12 @@ class AsyncPexManager:
                 session.consecutive_failures += 1
 
         # Send dropped peers if any
-        dropped_count = len(dropped_peers) // 6 if dropped_peers else 0
+        if dropped_peers:
+            with contextlib.suppress(Exception):
+                decoded = pex_exchange.decode_bep11_payload(dropped_peers)
+                dropped_count = len(decoded[2]) + len(decoded[3])
+            if dropped_count == 0:
+                dropped_count = len(dropped_peers) // 6
         if dropped_peers:
             self.logger.info(
                 "PEX: Sending %d dropped peer(s) to %s",
@@ -250,8 +336,8 @@ class AsyncPexManager:
             peer_key: The peer we're sending to (will exclude from peer list)
 
         Returns:
-            Tuple of (added_peers_data, dropped_peers_data) as bytes
-            Each is empty bytes if no peers of that type
+            Tuple of (added_payload, dropped_payload) as bytes.
+            Each is BEP11 payload bytes (bencoded dict) or empty bytes.
 
         """
         try:
@@ -312,16 +398,13 @@ class AsyncPexManager:
             # Update previous connected peers for next time
             self.previous_connected_peers[peer_key] = current_connected.copy()
 
-            # Encode peer lists
+            # Encode BEP11 payloads
             pex_exchange = PeerExchange()
 
-            added_data = b""
-            if pex_peers_to_add:
-                added_data = pex_exchange.encode_peers_list(pex_peers_to_add)
-
-            dropped_data = b""
-            if pex_peers_to_drop:
-                dropped_data = pex_exchange.encode_peers_list(pex_peers_to_drop)
+            added_data = pex_exchange.encode_bep11_payload(added_peers=pex_peers_to_add)
+            dropped_data = pex_exchange.encode_bep11_payload(
+                dropped_peers=pex_peers_to_drop
+            )
 
             if added_data or dropped_data:
                 self.logger.debug(
@@ -352,6 +435,61 @@ class AsyncPexManager:
             if peer_key in self.peer_sources:
                 del self.peer_sources[peer_key]
 
+    def add_chunks_from_peer(
+        self,
+        peer_ip: str,
+        peer_port: int,
+        chunk_hashes: list[bytes],
+    ) -> None:
+        """Record chunk hashes reported by a peer (e.g. from XET extension).
+
+        Updates known_chunks so get_peers_with_chunks() can return this peer
+        for those chunks, and invokes chunk_callbacks with (chunk_hashes, peer_ip, peer_port).
+
+        Args:
+            peer_ip: Peer IP address
+            peer_port: Peer port
+            chunk_hashes: List of 32-byte chunk hashes the peer has
+
+        """
+        peer_addr = (peer_ip, peer_port)
+        for ch in chunk_hashes:
+            if len(ch) != 32:
+                continue
+            self.known_chunks.setdefault(ch, set()).add(peer_addr)
+        for cb in self.chunk_callbacks:
+            try:
+                cb(chunk_hashes, peer_ip, peer_port)
+            except Exception as e:
+                self.logger.debug("Error in XET chunk callback: %s", e)
+
+    def get_peers_with_chunks(
+        self, chunk_hashes: list[bytes]
+    ) -> dict[bytes, list[PeerInfo]]:
+        """Return peers known to have each chunk (from PEX/XET chunk exchange).
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes to look up
+
+        Returns:
+            Dict mapping each chunk_hash to list of PeerInfo for peers that have it
+
+        """
+        result: dict[bytes, list[PeerInfo]] = {h: [] for h in chunk_hashes}
+        for ch in chunk_hashes:
+            if len(ch) != 32:
+                continue
+            addrs = self.known_chunks.get(ch, set())
+            for ip, port in addrs:
+                try:
+                    result[ch].append(PeerInfo(ip=ip, port=port, peer_source="pex"))
+                except Exception as e:
+                    self.logger.debug(
+                        "Skipping invalid peer info from chunk registry: %s", e
+                    )
+                    continue
+        return result
+
     def add_peer_callback(self, callback: Callable[[list[PexPeer]], None]) -> None:
         """Add callback for new peers discovered via PEX."""
         self.pex_callbacks.append(callback)
@@ -364,8 +502,51 @@ class AsyncPexManager:
         """Get number of known peers."""
         return len(self.known_peers)
 
+    async def add_peers(self, peers: list[PexPeer]) -> None:
+        """Add peers to the PEX manager from external sources (trackers, DHT, etc.).
+
+        Args:
+            peers: List of PexPeer objects to add
+
+        """
+        added_count = 0
+        for peer in peers:
+            peer_key = (peer.ip, peer.port)
+            if peer_key not in self.known_peers:
+                self.known_peers[peer_key] = peer
+                self.peer_sources[peer_key].add(peer.source)
+                added_count += 1
+                self.logger.debug(
+                    "Added peer %s:%d from %s to PEX manager",
+                    peer.ip,
+                    peer.port,
+                    peer.source,
+                )
+
+        if added_count > 0:
+            # Trigger callbacks with new peers
+            for callback in self.pex_callbacks:
+                if callback is None:
+                    continue
+                try:
+                    # Only pass the newly added peers
+                    new_peers = [p for p in peers if (p.ip, p.port) in self.known_peers]
+                    # Type checker: callback is Callable, but may be coroutine function
+                    # Check if it's a coroutine function before awaiting
+                    if new_peers and callback is not None:
+                        if asyncio.iscoroutinefunction(callback):
+                            await callback(new_peers)  # type: ignore[invalid-await,misc]
+                        else:
+                            callback(new_peers)
+                except Exception as e:
+                    self.logger.debug("Error calling PEX callback: %s", e)
+
     async def refresh(self) -> None:
-        """Manually trigger PEX refresh to all supported peers."""
+        """Manually trigger PEX refresh to all supported peers.
+
+        Session code may call this when DHT ``get_peers`` is rate-limited so PEX
+        still drives peer exchange as a complement to throttled DHT lookups.
+        """
         refreshed_count = 0
 
         # Reset last_pex_time for all sessions to allow immediate refresh

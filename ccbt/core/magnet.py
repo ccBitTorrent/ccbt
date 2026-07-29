@@ -8,9 +8,22 @@ This module parses magnet links and provides helpers to construct
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+_HARDCODED_DEFAULT_TRACKERS: list[str] = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "http://tracker.dler.org:6969/announce",
+    "http://tracker.renfei.net:8080/announce",
+    "https://tracker.nekomi.cn/announce",
+    "http://bt2.archive.org:6969/announce",
+    "https://tr.nyacat.pw/announce",
+]
 
 
 @dataclass
@@ -18,11 +31,12 @@ class MagnetInfo:
     """Information extracted from a magnet link (BEP 9 + BEP 53)."""
 
     info_hash: bytes
-    display_name: str | None
+    display_name: Optional[str]
+    swarm_id: Optional[str]
     trackers: list[str]
     web_seeds: list[str]
-    selected_indices: list[int] | None = None  # BEP 53: so parameter
-    prioritized_indices: dict[int, int] | None = None  # BEP 53: x.pe parameter
+    selected_indices: Optional[list[int]] = None  # BEP 53: so parameter
+    prioritized_indices: Optional[dict[int, int]] = None  # BEP 53: x.pe parameter
 
 
 def _hex_or_base32_to_bytes(btih: str) -> bytes:
@@ -234,6 +248,7 @@ def parse_magnet(uri: str) -> MagnetInfo:
     return MagnetInfo(
         info_hash=info_hash,
         display_name=display_name,
+        swarm_id=qs.get("swarm_id", [None])[0],
         trackers=trackers,
         web_seeds=web_seeds,
         selected_indices=selected_indices,
@@ -241,30 +256,255 @@ def parse_magnet(uri: str) -> MagnetInfo:
     )
 
 
+def get_configured_default_trackers() -> list[str]:
+    """Return configured default trackers for magnet links without tr= parameters."""
+    from ccbt.config.config import get_config
+
+    try:
+        config = get_config()
+        discovery = getattr(config, "discovery", None)
+        configured = getattr(discovery, "default_trackers", None) if discovery else None
+        if configured:
+            return list(configured)
+    except Exception as exc:
+        logger.warning(
+            "Failed to get default trackers from config: %s, using hardcoded defaults",
+            exc,
+        )
+    return _HARDCODED_DEFAULT_TRACKERS.copy()
+
+
+def collect_announce_urls_from_torrent_data(torrent_data: dict[str, Any]) -> list[str]:
+    """Collect tracker announce URLs from torrent_data (flat or tiered announce_list)."""
+    announce_urls: list[str] = []
+    seen: set[str] = set()
+
+    def add_url(url: Any) -> None:
+        if isinstance(url, str) and url.strip() and url not in seen:
+            seen.add(url)
+            announce_urls.append(url)
+
+    announce = torrent_data.get("announce")
+    if isinstance(announce, str):
+        add_url(announce)
+
+    announce_list = torrent_data.get("announce_list")
+    if isinstance(announce_list, list):
+        for tier in announce_list:
+            if isinstance(tier, str):
+                add_url(tier)
+            elif isinstance(tier, list):
+                for url in tier:
+                    add_url(url)
+    return announce_urls
+
+
+def dedupe_tracker_urls(urls: list[str]) -> list[str]:
+    """Return tracker URLs in stable order with duplicates removed."""
+    seen: set[str] = set()
+    unique: list[str] = []
+    for raw in urls:
+        if not isinstance(raw, str):
+            continue
+        url = raw.strip()
+        if not url or not url.startswith(("http://", "https://", "udp://")):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        unique.append(url)
+    return unique
+
+
+def merge_tracker_url_lists(*url_lists: list[str]) -> list[str]:
+    """Merge multiple tracker URL lists preserving order and deduplicating."""
+    merged: list[str] = []
+    for urls in url_lists:
+        merged.extend(urls)
+    return dedupe_tracker_urls(merged)
+
+
+def resolve_trackers_from_sources(
+    *,
+    magnet_trackers: Optional[list[str]] = None,
+    checkpoint_announce_urls: Optional[list[str]] = None,
+    checkpoint_magnet_uri: Optional[str] = None,
+    torrent_data: Optional[dict[str, Any]] = None,
+    supplement_defaults: bool = True,
+) -> list[str]:
+    """Merge tracker URLs from magnet, checkpoint, torrent_data, and configured defaults."""
+    sources: list[list[str]] = []
+    if magnet_trackers:
+        sources.append(list(magnet_trackers))
+    if checkpoint_announce_urls:
+        sources.append(list(checkpoint_announce_urls))
+    if checkpoint_magnet_uri and "tr=" in checkpoint_magnet_uri:
+        with contextlib.suppress(ValueError):
+            sources.append(list(parse_magnet(checkpoint_magnet_uri).trackers))
+    if torrent_data:
+        sources.append(collect_announce_urls_from_torrent_data(torrent_data))
+
+    merged = merge_tracker_url_lists(*sources) if sources else []
+    has_http = any(url.startswith(("http://", "https://")) for url in merged)
+    if supplement_defaults and (not merged or not has_http or len(merged) < 3):
+        merged = merge_tracker_url_lists(merged, get_configured_default_trackers())
+    return merged
+
+
+def enrich_magnet_uri_with_trackers(
+    magnet_uri: str,
+    trackers: list[str],
+) -> str:
+    """Return magnet URI with merged tracker parameters."""
+    if not trackers:
+        return magnet_uri
+    try:
+        info = parse_magnet(magnet_uri)
+        merged = merge_tracker_url_lists(list(info.trackers or []), trackers)
+        if merged == list(info.trackers or []) and "tr=" in magnet_uri:
+            return magnet_uri
+        return generate_magnet_link(
+            info.info_hash,
+            display_name=info.display_name,
+            trackers=merged,
+            web_seeds=info.web_seeds or None,
+        )
+    except ValueError:
+        return magnet_uri
+
+
+def merge_tracker_urls_into_torrent_data(
+    torrent_data: dict[str, Any],
+    tracker_urls: list[str],
+) -> bool:
+    """Merge tracker URLs into torrent_data, deduplicating against existing entries.
+
+    Returns:
+        True when tracker URLs were added to torrent_data.
+    """
+    if not tracker_urls:
+        return False
+
+    existing = collect_announce_urls_from_torrent_data(torrent_data)
+    merged = merge_tracker_url_lists(existing, tracker_urls)
+    if merged == existing:
+        return False
+
+    torrent_data["announce_list"] = merged
+    torrent_data["announce"] = merged[0]
+    return True
+
+
 def build_minimal_torrent_data(
     info_hash: bytes,
-    name: str | None,
+    name: Optional[str],
     trackers: list[str],
+    web_seeds: Optional[list[str]] = None,
+    swarm_id: Optional[str] = None,
+    *,
+    add_default_trackers: bool = True,
 ) -> dict[str, Any]:
     """Create a minimal `torrent_data` placeholder using known info.
 
     This structure is suitable for tracker/DHT peer discovery and metadata
     fetching, but lacks `info` details and piece layout until metadata is fetched.
+
+    When ``add_default_trackers`` is True and no trackers are supplied, configured
+    public trackers are injected so info-hash-only magnets can discover peers.
+
+    Note: Store web seeds (ws= parameters) from magnet links so they can be
+    used by the WebSeedExtension for downloading pieces via HTTP range requests.
     """
-    return {
+    trackers = dedupe_tracker_urls(list(trackers or []))
+    if add_default_trackers:
+        default_trackers = get_configured_default_trackers()
+        if default_trackers:
+            before_count = len(trackers)
+            trackers = merge_tracker_url_lists(trackers, default_trackers)
+            if before_count == 0:
+                logger.info(
+                    "Magnet link has no trackers (tr= parameters), adding %d default "
+                    "tracker(s) from configuration for peer discovery",
+                    len(trackers),
+                )
+            elif len(trackers) > before_count:
+                logger.info(
+                    "Supplemented magnet trackers with %d configured default tracker(s) "
+                    "(%d total)",
+                    len(trackers) - before_count,
+                    len(trackers),
+                )
+
+    result = {
         "announce": trackers[0] if trackers else "",
         "announce_list": trackers,
         "info_hash": info_hash,
         "info": None,
         "file_info": None,
         "pieces_info": None,
+        "_metadata_incomplete": True,
         "name": name or "",
         "is_magnet": True,  # CRITICAL: Mark as magnet link for DHT setup to prioritize DHT queries
     }
+    if swarm_id:
+        result["swarm_id"] = swarm_id
+
+    # Note: Store web seeds from magnet link (ws= parameters)
+    # These will be used by WebSeedExtension to download pieces via HTTP range requests
+    if web_seeds:
+        result["web_seeds"] = web_seeds
+        logger.info(
+            "Magnet link contains %d web seed(s) (ws= parameters), will be used for HTTP downloads",
+            len(web_seeds),
+        )
+
+    return result
+
+
+def magnet_info_from_minimal_torrent_data(
+    torrent_data: dict[str, Any],
+) -> MagnetInfo:
+    """Build MagnetInfo from minimal torrent_data (e.g. from parse_magnet_link).
+
+    Used when add_torrent is called with a dict that has is_magnet=True but
+    no magnet_uri/magnet_info (e.g. CLI interactive magnet path). Allows
+    BEP 53 application when metadata arrives later.
+
+    Args:
+        torrent_data: Dict with info_hash, name (or similar), announce_list
+            or announce, and optionally web_seeds.
+
+    Returns:
+        MagnetInfo with selected_indices and prioritized_indices None.
+
+    """
+    info_hash = torrent_data.get("info_hash")
+    if info_hash is None:
+        msg = "minimal torrent_data must contain info_hash"
+        raise ValueError(msg)
+    if isinstance(info_hash, str):
+        info_hash = bytes.fromhex(info_hash)
+    name = torrent_data.get("name") or torrent_data.get("display_name")
+    announce_list = torrent_data.get("announce_list")
+    if isinstance(announce_list, list) and announce_list:
+        trackers = list(announce_list)
+    else:
+        announce = torrent_data.get("announce")
+        trackers = [announce] if announce else []
+    web_seeds = torrent_data.get("web_seeds") or []
+    return MagnetInfo(
+        info_hash=info_hash,
+        display_name=name,
+        swarm_id=torrent_data.get("swarm_id"),
+        trackers=trackers,
+        web_seeds=web_seeds,
+        selected_indices=None,
+        prioritized_indices=None,
+    )
 
 
 def validate_and_normalize_indices(
-    indices: list[int] | None,
+    indices: Optional[list[int]],
     num_files: int,
     parameter_name: str = "indices",
 ) -> list[int]:
@@ -323,13 +563,71 @@ def validate_and_normalize_indices(
 
 def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), tested in test_magnet.py
     info_hash: bytes,
-    info_dict: dict[bytes, Any],
+    info_dict: dict[bytes | str, Any],  # Can have both bytes and str keys
 ) -> dict[str, Any]:
     """Convert decoded info dictionary to the client `torrent_data` shape."""
     # Extract piece hashes
     piece_length = int(info_dict.get(b"piece length", 0))
-    pieces_blob = info_dict.get(b"pieces", b"")
+
+    # Note: Handle both bytes and string keys for 'pieces' field
+    # Some decoders may return string keys instead of bytes
+    pieces_blob = b""
+    if b"pieces" in info_dict:
+        pieces_blob = info_dict[b"pieces"]
+    elif "pieces" in info_dict:
+        # Type checker: info_dict is dict[bytes | str, Any], so str key access is valid
+        pieces_value = info_dict["pieces"]  # type: ignore[invalid-argument-type]
+        if isinstance(pieces_value, bytes):
+            pieces_blob = pieces_value
+        elif isinstance(pieces_value, str):
+            # Try to decode if it's a hex string (unlikely but possible)
+            try:
+                pieces_blob = bytes.fromhex(pieces_value)
+            except ValueError:
+                # If not hex, try encoding as UTF-8 (shouldn't happen but defensive)
+                pieces_blob = pieces_value.encode("utf-8")
+        else:
+            pieces_blob = bytes(pieces_value) if pieces_value else b""
+
+    # Validate pieces_blob length is multiple of 20 (SHA-1 hash size)
+    if len(pieces_blob) % 20 != 0:
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Pieces blob length (%d) is not a multiple of 20. "
+            "This may indicate corrupted metadata. Expected %d hashes, got %d bytes.",
+            len(pieces_blob),
+            len(pieces_blob) // 20,
+            len(pieces_blob),
+        )
+
     piece_hashes = [pieces_blob[i : i + 20] for i in range(0, len(pieces_blob), 20)]
+
+    # Note: Log piece hash extraction for debugging
+    import logging
+
+    logger = logging.getLogger(__name__)
+    if piece_hashes:
+        # Calculate expected piece count from file info (will be available after file_info is created)
+        # For now, log what we have
+        logger.info(
+            "Extracted %d piece hashes from metadata (pieces_blob_len=%d, piece_length=%d). "
+            "First hash (piece 0): %s, Last hash (piece %d): %s",
+            len(piece_hashes),
+            len(pieces_blob),
+            piece_length,
+            piece_hashes[0].hex() if piece_hashes[0] else "None",
+            len(piece_hashes) - 1,
+            piece_hashes[-1].hex() if piece_hashes else "None",
+        )
+    else:
+        logger.error(
+            "CRITICAL: No piece hashes extracted from metadata! pieces_blob_len=%d, piece_length=%d. "
+            "This will cause all hash verifications to fail.",
+            len(pieces_blob),
+            piece_length,
+        )
 
     if b"files" in info_dict:
         # multi-file
@@ -368,17 +666,63 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
         # This check exists for type checker satisfaction but is unreachable in practice.
         msg = f"Expected dict for file_info, got {type(file_info)}"
         raise TypeError(msg)
-    pieces_info = {
-        "piece_length": piece_length,
-        "num_pieces": len(piece_hashes),
-        "piece_hashes": piece_hashes,
-        "total_length": file_info["total_length"]
+    total_length = (
+        file_info["total_length"]
         if file_info["type"] == "single"
         else sum(
             f.get("length", 0)
             for f in file_info.get("files", [])  # type: ignore[not-iterable]
             if isinstance(f, dict)
-        ),
+        )
+    )
+
+    # Note: Validate piece count matches expected count based on total_length
+    # Expected piece count = ceil(total_length / piece_length)
+    import logging
+    import math
+
+    logger = logging.getLogger(__name__)
+
+    # Type narrowing for numeric operations
+    if isinstance(piece_length, (int, float)) and isinstance(
+        total_length, (int, float)
+    ):
+        if piece_length > 0 and total_length > 0:
+            expected_num_pieces = math.ceil(total_length / piece_length)
+            actual_num_pieces = len(piece_hashes)
+
+            if expected_num_pieces != actual_num_pieces:
+                logger.warning(
+                    "PIECE_COUNT_MISMATCH: Expected %d pieces (total_length=%d, piece_length=%d), "
+                    "but extracted %d piece hashes from metadata. "
+                    "This may indicate corrupted metadata or incorrect piece hash extraction. "
+                    "Hash verification may fail for some pieces.",
+                    expected_num_pieces,
+                    total_length,
+                    piece_length,
+                    actual_num_pieces,
+                )
+            else:
+                logger.info(
+                    "PIECE_COUNT_VALIDATION: Piece count matches expected (num_pieces=%d, total_length=%d, piece_length=%d)",
+                    actual_num_pieces,
+                    total_length,
+                    piece_length,
+                )
+    elif isinstance(piece_length, (int, float)) and piece_length == 0:
+        logger.error(
+            "CRITICAL: piece_length is 0 in metadata! Cannot validate piece count."
+        )
+    elif isinstance(total_length, (int, float)) and total_length == 0:
+        logger.warning(
+            "WARNING: total_length is 0 in metadata. Cannot validate piece count."
+        )
+
+    pieces_info = {
+        "piece_length": piece_length,
+        "num_pieces": len(piece_hashes),
+        "piece_hashes": piece_hashes,
+        "total_length": total_length,
     }
 
     # Extract private flag from info dictionary (BEP 27)
@@ -390,6 +734,7 @@ def build_torrent_data_from_metadata(  # pragma: no cover - BEP 9 (not BEP 53), 
         "announce_list": [],
         "info_hash": info_hash,
         "info": info_dict,
+        "_metadata_incomplete": False,
         "file_info": file_info,
         "pieces_info": pieces_info,
         "name": file_info["name"],
@@ -484,11 +829,11 @@ async def apply_magnet_file_selection(
 
 def generate_magnet_link(
     info_hash: bytes,
-    display_name: str | None = None,
-    trackers: list[str] | None = None,
-    web_seeds: list[str] | None = None,
-    selected_indices: list[int] | None = None,
-    prioritized_indices: dict[int, int] | None = None,
+    display_name: Optional[str] = None,
+    trackers: Optional[list[str]] = None,
+    web_seeds: Optional[list[str]] = None,
+    selected_indices: Optional[list[int]] = None,
+    prioritized_indices: Optional[dict[int, int]] = None,
     use_base32: bool = False,
 ) -> str:
     """Generate a magnet URI with optional file indices (BEP 53).

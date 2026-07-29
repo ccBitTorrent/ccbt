@@ -55,15 +55,12 @@ class TestMetricsCollectorHTTPFinalCoverage:
                 type(self.observability).metrics_port = RaisingProperty()
 
         config_with_raise = ConfigWithRaise()
-
-        from ccbt import config as config_module
-
-        original_get_config = config_module.get_config
+        from ccbt.config.config import get_config as original_get_config
 
         def get_config_with_raise():
             return config_with_raise
 
-        monkeypatch.setattr(config_module, "get_config", get_config_with_raise)
+        monkeypatch.setattr("ccbt.config.config.get_config", get_config_with_raise)
 
         # Patch HTTPServer to raise OSError
         from http.server import HTTPServer
@@ -83,7 +80,7 @@ class TestMetricsCollectorHTTPFinalCoverage:
         finally:
             # Restore
             monkeypatch.setattr(HTTPServer, "__init__", original_init)
-            monkeypatch.setattr(config_module, "get_config", original_get_config)
+            monkeypatch.setattr("ccbt.config.config.get_config", original_get_config)
 
     @pytest.mark.asyncio
     async def test_oserror_handler_with_port_attribute_error(self, monkeypatch):
@@ -106,11 +103,11 @@ class TestMetricsCollectorHTTPFinalCoverage:
         mock_observability = Mock()
         mock_observability.enable_metrics = True
         mock_observability.metrics_interval = 5.0
-        
+
         # Create a property that raises when accessed in exception handler
         # We need it to work on first access (line 780) but raise on second (line 841)
         access_count = [0]
-        
+
         def metrics_port_getter():
             access_count[0] += 1
             # First access (line 780) succeeds with a value
@@ -118,19 +115,15 @@ class TestMetricsCollectorHTTPFinalCoverage:
                 return 9195  # Return a port value for first access
             # Second access (in exception handler at line 841) raises
             raise AttributeError("metrics_port not accessible in exception handler")
-        
+
         # Use PropertyMock properly - set it on the type, not the instance
-        from unittest.mock import PropertyMock
         mock_port = PropertyMock(side_effect=metrics_port_getter)
         # Set as a property on the mock class
         type(mock_observability).metrics_port = mock_port
-        
+
         mock_config.observability = mock_observability
-
-        from ccbt import config as config_module
-
-        original_get_config = config_module.get_config
-        monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+        from ccbt.config.config import get_config as original_get_config
+        monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
         # Patch HTTPServer to raise OSError AFTER config is retrieved
         # This simulates port conflict after we've already gotten the config
@@ -155,7 +148,7 @@ class TestMetricsCollectorHTTPFinalCoverage:
             # - Caught exception (line 829)
             # - Set port = 9090 (line 830)
             assert metrics._http_server is None
-            
+
             # The test verifies that:
             # 1. HTTPServer.__init__ raised OSError (line 824)
             # 2. Exception handler at line 838-847 executed
@@ -164,9 +157,9 @@ class TestMetricsCollectorHTTPFinalCoverage:
             # Since we verified _http_server is None, the exception handler definitely ran
             # The property access tracking may not work correctly with mocked config,
             # but the important part (exception handler execution) is verified
-            pass  # Test passes if we reach here without exceptions
+            # Test passes if we reach here without exceptions
         finally:
             # Restore
             monkeypatch.setattr(HTTPServer, "__init__", original_init)
-            monkeypatch.setattr(config_module, "get_config", original_get_config)
+            monkeypatch.setattr("ccbt.config.config.get_config", original_get_config)
 

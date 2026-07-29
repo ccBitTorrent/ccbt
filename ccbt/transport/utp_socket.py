@@ -10,7 +10,7 @@ import asyncio
 import logging
 import random
 import struct
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 from ccbt.config.config import get_config
 
@@ -60,33 +60,24 @@ class UTPProtocol(asyncio.DatagramProtocol):
 
 
 class UTPSocketManager:
-    """Global UDP socket manager for uTP connections.
+    """uTP socket manager.
 
-    Manages a single shared UDP socket for all uTP connections.
-    Routes incoming packets to the correct connection based on connection_id.
-
-    This is a singleton pattern - use get_instance() to get the global instance.
+    Manages a UDP socket for all uTP connections. This class is intended to be
+    session-owned and injected where needed.
     """
-
-    # Singleton pattern removed - UTPSocketManager is now managed via AsyncSessionManager.utp_socket_manager
-    # This ensures proper lifecycle management and prevents socket recreation issues
-    _instance: UTPSocketManager | None = (
-        None  # Deprecated - use session_manager.utp_socket_manager
-    )
-    _lock = asyncio.Lock()  # Deprecated - kept for backward compatibility
 
     def __init__(self):
         """Initialize uTP socket manager.
 
-        CRITICAL FIX: Singleton pattern removed. This should be initialized at daemon startup
+        Note: Singleton pattern removed. This should be initialized at daemon startup
         via start_utp_socket_manager() and stored in AsyncSessionManager.utp_socket_manager.
         """
         self.config = get_config()
         self.logger = logging.getLogger(__name__)
 
         # UDP socket
-        self.transport: asyncio.DatagramTransport | None = None
-        self.protocol: UTPProtocol | None = None
+        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.protocol: Optional[UTPProtocol] = None
         self._socket_ready = asyncio.Event()
 
         # Active connections: (ip, port, connection_id) -> UTPConnection
@@ -99,9 +90,9 @@ class UTPSocketManager:
         self.active_connection_ids: set[int] = set()
 
         # Callback for incoming connections
-        self.on_incoming_connection: (
-            Callable[[UTPConnection, tuple[str, int]], None] | None
-        ) = None
+        self.on_incoming_connection: Optional[
+            Callable[[UTPConnection, tuple[str, int]], None]
+        ] = None
 
         # Statistics
         self.total_packets_received: int = 0
@@ -113,13 +104,14 @@ class UTPSocketManager:
 
     @classmethod
     async def get_instance(cls) -> UTPSocketManager:
-        """Get or create the global uTP socket manager instance.
+        """Get or create a compatibility uTP socket manager instance.
 
         DEPRECATED: Singleton pattern removed. Use session_manager.utp_socket_manager instead.
-        This method is kept for backward compatibility but will log a warning.
+        This method is kept for backward compatibility and returns a dedicated
+        instance.
 
         Returns:
-            Global UTPSocketManager instance (deprecated - use session_manager.utp_socket_manager)
+            Dedicated UTPSocketManager instance (deprecated)
 
         """
         import warnings
@@ -127,16 +119,13 @@ class UTPSocketManager:
         warnings.warn(
             "UTPSocketManager.get_instance() is deprecated. "
             "Use session_manager.utp_socket_manager instead. "
-            "Singleton pattern removed to prevent socket recreation issues.",
+            "compatibility instances are now independent.",
             DeprecationWarning,
             stacklevel=2,
         )
-        if cls._instance is None:
-            async with cls._lock:
-                if cls._instance is None:
-                    cls._instance = cls()
-                    await cls._instance.start()
-        return cls._instance
+        instance = cls()
+        await instance.start()
+        return instance
 
     async def start(self) -> None:
         """Start the UDP socket manager.
@@ -472,6 +461,14 @@ class UTPSocketManager:
         """
         return self.active_connection_ids.copy()
 
+    def generate_connection_id(self) -> int:
+        """Generate a unique connection ID.
+
+        This public wrapper preserves the existing uniqueness constraints without
+        exposing internal generation internals.
+        """
+        return self._generate_connection_id()
+
     def _generate_connection_id(self) -> int:
         """Generate a unique connection ID.
 
@@ -519,7 +516,11 @@ class UTPSocketManager:
             local_conn_id = self._generate_connection_id()
 
             # Create new connection in SYN_RECEIVED state
-            conn = UTPConnection(remote_addr=addr, connection_id=local_conn_id)
+            conn = UTPConnection(
+                remote_addr=addr,
+                connection_id=local_conn_id,
+                socket_manager=self,
+            )
             conn.state = UTPConnectionState.SYN_RECEIVED
             conn.remote_connection_id = connection_id  # From SYN packet
             conn.ack_nr = packet.seq_nr  # Track peer's sequence number

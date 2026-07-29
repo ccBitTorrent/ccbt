@@ -5,10 +5,7 @@ Verifies that all components correctly authenticate with the daemon IPC server.
 
 from __future__ import annotations
 
-import asyncio
-import json
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -24,29 +21,35 @@ class TestIPCAuthentication:
         """Test that IPCClient sets API key header correctly for HTTP requests."""
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         headers = client._get_headers()
-        
+
         assert API_KEY_HEADER in headers
         assert headers[API_KEY_HEADER] == api_key
 
-    def test_ipc_client_no_api_key(self):
-        """Test that IPCClient handles missing API key gracefully."""
+    def test_ipc_client_no_api_key(self, monkeypatch: pytest.MonkeyPatch):
+        """Test that IPCClient omits auth header when no key is available."""
+        # Constructor resolves from daemon config when api_key is None; isolate that.
+        monkeypatch.setattr(
+            "ccbt.daemon.daemon_manager.resolve_daemon_connection_params",
+            lambda: (8080, None, None),
+        )
         client = IPCClient(api_key=None)
-        
+        client.api_key = None
+
         headers = client._get_headers()
-        
-        # Should return empty headers if no API key
+
         assert headers == {}
+        assert API_KEY_HEADER not in headers
 
     def test_ipc_client_websocket_url(self):
         """Test that IPCClient includes API key in WebSocket URL."""
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key, base_url="http://127.0.0.1:8080")
-        
+
         # Simulate WebSocket URL construction
         ws_url = f"{client.base_url.replace('http://', 'ws://')}/api/v1/events?api_key={api_key}"
-        
+
         assert "api_key=" in ws_url
         assert api_key in ws_url
 
@@ -55,9 +58,9 @@ class TestIPCAuthentication:
         """Test that DaemonSessionAdapter uses IPCClient with authentication."""
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         adapter = DaemonSessionAdapter(client)
-        
+
         # Verify adapter has access to IPC client
         assert adapter.ipc_client == client
         assert adapter.ipc_client.api_key == api_key
@@ -70,7 +73,7 @@ class TestIPCAuthentication:
         # This is a known architectural issue that doesn't affect runtime behavior
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         # Verify the client itself is properly configured
         assert client.api_key == api_key
         assert client._get_headers()[API_KEY_HEADER] == api_key
@@ -81,11 +84,11 @@ class TestIPCAuthentication:
         # CLI code: client = IPCClient(api_key=cfg.daemon.api_key)
         api_key = "cli-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         # Verify client is created with API key
         assert client.api_key == api_key
         assert client._get_headers()[API_KEY_HEADER] == api_key
-        
+
         # Verify this matches the pattern used in CLI
         # In ccbt/cli/main.py: client = IPCClient(api_key=cfg.daemon.api_key)
         # This ensures the API key flows from config -> IPCClient -> headers
@@ -96,11 +99,11 @@ class TestIPCAuthentication:
         # Interface code: client = IPCClient(api_key=cfg.daemon.api_key)
         api_key = "interface-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         # Verify client is created with API key
         assert client.api_key == api_key
         assert client._get_headers()[API_KEY_HEADER] == api_key
-        
+
         # Verify this matches the pattern used in terminal_dashboard.py
         # In ccbt/interface/terminal_dashboard.py: client = IPCClient(api_key=cfg.daemon.api_key)
         # This ensures the API key flows from config -> IPCClient -> headers
@@ -110,7 +113,7 @@ class TestIPCAuthentication:
         """Test that all IPCClient HTTP methods include authentication headers."""
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         # Mock aiohttp session
         mock_session = AsyncMock()
         mock_response = AsyncMock()
@@ -119,14 +122,14 @@ class TestIPCAuthentication:
         mock_response.raise_for_status = AsyncMock()
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=None)
-        
+
         mock_session.get = AsyncMock(return_value=mock_response)
         mock_session.post = AsyncMock(return_value=mock_response)
         mock_session.put = AsyncMock(return_value=mock_response)
         mock_session.delete = AsyncMock(return_value=mock_response)
-        
+
         client._session = mock_session
-        
+
         # Test various methods
         methods_to_test = [
             ("get_status", "get", "/api/v1/status"),
@@ -135,10 +138,10 @@ class TestIPCAuthentication:
             ("get_config", "get", "/api/v1/config"),
             ("update_config", "put", "/api/v1/config"),
         ]
-        
+
         for method_name, http_method, url_path in methods_to_test:
             method = getattr(client, method_name)
-            
+
             try:
                 if method_name == "add_torrent":
                     await method("test.torrent")
@@ -149,7 +152,7 @@ class TestIPCAuthentication:
             except Exception:
                 # Expected to fail with mocked session, but we check headers
                 pass
-            
+
             # Verify headers were included
             call_args = getattr(mock_session, http_method).call_args
             if call_args:
@@ -162,20 +165,20 @@ class TestIPCAuthentication:
         """Test that WebSocket connection includes API key."""
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key, base_url="http://127.0.0.1:8080")
-        
+
         # Mock WebSocket connection
         mock_ws = AsyncMock()
         mock_ws.closed = False
         mock_ws.send_json = AsyncMock()
         mock_ws.receive = AsyncMock()
-        
+
         mock_session = AsyncMock()
         mock_session.ws_connect = AsyncMock(return_value=mock_ws)
         client._session = mock_session
-        
+
         # Test WebSocket connection
         result = await client.connect_websocket()
-        
+
         # Verify WebSocket URL includes API key
         ws_connect_call = mock_session.ws_connect.call_args
         if ws_connect_call:
@@ -187,12 +190,12 @@ class TestIPCAuthentication:
         """Test that UnifiedCommandExecutor uses authenticated adapter."""
         from ccbt.executor.executor import UnifiedCommandExecutor
         from ccbt.executor.session_adapter import DaemonSessionAdapter
-        
+
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key)
         adapter = DaemonSessionAdapter(client)
         executor = UnifiedCommandExecutor(adapter)
-        
+
         # Verify executor uses the adapter
         assert executor.torrent_executor.adapter == adapter
         assert executor.torrent_executor.adapter.ipc_client.api_key == api_key
@@ -203,7 +206,7 @@ class TestIPCAuthentication:
         # The authentication is verified through DaemonInterfaceAdapter test
         api_key = "test-api-key-12345"
         client = IPCClient(api_key=api_key)
-        
+
         # Verify the client itself is properly configured
         assert client.api_key == api_key
         assert client._get_headers()[API_KEY_HEADER] == api_key

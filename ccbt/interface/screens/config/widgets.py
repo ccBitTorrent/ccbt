@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from textual.widgets import Input, Static
 else:
     try:
         from textual.widgets import Input, Static
-    except ImportError:
-        Input = None  # type: ignore[assignment, misc]
-        Static = None  # type: ignore[assignment, misc]
+    except ImportError:  # pragma: no cover - fallback when textual unavailable
+        # Fallback base classes so the module can be imported without Textual.
+        # Subclasses remain valid; instantiation without Textual will fail at runtime.
+        class Input:  # type: ignore[no-redef,misc]
+            """Fallback when textual is not available."""
+
+        class Static:  # type: ignore[no-redef,misc]
+            """Fallback when textual is not available."""
 
 
 class ConfigValueEditor(Input):  # type: ignore[misc]
@@ -23,7 +28,7 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
         current_value: Any,
         value_type: str = "string",
         description: str = "",
-        constraints: dict[str, Any] | None = None,
+        constraints: Optional[dict[str, Any]] = None,
         *args: Any,
         **kwargs: Any,
     ):  # pragma: no cover
@@ -36,6 +41,19 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
             description: Option description
             constraints: Validation constraints (min, max, etc.)
         """
+        # Normalize constraints first so we can assign attributes before super().__init__
+        normalized_constraints = constraints or {}
+
+        # Assign attributes that may be accessed during the superclass initialization.
+        # Textual's Input initializer immediately sets self.value which triggers our
+        # overridden validate_value(), so these fields must exist beforehand.
+        self.option_key = option_key
+        self.value_type = value_type
+        self.description = description
+        self.constraints = normalized_constraints
+        self._original_value = current_value
+        self._validation_error: Optional[str] = None
+
         # Format initial value for display
         if value_type == "bool":
             initial_value = "true" if current_value else "false"
@@ -49,12 +67,6 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
             initial_value = str(current_value)
 
         super().__init__(value=initial_value, *args, **kwargs)
-        self.option_key = option_key
-        self.value_type = value_type
-        self.description = description
-        self.constraints = constraints or {}
-        self._original_value = current_value
-        self._validation_error: str | None = None
         # Don't set validators on Input - we'll validate manually
         self.validators = None
 
@@ -95,7 +107,7 @@ class ConfigValueEditor(Input):  # type: ignore[misc]
         return value_str
 
     def validate_value(
-        self, value: str | None = None
+        self, value: Optional[str] = None
     ) -> tuple[bool, str]:  # pragma: no cover
         """Validate the current value or a provided value.
 

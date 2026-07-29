@@ -12,7 +12,7 @@ import asyncio
 import logging
 import struct
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core.bencode import BencodeDecoder, BencodeEncoder
 from ccbt.extensions.protocol import ExtensionMessageType, ExtensionProtocol
@@ -37,6 +37,43 @@ HANDSHAKE_V1_SIZE = (
 HANDSHAKE_V2_SIZE = (
     1 + PROTOCOL_STRING_LEN + RESERVED_BYTES_LEN + INFO_HASH_V2_LEN + PEER_ID_LEN
 )  # 80 bytes
+HANDSHAKE_HYBRID_SIZE = (
+    1
+    + PROTOCOL_STRING_LEN
+    + RESERVED_BYTES_LEN
+    + INFO_HASH_V1_LEN
+    + INFO_HASH_V2_LEN
+    + PEER_ID_LEN
+)  # 100 bytes
+
+
+def expected_plaintext_handshake_total_len(prefix: bytes) -> tuple[int, ...]:
+    """Return valid plaintext handshake lengths for a 28-byte prefix."""
+    if len(prefix) != 1 + PROTOCOL_STRING_LEN + RESERVED_BYTES_LEN:
+        msg = f"Handshake prefix must be {1 + PROTOCOL_STRING_LEN + RESERVED_BYTES_LEN} bytes, got {len(prefix)}"
+        raise ProtocolVersionError(msg)
+
+    if prefix[0] != PROTOCOL_STRING_LEN:
+        msg = f"Invalid protocol string length: {prefix[0]} (expected {PROTOCOL_STRING_LEN})"
+        raise ProtocolVersionError(msg)
+
+    protocol = prefix[1 : 1 + PROTOCOL_STRING_LEN]
+    if protocol != PROTOCOL_STRING:
+        msg = f"Invalid protocol string: {protocol!r}"
+        raise ProtocolVersionError(msg)
+
+    reserved = prefix[
+        1 + PROTOCOL_STRING_LEN : 1 + PROTOCOL_STRING_LEN + RESERVED_BYTES_LEN
+    ]
+    has_v2_support = (reserved[0] & 0x01) != 0
+    if has_v2_support:
+        return (HANDSHAKE_V1_SIZE, HANDSHAKE_V2_SIZE, HANDSHAKE_HYBRID_SIZE)
+    return (HANDSHAKE_V1_SIZE,)
+
+
+def expected_plaintext_handshake_total_len_prefix28(prefix: bytes) -> tuple[int, ...]:
+    """Backward-compatible alias for expected_plaintext_handshake_total_len."""
+    return expected_plaintext_handshake_total_len(prefix)
 
 
 class ProtocolVersion(Enum):
@@ -196,8 +233,8 @@ def parse_v2_handshake(data: bytes) -> dict[str, Any]:
     version = detect_protocol_version(data)
 
     # Parse info hashes and peer_id based on version
-    info_hash_v2: bytes | None = None
-    info_hash_v1: bytes | None = None
+    info_hash_v2: Optional[bytes] = None
+    info_hash_v1: Optional[bytes] = None
     peer_id: bytes
 
     hash_start = reserved_end
@@ -425,7 +462,7 @@ async def send_hybrid_handshake(
 def negotiate_protocol_version(
     handshake: bytes,
     supported_versions: list[ProtocolVersion],
-) -> ProtocolVersion | None:
+) -> Optional[ProtocolVersion]:
     """Negotiate highest common protocol version with peer.
 
     Compares peer's supported version (from handshake) with our supported versions
@@ -512,8 +549,8 @@ def negotiate_protocol_version(
 async def handle_v2_handshake(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,  # noqa: ARG001 - Reserved for future use
-    our_info_hash_v2: bytes | None = None,
-    our_info_hash_v1: bytes | None = None,
+    our_info_hash_v2: Optional[bytes] = None,
+    our_info_hash_v1: Optional[bytes] = None,
     timeout: float = 30.0,
 ) -> tuple[ProtocolVersion, bytes, dict[str, Any]]:
     """Handle incoming v2 handshake from peer.
@@ -537,15 +574,14 @@ async def handle_v2_handshake(
         ValueError: If info_hash doesn't match
 
     """
-    # Read handshake (try v2 size first, fallback to v1)
     try:
-        # Try reading v2 handshake size (80 bytes)
+        # Try reading v2 handshake size first (80 bytes).
         handshake_data = await asyncio.wait_for(
             reader.readexactly(HANDSHAKE_V2_SIZE),
             timeout=timeout,
         )
     except asyncio.IncompleteReadError:
-        # Try v1 handshake size (68 bytes)
+        # Fallback to v1 handshake size (68 bytes).
         try:
             handshake_data = await asyncio.wait_for(
                 reader.readexactly(HANDSHAKE_V1_SIZE),
@@ -558,7 +594,6 @@ async def handle_v2_handshake(
         logger.exception("Handshake read timed out after %s seconds", timeout)
         raise
 
-    # Parse handshake
     parsed = parse_v2_handshake(handshake_data)
     version = parsed["version"]
     peer_id = parsed["peer_id"]
@@ -617,9 +652,22 @@ async def _send_extension_message(
         return False
 
     try:
-        # Create ExtensionProtocol instance for encoding
-        ext_protocol = ExtensionProtocol()
-        message_bytes = ext_protocol.encode_extension_message(message_id, payload)
+        if message_id <= 0 or message_id > 255:
+            logger.warning("Invalid extension message ID: %s", message_id)
+            return False
+        if len(payload) > 0xFFFFFFFF - 2:
+            logger.warning("Extension payload too large: %d bytes", len(payload))
+            return False
+
+        message_bytes = (
+            struct.pack(
+                "!IBB",
+                len(payload) + 2,
+                ExtensionMessageType.EXTENDED,
+                message_id,
+            )
+            + payload
+        )
 
         # Send message via connection writer
         connection.writer.write(message_bytes)
@@ -640,7 +688,7 @@ async def _send_extension_message(
 async def _receive_extension_message(
     connection: Any,
     timeout: float = 10.0,
-) -> tuple[int, bytes] | None:
+) -> Optional[tuple[int, bytes]]:
     """Receive an extension message via BEP 10 extension protocol.
 
     Args:

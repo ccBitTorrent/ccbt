@@ -16,7 +16,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -333,7 +333,7 @@ class PiecePredictor:
 
         return pattern_analysis
 
-    def get_piece_info(self, piece_index: int) -> PieceInfo | None:
+    def get_piece_info(self, piece_index: int) -> Optional[PieceInfo]:
         """Get piece information."""
         return self.piece_info.get(piece_index)
 
@@ -341,7 +341,7 @@ class PiecePredictor:
         """Get all piece information."""
         return self.piece_info.copy()
 
-    def get_download_pattern(self, piece_index: int) -> DownloadPattern | None:
+    def get_download_pattern(self, piece_index: int) -> Optional[DownloadPattern]:
         """Get download pattern for a piece."""
         return self.download_patterns.get(piece_index)
 

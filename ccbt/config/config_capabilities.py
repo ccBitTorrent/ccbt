@@ -11,7 +11,7 @@ import platform
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Optional
 
 import psutil
 
@@ -30,7 +30,7 @@ class SystemCapabilities:
         self._cache: dict[str, tuple[Any, float]] = {}
         self._platform = platform.system().lower()
 
-    def _get_cached(self, key: str) -> Any | None:
+    def _get_cached(self, key: str) -> Optional[Any]:
         """Get cached value if not expired.
 
         Args:
@@ -89,7 +89,7 @@ class SystemCapabilities:
                 else:
                     # Try to import io_uring module
                     try:
-                        import io_uring  # noqa: F401  # pragma: no cover - io_uring is optional and may not be installed
+                        import io_uring  # type: ignore[unresolved-import] # noqa: F401  # pragma: no cover - io_uring is optional and may not be installed
 
                         result = True  # pragma: no cover - io_uring import success, requires actual io_uring installation
                     except ImportError:

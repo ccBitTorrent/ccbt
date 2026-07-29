@@ -1,15 +1,14 @@
-"""Diffie-Hellman key exchange for BEP 3 encryption.
+"""Diffie-Hellman key material for BEP 3 MSE/PE peer obfuscation.
 
-from __future__ import annotations
-
-Implements DH key exchange with 768-bit or 1024-bit groups as specified
-in BEP 3. Provides key derivation using SHA-1 hash function.
+768-bit or 1024-bit groups and SHA-1-based derivation as used in the
+ecosystem MSE/PE handshake. This establishes shared stream keys for
+interoperability, not authenticated peer identity.
 """
 
 from __future__ import annotations
 
 import hashlib
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import dh
@@ -25,8 +24,20 @@ class DHKeyPair(NamedTuple):
 class DHPeerExchange:
     """Diffie-Hellman key exchange for peer connections."""
 
-    # Standard DH parameters (768-bit and 1024-bit)
-    # These are common parameters used in BitTorrent encryption
+    # Well-known Oakley MODP group values used by BEP 3 and compatible
+    # clients.
+    _DH_768_PRIME_HEX = (
+        "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA"
+        "63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51"
+        "C245E485B576625E7EC6F44C42E9A63A3620FFFFFFFFFFFFFFFF"
+    )
+    _DH_1024_PRIME_HEX = (
+        "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA"
+        "63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51"
+        "C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5"
+        "AE9F24117C4B1FE649286651ECE65381FFFFFFFFFFFFFFFF"
+    )
+    _DH_GENERATOR = 2
     _DH_768_PARAMS = None
     _DH_1024_PARAMS = None
 
@@ -58,22 +69,21 @@ class DHPeerExchange:
             DH parameters
 
         """
-        # Generate parameters on first use and cache
+        # Load embedded well-known Oakley parameters on first use and cache.
         if key_size == 768:
             if cls._DH_768_PARAMS is None:
-                # Generate 768-bit parameters
-                # Note: In production, use well-known parameters for compatibility
-                cls._DH_768_PARAMS = dh.generate_parameters(
-                    generator=2, key_size=768, backend=default_backend()
+                dh_numbers = dh.DHParameterNumbers(
+                    p=int(cls._DH_768_PRIME_HEX, 16), g=cls._DH_GENERATOR
                 )
+                cls._DH_768_PARAMS = dh_numbers.parameters(default_backend())
             return cls._DH_768_PARAMS
 
         if key_size == 1024:
             if cls._DH_1024_PARAMS is None:
-                # Generate 1024-bit parameters
-                cls._DH_1024_PARAMS = dh.generate_parameters(
-                    generator=2, key_size=1024, backend=default_backend()
+                dh_numbers = dh.DHParameterNumbers(
+                    p=int(cls._DH_1024_PRIME_HEX, 16), g=cls._DH_GENERATOR
                 )
+                cls._DH_1024_PARAMS = dh_numbers.parameters(default_backend())
             return cls._DH_1024_PARAMS
 
         msg = f"Unsupported key size: {key_size}"
@@ -109,17 +119,18 @@ class DHPeerExchange:
         self,
         shared_secret: bytes,
         info_hash: bytes,
-        pad: bytes | None = None,
+        direction: Literal["outbound", "inbound"] = "outbound",
     ) -> bytes:
-        """Derive encryption key from shared secret.
+        """Derive directional encryption key material from shared secret.
 
-        Per BEP 3: key = SHA1(secret + S + info_hash)
-        Where S is a pad (typically 0x00 bytes for RC4, or IV for AES).
+        MSE/PE uses directional labels:
+        - Outbound stream (our-to-peer): HASH("keyA" + S + SKEY)
+        - Inbound stream (peer-to-our): HASH("keyB" + S + SKEY)
 
         Args:
             shared_secret: Shared secret from DH exchange
             info_hash: Torrent info hash (20 bytes)
-            pad: Optional padding/IV (typically 0x00 for RC4)
+            direction: Cipher direction from local perspective.
 
         Returns:
             Derived encryption key (20 bytes from SHA-1)
@@ -129,18 +140,80 @@ class DHPeerExchange:
             msg = f"Info hash must be 20 bytes, got {len(info_hash)}"
             raise ValueError(msg)
 
-        if pad is None:
-            pad = b"\x00" * 20  # Default padding for RC4
+        if direction not in {"outbound", "inbound"}:
+            msg = f"Direction must be 'outbound' or 'inbound', got {direction}"
+            raise ValueError(msg)
 
-        # BEP 3 key derivation: SHA1(secret + S + info_hash)
-        # Where S is the pad
-        # Note: SHA-1 is required by BEP 3 specification for key derivation
-        # See BEP 3: key = SHA1(secret + S + info_hash)
+        # Directional key derivation required by BEP 3 and compatible peers.
+        # We preserve legacy `derive_encryption_key` naming for compatibility while
+        # making direction explicit.
+        label = b"keyA" if direction == "outbound" else b"keyB"
         digest = hashlib.sha1()  # nosec B324 - Required by BEP 3 spec
+        digest.update(label)
         digest.update(shared_secret)
-        digest.update(pad)
         digest.update(info_hash)
         return digest.digest()
+
+    def derive_stream_keys(
+        self, shared_secret: bytes, info_hash: bytes
+    ) -> tuple[bytes, bytes]:
+        """Derive both directional keys for a negotiated session.
+
+        Returns:
+            (outbound_key, inbound_key)
+        """
+        outbound_key = self.derive_encryption_key(
+            shared_secret, info_hash, direction="outbound"
+        )
+        inbound_key = self.derive_encryption_key(
+            shared_secret, info_hash, direction="inbound"
+        )
+        return outbound_key, inbound_key
+
+    def derive_transcript_keys(
+        self, shared_secret: bytes, info_hash: bytes
+    ) -> tuple[bytes, bytes]:
+        """Compatibility wrapper for directional key derivation.
+
+        Mirrors historical naming used by the MSE transcript implementation and
+        returns (keyA, keyB).
+        """
+        key_a = self.derive_encryption_key(
+            shared_secret, info_hash, direction="outbound"
+        )
+        key_b = self.derive_encryption_key(
+            shared_secret, info_hash, direction="inbound"
+        )
+        return key_a, key_b
+
+    def req1_hash(self, shared_secret: bytes) -> bytes:
+        r"""Compute HASH(\"req1\" + S) for transcript validation."""
+        digest = hashlib.sha1()  # nosec B324 - Required by BEP 3
+        digest.update(b"req1")
+        digest.update(shared_secret)
+        return digest.digest()
+
+    def req2_hash(self, info_hash: bytes) -> bytes:
+        r"""Compute HASH(\"req2\" + SKEY)."""
+        if len(info_hash) != 20:
+            msg = f"Info hash must be 20 bytes, got {len(info_hash)}"
+            raise ValueError(msg)
+
+        digest = hashlib.sha1()  # nosec B324 - Required by BEP 3
+        digest.update(b"req2")
+        digest.update(info_hash)
+        return digest.digest()
+
+    def req3_hash(self, shared_secret: bytes) -> bytes:
+        r"""Compute HASH(\"req3\" + S)."""
+        digest = hashlib.sha1()  # nosec B324 - Required by BEP 3
+        digest.update(b"req3")
+        digest.update(shared_secret)
+        return digest.digest()
+
+    def verification_constant(self) -> bytes:
+        """Return the verification constant used in transcript exchanges."""
+        return b"\x00" * 8
 
     def get_public_key_bytes(self, keypair: DHKeyPair) -> bytes:
         """Get public key as raw bytes (for BEP 3 handshake).

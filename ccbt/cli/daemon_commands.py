@@ -6,25 +6,90 @@ Provides `btbt daemon start` and `btbt daemon exit` commands for daemon manageme
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 import time
 import warnings
+from typing import Any, Optional
 
 import click
-from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from ccbt.config.config import get_config, init_config
 from ccbt.daemon.daemon_manager import DaemonManager
 from ccbt.daemon.ipc_client import IPCClient  # type: ignore[attr-defined]
 from ccbt.daemon.utils import generate_api_key
+from ccbt.i18n import _
 from ccbt.models import DaemonConfig
-from ccbt.utils.logging_config import get_logger
+from ccbt.utils.console_utils import create_console
+from ccbt.utils.logging_config import get_logger, log_info_normal
 
 logger = get_logger(__name__)
-console = Console()
+console = create_console()
 
-# CRITICAL FIX: Suppress Windows ProactorEventLoop cleanup warnings
+
+async def _probe_daemon_ipc(daemon_config: DaemonConfig) -> bool:
+    """Return True when daemon IPC responds to a health check."""
+    client = IPCClient(api_key=daemon_config.api_key)
+    try:
+        return await client.is_daemon_running()
+    finally:
+        await client.close()
+
+
+def _ensure_can_start_daemon(daemon_manager: DaemonManager, cfg: Any) -> None:
+    """Allow start when PID file is stale; block duplicate live instances."""
+    if daemon_manager.ensure_single_instance():
+        return
+
+    pid = daemon_manager.get_pid()
+    if pid is None:
+        return
+
+    import os
+
+    try:
+        os.kill(pid, 0)
+        process_alive = True
+    except (OSError, ProcessLookupError):
+        process_alive = False
+
+    if not process_alive:
+        console.print(
+            _(
+                "[yellow]WARN[/yellow] Removing stale daemon PID file (PID {pid} not running)"
+            ).format(pid=pid)
+        )
+        daemon_manager.remove_pid()
+        return
+
+    ipc_alive = False
+    if cfg.daemon and cfg.daemon.api_key:
+        try:
+            ipc_alive = asyncio.run(_probe_daemon_ipc(cfg.daemon))
+        except Exception:
+            ipc_alive = False
+
+    if ipc_alive:
+        console.print(
+            _("[red]FAILED[/red] Daemon is already running with PID {pid}").format(
+                pid=pid
+            ),
+            style="red",
+        )
+        raise click.Abort
+
+    console.print(
+        _(
+            "[yellow]WARN[/yellow] Daemon process (PID {pid}) exists but IPC is not "
+            "responding yet. Wait a few seconds and try 'btbt daemon status', or "
+            "stop the existing daemon with 'btbt daemon exit'."
+        ).format(pid=pid)
+    )
+    raise click.Abort
+
+
+# Note: Suppress Windows ProactorEventLoop cleanup warnings
 # This is a known Python bug (https://bugs.python.org/issue39232) where
 # ProactorEventLoop cleanup raises AttributeError for _ssock during __del__
 # The error occurs during garbage collection and doesn't affect functionality
@@ -48,28 +113,27 @@ if sys.platform == "win32":
         affect functionality - it's just a cleanup issue.
         """
         # Only filter AttributeError with _ssock (the known bug signature)
-        if exc_type == AttributeError and "_ssock" in str(exc_value):
+        if exc_type is AttributeError and "_ssock" in str(exc_value) and exc_traceback:
             # Check if this is the ProactorEventLoop cleanup bug
             # The error occurs in __del__ during garbage collection
-            if exc_traceback:
-                try:
-                    import traceback
+            try:
+                import traceback
 
-                    tb_lines = traceback.format_exception(
-                        exc_type, exc_value, exc_traceback
-                    )
-                    tb_str = "".join(tb_lines)
-                    # Very specific check: must be ProactorEventLoop.__del__ trying to access _ssock
-                    if (
-                        "ProactorEventLoop" in tb_str
-                        and "__del__" in tb_str
-                        and "_close_self_pipe" in tb_str
-                    ):
-                        # This is the known cleanup bug - silently ignore it
-                        return
-                except Exception:
-                    # If we can't parse the traceback, don't filter (be safe)
-                    pass
+                tb_lines = traceback.format_exception(
+                    exc_type, exc_value, exc_traceback
+                )
+                tb_str = "".join(tb_lines)
+                # Very specific check: must be ProactorEventLoop.__del__ trying to access _ssock
+                if (
+                    "ProactorEventLoop" in tb_str
+                    and "__del__" in tb_str
+                    and "_close_self_pipe" in tb_str
+                ):
+                    # This is the known cleanup bug - silently ignore it
+                    return
+            except Exception:
+                # If we can't parse the traceback, don't filter (be safe)
+                pass
         # Call original excepthook for all other exceptions
         _original_excepthook(exc_type, exc_value, exc_traceback)
 
@@ -82,57 +146,102 @@ def daemon():
 
 
 @daemon.command("start")
+@click.pass_context
 @click.option(
     "--foreground",
     "-f",
     is_flag=True,
-    help="Run in foreground (for debugging)",
+    help=_("Run in foreground (for debugging)"),
 )
 @click.option(
     "--config",
     "-c",
     type=click.Path(exists=True),
-    help="Path to config file",
+    help=_("Path to config file"),
 )
 @click.option(
     "--port",
+    "-p",
     type=int,
-    help="Override IPC server port",
+    help=_("Override IPC server port"),
 )
 @click.option(
     "--generate-api-key",
+    "-K",
     "regenerate_api_key",
     is_flag=True,
-    help="Generate new API key",
+    help=_("Generate new API key"),
 )
 @click.option(
     "--verbose",
     "-v",
+    count=True,
+    help=_("Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)"),
+)
+@click.option(
+    "--vv",
     is_flag=True,
-    help="Enable verbose logging",
+    help=_("Enable debug verbosity (equivalent to -vv)"),
+)
+@click.option(
+    "--vvv",
+    is_flag=True,
+    help=_("Enable trace verbosity (equivalent to -vvv)"),
 )
 @click.option(
     "--no-wait",
+    "-B",
     "--background-only",
     is_flag=True,
-    help="Start daemon in background without waiting for completion (faster startup)",
+    help=_(
+        "Start daemon in background without waiting for completion (faster startup)"
+    ),
+)
+@click.option(
+    "--no-splash",
+    "-d",
+    is_flag=True,
+    help=_("Disable splash screen (useful for debugging)"),
 )
 def start(
+    ctx: click.Context,
     foreground: bool,
-    config: str | None,
-    port: int | None,
+    config: Optional[str],
+    port: Optional[int],
     regenerate_api_key: bool,
-    verbose: bool,
+    verbose: int,
+    vv: bool,
+    vvv: bool,
     no_wait: bool,
+    no_splash: bool,
 ) -> None:
     """Start the daemon process."""
+    from ccbt.cli.verbosity import (
+        VerbosityManager,
+        apply_cli_verbosity_to_observability,
+    )
+
+    # Combine -v count with --vv and --vvv flags
+    if vvv:
+        verbose = max(verbose, 3)  # --vvv is equivalent to -vvv
+    elif vv:
+        verbose = max(verbose, 2)  # --vv is equivalent to -vv
+
+    parent_verbosity = 0
+    if ctx.obj:
+        parent_verbosity = int(ctx.obj.get("verbosity", 0) or 0)
+    merged_verbosity = max(parent_verbosity, verbose)
+
     start_time = time.time()
+    verbosity = VerbosityManager.from_count(merged_verbosity)
 
     # Initialize config
-    if verbose:
-        console.print("[cyan]Initializing configuration...[/cyan]")
+    if verbosity.is_verbose():
+        console.print(_("[cyan]Initializing configuration...[/cyan]"))
     config_manager = init_config(config)
     cfg = config_manager.config
+    if hasattr(cfg, "observability"):
+        apply_cli_verbosity_to_observability(cfg.observability, merged_verbosity)
 
     # Ensure daemon config exists
     daemon_config_created = False
@@ -141,23 +250,27 @@ def start(
         api_key = generate_api_key()
         cfg.daemon = DaemonConfig(api_key=api_key)
         daemon_config_created = True
-        if verbose:
-            console.print("[green]✓[/green] Generated new API key for daemon")
-        logger.info("Generated new API key for daemon")
+        if verbosity.is_verbose():
+            console.print(_("[green]OK[/green] Generated new API key for daemon"))
+        # LOGGING OPTIMIZATION: Use verbosity-aware logging - important operation
+        log_info_normal(logger, verbosity, _("Generated new API key for daemon"))
     elif regenerate_api_key or not cfg.daemon.api_key:
         # Generate new API key
         api_key = generate_api_key()
         cfg.daemon.api_key = api_key
         daemon_config_created = True
-        if verbose:
-            console.print("[green]✓[/green] Generated new API key for daemon")
-        logger.info("Generated new API key for daemon")
+        if verbosity.is_verbose():
+            console.print(_("[green]OK[/green] Generated new API key for daemon"))
+        # LOGGING OPTIMIZATION: Use verbosity-aware logging - important operation
+        log_info_normal(logger, verbosity, _("Generated new API key for daemon"))
 
     # Override port if specified
     if port:
         cfg.daemon.ipc_port = port
-        if verbose:
-            console.print(f"[cyan]Using custom IPC port: {port}[/cyan]")
+        if verbosity.is_verbose():
+            console.print(
+                _("[cyan]Using custom IPC port: {port}[/cyan]").format(port=port)
+            )
 
     # Save config if daemon config was created or modified
     # This ensures DaemonMain can read the config when it initializes
@@ -192,56 +305,208 @@ def start(
                 with open(config_manager.config_file, "w", encoding="utf-8") as f:
                     toml.dump(config_data, f)
 
-                if verbose:
+                if verbosity.is_verbose():
                     console.print(
-                        f"[green]✓[/green] Updated config file: {config_manager.config_file}"
+                        _("[green]OK[/green] Updated config file: {file}").format(
+                            file=config_manager.config_file
+                        )
                     )
-                logger.info("Updated config file with daemon configuration")
-        except Exception as e:
-            if verbose:
-                console.print(
-                    f"[yellow]⚠[/yellow] Could not save daemon config to config file: {e}"
+                # LOGGING OPTIMIZATION: Use verbosity-aware logging - important operation
+                log_info_normal(
+                    logger,
+                    verbosity,
+                    _("Updated config file with daemon configuration"),
                 )
-            logger.warning("Could not save daemon config to config file: %s", e)
+        except Exception as e:
+            if verbosity.is_verbose():
+                console.print(
+                    _(
+                        "[yellow]WARN[/yellow] Could not save daemon config to config file: {e}"
+                    ).format(e=e)
+                )
+            logger.warning(_("Could not save daemon config to config file: %s"), e)
 
     # Check if daemon is already running
-    if verbose:
-        console.print("[cyan]Checking for existing daemon instance...[/cyan]")
+    if verbosity.is_verbose():
+        console.print(_("[cyan]Checking for existing daemon instance...[/cyan]"))
     daemon_manager = DaemonManager()
-    if not daemon_manager.ensure_single_instance():
-        pid = daemon_manager.get_pid()
-        console.print(
-            f"[red]✗[/red] Daemon is already running with PID {pid}", style="red"
-        )
-        raise click.Abort()
+    _ensure_can_start_daemon(daemon_manager, cfg)
 
     if foreground:
         # Run in foreground
-        if verbose:
-            console.print("[cyan]Starting daemon in foreground mode...[/cyan]")
-        console.print("Press Ctrl+C to stop the daemon")
+        if verbosity.is_verbose():
+            console.print(_("[cyan]Starting daemon in foreground mode...[/cyan]"))
+        console.print(_("Press Ctrl+C to stop the daemon"))
+
+        # Show splash screen for foreground mode (allow with -v and -vv, but hide with -vvv or higher)
+        splash_manager = None
+        splash_thread = None
+        expected_duration = (
+            60.0  # Default duration, will be overridden if detector available
+        )
+        if (
+            verbosity.verbosity_count <= 2 and not no_splash
+        ):  # Allow with -v and -vv, hide with -vvv+
+            import threading
+
+            from ccbt.cli.task_detector import get_detector
+            from ccbt.interface.splash.splash_manager import SplashManager
+
+            detector = get_detector()
+            if detector.should_show_splash("daemon.start"):
+                splash_manager = SplashManager.from_verbosity_count(
+                    merged_verbosity, console=console
+                )
+                expected_duration = detector.get_expected_duration("daemon.start")
+                # Update splash message to indicate daemon is starting
+                with contextlib.suppress(Exception):
+                    logger.debug("Starting daemon process...")
+
+                # Start splash screen in background thread
+                def run_splash():
+                    if splash_manager is not None:
+                        asyncio.run(
+                            splash_manager.show_splash_for_task(
+                                task_name="daemon start",
+                                max_duration=expected_duration,
+                            )
+                        )
+
+                splash_thread = threading.Thread(target=run_splash, daemon=True)
+                splash_thread.start()
+
+        daemon_main_ref: Any = None
 
         async def _run_foreground() -> None:
             """Run daemon in foreground."""
             from ccbt.daemon.main import DaemonMain
 
+            nonlocal daemon_main_ref
             daemon_main = DaemonMain(
                 config_file=config,
                 foreground=True,
             )
+            daemon_main_ref = daemon_main
+
+            # Signal handlers are set up in daemon_main.start() via daemon_manager
+            # The signal handler will set _shutdown_event, which run() checks in its loop
+            # The run() method catches KeyboardInterrupt and calls stop() in its finally block
             await daemon_main.run()
 
         try:
+            # Note: Use asyncio.run() - it properly handles KeyboardInterrupt
+            # The daemon's run() method also catches KeyboardInterrupt and ensures cleanup
+            # On Windows, asyncio.run() should properly propagate KeyboardInterrupt
             asyncio.run(_run_foreground())
+            console.print(_("[green]Daemon stopped[/green]"))
         except KeyboardInterrupt:
-            console.print("\n[yellow]Shutting down daemon...[/yellow]")
+            # KeyboardInterrupt caught by asyncio.run()
+            # The daemon's run() method should have already handled cleanup in its KeyboardInterrupt handler
+            console.print(_("\n[yellow]Shutting down daemon...[/yellow]"))
+            # Ensure shutdown event is set if it wasn't already
+            if daemon_main_ref is not None:
+                if (
+                    daemon_main_ref.shutdown_event
+                    and not daemon_main_ref.shutdown_event.is_set()
+                ):
+                    daemon_main_ref.shutdown_event.set()
+                    logger.debug(
+                        "Shutdown event set from CLI KeyboardInterrupt handler"
+                    )
+
+                # Note: If stop() wasn't called yet (event loop was cancelled before handler ran),
+                # try to ensure shutdown completes in a new event loop
+                if not daemon_main_ref.is_stopping:
+                    try:
+
+                        async def _ensure_shutdown() -> None:
+                            """Ensure daemon shutdown completes."""
+                            if daemon_main_ref is None:
+                                return
+                            try:
+                                # Use timeout to prevent hanging
+                                await asyncio.wait_for(
+                                    daemon_main_ref.stop(), timeout=10.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("Shutdown timeout - forcing cleanup")
+                                # At least try to remove PID file
+                                with contextlib.suppress(Exception):
+                                    if hasattr(daemon_main_ref, "daemon_manager"):
+                                        daemon_main_ref.daemon_manager.remove_pid()
+                            except Exception as e:
+                                logger.warning("Error ensuring shutdown: %s", e)
+                                # At least try to remove PID file
+                                with contextlib.suppress(Exception):
+                                    if hasattr(daemon_main_ref, "daemon_manager"):
+                                        daemon_main_ref.daemon_manager.remove_pid()
+
+                        # Run in a new event loop to ensure shutdown completes
+                        asyncio.run(_ensure_shutdown())
+                    except Exception as e:
+                        logger.warning("Could not ensure shutdown completion: %s", e)
+                        # Last resort: try to remove PID file directly
+                        try:
+                            if daemon_main_ref.daemon_manager:
+                                daemon_main_ref.daemon_manager.remove_pid()
+                        except Exception:
+                            pass
+
+            console.print(_("[green]Daemon stopped[/green]"))
     else:
         # Start daemon in background
-        if verbose:
-            console.print("[cyan]Starting daemon in background...[/cyan]")
+        if verbosity.is_verbose():
+            console.print(_("[cyan]Starting daemon in background...[/cyan]"))
+
+        # Show splash screen (allow with -v and -vv, but hide with -vvv or higher)
+        # Start splash screen just before daemon process actually starts
+        splash_manager = None
+        splash_thread = None
+        expected_duration = (
+            60.0  # Default duration, will be overridden if detector available
+        )
+        if (
+            verbosity.verbosity_count <= 2 and not no_splash
+        ):  # Allow with -v and -vv, hide with -vvv+
+            import threading
+
+            from ccbt.cli.task_detector import get_detector
+            from ccbt.interface.splash.splash_manager import SplashManager
+
+            detector = get_detector()
+            if detector.should_show_splash("daemon.start"):
+                splash_manager = SplashManager.from_verbosity_count(
+                    merged_verbosity, console=console
+                )
+                expected_duration = detector.get_expected_duration("daemon.start")
+                # Update splash message to indicate daemon is starting
+                with contextlib.suppress(Exception):
+                    logger.debug("Starting daemon process...")
+
+                # Start splash screen in background thread
+                def run_splash():
+                    if splash_manager is not None:
+                        asyncio.run(
+                            splash_manager.show_splash_for_task(
+                                task_name="daemon start",
+                                max_duration=expected_duration,
+                            )
+                        )
+
+                splash_thread = threading.Thread(target=run_splash, daemon=True)
+                splash_thread.start()
 
         try:
-            pid = daemon_manager.start(foreground=False)
+            # Pass config file to daemon so it uses the same config as CLI
+            extra_args: list[str] = []
+            if config_manager.config_file and config_manager.config_file.exists():
+                extra_args.extend(["--config", str(config_manager.config_file)])
+            if merged_verbosity:
+                extra_args.append(f"-{'v' * merged_verbosity}")
+            pid = daemon_manager.start(
+                foreground=False,
+                extra_args=extra_args if extra_args else None,
+            )
 
             # Give the process a moment to initialize before checking
             time.sleep(0.2)
@@ -254,32 +519,49 @@ def start(
             except (OSError, ProcessLookupError, Exception):
                 # Process died immediately
                 console.print(
-                    f"[red]✗[/red] Daemon process (PID {pid}) exited immediately after starting"
+                    _(
+                        "[red]FAILED[/red] Daemon process (PID {pid}) exited immediately after starting"
+                    ).format(pid=pid)
                 )
                 console.print(
-                    "[yellow]The daemon process crashed during initialization.[/yellow]"
+                    _(
+                        "[yellow]The daemon process crashed during initialization.[/yellow]"
+                    )
                 )
-                if verbose:
+                if verbosity.is_verbose():
                     console.print(
-                        "[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]"
+                        _(
+                            "[yellow]This usually indicates a configuration error, missing dependency, or initialization failure.[/yellow]"
+                        )
                     )
                     console.print(
-                        "[dim]Try running with --foreground flag to see detailed error output:[/dim]"
+                        _(
+                            "[dim]Try running with --foreground flag to see detailed error output:[/dim]"
+                        )
                     )
-                    console.print("[dim]  uv run btbt daemon start --foreground[/dim]")
+                    console.print(
+                        _("[dim]  uv run btbt daemon start --foreground[/dim]")
+                    )
                 else:
                     console.print(
-                        "[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]"
+                        _(
+                            "[yellow]Use -v flag for more details or try --foreground to see error output[/yellow]"
+                        )
                     )
-                raise click.Abort()
+                raise click.Abort from None
 
             # Small delay to ensure PID file is written and process is starting
             time.sleep(0.3)
 
             # Wait for daemon to be ready (unless --no-wait flag is set)
             if not no_wait:
-                if verbose:
-                    console.print("[cyan]Waiting for daemon to be ready...[/cyan]")
+                # Update splash message to indicate initialization
+                if splash_manager:
+                    with contextlib.suppress(Exception):
+                        logger.debug("Initializing daemon components...")
+
+                if verbosity.is_verbose():
+                    console.print(_("[cyan]Waiting for daemon to be ready...[/cyan]"))
                     with Progress(
                         SpinnerColumn(),
                         TextColumn("[progress.description]{task.description}"),
@@ -289,40 +571,77 @@ def start(
                         task = progress.add_task("Starting daemon...", total=None)
                         daemon_ready = _wait_for_daemon_with_progress(
                             cfg.daemon,
-                            timeout=15.0,
+                            timeout=expected_duration,
                             progress=progress,
                             task=task,
-                            verbose=verbose,
+                            verbosity=verbosity,
                             daemon_pid=pid,
+                            splash_manager=splash_manager,
                         )
                 else:
-                    daemon_ready = _wait_for_daemon(cfg.daemon, timeout=15.0)
+                    daemon_ready = _wait_for_daemon(
+                        cfg.daemon,
+                        timeout=expected_duration,
+                        splash_manager=splash_manager,
+                    )
 
                 if daemon_ready:
                     elapsed = time.time() - start_time
+                    # Update splash screen message to indicate initialization complete
+                    if splash_manager:
+                        with contextlib.suppress(Exception):
+                            logger.debug("Daemon initialization complete!")
+                    # Small additional delay to ensure "Daemon initialization complete" message has been logged
+                    time.sleep(0.5)
                     console.print(
-                        f"[green]✓[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)"
+                        _(
+                            "[green]OK[/green] Daemon started successfully (PID {pid}, took {elapsed:.1f}s)"
+                        ).format(pid=pid, elapsed=elapsed)
                     )
+                    # Clear splash screen only after daemon initialization is fully complete
+                    if splash_manager:
+                        with contextlib.suppress(Exception):
+                            splash_manager.stop_splash()
                 else:
                     console.print(
-                        f"[yellow]⚠[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet"
+                        _(
+                            "[yellow]WARN[/yellow] Daemon process started (PID {pid}) but may not be fully ready yet"
+                        ).format(pid=pid)
                     )
                     console.print(
-                        "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+                        _("[dim]Use 'btbt daemon status' to check daemon status[/dim]")
                     )
             else:
-                console.print(f"[green]✓[/green] Daemon process started (PID {pid})")
                 console.print(
-                    "[dim]Use 'btbt daemon status' to check daemon status[/dim]"
+                    _("[green]OK[/green] Daemon process started (PID {pid})").format(
+                        pid=pid
+                    )
+                )
+                console.print(
+                    _("[dim]Use 'btbt daemon status' to check daemon status[/dim]")
                 )
 
         except RuntimeError as e:
-            console.print(f"[red]✗[/red] Failed to start daemon: {e}")
-            raise click.Abort()
+            console.print(
+                _("[red]FAILED[/red] Failed to start daemon: {e}").format(e=e)
+            )
+            # Point user to log file and foreground for debugging
+            log_file = daemon_manager.state_dir / "daemon_startup.log"
+            if log_file.exists():
+                console.print(
+                    _("[dim]See daemon log: {path}[/dim]").format(path=log_file)
+                )
+            console.print(
+                _(
+                    "[yellow]To see errors in the terminal, run:[/yellow] "
+                    "[dim]uv run btbt daemon start --foreground[/dim]"
+                )
+            )
+            raise click.Abort from e
 
 
 async def _run_daemon_foreground(
-    daemon_config: DaemonConfig, config_file: str | None
+    _daemon_config: DaemonConfig, config_file: Optional[str]
 ) -> None:
     """Run daemon in foreground mode."""
     from ccbt.daemon.main import DaemonMain
@@ -335,12 +654,17 @@ async def _run_daemon_foreground(
     await daemon.run()
 
 
-def _wait_for_daemon(daemon_config: DaemonConfig, timeout: float = 15.0) -> bool:
+def _wait_for_daemon(
+    daemon_config: DaemonConfig,
+    timeout: float = 15.0,
+    splash_manager: Optional[Any] = None,
+) -> bool:
     """Wait for daemon to be ready.
 
     Args:
         daemon_config: Daemon configuration
         timeout: Timeout in seconds
+        splash_manager: Optional splash manager for progress updates
 
     Returns:
         True if daemon is ready, False otherwise
@@ -350,17 +674,35 @@ def _wait_for_daemon(daemon_config: DaemonConfig, timeout: float = 15.0) -> bool
     async def _check_daemon_loop() -> bool:
         """Check if daemon is running in a loop."""
         start_time = time.time()
+        last_stage = ""
 
         while time.time() - start_time < timeout:
             client = IPCClient(api_key=daemon_config.api_key)
             try:
                 is_running = await client.is_daemon_running()
                 if is_running:
+                    # Update splash to indicate waiting for full initialization
+                    if splash_manager and last_stage != "waiting":
+                        try:
+                            logger.debug("Waiting for daemon to be ready...")
+                            last_stage = "waiting"
+                        except Exception:
+                            pass
+                    # Small delay to ensure daemon has fully initialized (including "Daemon initialization complete" message)
+                    await asyncio.sleep(1.0)
                     return True
             except Exception:
                 pass
             finally:
                 await client.close()
+
+            # Update splash message during wait
+            if splash_manager and last_stage != "checking":
+                try:
+                    logger.debug("Checking daemon status...")
+                    last_stage = "checking"
+                except Exception:
+                    pass
 
             # Wait before next check
             await asyncio.sleep(0.5)
@@ -372,17 +714,18 @@ def _wait_for_daemon(daemon_config: DaemonConfig, timeout: float = 15.0) -> bool
         # Windows ProactorEventLoop cleanup warnings are handled at module level
         return asyncio.run(_check_daemon_loop())
     except Exception as e:
-        logger.debug("Error waiting for daemon: %s", e)
+        logger.debug(_("Error waiting for daemon: %s"), e)
         return False
 
 
 def _wait_for_daemon_with_progress(
     daemon_config: DaemonConfig,
     timeout: float = 15.0,
-    progress: Progress | None = None,
-    task: int | None = None,
-    verbose: bool = False,
-    daemon_pid: int | None = None,
+    progress: Optional[Any] = None,  # Optional[Progress]
+    task: Optional[int] = None,
+    verbosity: Optional[Any] = None,
+    daemon_pid: Optional[int] = None,
+    splash_manager: Optional[Any] = None,
 ) -> bool:
     """Wait for daemon to be ready with progress indicator.
 
@@ -391,14 +734,15 @@ def _wait_for_daemon_with_progress(
         timeout: Timeout in seconds
         progress: Rich Progress object (optional)
         task: Task ID for progress (optional)
-        verbose: Enable verbose output
+        verbosity: Verbosity level for output
         daemon_pid: Daemon PID to monitor
+        splash_manager: Splash screen manager (optional)
 
     Returns:
         True if daemon is ready, False otherwise
 
     """
-    INIT_STAGES = [
+    init_stages = [
         "Starting daemon process...",
         "Waiting for process to initialize...",
         "Checking IPC server...",
@@ -416,13 +760,11 @@ def _wait_for_daemon_with_progress(
         # Check if process is running
         daemon_manager = DaemonManager()
         is_running = False
-        try:
+        with contextlib.suppress(Exception):
             is_running = daemon_manager.is_running()
-        except Exception:
-            pass
 
         if not is_running:
-            return False, 1, INIT_STAGES[1]
+            return False, 1, init_stages[1]
 
         # Try to connect to IPC server
         client = IPCClient(api_key=daemon_config.api_key)
@@ -432,7 +774,7 @@ def _wait_for_daemon_with_progress(
             )
 
             if not is_accessible:
-                return False, 2, INIT_STAGES[2]  # "Process starting..."
+                return False, 2, init_stages[2]  # "Process starting..."
 
             # IPC server is accessible - session manager and IPC server are started
             # Try to get detailed status to confirm full readiness
@@ -440,22 +782,22 @@ def _wait_for_daemon_with_progress(
                 status = await asyncio.wait_for(client.get_status(), timeout=1.5)
                 # If we can get status with valid data, daemon is fully ready
                 if status.status and status.uptime >= 0:
-                    return True, len(INIT_STAGES) - 1, INIT_STAGES[-1]
+                    return True, len(init_stages) - 1, init_stages[-1]
                 # Status endpoint exists but not fully initialized
-                return False, 3, INIT_STAGES[3]  # "Starting IPC server..."
+                return False, 3, init_stages[3]  # "Starting IPC server..."
             except (ConnectionError, TimeoutError, asyncio.TimeoutError):
                 # IPC server accessible but status endpoint not ready - IPC server still starting
-                return False, 3, INIT_STAGES[3]  # "Starting IPC server..."
+                return False, 3, init_stages[3]  # "Starting IPC server..."
             except Exception:
                 # Status endpoint error - IPC server started but not fully ready
-                return False, 3, INIT_STAGES[3]  # "Starting IPC server..."
+                return False, 3, init_stages[3]  # "Starting IPC server..."
 
         finally:
             await client.close()
 
     start_time = time.time()
-    last_status = INIT_STAGES[0]
-    check_count = 0
+    last_status = init_stages[0]
+    # check_count = 0  # Reserved for future use
     stage_start_times: dict[int, float] = {}  # Track when each stage started
     last_detected_stage = -1
 
@@ -466,9 +808,8 @@ def _wait_for_daemon_with_progress(
     if initial_pid is None:
         # Fallback: try to get PID from file (may not exist yet)
         initial_pid = daemon_manager.get_pid()
-    process_crashed = False
 
-    def _is_process_alive(pid: int | None) -> bool:
+    def _is_process_alive(pid: Optional[int]) -> bool:
         """Check if process is actually running.
 
         Args:
@@ -498,7 +839,6 @@ def _wait_for_daemon_with_progress(
 
         while time.time() - start_time < timeout:
             elapsed = time.time() - start_time
-            check_count_local = check_count + 1
 
             # Check if daemon process is still running (detect crashes)
             # Only check if we have a valid PID
@@ -509,24 +849,34 @@ def _wait_for_daemon_with_progress(
                     # Process crashed - process is dead
                     if progress and task is not None:
                         progress.update(
-                            task, description="[red]Daemon process crashed[/red]"
+                            task, description=_("[red]Daemon process crashed[/red]")
                         )
-                    if verbose:
+                    if verbosity and verbosity.is_verbose():
                         console.print(
-                            f"[red]✗[/red] Daemon process (PID {initial_pid}) crashed during startup (after {elapsed:.1f}s)"
+                            _(
+                                "[red]FAILED[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
+                            ).format(pid=initial_pid, elapsed=elapsed)
                         )
                         console.print(
-                            "[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]"
+                            _(
+                                "[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]"
+                            )
                         )
                     else:
                         console.print(
-                            f"[red]✗[/red] Daemon process (PID {initial_pid}) crashed during startup (after {elapsed:.1f}s)"
+                            _(
+                                "[red]FAILED[/red] Daemon process (PID {pid}) crashed during startup (after {elapsed:.1f}s)"
+                            ).format(pid=initial_pid, elapsed=elapsed)
                         )
                         console.print(
-                            "[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]"
+                            _(
+                                "[yellow]The daemon process exited unexpectedly. Check daemon logs for error details.[/yellow]"
+                            )
                         )
                         console.print(
-                            "[dim]Use -v flag for more details or check daemon logs[/dim]"
+                            _(
+                                "[dim]Use -v flag for more details or check daemon logs[/dim]"
+                            )
                         )
                     return False
 
@@ -537,6 +887,10 @@ def _wait_for_daemon_with_progress(
                 if stage_idx != last_detected_stage:
                     stage_start_times[stage_idx] = time.time()
                     last_detected_stage = stage_idx
+                    # Update splash screen with stage description
+                    if splash_manager:
+                        with contextlib.suppress(Exception):
+                            logger.debug(stage_desc)
 
                 if progress and task is not None:
                     progress.update(task, description=stage_desc)
@@ -544,11 +898,19 @@ def _wait_for_daemon_with_progress(
                 last_status = stage_desc
 
                 if is_ready:
+                    # Update splash to indicate waiting for full initialization
+                    if splash_manager:
+                        with contextlib.suppress(Exception):
+                            logger.debug(
+                                "Waiting for daemon initialization to complete..."
+                            )
+                    # Small delay to ensure daemon has fully initialized (including "Daemon initialization complete" message)
+                    await asyncio.sleep(1.0)
                     return True
 
             except Exception as e:
-                if verbose:
-                    logger.debug("Error checking daemon stage: %s", e)
+                if verbosity and verbosity.is_debug():
+                    logger.debug(_("Error checking daemon stage: %s"), e)
                 # Continue waiting
 
             # Brief sleep before next check
@@ -558,15 +920,21 @@ def _wait_for_daemon_with_progress(
         if progress and task is not None:
             progress.update(
                 task,
-                description=f"[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]",
+                description=_(
+                    "[yellow]Timeout waiting for daemon (last status: {last_status})[/yellow]"
+                ).format(last_status=last_status),
             )
 
-        if verbose:
+        if verbosity and verbosity.is_verbose():
             console.print(
-                f"[yellow]⚠[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})"
+                _(
+                    "[yellow]WARN[/yellow] Daemon startup timeout after {timeout:.1f}s (last status: {last_status})"
+                ).format(timeout=timeout, last_status=last_status)
             )
             console.print(
-                "[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]"
+                _(
+                    "[dim]Daemon may still be starting. Use 'btbt daemon status' to check.[/dim]"
+                )
             )
 
         return False
@@ -576,28 +944,30 @@ def _wait_for_daemon_with_progress(
         # Windows ProactorEventLoop cleanup warnings are handled at module level
         return asyncio.run(_wait_loop())
     except Exception as e:
-        logger.debug("Error waiting for daemon with progress: %s", e)
+        logger.debug(_("Error waiting for daemon with progress: %s"), e)
         return False
 
 
 @daemon.command("exit")
 @click.option(
     "--force",
+    "-f",
     is_flag=True,
-    help="Force kill without graceful shutdown",
+    help=_("Force kill without graceful shutdown"),
 )
 @click.option(
     "--timeout",
+    "-t",
     type=float,
     default=30.0,
-    help="Shutdown timeout in seconds",
+    help=_("Shutdown timeout in seconds"),
 )
-def exit(force: bool, timeout: float) -> None:
+def exit_daemon(force: bool, timeout: float) -> None:
     """Stop the daemon process."""
     daemon_manager = DaemonManager()
 
     if not daemon_manager.is_running():
-        click.echo("Daemon is not running")
+        click.echo(_("Daemon is not running"))
         return
 
     success = False
@@ -605,7 +975,6 @@ def exit(force: bool, timeout: float) -> None:
     if not force:
         # Try graceful shutdown via IPC
         try:
-            config_manager = init_config()
             cfg = get_config()
 
             if cfg.daemon and cfg.daemon.api_key:
@@ -623,16 +992,44 @@ def exit(force: bool, timeout: float) -> None:
                         click.echo(
                             "Shutdown request sent, waiting for daemon to stop..."
                         )
-                        # Wait for process to exit
+                        # Wait for process to exit with progress
                         start_time = time.time()
-                        while time.time() - start_time < timeout:
-                            if not daemon_manager.is_running():
-                                click.echo("Daemon stopped gracefully")
-                                return
-                            time.sleep(0.5)
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            TimeElapsedColumn(),
+                            console=console,
+                        ) as progress:
+                            task = progress.add_task(
+                                _("Stopping daemon..."), total=None
+                            )
+                            while time.time() - start_time < timeout:
+                                if not daemon_manager.is_running():
+                                    progress.update(
+                                        task,
+                                        description=_(
+                                            "[green]Daemon stopped gracefully[/green]"
+                                        ),
+                                    )
+                                    click.echo(_("Daemon stopped gracefully"))
+                                    return
+                                elapsed = time.time() - start_time
+                                progress.update(
+                                    task,
+                                    description=_(
+                                        "Stopping daemon... ({elapsed:.1f}s)"
+                                    ).format(elapsed=elapsed),
+                                )
+                                time.sleep(0.5)
+                    else:
+                        click.echo(
+                            _(
+                                "Daemon rejected graceful shutdown request, using signal fallback..."
+                            )
+                        )
                 except Exception as e:
-                    logger.debug("Error sending shutdown request: %s", e)
-                    click.echo("Could not send shutdown request, using signal...")
+                    logger.debug(_("Error sending shutdown request: %s"), e)
+                    click.echo(_("Could not send shutdown request, using signal..."))
 
             # Fallback to signal-based shutdown
             success = daemon_manager.stop(timeout=timeout, force=False)
@@ -644,12 +1041,12 @@ def exit(force: bool, timeout: float) -> None:
         success = daemon_manager.stop(timeout=timeout, force=True)
 
     if success:
-        click.echo("Daemon stopped")
+        click.echo(_("Daemon stopped"))
     else:
-        click.echo("Failed to stop daemon", err=True)
+        click.echo(_("Failed to stop daemon"), err=True)
         if not force:
-            click.echo("Use --force to force kill", err=True)
-        raise click.Abort()
+            click.echo(_("Use --force to force kill"), err=True)
+        raise click.Abort
 
 
 @daemon.command("status")
@@ -658,15 +1055,14 @@ def status() -> None:
     daemon_manager = DaemonManager()
 
     if not daemon_manager.is_running():
-        console.print("[red]Daemon is not running[/red]")
+        console.print(_("[red]Daemon is not running[/red]"))
         return
 
     pid = daemon_manager.get_pid()
-    console.print(f"[green]Daemon is running[/green] (PID: {pid})")
+    console.print(_("[green]Daemon is running[/green] (PID: {pid})").format(pid=pid))
 
     # Try to get detailed status via IPC
     try:
-        config_manager = init_config()
         cfg = get_config()
 
         if cfg.daemon and cfg.daemon.api_key:
@@ -676,16 +1072,32 @@ def status() -> None:
                 client = IPCClient(api_key=cfg.daemon.api_key)  # type: ignore[union-attr]
                 try:
                     status = await client.get_status()
-                    console.print(f"\n[cyan]Status:[/cyan] {status.status}")
-                    console.print(f"[cyan]Torrents:[/cyan] {status.num_torrents}")
-                    console.print(f"[cyan]Uptime:[/cyan] {status.uptime:.1f}s")
+                    console.print(
+                        _("\n[cyan]Status:[/cyan] {status}").format(
+                            status=status.status
+                        )
+                    )
+                    console.print(
+                        _("[cyan]Torrents:[/cyan] {num_torrents}").format(
+                            num_torrents=status.num_torrents
+                        )
+                    )
+                    console.print(
+                        _("[cyan]Uptime:[/cyan] {uptime:.1f}s").format(
+                            uptime=status.uptime
+                        )
+                    )
                     if hasattr(status, "download_rate"):
                         console.print(
-                            f"[cyan]Download:[/cyan] {status.download_rate:.2f} KiB/s"
+                            _("[cyan]Download:[/cyan] {rate:.2f} KiB/s").format(
+                                rate=status.download_rate
+                            )
                         )
                     if hasattr(status, "upload_rate"):
                         console.print(
-                            f"[cyan]Upload:[/cyan] {status.upload_rate:.2f} KiB/s"
+                            _("[cyan]Upload:[/cyan] {rate:.2f} KiB/s").format(
+                                rate=status.upload_rate
+                            )
                         )
                 finally:
                     await client.close()
@@ -693,8 +1105,10 @@ def status() -> None:
             asyncio.run(_get_status())
         else:
             console.print(
-                "[yellow]API key not found in config, cannot get detailed status[/yellow]"
+                _(
+                    "[yellow]API key not found in config, cannot get detailed status[/yellow]"
+                )
             )
     except Exception as e:
-        logger.debug("Error getting daemon status: %s", e)
-        console.print("[yellow]Could not get detailed status via IPC[/yellow]")
+        logger.debug(_("Error getting daemon status: %s"), e)
+        console.print(_("[yellow]Could not get detailed status via IPC[/yellow]"))

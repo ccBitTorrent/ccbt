@@ -9,7 +9,6 @@ Target: 95%+ code coverage.
 from __future__ import annotations
 
 import asyncio
-import struct
 import time
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -27,7 +26,7 @@ from ccbt.transport.utp import (
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock configuration."""
     config = MagicMock()
@@ -224,12 +223,10 @@ class TestUTPConnection:
         mock_socket_manager = AsyncMock()
         mock_socket_manager.get_transport = Mock(return_value=mock_transport)
         mock_socket_manager.register_connection = Mock()
+        utp_connection.socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance", return_value=mock_socket_manager
-        ):
-            await utp_connection.initialize_transport()
-            assert utp_connection.transport == mock_transport
+        await utp_connection.initialize_transport()
+        assert utp_connection.transport == mock_transport
 
     @pytest.mark.asyncio
     async def test_connect_timeout(self, utp_connection):
@@ -305,7 +302,7 @@ class TestUTPConnection:
         utp_connection.max_unacked_packets = 100  # Allow sending
 
         await utp_connection.send(b"small data")
-        
+
         # send() should have called _send_packet which calls transport.sendto
         assert mock_transport.sendto.called
 
@@ -372,7 +369,7 @@ class TestUTPConnection:
 
         # Start from seq_nr=1 (expected_seq=0, so first packet should be seq_nr=0 or we adjust)
         # Actually, recv_buffer_expected_seq starts at 0, so first packet should be seq_nr=0
-        
+
         # Send packet 2 first (out of order)
         packet2 = UTPPacket(
             type=UTPPacketType.ST_DATA,
@@ -490,7 +487,7 @@ class TestUTPConnection:
             # Actually, we can't easily create an invalid type packet via pack()
             # So we'll test the unpack path with an invalid type
             # This would need to be done via raw bytes manipulation
-            pass  # Covered by integration tests
+            # Covered by integration tests
 
     def test_packet_unpack_invalid_version(self):
         """Test unpacking packet with invalid version."""
@@ -609,12 +606,10 @@ class TestUTPConnection:
         # Mock socket manager
         mock_socket_manager = AsyncMock()
         mock_socket_manager.unregister_connection = Mock()
+        utp_connection.socket_manager = mock_socket_manager
 
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance", return_value=mock_socket_manager
-        ):
-            await utp_connection.close()
-            assert utp_connection.state == UTPConnectionState.CLOSED
+        await utp_connection.close()
+        assert utp_connection.state == UTPConnectionState.CLOSED
 
     def test_calculate_target_window(self, mock_config, remote_addr):
         """Test window size calculation."""
@@ -710,62 +705,43 @@ class TestUTPSocketManager:
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
             from ccbt.transport.utp_socket import UTPSocketManager
 
-            # Reset singleton
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
-
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
             mock_protocol = MagicMock()
             loop = asyncio.get_event_loop()
-            
+
             async def mock_create_datagram_endpoint(*args, **kwargs):
                 return (mock_transport, mock_protocol)
-            
+
             with patch.object(loop, "create_datagram_endpoint", side_effect=mock_create_datagram_endpoint):
                 manager = await UTPSocketManager.get_instance()
                 yield manager
                 await manager.stop()
-                UTPSocketManager._instance = None
 
     @pytest.mark.asyncio
-    async def test_socket_manager_singleton(self, mock_config):
-        """Test singleton pattern."""
+    async def test_socket_manager_returns_independent_instances(self, mock_config):
+        """Test compatibility get_instance returns dedicated managers."""
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
             from ccbt.transport.utp_socket import UTPSocketManager
-
-            # Ensure previous instance is stopped and cleaned up
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
 
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
             mock_protocol = MagicMock()
-            
+
             with patch("asyncio.get_event_loop") as mock_loop:
                 loop = asyncio.get_event_loop()
                 mock_loop.return_value = loop
-                
+
                 async def mock_create_datagram_endpoint(*args, **kwargs):
                     return (mock_transport, mock_protocol)
-                
+
                 with patch.object(loop, "create_datagram_endpoint", side_effect=mock_create_datagram_endpoint):
                     manager1 = await UTPSocketManager.get_instance()
                     manager2 = await UTPSocketManager.get_instance()
-                    assert manager1 is manager2
+                    assert manager1 is not manager2
 
                     await manager1.stop()
-                    UTPSocketManager._instance = None
+                    await manager2.stop()
 
     @pytest.mark.asyncio
     async def test_register_connection(self, socket_manager, mock_config, remote_addr):
@@ -874,14 +850,7 @@ class TestUTPIntegration:
                 from ccbt.transport.utp_socket import UTPSocketManager
 
                 # Ensure previous instance is stopped and cleaned up
-                if UTPSocketManager._instance is not None:
-                    try:
-                        await UTPSocketManager._instance.stop()
-                    except Exception:
-                        pass
-                    UTPSocketManager._instance = None
-                    # Give Windows time to release the port (TIME_WAIT state)
-                    await asyncio.sleep(0.5)
+                # Compatibility singleton removed; get_instance creates dedicated managers.
 
                 # Create two connections (simulating peer-to-peer)
                 addr1 = ("127.0.0.1", 6881)
@@ -894,14 +863,14 @@ class TestUTPIntegration:
                 mock_transport = MagicMock()
                 mock_protocol = MagicMock()
                 loop = asyncio.get_event_loop()
-                
+
                 async def mock_create_datagram_endpoint(*args, **kwargs):
                     return (mock_transport, mock_protocol)
-                
+
                 with patch.object(loop, "create_datagram_endpoint", side_effect=mock_create_datagram_endpoint):
                     # Initialize socket manager
                     socket_manager = await UTPSocketManager.get_instance()
-                    
+
                     try:
                         # Register connections
                         socket_manager.register_connection(conn1, addr2, conn1.connection_id)
@@ -922,7 +891,6 @@ class TestUTPIntegration:
                         # In real scenario, conn2 would receive SYN and respond with SYN-ACK
                     finally:
                         await socket_manager.stop()
-                        UTPSocketManager._instance = None
 
                         # Cleanup
                         try:
@@ -1439,7 +1407,7 @@ class TestUTPIntegration:
             assert conn._is_sequence_acked(0, 1) is True
             assert conn._is_sequence_acked(5, 10) is True
             assert conn._is_sequence_acked(10, 5) is False  # seq 10 > ack 5 (no wraparound)
-            
+
             # Test wraparound case where ack_nr has wrapped (> 0x8000)
             high_ack = 0x9000  # > 0x8000, so wrapped
             assert conn._is_sequence_acked(0x8500, high_ack) is True  # seq in range [ack, 0xFFFF]
@@ -1483,12 +1451,10 @@ class TestUTPIntegration:
             # Mock socket manager to raise error
             mock_socket_manager = AsyncMock()
             mock_socket_manager.unregister_connection = Mock(side_effect=Exception("Error"))
+            conn.socket_manager = mock_socket_manager
 
-            with patch(
-                "ccbt.transport.utp_socket.UTPSocketManager.get_instance", return_value=mock_socket_manager
-            ):
-                await conn.close()
-                assert conn.state == UTPConnectionState.CLOSED
+            await conn.close()
+            assert conn.state == UTPConnectionState.CLOSED
 
     @pytest.mark.asyncio
     async def test_send_loop_exception(self, mock_config, remote_addr):
@@ -1705,28 +1671,22 @@ class TestUTPIntegration:
             from ccbt.transport.utp_socket import UTPSocketManager
 
             # Ensure previous instance is stopped and cleaned up
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
+            # Compatibility singleton removed; no singleton cleanup needed.
 
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
             mock_protocol = MagicMock()
             loop = asyncio.get_event_loop()
-            
+
             async def mock_create_datagram_endpoint(*args, **kwargs):
                 return (mock_transport, mock_protocol)
-            
+
             with patch.object(loop, "create_datagram_endpoint", side_effect=mock_create_datagram_endpoint):
                 manager = await UTPSocketManager.get_instance()
                 try:
                     await manager.stop()
                 finally:
-                    UTPSocketManager._instance = None
+                    pass
 
                 # Should handle gracefully
                 assert manager.transport is None or True  # May be None after stop
@@ -1735,49 +1695,39 @@ class TestUTPIntegration:
     async def test_socket_manager_start_error(self, mock_config):
         """Test socket manager start with error."""
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
-            from ccbt.transport.utp_socket import UTPSocketManager
 
-            UTPSocketManager._instance = None
+            # Compatibility singleton removed; no singleton reset required.
 
             with patch("asyncio.get_event_loop") as mock_loop:
                 mock_loop.side_effect = Exception("Error")
                 # Should handle gracefully
-                pass
 
     @pytest.mark.asyncio
     async def test_utp_protocol_error_received(self, mock_config):
         """Test UTP protocol error handling."""
         with patch("ccbt.transport.utp_socket.get_config", return_value=mock_config):
-            from ccbt.transport.utp_socket import UTPSocketManager, UTPProtocol
+            from ccbt.transport.utp_socket import UTPProtocol, UTPSocketManager
 
-            # Ensure previous instance is stopped and cleaned up
-            if UTPSocketManager._instance is not None:
-                try:
-                    await UTPSocketManager._instance.stop()
-                except Exception:
-                    pass
-                UTPSocketManager._instance = None
-                await asyncio.sleep(0.5)
+            # Compatibility singleton removed; get_instance creates dedicated managers.
 
             # Mock socket creation to avoid port conflicts
             mock_transport = MagicMock()
             mock_protocol = MagicMock()
             loop = asyncio.get_event_loop()
-            
+
             async def mock_create_datagram_endpoint(*args, **kwargs):
                 return (mock_transport, mock_protocol)
-            
+
             with patch.object(loop, "create_datagram_endpoint", side_effect=mock_create_datagram_endpoint):
                 manager = await UTPSocketManager.get_instance()
                 protocol = UTPProtocol(manager)
-                
+
                 try:
                     # Test error_received
                     protocol.error_received(Exception("UDP error"))
                     # Should handle gracefully (log debug)
                 finally:
                     await manager.stop()
-                    UTPSocketManager._instance = None
 
 
 class TestUTPConfig:

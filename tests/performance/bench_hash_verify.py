@@ -21,7 +21,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional
 
 from ccbt.piece.piece_manager import PieceData, PieceManager  # type: ignore
 
@@ -56,7 +56,7 @@ def parse_size(size_str: str) -> int:
     return int(s)
 
 
-def format_bytes(n: Union[int, float]) -> str:
+def format_bytes(n: float) -> str:
     value: float = float(n)
     for unit in ("B", "KiB", "MiB", "GiB"):
         if value < 1024.0 or unit == "GiB":  # type: ignore[comparison-overlap]
@@ -121,7 +121,7 @@ def write_json(output_dir: Path, benchmark: str, config_name: str, results: List
     return path
 
 
-def derive_config_name(config_file: str | None) -> str:
+def derive_config_name(config_file: Optional[str]) -> str:
     if not config_file:
         return "default"
     stem = Path(config_file).stem
@@ -148,6 +148,12 @@ def main() -> int:
         default="auto",
         help="Recording mode: auto (detect), pre-commit, commit, both, or none",
     )
+    parser.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="Write benchmark JSON artifact to this path (or directory) for CI",
+    )
 
     args = parser.parse_args()
 
@@ -166,7 +172,13 @@ def main() -> int:
     config_name = derive_config_name(args.config_file)
 
     # Record benchmark results using new system
-    per_run_path, timeseries_path = record_benchmark_results("hash_verify", config_name, results, args.record_mode)
+    per_run_path, timeseries_path = record_benchmark_results(
+        "hash_verify",
+        config_name,
+        results,
+        args.record_mode,
+        json_out=args.json_out,
+    )
 
     # Backward compatibility: write to old location if --output-dir specified
     if args.output_dir and args.output_dir != "site/reports/benchmarks/artifacts":

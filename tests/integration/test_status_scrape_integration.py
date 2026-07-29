@@ -6,15 +6,15 @@ Tests the complete flow of status command with scrape cache integration.
 from __future__ import annotations
 
 import asyncio
+import importlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 from click.testing import CliRunner
 
-import importlib
-
 cli_main = importlib.import_module("ccbt.cli.main")
+from ccbt.cli.status import show_status
 from ccbt.session.session import AsyncSessionManager
 from tests.conftest import create_test_torrent_dict
 
@@ -55,6 +55,19 @@ class TestStatusScrapeIntegration:
         from ccbt.models import CheckpointFormat
         config.disk.checkpoint_format = CheckpointFormat.BINARY
         config.disk.checkpoint_enabled = True
+        # Note: Add limits config with real integer values to support comparisons
+        config.limits = MagicMock()
+        config.limits.global_down_kib = 0
+        config.limits.global_up_kib = 0
+        # Add network config with real values
+        config.network = MagicMock()
+        config.network.max_global_peers = 100
+        config.network.connection_timeout = 30.0
+        config.network.enable_tcp = True
+        config.network.enable_utp = False
+        config.network.listen_port = 6881
+        config.network.listen_port_tcp = 6881
+        config.network.listen_port_udp = 6881
         return config
 
     @pytest_asyncio.fixture
@@ -63,13 +76,44 @@ class TestStatusScrapeIntegration:
         with patch("ccbt.session.session.get_config") as mock_get_config:
             mock_get_config.return_value = mock_config
 
+            # Note: Comprehensive network mocking to prevent port conflicts
+            mock_tracker = AsyncMock()
+            mock_tracker.start = AsyncMock()
+            mock_tracker.stop = AsyncMock()
+            mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
+
             session = AsyncSessionManager(".")
-            await session.start()
-            try:
-                yield session
-            finally:
-                await session.stop()
-                await asyncio.sleep(0.1)
+            # Disable network services to prevent real network operations
+            session.config.nat.auto_map_ports = False
+            session.config.discovery.enable_dht = False
+            session.config.network.enable_tcp = False
+            session.config.network.enable_utp = False
+            # Use dynamic ports to avoid conflicts
+            session.config.network.listen_port = 0
+            session.config.network.listen_port_tcp = 0
+            session.config.network.listen_port_udp = 0
+            session.config.discovery.dht_port = 0
+
+            # Mock network initialization methods
+            session._make_dht_client = lambda: None  # type: ignore[method-assign]
+            session._make_nat_manager = lambda: None  # type: ignore[method-assign]
+            session._make_tcp_server = lambda: None  # type: ignore[method-assign]
+
+            with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
+                # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
+                from ccbt.session.torrent_addition import TorrentAdditionHandler
+                async def mock_wait_for_starting_session(self, session):
+                    """Mock to immediately mark session as ready."""
+                    if hasattr(session, "info"):
+                        session.info.status = "downloading"
+
+                with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
+                    await session.start()
+                    try:
+                        yield session
+                    finally:
+                        await session.stop()
+                        await asyncio.sleep(0.1)
 
     @pytest.fixture
     def sample_torrent_data(self):
@@ -88,8 +132,6 @@ class TestStatusScrapeIntegration:
         self, session_manager, mock_config, sample_torrent_data
     ):
         """Test status display with real scrape cache populated from scrape operations."""
-        from ccbt.models import ScrapeResult
-
         info_hash = b"x" * 20
         info_hash_hex = info_hash.hex()
 
@@ -123,11 +165,14 @@ class TestStatusScrapeIntegration:
             assert cached.completed == 1500
 
             # Now test status display
-            from rich.console import Console
             from io import StringIO
 
+            from rich.console import Console
+
             console = Console(file=StringIO(), width=120)
-            await cli_main.show_status(session_manager, console)
+            from ccbt.executor.session_adapter import LocalSessionAdapter
+            adapter = LocalSessionAdapter(session_manager)
+            await show_status(adapter, console)
 
             # Get output
             output = console.file.getvalue()
@@ -148,107 +193,167 @@ class TestStatusScrapeIntegration:
         runner = CliRunner()
 
         from ccbt.session.session import AsyncSessionManager
-        from ccbt.models import ScrapeResult
         from tests.conftest import create_test_torrent_dict
 
+        # Note: Comprehensive network mocking to prevent timeout
+        # Mock AsyncTrackerClient to prevent real network operations
+        mock_tracker = AsyncMock()
+        mock_tracker.start = AsyncMock()
+        mock_tracker.stop = AsyncMock()
+        mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
+
         session_manager = AsyncSessionManager(str(tmp_path))
+        # Disable network services to prevent real network operations
         session_manager.config.nat.auto_map_ports = False
-        await session_manager.start()
+        session_manager.config.discovery.enable_dht = False
+        session_manager.config.network.enable_tcp = False
 
-        try:
-            # Add torrent and populate scrape cache
-            torrent_data = create_test_torrent_dict(
-                name="test",
-                file_length=1024,
-                announce="http://tracker.example.com",
-            )
-            info_hash_hex = await session_manager.add_torrent(torrent_data, resume=False)
+        # Mock network initialization methods
+        session_manager._make_dht_client = lambda: None  # type: ignore[method-assign]
+        session_manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
+        session_manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
-            # Mock protocol scrape
-            mock_protocol = AsyncMock()
-            mock_protocol.scrape_torrent = AsyncMock(
-                return_value={"seeders": 200, "leechers": 100, "completed": 2000}
-            )
+        with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
+            # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
+            from ccbt.session.torrent_addition import TorrentAdditionHandler
+            async def mock_wait_for_starting_session(self, session):
+                """Mock to immediately mark session as ready."""
+                if hasattr(session, "info"):
+                    session.info.status = "downloading"
 
-            with patch(
-                "ccbt.protocols.bittorrent.BitTorrentProtocol", return_value=mock_protocol
-            ):
-                await session_manager.force_scrape(info_hash_hex)
+            with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
+                await session_manager.start()
 
-                # Verify cache populated
-                cached = await session_manager.get_scrape_result(info_hash_hex)
-                assert cached is not None
+                try:
+                    # Add torrent and populate scrape cache
+                    torrent_data = create_test_torrent_dict(
+                        name="test",
+                        file_length=1024,
+                        announce="http://tracker.example.com",
+                    )
+                    info_hash_hex = await session_manager.add_torrent(torrent_data, resume=False)
 
-                # Test CLI status command
-                def _run(coro):
-                    return _run_coro_locally(coro)
+                    # Mock protocol scrape
+                    mock_protocol = AsyncMock()
+                    mock_protocol.scrape_torrent = AsyncMock(
+                        return_value={"seeders": 200, "leechers": 100, "completed": 2000}
+                    )
 
-                with patch("ccbt.cli.main.ConfigManager") as mock_cm:
-                    mock_cm_instance = MagicMock()
-                    mock_cm_instance.config = session_manager.config
-                    mock_cm.return_value = mock_cm_instance
+                    with patch(
+                        "ccbt.protocols.bittorrent.BitTorrentProtocol", return_value=mock_protocol
+                    ):
+                        await session_manager.force_scrape(info_hash_hex)
 
-                    with patch("ccbt.cli.main.AsyncSessionManager", return_value=session_manager):
-                        with patch("ccbt.cli.main.asyncio.run", side_effect=_run):
-                            try:
-                                result = runner.invoke(cli_main.cli, ["status"])
+                        # Verify cache populated
+                        cached = await session_manager.get_scrape_result(info_hash_hex)
+                        assert cached is not None
 
-                                # May fail due to missing attributes, but verify scrape cache logic works
-                                # The important thing is that the code doesn't crash on scrape display
-                                if result.exit_code == 0:
-                                    assert "ccBitTorrent Status" in result.output
-                                    # Scrape statistics should be present if cache has entries
-                                    if cached:
-                                        # May or may not show depending on output format, but shouldn't error
+                        # Test CLI status command
+                        def _run(coro):
+                            return _run_coro_locally(coro)
+
+                        with patch("ccbt.cli.main.ConfigManager") as mock_cm:
+                            mock_cm_instance = MagicMock()
+                            mock_cm_instance.config = session_manager.config
+                            mock_cm.return_value = mock_cm_instance
+
+                            with patch("ccbt.cli.main.AsyncSessionManager", return_value=session_manager):
+                                with patch("ccbt.cli.main.asyncio.run", side_effect=_run):
+                                    try:
+                                        result = runner.invoke(cli_main.cli, ["status"])
+
+                                        # May fail due to missing attributes, but verify scrape cache logic works
+                                        # The important thing is that the code doesn't crash on scrape display
+                                        if result.exit_code == 0:
+                                            assert "ccBitTorrent Status" in result.output
+                                            # Scrape statistics should be present if cache has entries
+                                            if cached:
+                                                # May or may not show depending on output format, but shouldn't error
+                                                pass
+                                    except Exception:
+                                        # If it errors due to other missing config, that's ok for integration test
+                                        # The important part is that scrape cache was populated
                                         pass
-                            except Exception:
-                                # If it errors due to other missing config, that's ok for integration test
-                                # The important part is that scrape cache was populated
-                                pass
 
-        finally:
-            await session_manager.stop()
+                finally:
+                    try:
+                        await session_manager.stop()
+                    except Exception:
+                        pass
 
     @pytest.mark.asyncio
     async def test_status_with_multiple_scrape_cache_entries(self, tmp_path):
         """Test status display with multiple scrape cache entries."""
-        from ccbt.session.session import AsyncSessionManager
-        from ccbt.models import ScrapeResult
-        from rich.console import Console
         from io import StringIO
 
+        from rich.console import Console
+
+        from ccbt.models import ScrapeResult
+        from ccbt.session.session import AsyncSessionManager
+
+        # Note: Comprehensive network mocking to prevent port conflicts
+        mock_tracker = AsyncMock()
+        mock_tracker.start = AsyncMock()
+        mock_tracker.stop = AsyncMock()
+        mock_tracker.announce_to_multiple = AsyncMock(return_value=[])
+
         session_manager = AsyncSessionManager(str(tmp_path))
+        # Disable network services to prevent real network operations
         session_manager.config.nat.auto_map_ports = False
-        await session_manager.start()
+        session_manager.config.discovery.enable_dht = False
+        session_manager.config.network.enable_tcp = False
+        session_manager.config.network.enable_utp = False
+        # Use dynamic ports to avoid conflicts
+        session_manager.config.network.listen_port = 0
+        session_manager.config.network.listen_port_tcp = 0
+        session_manager.config.network.listen_port_udp = 0
+        session_manager.config.discovery.dht_port = 0
 
-        try:
-            # Populate scrape cache with multiple entries
-            for i in range(5):
-                info_hash = bytes([i] * 20)
-                scrape_result = ScrapeResult(
-                    info_hash=info_hash,
-                    seeders=100 + i * 10,
-                    leechers=50 + i * 5,
-                    completed=1000 + i * 100,
-                    last_scrape_time=1234567890.0 + i,
-                    scrape_count=1,
-                )
-                async with session_manager.scrape_cache_lock:
-                    session_manager.scrape_cache[info_hash] = scrape_result
+        # Mock network initialization methods
+        session_manager._make_dht_client = lambda: None  # type: ignore[method-assign]
+        session_manager._make_nat_manager = lambda: None  # type: ignore[method-assign]
+        session_manager._make_tcp_server = lambda: None  # type: ignore[method-assign]
 
-            # Test status display
-            console = Console(file=StringIO(), width=120)
-            await cli_main.show_status(session_manager, console)
+        with patch("ccbt.session.session.AsyncTrackerClient", return_value=mock_tracker):
+            # Note: Mock TorrentAdditionHandler to prevent waiting for session startup
+            from ccbt.session.torrent_addition import TorrentAdditionHandler
+            async def mock_wait_for_starting_session(self, session):
+                """Mock to immediately mark session as ready."""
+                if hasattr(session, "info"):
+                    session.info.status = "downloading"
 
-            output = console.file.getvalue()
+            with patch.object(TorrentAdditionHandler, "_wait_for_starting_session", mock_wait_for_starting_session):
+                await session_manager.start()
 
-            # Verify all entries are shown (up to 10)
-            assert "Tracker Scrape Statistics" in output
-            # Should show multiple entries
-            assert output.count("Seeders") >= 1  # Table header
-            # Count info hash entries (truncated format)
-            assert output.count("...") >= 5  # Should show all 5 entries
+                try:
+                    # Populate scrape cache with multiple entries
+                    for i in range(5):
+                        info_hash = bytes([i] * 20)
+                        scrape_result = ScrapeResult(
+                            info_hash=info_hash,
+                            seeders=100 + i * 10,
+                            leechers=50 + i * 5,
+                            completed=1000 + i * 100,
+                            last_scrape_time=1234567890.0 + i,
+                            scrape_count=1,
+                        )
+                        async with session_manager.scrape_cache_lock:
+                            session_manager.scrape_cache[info_hash] = scrape_result
 
-        finally:
-            await session_manager.stop()
+                    # Test status display
+                    console = Console(file=StringIO(), width=120)
+                    from ccbt.executor.session_adapter import LocalSessionAdapter
+                    adapter = LocalSessionAdapter(session_manager)
+                    await show_status(adapter, console)
 
+                    output = console.file.getvalue()
+
+                    # Verify all entries are shown (up to 10)
+                    assert "Tracker Scrape Statistics" in output
+                    # Should show multiple entries
+                    assert output.count("Seeders") >= 1  # Table header
+                    # Count info hash entries (truncated format)
+                    assert output.count("...") >= 5  # Should show all 5 entries
+
+                finally:
+                    await session_manager.stop()

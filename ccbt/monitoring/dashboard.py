@@ -19,7 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ccbt.i18n import _
 from ccbt.utils.events import Event, EventType, emit_event
@@ -34,7 +34,9 @@ class TorrentFileNotFoundError(ValueError):
 
     def __init__(self, file_path: str):  # pragma: no cover
         """Initialize torrent file not found error."""
-        super().__init__(_(f"Torrent file not found: {file_path}"))  # pragma: no cover
+        super().__init__(
+            _("Torrent file not found: %s") % file_path
+        )  # pragma: no cover
 
 
 class InvalidTorrentExtensionError(ValueError):
@@ -43,7 +45,7 @@ class InvalidTorrentExtensionError(ValueError):
     def __init__(self, file_path: str):  # pragma: no cover
         """Initialize invalid torrent extension error."""
         super().__init__(
-            _(f"File must have .torrent extension: {file_path}")
+            _("File must have .torrent extension: %s") % file_path
         )  # pragma: no cover
 
 
@@ -165,7 +167,7 @@ class DashboardManager:
         name: str,
         dashboard_type: DashboardType,
         description: str = "",
-        widgets: list[Widget] | None = None,
+        widgets: Optional[list[Widget]] = None,
     ) -> str:
         """Create a new dashboard."""
         dashboard_id = f"dashboard_{int(time.time())}"
@@ -295,7 +297,7 @@ class DashboardManager:
 
         return False
 
-    def get_dashboard(self, dashboard_id: str) -> Dashboard | None:
+    def get_dashboard(self, dashboard_id: str) -> Optional[Dashboard]:
         """Get dashboard by ID."""
         return self.dashboards.get(dashboard_id)
 
@@ -303,7 +305,7 @@ class DashboardManager:
         """Get all dashboards."""
         return self.dashboards.copy()
 
-    def get_dashboard_data(self, dashboard_id: str) -> DashboardData | None:
+    def get_dashboard_data(self, dashboard_id: str) -> Optional[DashboardData]:
         """Get dashboard data."""
         return self.dashboard_data.get(dashboard_id)
 
@@ -515,7 +517,7 @@ class DashboardManager:
         )
         self.templates[DashboardType.SECURITY] = security_dashboard
 
-    def _widget_to_grafana_panel(self, widget: Widget) -> dict[str, Any] | None:
+    def _widget_to_grafana_panel(self, widget: Widget) -> Optional[dict[str, Any]]:
         """Convert widget to Grafana panel."""
         if widget.type == WidgetType.METRIC:
             return {
@@ -612,7 +614,7 @@ class DashboardManager:
         self,
         session: AsyncSessionManager,
         file_path: str,
-        _output_dir: str | None = None,
+        _output_dir: Optional[str] = None,
         resume: bool = False,
         download_limit: int = 0,
         upload_limit: int = 0,
@@ -674,7 +676,7 @@ class DashboardManager:
         self,
         session: AsyncSessionManager,
         magnet_uri: str,
-        _output_dir: str | None = None,
+        _output_dir: Optional[str] = None,
         resume: bool = False,
         download_limit: int = 0,
         upload_limit: int = 0,
@@ -737,29 +739,32 @@ class DashboardManager:
         try:
             path = Path(file_path)
             if not path.exists():
-                return {"valid": False, "error": _(f"File not found: {file_path}")}
+                return {"valid": False, "error": _("File not found: %s") % file_path}
 
             if not path.is_file():
-                return {"valid": False, "error": _(f"Path is not a file: {file_path}")}
+                return {
+                    "valid": False,
+                    "error": _("Path is not a file: %s") % file_path,
+                }
 
             if not file_path.lower().endswith(".torrent"):
                 return {
                     "valid": False,
-                    "error": _(f"File must have .torrent extension: {file_path}"),
+                    "error": _("File must have .torrent extension: %s") % file_path,
                 }
 
             # Check file size (basic validation)
             if path.stat().st_size == 0:
                 return {
                     "valid": False,
-                    "error": _(f"Torrent file is empty: {file_path}"),
+                    "error": _("Torrent file is empty: %s") % file_path,
                 }
 
             return {"valid": True, "path": str(path.absolute())}
         except Exception as e:  # pragma: no cover
             return {
                 "valid": False,
-                "error": _(f"Validation error: {e}"),
+                "error": _("Validation error: %s") % e,
             }  # pragma: no cover
 
     def validate_magnet_link(self, magnet_uri: str) -> dict[str, Any]:
@@ -798,7 +803,7 @@ class DashboardManager:
         except Exception as e:  # pragma: no cover
             return {
                 "valid": False,
-                "error": _(f"Validation error: {e}"),
+                "error": _("Validation error: %s") % e,
             }  # pragma: no cover
         else:
             return {"valid": True, "uri": magnet_uri}

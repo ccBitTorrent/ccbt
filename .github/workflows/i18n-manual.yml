@@ -1,0 +1,68 @@
+# Manual i18n pipeline: extract, msgmerge, fill English, validate, completeness, compile.
+# Run from Actions tab (workflow_dispatch) to validate translations on main or current branch.
+name: i18n (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run on (default: main)'
+        required: false
+        default: 'main'
+
+jobs:
+  i18n-full:
+    name: i18n full pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || 'main' }}
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Install gettext (msgmerge)
+        run: sudo apt-get update && sudo apt-get install -y gettext
+
+      - name: Extract translatable strings
+        run: uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
+
+      - name: Merge template into locale catalogs (msgmerge)
+        run: |
+          set -euo pipefail
+          POT=ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
+          for po in ccbt/i18n/locales/*/LC_MESSAGES/ccbt.po; do
+            msgmerge --update --backup=none --sort-output "$po" "$POT"
+          done
+
+      - name: Fill English catalog (msgstr = msgid for new entries)
+        run: uv run python -m ccbt.i18n.scripts.fill_english
+
+      - name: Validate .po files
+        run: uv run python -m ccbt.i18n.scripts.validate_po
+
+      - name: Check translation completeness
+        run: uv run python -m ccbt.i18n.scripts.check_completeness --output completeness_report.txt
+
+      - name: Upload completeness report
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-completeness-report
+          path: completeness_report.txt
+
+      - name: Compile .mo files
+        run: uv run python -m ccbt.i18n.scripts.compile_all

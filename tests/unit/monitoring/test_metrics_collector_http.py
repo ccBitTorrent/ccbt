@@ -70,12 +70,12 @@ class TestMetricsCollectorHTTPServer:
 
         # Patch HTTPServer.__init__ to raise OSError to simulate port in use
         from http.server import HTTPServer
-        
+
         original_init = HTTPServer.__init__
-        
+
         def raise_oserror(*args, **kwargs):
             raise OSError("Address already in use")
-        
+
         monkeypatch.setattr(HTTPServer, "__init__", raise_oserror)
 
         try:
@@ -146,7 +146,7 @@ class TestMetricsCollectorHTTPServer:
             pytest.skip("HTTP server not started")
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
@@ -158,17 +158,16 @@ def mock_config_enabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_disabled(monkeypatch):
     """Mock config with metrics disabled."""
     from unittest.mock import Mock
+
     import ccbt.monitoring as monitoring_module
 
     # Reset metrics singleton before each test
@@ -181,9 +180,7 @@ def mock_config_disabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

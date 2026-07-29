@@ -5,14 +5,13 @@ Tests URL building, response parsing, and error handling for HTTP tracker scrapi
 
 from __future__ import annotations
 
-import builtins
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import pytest_asyncio
 
-from ccbt.discovery.tracker import AsyncTrackerClient, TrackerError
 from ccbt.core.bencode import encode
+from ccbt.discovery.tracker import AsyncTrackerClient
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
@@ -243,12 +242,12 @@ class TestBuildScrapeURL:
         # but one key matches when converted to hex
         info_hash = b"x" * 20
         info_hash_hex = info_hash.hex()
-        
+
         # Create response with a key that will match via hex comparison
         # Note: In practice, if bytes match, exact match works. But we can test the loop path
         # by ensuring the exact match fails and then hex matches
         other_hash = b"y" * 20
-        
+
         response_dict = {
             b"files": {
                 other_hash: {  # Different hash first
@@ -280,25 +279,25 @@ class TestBuildScrapeURL:
         # 1. Exact match fails (info_hash not found)
         # 2. Loop finds a match via hex comparison
         # 3. Break is executed
-        
+
         # Create a hash to search for
         info_hash = b"x" * 20
         info_hash_hex = info_hash.hex()
-        
+
         # Create response with a different hash that has the same hex representation
         # This is impossible (same bytes = same hex), but we can test by ensuring
         # the loop iterates and the break condition is checked
-        
+
         # Actually, let's create a response where exact match doesn't exist,
         # so we iterate and find a match via hex (which will be the same since
         # if bytes match, exact match works)
-        
+
         # The best we can do is test that the loop path executes
         # by having multiple keys and ensuring we iterate through them
         other_hash1 = b"a" * 20
         other_hash2 = b"b" * 20
         matching_hash = b"x" * 20  # Same as info_hash
-        
+
         response_dict = {
             b"files": {
                 other_hash1: {
@@ -370,7 +369,7 @@ class TestBuildScrapeURL:
         info_hash = b"x" * 20
         matching_hash = b"x" * 20  # Same bytes, same hex
         other_hash = b"y" * 20
-        
+
         response_dict = {
             b"files": {
                 other_hash: {
@@ -385,39 +384,39 @@ class TestBuildScrapeURL:
                 },
             },
         }
-        from ccbt.core.bencode import encode, BencodeDecoder
-        
+        from ccbt.core.bencode import BencodeDecoder, encode
+
         data = encode(response_dict)
-        
+
         # Decode to get the structure
         decoder = BencodeDecoder(data)
         response = decoder.decode()
-        
+
         # Create custom files dict that returns None for exact match but allows iteration
         class HexMatchDict(dict):
             """Dict that forces hex matching by returning None for get()."""
             def __init__(self, source_dict):
                 super().__init__(source_dict)
-            
+
             def get(self, key, default=None):
                 # Force None for exact match to trigger hex matching loop
                 if key == info_hash:
                     return None
                 return super().get(key, default)
-        
+
         # Replace files dict with our custom one
         response[b"files"] = HexMatchDict(response[b"files"])
-        
+
         # Patch BencodeDecoder.decode to return our modified response
         # We need to match on data content, not object identity
         original_decode = BencodeDecoder.decode
-        
+
         def mock_decode(self):
             # Check if this is decoding our specific data by comparing bytes
-            if hasattr(self, 'data') and self.data == data:
+            if hasattr(self, "data") and self.data == data:
                 return response
             return original_decode(self)
-        
+
         with patch.object(BencodeDecoder, "decode", mock_decode):
             result = client._parse_scrape_response(data, info_hash)
             # Should find via hex matching loop (break at line 633)
@@ -429,10 +428,10 @@ class TestBuildScrapeURL:
         """Test UnicodeDecodeError in get_int_value (lines 658-661)."""
         # Create response with bytes value that cannot be decoded as UTF-8
         info_hash = b"x" * 20
-        
+
         # Create invalid UTF-8 bytes (e.g., 0xFF 0xFE sequence that's not valid UTF-8)
         invalid_utf8_bytes = b"\xff\xfe\x00\x01"  # Invalid UTF-8 sequence
-        
+
         response_dict = {
             b"files": {
                 info_hash: {
@@ -474,17 +473,17 @@ class TestBuildScrapeURL:
             },
         }
         from ccbt.core.bencode import encode
-        
+
         data = encode(response_dict)
-        
+
         # Test normal execution path (line 654 is defensive and not reachable in practice)
         result = client._parse_scrape_response(data, info_hash)
-        
+
         # Verify function works correctly
         assert result["seeders"] == 42
         assert result["leechers"] == 21
         assert result["completed"] == 84
-        
+
         # Note: Line 654 (else branch for non-bytes key) is defensive code that cannot
         # be tested via isinstance patching due to mock framework recursion issues.
         # This is acceptable as the branch is never executed in practice.

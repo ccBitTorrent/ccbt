@@ -9,17 +9,15 @@ Tests end-to-end SSL extension negotiation flow including:
 
 from __future__ import annotations
 
-import asyncio
-import json
 import struct
 import time
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.security, pytest.mark.extensions]
 
-from ccbt.extensions.manager import ExtensionManager, get_extension_manager
+from ccbt.extensions.manager import ExtensionManager
 from ccbt.extensions.protocol import ExtensionMessageType
 from ccbt.extensions.ssl import SSLMessageType, SSLNegotiationState
 from ccbt.models import Config
@@ -38,68 +36,90 @@ class TestSSLExtensionIntegration:
         # Encode handshake
         handshake_data = protocol_ext.encode_handshake()
 
-        # Decode to verify SSL extension is included
-        # Format: <length><message_id><json_data>
+        # Verify message format
+        # Format: <length><message_id><bencoded_data> (BEP 10 uses bencode, not JSON)
         length = struct.unpack("!I", handshake_data[:4])[0]
         message_id = handshake_data[4]
-        json_data = handshake_data[5:].decode("utf-8")
-        extensions = json.loads(json_data)
 
         assert message_id == ExtensionMessageType.EXTENDED
+
+        # Note: Use decode_handshake method which properly handles bencode decoding
+        # and converts bytes keys to strings
+        extensions = protocol_ext.decode_handshake(handshake_data)
+
         assert "ssl" in extensions
-        assert extensions["ssl"]["version"] == "1.0"
+        # Handle both bytes and string values (bencode may return bytes)
+        version = extensions["ssl"]["version"]
+        if isinstance(version, bytes):
+            version = version.decode("utf-8")
+        assert version == "1.0"
 
     @pytest.mark.asyncio
     async def test_ssl_extension_message_flow(self):
         """Test complete SSL extension message flow."""
-        manager = ExtensionManager()
-        # Start extensions to activate SSL extension
-        await manager.start()
+        config_data = {
+            "security": {
+                "ssl": {
+                    "enable_ssl_peers": True,
+                    "ssl_extension_enabled": True,
+                    "ssl_extension_timeout": 2.0,
+                    "ssl_extension_opportunistic": True,
+                }
+            }
+        }
+        config = Config(**config_data)
 
-        protocol_ext = manager.get_extension("protocol")
-        ssl_ext = manager.get_extension("ssl")
+        with patch("ccbt.extensions.manager.get_config", return_value=config):
+            manager = ExtensionManager()
+            # Start extensions to activate SSL extension
+            await manager.start()
 
-        peer_id = "integration_test_peer"
+            protocol_ext = manager.get_extension("protocol")
+            ssl_ext = manager.get_extension("ssl")
 
-        # Simulate peer extension handshake
-        peer_handshake = {"ssl": {"supports_ssl": True, "version": "1.0"}}
-        manager.set_peer_extensions(peer_id, peer_handshake)
+            peer_id = "integration_test_peer"
 
-        # Verify peer supports SSL extension
-        assert manager.peer_supports_extension(peer_id, "ssl")
+            # Simulate peer extension handshake
+            peer_handshake = {"ssl": {"supports_ssl": True, "version": "1.0"}}
+            manager.set_peer_extensions(peer_id, peer_handshake)
 
-        # Encode SSL request
-        request_data = ssl_ext.encode_request()
-        request_id = ssl_ext.decode_request(request_data)
+            # Verify peer supports SSL extension
+            assert manager.peer_supports_extension(peer_id, "ssl")
 
-        # Get SSL extension message ID
-        ssl_ext_info = protocol_ext.get_extension_info("ssl")
-        assert ssl_ext_info is not None
+            # Encode SSL request
+            request_data = ssl_ext.encode_request()
+            request_id = ssl_ext.decode_request(request_data)
 
-        # Encode as extension message
-        extension_message = protocol_ext.encode_extension_message(
-            ssl_ext_info.message_id, request_data
-        )
+            # Get SSL extension message ID
+            ssl_ext_info = protocol_ext.get_extension_info("ssl")
+            assert ssl_ext_info is not None
 
-        # Verify message format
-        # Extension message format: <length><extension_message_id><payload>
-        assert len(extension_message) >= 5
-        length, ext_msg_id = struct.unpack("!IB", extension_message[:5])
-        assert ext_msg_id == ssl_ext_info.message_id
+            # Encode as extension message
+            extension_message = protocol_ext.encode_extension_message(
+                ssl_ext_info.message_id, request_data
+            )
 
-        # Handle request (simulate peer receiving)
-        response = await manager.handle_ssl_message(peer_id, ssl_ext_info.message_id, request_data)
+            # Verify message format
+            # Extension message format: <length><extension_message_id><payload>
+            assert len(extension_message) >= 5
+            length, ext_msg_id = struct.unpack("!IB", extension_message[:5])
+            assert ext_msg_id == ssl_ext_info.message_id
 
-        # Verify response
-        assert response is not None
-        response_msg_type, response_request_id = struct.unpack("!BI", response)
-        assert response_msg_type == SSLMessageType.ACCEPT
-        assert response_request_id == request_id
+            # Handle request (simulate peer receiving)
+            response = await manager.handle_ssl_message(
+                peer_id, ssl_ext_info.message_id, request_data
+            )
 
-        # Verify negotiation state
-        negotiation_state = ssl_ext.get_negotiation_state(peer_id)
-        assert negotiation_state is not None
-        assert negotiation_state.state == "accepted"
+            # Verify response
+            assert response is not None
+            response_msg_type, response_request_id = struct.unpack("!BI", response)
+            assert response_msg_type == SSLMessageType.ACCEPT
+            assert response_request_id == request_id
+
+            # Verify negotiation state
+            negotiation_state = ssl_ext.get_negotiation_state(peer_id)
+            assert negotiation_state is not None
+            assert negotiation_state.state == "accepted"
 
     @pytest.mark.asyncio
     async def test_ssl_negotiation_with_mock_connection(self):
@@ -137,29 +157,29 @@ class TestSSLExtensionIntegration:
             )
             ssl_ext.negotiation_states[peer_id] = negotiation_state
 
-            with patch("ccbt.peer.ssl_peer.get_extension_manager", return_value=manager):
-                with patch.object(
-                    connection, "_send_ssl_extension_message", return_value=None
-                ) as mock_send:
-                    with patch.object(
-                        connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
-                    ) as mock_wrap:
-                        mock_ssl_reader = AsyncMock()
-                        mock_ssl_writer = AsyncMock()
-                        mock_wrap.return_value = (mock_ssl_reader, mock_ssl_writer, True)
+            connection.extension_manager = manager
+            with patch.object(
+                connection, "_send_ssl_extension_message", return_value=None
+            ) as mock_send, patch.object(
+                connection, "_wrap_connection_with_ssl", new_callable=AsyncMock
+            ) as mock_wrap:
+                mock_ssl_reader = AsyncMock()
+                mock_ssl_writer = AsyncMock()
+                mock_wrap.return_value = (mock_ssl_reader, mock_ssl_writer, True)
 
-                        mock_reader = AsyncMock()
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                        result = await connection.negotiate_ssl_after_handshake(
-                            mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
-                        )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
+                )
 
-                        # Should return SSL reader/writer
-                        assert result is not None
-                        assert result[0] == mock_ssl_reader
-                        assert result[1] == mock_ssl_writer
-                        mock_send.assert_called_once()
-                        mock_wrap.assert_called_once()
+                # Should return SSL reader/writer
+                assert result is not None
+                assert result[0] == mock_ssl_reader
+                assert result[1] == mock_ssl_writer
+                mock_send.assert_called_once()
+                mock_wrap.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_ssl_negotiation_fallback_on_timeout(self):
@@ -192,19 +212,19 @@ class TestSSLExtensionIntegration:
             )
             ssl_ext.negotiation_states[peer_id] = negotiation_state
 
-            with patch("ccbt.peer.ssl_peer.get_extension_manager", return_value=manager):
-                with patch.object(
-                    connection, "_send_ssl_extension_message", return_value=None
-                ):
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+            connection.extension_manager = manager
+            with patch.object(
+                connection, "_send_ssl_extension_message", return_value=None
+            ):
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
+                )
 
-                    # Should return None (fallback to plain) due to timeout
-                    assert result is None
+                # Should return None (fallback to plain) due to timeout
+                assert result is None
 
     @pytest.mark.asyncio
     async def test_ssl_negotiation_fallback_on_rejection(self):
@@ -237,19 +257,19 @@ class TestSSLExtensionIntegration:
             )
             ssl_ext.negotiation_states[peer_id] = negotiation_state
 
-            with patch("ccbt.peer.ssl_peer.get_extension_manager", return_value=manager):
-                with patch.object(
-                    connection, "_send_ssl_extension_message", return_value=None
-                ):
-                    mock_reader = AsyncMock()
-                    mock_writer = AsyncMock()
+            connection.extension_manager = manager
+            with patch.object(
+                connection, "_send_ssl_extension_message", return_value=None
+            ):
+                mock_reader = AsyncMock()
+                mock_writer = AsyncMock()
 
-                    result = await connection.negotiate_ssl_after_handshake(
-                        mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
-                    )
+                result = await connection.negotiate_ssl_after_handshake(
+                    mock_reader, mock_writer, peer_id, "127.0.0.1", 6881
+                )
 
-                    # Should return None (fallback to plain) due to rejection
-                    assert result is None
+                # Should return None (fallback to plain) due to rejection
+                assert result is None
 
     @pytest.mark.asyncio
     async def test_ssl_extension_handshake_decoding(self):

@@ -6,7 +6,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.security]
 
-from ccbt.security.security_manager import PeerReputation, SecurityManager, ThreatType
+from ccbt.security.security_manager import PeerReputation
 
 
 class TestPeerReputation:

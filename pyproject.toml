@@ -6,8 +6,8 @@ build-backend = "hatchling.build"
 name = "ccbt"
 version = "0.1.0"
 description = "The Easiest , Smallest & Fastest High-performance BitTorrent Client With All The Features"
-readme = "docs/README_PyPI.md"
-requires-python = ">=3.8"
+readme = "dev/README_PyPI.md"
+requires-python = ">=3.9"
 license = {text = "GPL-2.0"}
 authors = [
     {name = "ccBitTorrent Contributors", email = "joseph.pollack@emle.eu"},
@@ -19,7 +19,6 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -39,24 +38,30 @@ dependencies = [
     "rich>=14.2.0",
     "click>=8.1.8",
     "msgpack>=1.1.1",
-    "textual>=0.73.0",
+    "textual>=8.0.0",
     "cryptography>=46.0.3",
     "pyyaml>=6.0.3",
     "defusedxml>=0.7.1",
     "aiohttp-socks>=0.10.1",
     "aiortc>=1.9.0",
     "prometheus-client>=0.21.1",
-    "av>=12.3.0",
     "netifaces>=0.11.0; platform_system != 'Windows'",
     "liburing>=0.0.1; sys_platform == 'linux'",
     "ipfshttpclient>=0.8.0a2",
     "multiaddr>=0.0.9",
     "multiformats>=0.3.1.post4",
+    "av>=14.0.0,<14.3.0; python_full_version == '3.9.*'",
     "blake3>=1.0.8",
     "lz4>=4.3.3",
+    "watchdog>=4.0.2",
+    "eval-type-backport>=0.3.1 ; python_full_version < '3.10'",
 ]
 
 [project.optional-dependencies]
+media = [
+    "av>=12.3.0",
+]
+
 dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=0.24.0",
@@ -76,19 +81,11 @@ dev = [
     "mkdocs-git-revision-date-localized-plugin>=1.4.7",
     "mkdocstrings[python]>=0.26.1",
     "pymdown-extensions>=10.15",
-    "mkdocs-codeinclude-plugin>=0.2.1",
+    "mkdocs-static-i18n>=1.0.0",
+    "mkdocs-blog-plugin>=0.25.0",
     "ty>=0.0.1a24",
-    "textual-dev>=1.6.1",
+    "textual-dev>=1.7.0",
 ]
-metrics-endpoint = [
-]
-webrtc = [
-]
-nat = [
-]
-proxy = [
-]
-
 
 [project.urls]
 Homepage = "https://github.com/ccBittorrent/ccbt"
@@ -112,7 +109,12 @@ ccbt = ["py.typed", "i18n/locales/**/*.mo"]
 [tool.ruff]
 target-version = "py38"
 line-length = 88
-exclude = ["tests/", "benchmarks/"]
+exclude = [
+    "tests/",
+    "benchmarks/",
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
+]
 select = [
     "E4",   # pycodestyle errors
     "E7",   # pycodestyle errors
@@ -191,15 +193,6 @@ max-branches = 12
 max-returns = 6
 max-statements = 50
 
-[tool.ruff.lint.pylint.messages-control]
-disable = [
-    "too-few-public-methods",
-    "too-many-arguments",
-    "too-many-branches",
-    "too-many-locals",
-    "too-many-statements",
-]
-
 # Pytest configuration
 # Coverage configuration
 [tool.coverage.run]
@@ -234,6 +227,12 @@ omit = [
     "*/py.typed",
     # Exclude root-level wrapper modules (re-export from core)
     "ccbt/bencode.py",  # Wrapper re-exporting from core.bencode
+    # Exclude CLI and UI from coverage by design
+    "ccbt/cli/*",
+    "ccbt/interface/*",
+    "ccbt/interface/*/*",
+    "ccbt/interface/*/*/*",
+    "ccbt/interface/*/*/*/*",
 ]
 # Note: We include __init__.py files as they may contain package initialization logic
 
@@ -272,6 +271,8 @@ exclude_dirs = [
     ".ruff_cache",
     ".venv",
     "benchmarks",
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
     "dev",
     "dist",
     "docs",
@@ -312,11 +313,13 @@ dev = [
     "pylint>=3.0.0",
     "ruff>=0.14.2",
     "safety>=2.0.0",
-    "textual-dev>=1.6.1",
+    "textual-dev>=1.7.0",
     "ty>=0.0.1a24",
     "mkdocs-coverage>=1.1.0",
-    "mkdocs-codeinclude-plugin>=0.2.1",
+    "mkdocs-static-i18n>=1.0.0",
+    "mkdocs-blog-plugin>=0.25.0",
     "types-pyyaml>=6.0.12.20241230",
+    "deep-translator>=1.11.4",
 ]
 
  

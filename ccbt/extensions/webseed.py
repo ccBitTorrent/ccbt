@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 from urllib.parse import urlparse
 
 import aiohttp
@@ -29,7 +29,7 @@ class WebSeedInfo:
     """WebSeed information."""
 
     url: str
-    name: str | None = None
+    name: Optional[str] = None
     is_active: bool = True
     last_accessed: float = 0.0
     bytes_downloaded: int = 0
@@ -45,7 +45,7 @@ class WebSeedExtension:
         import logging
 
         self.webseeds: dict[str, WebSeedInfo] = {}
-        self.session: aiohttp.ClientSession | None = None
+        self.session: Optional[aiohttp.ClientSession] = None
         self.timeout = aiohttp.ClientTimeout(total=30.0)
         self.logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class WebSeedExtension:
                 timeout=self.timeout, connector=connector
             )
 
-    def _create_connector(self) -> aiohttp.BaseConnector | None:
+    def _create_connector(self) -> Optional[aiohttp.BaseConnector]:
         """Create appropriate connector (proxy or direct).
 
         Returns:
@@ -100,10 +100,45 @@ class WebSeedExtension:
     async def stop(self) -> None:
         """Stop WebSeed extension."""
         if self.session:
-            await self.session.close()
-            self.session = None
+            try:
+                if not self.session.closed:
+                    await self.session.close()
+                    # Note: Wait for session to fully close (especially on Windows)
+                    # This prevents "Unclosed client session" warnings
+                    import sys
 
-    def add_webseed(self, url: str, name: str | None = None) -> str:
+                    if sys.platform == "win32":
+                        await asyncio.sleep(0.2)
+                    else:
+                        await asyncio.sleep(0.1)
+
+                    # Note: Close connector explicitly to ensure complete cleanup
+                    # This is especially important on Windows where connector cleanup can be delayed
+                    if hasattr(self.session, "connector") and self.session.connector:
+                        connector = self.session.connector
+                        if not connector.closed:
+                            try:
+                                await connector.close()
+                                if sys.platform == "win32":
+                                    await asyncio.sleep(
+                                        0.1
+                                    )  # Additional wait for connector cleanup on Windows
+                            except Exception as e:
+                                self.logger.debug("Error closing connector: %s", e)
+            except Exception as e:
+                self.logger.debug("Error closing WebSeed session: %s", e)
+                # Note: Even if close() fails, try to clean up connector
+                try:
+                    if hasattr(self.session, "connector") and self.session.connector:
+                        connector = self.session.connector
+                        if not connector.closed:
+                            await connector.close()
+                except Exception:
+                    pass
+            finally:
+                self.session = None
+
+    def add_webseed(self, url: str, name: Optional[str] = None) -> str:
         """Add WebSeed URL."""
         webseed_id = url
         self.webseeds[webseed_id] = WebSeedInfo(
@@ -160,7 +195,7 @@ class WebSeedExtension:
                 # No event loop running, skip event emission
                 pass
 
-    def get_webseed(self, webseed_id: str) -> WebSeedInfo | None:
+    def get_webseed(self, webseed_id: str) -> Optional[WebSeedInfo]:
         """Get WebSeed information."""
         return self.webseeds.get(webseed_id)
 
@@ -173,7 +208,7 @@ class WebSeedExtension:
         webseed_id: str,
         piece_info: PieceInfo,
         _piece_data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Download piece from WebSeed."""
         if webseed_id not in self.webseeds:
             return None
@@ -292,7 +327,7 @@ class WebSeedExtension:
         webseed_id: str,
         start_byte: int,
         length: int,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Download specific byte range from WebSeed."""
         if webseed_id not in self.webseeds:
             return None
@@ -366,7 +401,7 @@ class WebSeedExtension:
 
             return None
 
-    def get_best_webseed(self) -> str | None:
+    def get_best_webseed(self) -> Optional[str]:
         """Get best WebSeed based on success rate and activity."""
         if not self.webseeds:
             return None
@@ -392,7 +427,7 @@ class WebSeedExtension:
 
         return best_webseed_id
 
-    def get_webseed_statistics(self, webseed_id: str) -> dict[str, Any] | None:
+    def get_webseed_statistics(self, webseed_id: str) -> Optional[dict[str, Any]]:
         """Get WebSeed statistics."""
         webseed = self.webseeds.get(webseed_id)
         if not webseed:

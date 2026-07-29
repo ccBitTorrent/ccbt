@@ -1,19 +1,25 @@
+"""Metrics and status monitoring for torrent sessions."""
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 
-from ccbt.session.models import SessionContext
 from ccbt.session.tasks import TaskSupervisor
+
+if TYPE_CHECKING:
+    from ccbt.session.models import SessionContext
 
 
 class MetricsAndStatus:
     """Status aggregation and metrics emission helper for session/manager."""
 
     def __init__(
-        self, ctx: SessionContext, tasks: TaskSupervisor | None = None
+        self, ctx: SessionContext, tasks: Optional[TaskSupervisor] = None
     ) -> None:
+        """Initialize the metrics and status helper with session context and optional task supervisor."""
         self._ctx = ctx
         self._tasks = tasks or TaskSupervisor()
 
@@ -38,7 +44,8 @@ class MetricsAndStatus:
             total_downloaded += torrent.downloaded_bytes
             total_uploaded += torrent.uploaded_bytes
             total_left += torrent.left_bytes
-            total_peers += len(torrent.peers)
+            # Session.peers is {"count": n}; use count, not len(dict)
+            total_peers += (getattr(torrent, "peers", None) or {}).get("count", 0)
             total_download_rate += torrent.download_rate
             total_upload_rate += torrent.upload_rate
 
@@ -74,12 +81,14 @@ class StatusLoop:
     """Periodic status monitor loop extracted from session."""
 
     def __init__(self, session: Any) -> None:
+        """Initialize the status loop with an AsyncTorrentSession instance."""
         self.s = session  # AsyncTorrentSession instance
 
     async def run(self) -> None:
+        """Run the status monitoring loop."""
         consecutive_errors = 0
         max_consecutive_errors = 10
-        while not self.s._stop_event.is_set():
+        while not self.s.is_stopped():
             try:
                 if not self.s.download_manager:
                     self.s.logger.debug(
@@ -130,21 +139,225 @@ class StatusLoop:
                     getattr(self.s.download_manager, "peer_manager", None)
                     or self.s.peer_manager
                 )
+                connection_summary: Optional[dict[str, int]] = None
+                local_requestable_from_summary: Optional[int] = None
                 if peer_manager and hasattr(peer_manager, "connections"):
                     try:
-                        actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
-                        status["peers"] = actual_peer_count
-                        status["connected_peers"] = actual_peer_count
-                    except Exception:
-                        pass
+                        if hasattr(peer_manager, "get_connection_summary"):
+                            connection_summary = (
+                                await peer_manager.get_connection_summary()
+                            )  # type: ignore[attr-defined]
+                            status["connected_peers"] = connection_summary.get(
+                                "active_connections", 0
+                            )
+                            status["total_connections"] = connection_summary.get(
+                                "total_connections", 0
+                            )
+                            status["requestable_peers"] = connection_summary.get(
+                                "requestable_connections", 0
+                            )
+                            status["remote_choked_peers"] = connection_summary.get(
+                                "remote_choked_connections", 0
+                            )
+                            status["pipeline_saturated_peers"] = connection_summary.get(
+                                "pipeline_saturated_connections", 0
+                            )
+                            status["productive_peers"] = connection_summary.get(
+                                "productive_connections", 0
+                            )
+                            status["handshake_complete_peers"] = connection_summary.get(
+                                "handshake_complete_connections", 0
+                            )
+                            status["extension_capable_peers"] = connection_summary.get(
+                                "extension_capable_connections", 0
+                            )
+                            status["metadata_capable_peers"] = connection_summary.get(
+                                "metadata_capable_connections", 0
+                            )
+                            local_requestable_from_summary = int(
+                                connection_summary.get("requestable_connections", 0)
+                                or 0
+                            )
+                            status["terminal_disconnected_connections"] = int(
+                                connection_summary.get(
+                                    "terminal_disconnected_connections", 0
+                                )
+                                or 0
+                            )
+                            status["error_state_connections"] = int(
+                                connection_summary.get("error_state_connections", 0)
+                                or 0
+                            )
+                            status["no_stream_connections"] = int(
+                                connection_summary.get("no_stream_connections", 0) or 0
+                            )
+                        else:
+                            actual_peer_count = len(peer_manager.connections)  # type: ignore[attr-defined]
+                            status["connected_peers"] = actual_peer_count
+                            status["total_connections"] = actual_peer_count
+                    except Exception as exc:
+                        self.s.logger.debug(
+                            "Failed to read peer connection summary for %s: %s",
+                            getattr(self.s, "info_hash", getattr(self.s, "info", None)),
+                            exc,
+                        )
 
-                connected_peers = status.get("connected_peers", status.get("peers", 0))
+                connected_peers = status.get("connected_peers", 0)
+                productive_peers = status.get("productive_peers", connected_peers)
+                requestable_peers = status.get("requestable_peers", 0)
+                remote_choked_peers = int(status.get("remote_choked_peers", 0) or 0)
+                pipeline_saturated_peers = int(
+                    status.get("pipeline_saturated_peers", 0) or 0
+                )
+                handshake_complete_peers = int(
+                    status.get("handshake_complete_peers", 0) or 0
+                )
+                extension_capable_peers = int(
+                    status.get("extension_capable_peers", 0) or 0
+                )
+                metadata_capable_peers = int(
+                    status.get("metadata_capable_peers", 0) or 0
+                )
                 download_rate = status.get("download_rate", 0.0)
                 upload_rate = status.get("upload_rate", 0.0)
                 download_complete = status.get(
                     "download_complete", status.get("completed", False)
                 )
                 progress = status.get("progress", 0.0)
+                peers_with_piece_info = 0
+                piece_metrics: dict[str, Any] = {}
+                if self.s.piece_manager:
+                    with contextlib.suppress(Exception):
+                        peers_with_piece_info = len(
+                            getattr(self.s.piece_manager, "peer_availability", {})
+                        )
+                    with contextlib.suppress(Exception):
+                        piece_metrics = (
+                            self.s.piece_manager.get_piece_selection_metrics()
+                        )
+                swarm_state: Optional[dict[str, Any]] = None
+                if hasattr(self.s, "_get_swarm_recovery_state"):
+                    with contextlib.suppress(Exception):
+                        swarm_state = await self.s._get_swarm_recovery_state()  # noqa: SLF001
+                if swarm_state is not None:
+                    pd_metrics = getattr(self.s, "_peer_discovery_metrics", None)
+                    if isinstance(pd_metrics, dict):
+                        status["peer_discovery_queued_reentrant_cycles"] = int(
+                            pd_metrics.get("queued_reentrant_non_progress_cycles", 0)
+                            or 0
+                        )
+                        status["peer_discovery_outbound_pending_depth"] = int(
+                            pd_metrics.get("outbound_pending_peer_queue_depth", 0) or 0
+                        )
+                    if bool(swarm_state.get("peer_manager_swarm_inputs")):
+                        summary_active = int(
+                            swarm_state.get("summary_active_connections", 0) or 0
+                        )
+                        transport_live = int(
+                            swarm_state.get("transport_live_peers", 0) or 0
+                        )
+                        status["summary_active_connections"] = summary_active
+                        status["transport_live_peers"] = transport_live
+                        connected_from_swarm = int(
+                            swarm_state.get("active_peers", 0) or 0
+                        )
+                        productive_from_swarm = int(
+                            swarm_state.get("productive_peers", 0) or 0
+                        )
+                        requestable_from_swarm = int(
+                            swarm_state.get("requestable_peers", 0) or 0
+                        )
+                        remote_choked_from_swarm = int(
+                            swarm_state.get("remote_choked_peers", 0) or 0
+                        )
+                        pipeline_saturated_from_swarm = int(
+                            swarm_state.get("pipeline_saturated_peers", 0) or 0
+                        )
+                        handshake_complete_from_swarm = int(
+                            swarm_state.get("handshake_complete_peers", 0) or 0
+                        )
+                        extension_capable_from_swarm = int(
+                            swarm_state.get("extension_capable_peers", 0) or 0
+                        )
+                        metadata_capable_from_swarm = int(
+                            swarm_state.get("metadata_capable_peers", 0) or 0
+                        )
+                        piece_info_from_swarm = int(
+                            swarm_state.get("peers_with_piece_info", 0) or 0
+                        )
+                        # Transport-aligned peer count (matches piece pipeline).
+                        connected_peers = connected_from_swarm
+                        if productive_from_swarm > 0 or productive_peers == 0:
+                            productive_peers = productive_from_swarm
+                        remote_choked_peers = remote_choked_from_swarm
+                        pipeline_saturated_peers = pipeline_saturated_from_swarm
+                        requestable_peers = max(
+                            int(requestable_peers or 0),
+                            int(local_requestable_from_summary or 0),
+                            requestable_from_swarm,
+                        )
+                        if (
+                            handshake_complete_from_swarm > 0
+                            or handshake_complete_peers == 0
+                        ):
+                            handshake_complete_peers = handshake_complete_from_swarm
+                        if (
+                            extension_capable_from_swarm > 0
+                            or extension_capable_peers == 0
+                        ):
+                            extension_capable_peers = extension_capable_from_swarm
+                        if (
+                            metadata_capable_from_swarm > 0
+                            or metadata_capable_peers == 0
+                        ):
+                            metadata_capable_peers = metadata_capable_from_swarm
+                        if piece_info_from_swarm > 0 or peers_with_piece_info == 0:
+                            peers_with_piece_info = piece_info_from_swarm
+                active_block_requests = int(
+                    piece_metrics.get("active_block_requests", 0) or 0
+                )
+                hash_verification_failures = int(
+                    piece_metrics.get("hash_verification_failures", 0) or 0
+                )
+                metadata_incomplete = bool(
+                    self.s._metadata_is_incomplete()  # noqa: SLF001
+                    if hasattr(self.s, "_metadata_is_incomplete")
+                    else False
+                )
+                dht_client = getattr(
+                    getattr(self.s, "session_manager", None), "dht_client", None
+                )
+                routing_table_size = 0
+                if dht_client is not None:
+                    with contextlib.suppress(Exception):
+                        routing_table_size = len(
+                            getattr(
+                                getattr(dht_client, "routing_table", None),
+                                "nodes",
+                                [],
+                            )
+                        )
+                tracker_anomalies = 0
+                tracker = getattr(self.s, "tracker", None)
+                if tracker and hasattr(tracker, "get_session_metrics"):
+                    with contextlib.suppress(Exception):
+                        tracker_metrics = tracker.get_session_metrics()
+                        tracker_anomalies = sum(
+                            int(metrics.get("resolution_anomaly_count", 0) or 0)
+                            for metrics in tracker_metrics.values()
+                            if isinstance(metrics, dict)
+                        )
+                if tracker_anomalies > 0 and (
+                    getattr(self.s, "_last_tracker_resolution_anomalies", None)
+                    != tracker_anomalies
+                ):
+                    vars(self.s)["_last_tracker_resolution_anomalies"] = (
+                        tracker_anomalies
+                    )
+                    self.s.logger.warning(
+                        "TRACKER_RESOLUTION_ANOMALY: Detected %d tracker resolution anomaly/anomalies (public tracker hostname resolved to loopback/private address during fallback or connect).",
+                        tracker_anomalies,
+                    )
 
                 if hasattr(self.s.download_manager, "download_complete"):
                     try:
@@ -174,17 +387,20 @@ class StatusLoop:
                                 if hasattr(self.s.piece_manager, "num_pieces")
                                 else 0
                             )
-                            if verified_count == total_pieces and total_pieces > 0:
-                                if (
+                            if (
+                                verified_count == total_pieces
+                                and total_pieces > 0
+                                and (
                                     download_rate > 0
                                     or connected_peers > 0
                                     or hasattr(self.s, "_download_start_time")
-                                ):
-                                    self.s.info.status = "seeding"
-                                    self.s.logger.info(
-                                        "Download progress 100%%, status changed to seeding: %s",
-                                        self.s.info.name,
-                                    )
+                                )
+                            ):
+                                self.s.info.status = "seeding"
+                                self.s.logger.info(
+                                    "Download progress 100%%, status changed to seeding: %s",
+                                    self.s.info.name,
+                                )
                         else:
                             self.s.logger.warning(
                                 "Progress reports 100%% but piece_manager not available for %s. Not switching to seeding.",
@@ -205,32 +421,363 @@ class StatusLoop:
                         )
                 elif (
                     self.s.info.status == "downloading"
-                    and connected_peers == 0
+                    and productive_peers == 0
                     and download_rate == 0.0
                 ):
-                    self.s.logger.debug(
-                        "Download appears idle (no peers, no rate): %s. Progress: %.1f%%",
+                    self.s.logger.warning(
+                        "Download appears stalled (connected=%d, productive=%d, requestable=%d, piece_info=%d, active_requests=%d, hash_failures=%d, rate=%.1f, summary=%s): %s. Progress: %.1f%%",
+                        connected_peers,
+                        productive_peers,
+                        requestable_peers,
+                        peers_with_piece_info,
+                        active_block_requests,
+                        hash_verification_failures,
+                        download_rate,
+                        connection_summary,
                         self.s.info.name,
                         progress * 100,
                     )
+                    if connected_peers > 0 and peers_with_piece_info == 0:
+                        no_piece_info_marker = (
+                            connected_peers,
+                            requestable_peers,
+                            active_block_requests,
+                            hash_verification_failures,
+                        )
+                        if (
+                            getattr(self.s, "_last_no_piece_info_marker", None)
+                            != no_piece_info_marker
+                        ):
+                            vars(self.s)["_last_no_piece_info_marker"] = (
+                                no_piece_info_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[connected_no_availability]: metadata is complete but connected peers still have no piece availability "
+                                "(connected=%d, requestable=%d, active_requests=%d, hash_failures=%d): %s",
+                                connected_peers,
+                                requestable_peers,
+                                active_block_requests,
+                                hash_verification_failures,
+                                self.s.info.name,
+                            )
+                    if (
+                        metadata_incomplete
+                        and handshake_complete_peers > 0
+                        and extension_capable_peers == 0
+                    ):
+                        handshake_no_extension_marker = (
+                            connected_peers,
+                            handshake_complete_peers,
+                            metadata_capable_peers,
+                        )
+                        if (
+                            getattr(self.s, "_last_handshake_no_extension_marker", None)
+                            != handshake_no_extension_marker
+                        ):
+                            vars(self.s)["_last_handshake_no_extension_marker"] = (
+                                handshake_no_extension_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[handshake_complete_but_no_extension]: peers are completing the base handshake but none advertise BEP 10 support "
+                                "(connected=%d, handshake_complete=%d, metadata_capable=%d): %s",
+                                connected_peers,
+                                handshake_complete_peers,
+                                metadata_capable_peers,
+                                self.s.info.name,
+                            )
+                    if (
+                        metadata_incomplete
+                        and extension_capable_peers > 0
+                        and metadata_capable_peers == 0
+                    ):
+                        extension_no_metadata_marker = (
+                            connected_peers,
+                            handshake_complete_peers,
+                            extension_capable_peers,
+                        )
+                        if (
+                            getattr(self.s, "_last_extension_no_metadata_marker", None)
+                            != extension_no_metadata_marker
+                        ):
+                            vars(self.s)["_last_extension_no_metadata_marker"] = (
+                                extension_no_metadata_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[extension_complete_but_no_metadata]: peers advertise extension support but none have progressed to ut_metadata capability "
+                                "(connected=%d, handshake_complete=%d, extension_capable=%d): %s",
+                                connected_peers,
+                                handshake_complete_peers,
+                                extension_capable_peers,
+                                self.s.info.name,
+                            )
+                    if (
+                        connected_peers > 0
+                        and peers_with_piece_info > 0
+                        and requestable_peers == 0
+                    ):
+                        no_requestable_marker = (
+                            connected_peers,
+                            peers_with_piece_info,
+                            active_block_requests,
+                            hash_verification_failures,
+                        )
+                        if (
+                            getattr(self.s, "_last_no_requestable_marker", None)
+                            != no_requestable_marker
+                        ):
+                            vars(self.s)["_last_no_requestable_marker"] = (
+                                no_requestable_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[availability_no_requestable_peers]: peers have advertised availability but none are currently requestable "
+                                "(connected=%d, piece_info=%d, active_requests=%d, hash_failures=%d): %s",
+                                connected_peers,
+                                peers_with_piece_info,
+                                active_block_requests,
+                                hash_verification_failures,
+                                self.s.info.name,
+                            )
+                    if (
+                        metadata_incomplete
+                        and routing_table_size == 0
+                        and connected_peers == 0
+                        and productive_peers == 0
+                    ):
+                        zero_node_marker = (
+                            connected_peers,
+                            productive_peers,
+                            routing_table_size,
+                        )
+                        if (
+                            getattr(self.s, "_last_zero_node_dht_marker", None)
+                            != zero_node_marker
+                        ):
+                            vars(self.s)["_last_zero_node_dht_marker"] = (
+                                zero_node_marker
+                            )
+                            self.s.logger.warning(
+                                "STALL_MARKER[zero_node_dht_lookup]: metadata is incomplete, no productive peers exist, and the DHT routing table is empty "
+                                "(connected=%d, productive=%d, routing_table_size=%d): %s",
+                                connected_peers,
+                                productive_peers,
+                                routing_table_size,
+                                self.s.info.name,
+                            )
+                    if active_block_requests > 0:
+                        stall_marker = (
+                            connected_peers,
+                            productive_peers,
+                            requestable_peers,
+                            peers_with_piece_info,
+                            active_block_requests,
+                            hash_verification_failures,
+                        )
+                        if getattr(self.s, "_last_stall_marker", None) != stall_marker:
+                            vars(self.s)["_last_stall_marker"] = stall_marker
+                            self.s.logger.warning(
+                                "STALL_MARKER[requests_outstanding_no_productive_peers]: downloading with outstanding requests but zero productive peers "
+                                "(connected=%d, requestable=%d, piece_info=%d, active_requests=%d, hash_failures=%d): %s",
+                                connected_peers,
+                                requestable_peers,
+                                peers_with_piece_info,
+                                active_block_requests,
+                                hash_verification_failures,
+                                self.s.info.name,
+                            )
+                    request_resume = (
+                        getattr(peer_manager, "request_pending_resume", None)
+                        if peer_manager is not None
+                        else None
+                    )
+                    if callable(request_resume):
+                        with contextlib.suppress(Exception):
+                            request_resume(reason="status_loop_stall")
 
-                # Update cached status
-                self.s._cached_status = {
-                    "downloaded": 0,
-                    "uploaded": 0,
-                    "left": 0,
-                    "peers": connected_peers,
+                with contextlib.suppress(Exception):
+                    self.s._touch_swarm_usefulness_latency_metrics(  # noqa: SLF001
+                        int(requestable_peers or 0),
+                        int(productive_peers or 0),
+                    )
+                # Track sustained active/requestable divergence for collapse diagnostics.
+                if int(connected_peers or 0) > 0 and int(requestable_peers or 0) == 0:
+                    started = float(
+                        getattr(
+                            self.s, "_active_requestable_divergence_started_at", 0.0
+                        )
+                        or 0.0
+                    )
+                    if started <= 0.0:
+                        vars(self.s)["_active_requestable_divergence_started_at"] = (
+                            time.monotonic()
+                        )
+                    divergence_s = max(
+                        0.0,
+                        time.monotonic()
+                        - float(
+                            getattr(
+                                self.s, "_active_requestable_divergence_started_at", 0.0
+                            )
+                            or 0.0
+                        ),
+                    )
+                else:
+                    vars(self.s)["_active_requestable_divergence_started_at"] = 0.0
+                    divergence_s = 0.0
+                status["active_requestable_divergence_s"] = float(divergence_s)
+                inbound_probation_depth = int(
+                    getattr(peer_manager, "_inbound_probation_wait_queue_depth", 0) or 0
+                )
+                status["inbound_probation_queue_depth"] = inbound_probation_depth
+                status["outbound_pending_depth"] = int(
+                    (
+                        getattr(peer_manager, "_pending_peer_queue", None)
+                        and len(getattr(peer_manager, "_pending_peer_queue", []))
+                    )
+                    or 0
+                )
+                status["metadata_incomplete"] = metadata_incomplete
+                discovery_metrics = getattr(self.s, "_peer_discovery_metrics", {}) or {}
+                status["ingress_hold_deferred_total"] = int(
+                    discovery_metrics.get("ingress_hold_deferred_total", 0) or 0
+                )
+                stage_counters = (
+                    getattr(peer_manager, "_connection_stage_counters", {}) or {}
+                )
+                handshake_received = int(
+                    stage_counters.get("handshake_received", 0) or 0
+                )
+                status["handshake_received"] = handshake_received
+                mse_attempted = int(stage_counters.get("mse_attempted", 0) or 0)
+                mse_fallback = int(stage_counters.get("mse_fallback_plain", 0) or 0)
+                status["mse_fallback_rate"] = (
+                    float(mse_fallback) / float(mse_attempted)
+                    if mse_attempted > 0
+                    else 0.0
+                )
+                tcp_server = getattr(
+                    getattr(self.s, "session_manager", None), "tcp_server", None
+                )
+                inbound_unknown_total = 0
+                if tcp_server is not None:
+                    with contextlib.suppress(Exception):
+                        inbound_unknown_total = sum(
+                            int(v)
+                            for v in getattr(
+                                tcp_server, "_inbound_unknown_hash_counts", {}
+                            ).values()
+                        )
+                status["inbound_unknown_total"] = inbound_unknown_total
+                status["inbound_outbound_fairness_pressure"] = float(
+                    inbound_probation_depth
+                ) / max(1.0, float(status["outbound_pending_depth"] or 0.0))
+                suppressed_cycles = int(
+                    getattr(peer_manager, "_reconnection_suppressed_cycles_total", 0)
+                    or 0
+                )
+                forced_cycles = int(
+                    getattr(
+                        peer_manager, "_reconnection_forced_overlap_cycles_total", 0
+                    )
+                    or 0
+                )
+                duty_denom = max(1, suppressed_cycles + forced_cycles)
+                status["backlog_suppression_duty_cycle"] = float(
+                    suppressed_cycles / duty_denom
+                )
+                zero_node_start = float(
+                    getattr(self.s, "_zero_node_dht_started_at", 0.0) or 0.0
+                )
+                if routing_table_size == 0 and metadata_incomplete:
+                    if zero_node_start <= 0.0:
+                        vars(self.s)["_zero_node_dht_started_at"] = time.monotonic()
+                        zero_node_start = float(
+                            getattr(self.s, "_zero_node_dht_started_at", 0.0) or 0.0
+                        )
+                    status["dht_zero_node_duration_s"] = max(
+                        0.0, time.monotonic() - zero_node_start
+                    )
+                else:
+                    vars(self.s)["_zero_node_dht_started_at"] = 0.0
+                    status["dht_zero_node_duration_s"] = 0.0
+
+                # Update cached status (canonical keys; preserve byte counters)
+                # Use setattr to avoid SLF001 for internal cache
+                cached_status = {
+                    "downloaded": status.get("downloaded", 0),
+                    "uploaded": status.get("uploaded", 0),
+                    "left": status.get("left", 0),
+                    "connected_peers": connected_peers,
+                    "productive_peers": productive_peers,
+                    "requestable_peers": requestable_peers,
+                    "remote_choked_peers": remote_choked_peers,
+                    "pipeline_saturated_peers": pipeline_saturated_peers,
+                    "handshake_complete_peers": handshake_complete_peers,
+                    "extension_capable_peers": extension_capable_peers,
+                    "metadata_capable_peers": metadata_capable_peers,
+                    "peers_with_piece_info": peers_with_piece_info,
                     "download_rate": download_rate,
                     "upload_rate": upload_rate,
                     "progress": progress,
                     "download_complete": download_complete,
+                    "tracker_resolution_anomalies": tracker_anomalies,
+                    "summary_active_connections": status.get(
+                        "summary_active_connections", 0
+                    ),
+                    "transport_live_peers": status.get("transport_live_peers", 0),
+                    "terminal_disconnected_connections": status.get(
+                        "terminal_disconnected_connections", 0
+                    ),
+                    "error_state_connections": status.get("error_state_connections", 0),
+                    "no_stream_connections": status.get("no_stream_connections", 0),
+                    "peer_discovery_queued_reentrant_cycles": status.get(
+                        "peer_discovery_queued_reentrant_cycles", 0
+                    ),
+                    "peer_discovery_outbound_pending_depth": status.get(
+                        "peer_discovery_outbound_pending_depth", 0
+                    ),
                 }
+                self.s._cached_status = cached_status  # noqa: SLF001
+
+                # Note: Safety check - if download is complete but files aren't finalized
+                # This catches cases where completion was detected but finalization failed or was missed
+                if (
+                    self.s.piece_manager
+                    and len(self.s.piece_manager.verified_pieces)
+                    == self.s.piece_manager.num_pieces
+                    and hasattr(self.s.download_manager, "file_assembler")
+                    and self.s.download_manager.file_assembler is not None
+                ):
+                    file_assembler = self.s.download_manager.file_assembler
+                    written_count = len(file_assembler.written_pieces)
+                    total_pieces = file_assembler.num_pieces
+
+                    # If all pieces are verified and written, but status is still downloading, finalize
+                    if written_count == total_pieces and self.s.info.status not in {
+                        "seeding",
+                        "completed",
+                    }:
+                        self.s.logger.info(
+                            "Safety check: All pieces verified and written, but status is '%s'. "
+                            "Finalizing files now.",
+                            self.s.info.status,
+                        )
+                        try:
+                            await file_assembler.finalize_files()
+                            self.s.info.status = "seeding"
+                            self.s.logger.info(
+                                "Files finalized via safety check for: %s",
+                                self.s.info.name,
+                            )
+                        except Exception as e:
+                            self.s.logger.warning(
+                                "Safety check finalization failed: %s",
+                                e,
+                                exc_info=True,
+                            )
 
                 if self.s.on_status_update:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self.s.on_status_update(status)
-                    except Exception:
-                        pass
 
                 await asyncio.sleep(5)
             except asyncio.CancelledError:

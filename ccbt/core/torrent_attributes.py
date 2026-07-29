@@ -33,6 +33,7 @@ import logging
 import platform
 from enum import IntFlag
 from pathlib import Path
+from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class FileAttribute(IntFlag):
     HIDDEN = 1 << 3  # Hidden file (bit 3)
 
 
-def parse_attributes(attr_str: str | None) -> FileAttribute:
+def parse_attributes(attr_str: Optional[str]) -> FileAttribute:
     """Parse attribute string into FileAttribute flags.
 
     Args:
@@ -84,7 +85,7 @@ def parse_attributes(attr_str: str | None) -> FileAttribute:
     return flags
 
 
-def is_padding_file(attributes: str | None) -> bool:
+def is_padding_file(attributes: Optional[str]) -> bool:
     """Check if attributes indicate a padding file.
 
     Args:
@@ -98,8 +99,8 @@ def is_padding_file(attributes: str | None) -> bool:
 
 
 def validate_symlink(
-    attributes: str | None,
-    symlink_path: str | None,
+    attributes: Optional[str],
+    symlink_path: Optional[str],
 ) -> bool:
     """Validate symlink attributes and path are consistent.
 
@@ -125,7 +126,7 @@ def validate_symlink(
     return True
 
 
-def should_skip_file(attributes: str | None) -> bool:
+def should_skip_file(attributes: Optional[str]) -> bool:
     """Determine if file should be skipped (padding files).
 
     Args:
@@ -139,9 +140,9 @@ def should_skip_file(attributes: str | None) -> bool:
 
 
 def apply_file_attributes(
-    file_path: str | Path,
-    attributes: str | None,
-    symlink_path: str | None = None,
+    file_path: Union[str, Path],
+    attributes: Optional[str],
+    symlink_path: Optional[str] = None,
 ) -> None:
     """Apply file attributes to a file on disk.
 
@@ -227,7 +228,7 @@ def apply_file_attributes(
             logger.warning("Failed to set hidden attribute on %s: %s", file_path, e)
 
 
-def verify_file_sha1(file_path: str | Path, expected_sha1: bytes) -> bool:
+def verify_file_sha1(file_path: Union[str, Path], expected_sha1: bytes) -> bool:
     """Verify file SHA-1 hash matches expected value.
 
     Args:
@@ -273,7 +274,7 @@ def verify_file_sha1(file_path: str | Path, expected_sha1: bytes) -> bool:
     return matches
 
 
-def get_attribute_display_string(attributes: str | None) -> str:
+def get_attribute_display_string(attributes: Optional[str]) -> str:
     """Get human-readable display string for attributes.
 
     Args:

@@ -1,10 +1,11 @@
 """Tests for session checkpoint utility methods."""
 
-import pytest
 import time
 from pathlib import Path
 
-from ccbt.models import TorrentCheckpoint, CheckpointFormat
+import pytest
+
+from ccbt.models import CheckpointFormat, TorrentCheckpoint
 from ccbt.storage.checkpoint import CheckpointFileInfo
 
 
@@ -57,7 +58,7 @@ async def test_list_resumable_checkpoints_filters_by_source(monkeypatch, tmp_pat
                     output_dir=str(tmp_path),
                     torrent_file_path=str(tmp_path / "test.torrent"),
                 )
-            elif ih == b"2" * 20:
+            if ih == b"2" * 20:
                 return TorrentCheckpoint(
                     info_hash=b"2" * 20,
                     torrent_name="has_magnet",
@@ -71,7 +72,7 @@ async def test_list_resumable_checkpoints_filters_by_source(monkeypatch, tmp_pat
                     output_dir=str(tmp_path),
                     magnet_uri="magnet:?xt=urn:btih:" + ("2" * 40),
                 )
-            elif ih == b"3" * 20:
+            if ih == b"3" * 20:
                 return TorrentCheckpoint(
                     info_hash=b"3" * 20,
                     torrent_name="no_source",
@@ -85,13 +86,15 @@ async def test_list_resumable_checkpoints_filters_by_source(monkeypatch, tmp_pat
                     output_dir=str(tmp_path),
                 )
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    resumable = await mgr.list_resumable_checkpoints()
+    resumable = await mgr.checkpoint_ops.list_resumable()
 
     assert len(resumable) == 2
     assert any(cp.info_hash == b"1" * 20 for cp in resumable)
@@ -142,13 +145,15 @@ async def test_list_resumable_checkpoints_handles_load_errors(monkeypatch, tmp_p
                 )
             raise RuntimeError("load failed")
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    resumable = await mgr.list_resumable_checkpoints()
+    resumable = await mgr.checkpoint_ops.list_resumable()
 
     assert len(resumable) == 1
     assert resumable[0].info_hash == b"1" * 20
@@ -194,7 +199,7 @@ async def test_find_checkpoint_by_name_returns_match(monkeypatch, tmp_path):
                     updated_at=time.time(),
                     output_dir=str(tmp_path),
                 )
-            elif ih == b"2" * 20:
+            if ih == b"2" * 20:
                 return TorrentCheckpoint(
                     info_hash=b"2" * 20,
                     torrent_name="other-torrent",
@@ -208,13 +213,15 @@ async def test_find_checkpoint_by_name_returns_match(monkeypatch, tmp_path):
                     output_dir=str(tmp_path),
                 )
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    cp = await mgr.find_checkpoint_by_name("test-torrent")
+    cp = await mgr.checkpoint_ops.find_by_name("test-torrent")
 
     assert cp is not None
     assert cp.torrent_name == "test-torrent"
@@ -232,13 +239,15 @@ async def test_find_checkpoint_by_name_returns_none_when_not_found(monkeypatch, 
         async def load_checkpoint(self, ih):
             return None
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    cp = await mgr.find_checkpoint_by_name("nonexistent")
+    cp = await mgr.checkpoint_ops.find_by_name("nonexistent")
 
     assert cp is None
 
@@ -264,13 +273,15 @@ async def test_get_checkpoint_info_returns_summary(monkeypatch, tmp_path):
                 torrent_file_path=str(tmp_path / "test.torrent"),
             )
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    info = await mgr.get_checkpoint_info(b"1" * 20)
+    info = await mgr.checkpoint_ops.get_info(b"1" * 20)
 
     assert info is not None
     assert info["info_hash"] == (b"1" * 20).hex()
@@ -292,13 +303,15 @@ async def test_get_checkpoint_info_returns_none_when_missing(monkeypatch):
         async def load_checkpoint(self, ih):
             return None
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(".")
-    info = await mgr.get_checkpoint_info(b"1" * 20)
+    info = await mgr.checkpoint_ops.get_info(b"1" * 20)
 
     assert info is None
 
@@ -323,13 +336,15 @@ async def test_get_checkpoint_info_handles_zero_pieces(monkeypatch, tmp_path):
                 output_dir=str(tmp_path),
             )
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
-    info = await mgr.get_checkpoint_info(b"1" * 20)
+    info = await mgr.checkpoint_ops.get_info(b"1" * 20)
 
     assert info is not None
     assert info["progress"] == 0
@@ -378,7 +393,7 @@ async def test_cleanup_completed_checkpoints_removes_completed(monkeypatch, tmp_
                     updated_at=time.time(),
                     output_dir=str(tmp_path),
                 )
-            elif ih == b"2" * 20:
+            if ih == b"2" * 20:
                 # Incomplete: only 5 pieces verified
                 return TorrentCheckpoint(
                     info_hash=b"2" * 20,
@@ -396,10 +411,12 @@ async def test_cleanup_completed_checkpoints_removes_completed(monkeypatch, tmp_
         async def delete_checkpoint(self, ih):
             deleted_hashes.append(ih)
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
     cleaned = await mgr.cleanup_completed_checkpoints()
@@ -438,7 +455,7 @@ async def test_cleanup_completed_checkpoints_handles_errors(monkeypatch, tmp_pat
         async def load_checkpoint(self, ih):
             if ih == b"1" * 20:
                 raise RuntimeError("load failed")
-            elif ih == b"2" * 20:
+            if ih == b"2" * 20:
                 return TorrentCheckpoint(
                     info_hash=b"2" * 20,
                     torrent_name="complete",
@@ -455,10 +472,12 @@ async def test_cleanup_completed_checkpoints_handles_errors(monkeypatch, tmp_pat
         async def delete_checkpoint(self, ih):
             pass
 
-    import ccbt.storage.checkpoint
+    import ccbt.session.checkpoint_operations as cp_ops
     import ccbt.session.session as sess_mod
+    import ccbt.storage.checkpoint
     monkeypatch.setattr(ccbt.storage.checkpoint, "CheckpointManager", lambda *a, **k: _CPM())
     monkeypatch.setattr(sess_mod, "CheckpointManager", lambda *a, **k: _CPM())
+    monkeypatch.setattr(cp_ops, "CheckpointManager", lambda *a, **k: _CPM())
 
     mgr = AsyncSessionManager(str(tmp_path))
     cleaned = await mgr.cleanup_completed_checkpoints()

@@ -5,6 +5,13 @@ This module handles configuration loading, validation, templating, and migration
 
 from __future__ import annotations
 
+from ccbt.config import (
+    config,
+    config_backup,
+    config_capabilities,
+    config_conditional,
+    config_diff,
+)
 from ccbt.config.config import Config, ConfigManager, get_config, init_config
 from ccbt.config.config_backup import ConfigBackup
 from ccbt.config.config_capabilities import SystemCapabilities
@@ -25,6 +32,11 @@ __all__ = [
     "ConfigSchema",
     "ConfigTemplates",
     "SystemCapabilities",
+    "config",
+    "config_backup",
+    "config_capabilities",
+    "config_conditional",
+    "config_diff",
     "get_config",
     "init_config",
 ]

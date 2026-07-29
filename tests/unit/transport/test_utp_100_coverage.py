@@ -1,9 +1,6 @@
 """Tests to achieve 100% coverage for uTP implementation."""
 
-import asyncio
-import socket
-import struct
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,10 +12,9 @@ from ccbt.transport.utp import (
 )
 from ccbt.transport.utp_extensions import (
     ECNExtension,
-    SACKExtension,
     SACKBlock,
+    SACKExtension,
     UTPExtensionType,
-    WindowScalingExtension,
 )
 from ccbt.transport.utp_socket import UTPSocketManager
 
@@ -326,7 +322,6 @@ class TestUTPConnectionEdgeCases:
         """Test handling out-of-order data packet with SACK enabled."""
         connection.state = UTPConnectionState.CONNECTED
         connection.recv_buffer_expected_seq = 100
-        from ccbt.transport.utp_extensions import UTPExtensionType
 
         connection.negotiated_extensions.add(UTPExtensionType.SACK)
 
@@ -553,46 +548,47 @@ class TestUTPSocketManagerCoverage:
     def test_ecn_support_enabled(self, socket_manager):
         """Test ECN support enabled when socket option available."""
         import socket as std_socket
+
+        ip_recvtos = getattr(std_socket, "IP_RECVTOS", None)
+        if ip_recvtos is None:
+            pytest.skip("IP_RECVTOS not available in this Python build")
+
         mock_socket = MagicMock()
         mock_socket.setsockopt = MagicMock()
 
         mock_transport = MagicMock()
         mock_transport.get_extra_info.return_value = mock_socket
 
-        # Test ECN setup code path directly (without calling start() which creates real socket)
         socket_manager.transport = mock_transport
-        if hasattr(socket_manager.transport, "get_extra_info"):
-            sock = socket_manager.transport.get_extra_info("socket")
-            if sock:
-                try:
-                    sock.setsockopt(std_socket.IPPROTO_IP, std_socket.IP_RECVTOS, 1)
-                except (OSError, AttributeError):
-                    pass
+        sock = socket_manager.transport.get_extra_info("socket")
+        if sock:
+            sock.setsockopt(std_socket.IPPROTO_IP, ip_recvtos, 1)
 
-        # Should attempt to enable IP_RECVTOS
         mock_transport.get_extra_info.assert_called_with("socket")
-        mock_socket.setsockopt.assert_called_with(std_socket.IPPROTO_IP, std_socket.IP_RECVTOS, 1)
+        mock_socket.setsockopt.assert_called_with(
+            std_socket.IPPROTO_IP, ip_recvtos, 1
+        )
 
     def test_ecn_support_not_available(self, socket_manager):
         """Test ECN support not available when socket option fails."""
         import socket as std_socket
+
+        ip_recvtos = getattr(std_socket, "IP_RECVTOS", None)
+        if ip_recvtos is None:
+            pytest.skip("IP_RECVTOS not available in this Python build")
+
         mock_socket = MagicMock()
         mock_socket.setsockopt.side_effect = OSError("Not supported")
 
         mock_transport = MagicMock()
         mock_transport.get_extra_info.return_value = mock_socket
 
-        # Test ECN setup code path directly
         socket_manager.transport = mock_transport
-        if hasattr(socket_manager.transport, "get_extra_info"):
-            sock = socket_manager.transport.get_extra_info("socket")
-            if sock:
-                try:
-                    sock.setsockopt(std_socket.IPPROTO_IP, std_socket.IP_RECVTOS, 1)
-                except (OSError, AttributeError):
-                    pass  # Expected
+        sock = socket_manager.transport.get_extra_info("socket")
+        if sock:
+            with pytest.raises(OSError):
+                sock.setsockopt(std_socket.IPPROTO_IP, ip_recvtos, 1)
 
-        # Should handle gracefully (OSError caught)
         mock_socket.setsockopt.assert_called()
 
     def test_ecn_no_socket(self, socket_manager):
@@ -665,12 +661,12 @@ class TestUTPSocketManagerCoverage:
         addr = ("127.0.0.1", 6881)
 
         socket_manager.register_connection(conn, addr, 12345)
-        
+
         # Verify it's registered
         key = (addr[0], addr[1], 12345)
         assert key in socket_manager.connections
         assert 12345 in socket_manager.active_connection_ids
-        
+
         socket_manager.unregister_connection(addr, 12345)
 
         # Should be unregistered
@@ -720,8 +716,6 @@ class TestExtensionNegotiation:
 
     def test_process_extension_negotiation_window_scaling_not_instance(self, connection):
         """Test processing window scaling extension that's not WindowScalingExtension."""
-        from ccbt.transport.utp_extensions import UTPExtensionType
-
         connection.supported_extensions.add(UTPExtensionType.WINDOW_SCALING)
 
         # Create extension that's not WindowScalingExtension
@@ -736,7 +730,7 @@ class TestExtensionNegotiation:
 
     def test_process_extension_negotiation_sack_not_supported(self, connection):
         """Test processing SACK extension when not supported."""
-        from ccbt.transport.utp_extensions import SACKExtension, UTPExtensionType
+        from ccbt.transport.utp_extensions import SACKExtension
 
         connection.supported_extensions.discard(UTPExtensionType.SACK)
 
@@ -749,8 +743,6 @@ class TestExtensionNegotiation:
 
     def test_process_extension_negotiation_ecn_not_supported(self, connection):
         """Test processing ECN extension when not supported."""
-        from ccbt.transport.utp_extensions import ECNExtension, UTPExtensionType
-
         connection.supported_extensions.discard(UTPExtensionType.ECN)
 
         peer_extensions = [ECNExtension(ecn_echo=False, ecn_cwr=False)]
@@ -773,8 +765,6 @@ class TestAdvertiseExtensions:
 
     def test_advertise_extensions_all(self, connection):
         """Test advertising all supported extensions."""
-        from ccbt.transport.utp_extensions import UTPExtensionType
-
         connection.supported_extensions.add(UTPExtensionType.SACK)
         connection.supported_extensions.add(UTPExtensionType.WINDOW_SCALING)
         connection.supported_extensions.add(UTPExtensionType.ECN)
@@ -809,8 +799,6 @@ class TestSendAckEdgeCases:
 
     def test_send_ack_with_ecn_echo(self, connection):
         """Test sending ACK with ECN echo flag."""
-        from ccbt.transport.utp_extensions import UTPExtensionType
-
         connection.negotiated_extensions.add(UTPExtensionType.ECN)
         connection.ecn_echo = True
         connection.ack_nr = 100  # Set ack_nr so ACK is meaningful
@@ -827,8 +815,6 @@ class TestSendAckEdgeCases:
 
     def test_send_ack_with_ecn_cwr(self, connection):
         """Test sending ACK with ECN CWR flag."""
-        from ccbt.transport.utp_extensions import UTPExtensionType
-
         connection.negotiated_extensions.add(UTPExtensionType.ECN)
         connection.ecn_cwr = True
         connection.ack_nr = 100
@@ -845,8 +831,6 @@ class TestSendAckEdgeCases:
 
     def test_send_ack_with_both_ecn_flags(self, connection):
         """Test sending ACK with both ECN flags."""
-        from ccbt.transport.utp_extensions import UTPExtensionType
-
         connection.negotiated_extensions.add(UTPExtensionType.ECN)
         connection.ecn_echo = True
         connection.ecn_cwr = True

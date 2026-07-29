@@ -24,7 +24,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.security]
 @pytest_asyncio.fixture
 async def mock_config_with_encryption():
     """Create mock config with encryption enabled."""
-    from ccbt.config.config import get_config
     from unittest.mock import MagicMock
 
     mock_config = MagicMock()
@@ -214,9 +213,10 @@ class TestEncryptionStreamIntegration:
             EncryptedStreamWriter,
         )
 
-        # Create test cipher
+        # Create test ciphers (distinct instances per direction)
         key = b"test_key_16_bytes"  # 16 bytes for RC4
-        cipher = RC4Cipher(key)
+        write_cipher = RC4Cipher(key)
+        read_cipher = RC4Cipher(key)
 
         # Create mock reader/writer
         mock_reader = AsyncMock()
@@ -224,8 +224,8 @@ class TestEncryptionStreamIntegration:
         mock_writer.drain = AsyncMock()
 
         # Setup encrypted streams
-        encrypted_reader = EncryptedStreamReader(mock_reader, cipher)
-        encrypted_writer = EncryptedStreamWriter(mock_writer, cipher)
+        encrypted_reader = EncryptedStreamReader(mock_reader, read_cipher)
+        encrypted_writer = EncryptedStreamWriter(mock_writer, write_cipher)
 
         # Test data
         test_message = b"Hello, encrypted world!"
@@ -257,14 +257,15 @@ class TestEncryptionStreamIntegration:
         )
 
         key = b"test_key_16_bytes"
-        cipher = RC4Cipher(key)
+        write_cipher = RC4Cipher(key)
 
         mock_reader = AsyncMock()
         mock_writer = MagicMock()
         mock_writer.drain = AsyncMock()
 
-        encrypted_reader = EncryptedStreamReader(mock_reader, cipher)
-        encrypted_writer = EncryptedStreamWriter(mock_writer, cipher)
+        encrypted_writer = EncryptedStreamWriter(mock_writer, write_cipher)
+        read_cipher = RC4Cipher(key)
+        encrypted_reader = EncryptedStreamReader(mock_reader, read_cipher)
 
         messages = [b"Message 1", b"Message 2", b"Message 3"]
 
@@ -276,11 +277,9 @@ class TestEncryptionStreamIntegration:
         # Verify all were encrypted
         assert mock_writer.write.call_count == len(messages)
 
-        # Simulate reading (each message independently encrypted)
+        # Simulate reading sequential messages on the same cipher state
         for i, msg in enumerate(messages):
-            # Create new cipher for each message to match encryption
-            read_cipher = RC4Cipher(key)
-            encrypted_msg = read_cipher.encrypt(msg)
+            encrypted_msg = mock_writer.write.call_args_list[i][0][0]
 
             mock_reader.readexactly = AsyncMock(return_value=encrypted_msg)
             decrypted = await encrypted_reader.readexactly(len(msg))
@@ -423,7 +422,6 @@ class TestEncryptionFullFlow:
     @pytest.mark.asyncio
     async def test_full_encrypted_peer_connection_flow(self):
         """Test full encrypted peer connection flow."""
-        from ccbt.security.ciphers.rc4 import RC4Cipher
         from ccbt.security.dh_exchange import DHPeerExchange
         from ccbt.security.mse_handshake import MSEHandshake
 
@@ -450,12 +448,16 @@ class TestEncryptionFullFlow:
         assert initiator_cipher is not None
         assert receiver_cipher is not None
 
-        # Test encryption/decryption round-trip
+        # Test encryption/decryption round-trip with distinct cipher instances
         test_data = b"Test message for encryption"
-        encrypted = initiator_cipher.encrypt(test_data)
-
-        # Decrypt - RC4 decrypt() creates a new instance internally, so this should work
-        decrypted = initiator_cipher.decrypt(encrypted)
+        encrypt_cipher = initiator._create_cipher(
+            initiator.allowed_ciphers[0], test_key
+        )
+        decrypt_cipher = initiator._create_cipher(
+            initiator.allowed_ciphers[0], test_key
+        )
+        encrypted = encrypt_cipher.encrypt(test_data)
+        decrypted = decrypt_cipher.decrypt(encrypted)
 
         assert decrypted == test_data
 

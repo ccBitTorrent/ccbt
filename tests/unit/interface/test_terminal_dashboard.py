@@ -1,125 +1,137 @@
-"""Tests for ccbt.interface.terminal_dashboard.
-
-Covers:
-- Import fallback handling when textual not available
-- Dashboard initialization (mocked)
-- Widget creation methods (mocked)
-- Status update logic
-- Refresh mechanisms
-- Error handling paths
-"""
+"""Focused terminal dashboard regression tests."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-import sys
+import asyncio
+import inspect
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+from ccbt.interface import terminal_dashboard as dashboard_module
+from ccbt.interface.terminal_dashboard import TerminalDashboard
 
 pytestmark = [pytest.mark.unit, pytest.mark.interface]
 
 
-def test_terminal_dashboard_import_fallback_no_textual():
-    """Test import fallback when textual is not available (lines 18-32)."""
-    # Simply verify fallback classes are defined in the module
-    import ccbt.interface.terminal_dashboard as dashboard_module
-    
-    # The module should define App and Static, either from textual or as fallbacks
-    assert hasattr(dashboard_module, 'App')
-    assert hasattr(dashboard_module, 'Static')
-
-
 @pytest.mark.asyncio
-async def test_terminal_dashboard_init_without_textual(monkeypatch):
-    """Test dashboard initialization without Textual (lines 44-731 partial)."""
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-    
-    # Mock textual not available
-    mock_session = AsyncMock()
-    mock_metrics = MagicMock()
-    
-    with patch('ccbt.interface.terminal_dashboard.App', Mock), \
-         patch('ccbt.interface.terminal_dashboard.get_alert_manager', return_value=mock_metrics):
-        
-        # Create dashboard instance
-        dashboard = TerminalDashboard(mock_session)
-        
-        assert dashboard.session == mock_session
-        assert hasattr(dashboard, 'metrics_collector')
+async def test_poll_once_marks_cached_rows_stale_when_list_torrents_fails() -> None:
+    """Polling should retain the last rows but mark them stale on list failure."""
+    dashboard = TerminalDashboard.__new__(TerminalDashboard)
+    dashboard._data_provider = SimpleNamespace(
+        get_ui_snapshot=AsyncMock(side_effect=RuntimeError("snapshot unavailable")),
+        get_global_stats=AsyncMock(
+            return_value={"download_rate": 0.0, "upload_rate": 0.0}
+        ),
+        list_torrents=AsyncMock(side_effect=RuntimeError("list failed")),
+    )
+    dashboard._last_status = {
+        "a" * 40: {
+            "info_hash": "a" * 40,
+            "name": "Example",
+            "status": "downloading",
+        }
+    }
+    dashboard._splash_manager = None
+    dashboard._splash_ended = True
+    dashboard._poll_timer = None
+    dashboard._last_poll_started_at = None
+    dashboard._last_poll_completed_at = None
+    dashboard.statusbar = None
+    dashboard.overview = None
+    dashboard.overview_footer = None
+    dashboard.speeds = None
+    dashboard.graphs_section = None
+    dashboard.peers = None
+    dashboard.details = None
+    dashboard.torrents = SimpleNamespace(get_selected_info_hash=lambda: None)
+    dashboard.session = SimpleNamespace(_websocket_connected=False)
+    dashboard.alert_manager = SimpleNamespace(alert_rules={})
+    dashboard.metrics_collector = None
+    dashboard._command_executor = MagicMock()
+    dashboard._apply_filter_and_update = MagicMock()
+    dashboard._poll_lock = asyncio.Lock()
+    dashboard.query_one = MagicMock(side_effect=Exception("no widget"))
+
+    await dashboard._poll_once_impl()
+
+    assert dashboard._last_status["a" * 40]["_stale"] is True
+    assert dashboard._apply_filter_and_update.call_count >= 1
 
 
-@pytest.mark.asyncio
-async def test_terminal_dashboard_widget_creation_mocked():
-    """Test widget creation methods with mocked Textual (lines 179-193)."""
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-    
-    mock_session = AsyncMock()
-    mock_app = MagicMock()
-    mock_container = MagicMock()
-    
-    with patch('ccbt.interface.terminal_dashboard.App', return_value=mock_app), \
-         patch('ccbt.interface.terminal_dashboard.Container', return_value=mock_container):
-        
-        dashboard = TerminalDashboard(mock_session)
-        
-        # Test that dashboard can be instantiated
-        assert dashboard is not None
+def test_poll_once_worker_uses_non_exclusive_poll_group() -> None:
+    """_poll_once uses @work(exclusive=False, group='poll') with lock coalescing."""
+    assert inspect.iscoroutinefunction(TerminalDashboard._poll_once_impl)
+    assert TerminalDashboard._poll_once is not TerminalDashboard._poll_once_impl
+
+    dashboard = TerminalDashboard.__new__(TerminalDashboard)
+    captured: dict[str, Any] = {}
+
+    def fake_run_worker(
+        _func: Any,
+        *,
+        name: str,
+        group: str,
+        description: str,
+        exclusive: bool,
+        exit_on_error: bool,
+        thread: bool,
+    ) -> Any:
+        captured["name"] = name
+        captured["group"] = group
+        captured["exclusive"] = exclusive
+        captured["exit_on_error"] = exit_on_error
+        captured["thread"] = thread
+        return MagicMock()
+
+    dashboard.run_worker = fake_run_worker  # type: ignore[assignment]
+
+    dashboard._poll_once()
+
+    assert captured["group"] == "poll"
+    assert captured["exclusive"] is False
+    assert captured["exit_on_error"] is False
+    assert captured["name"] == "_poll_once"
 
 
-@pytest.mark.asyncio
-async def test_terminal_dashboard_status_update_logic():
-    """Test status update logic via _poll_once (lines 396-427)."""
-    from ccbt.interface.terminal_dashboard import Overview, TerminalDashboard
-    
-    mock_session = AsyncMock()
-    mock_session.get_global_stats = AsyncMock(return_value={
-        'num_torrents': 2,
-        'num_active': 1,
-        'download_rate': 1000.0,
-        'upload_rate': 500.0,
-    })
-    mock_session.get_status = AsyncMock(return_value={})
-    
-    dashboard = TerminalDashboard(mock_session)
-    # Create mock widgets
-    dashboard.overview = Overview()
-    dashboard.speeds = MagicMock()
-    
-    # Test polling logic
-    await dashboard._poll_once()
-    
-    # Verify session was called
-    assert mock_session.get_global_stats.called
-    assert mock_session.get_status.called
+def test_run_dashboard_retries_once_on_early_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_dashboard should retry once on an immediate startup interrupt."""
 
+    run_calls: list[str] = []
+    monotonic_values = iter([10.0, 11.2])
+    original_monotonic = dashboard_module.time.monotonic
 
-@pytest.mark.asyncio
-async def test_terminal_dashboard_refresh_mechanisms():
-    """Test refresh mechanisms via _schedule_poll (lines 390-394)."""
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-    
-    mock_session = AsyncMock()
-    dashboard = TerminalDashboard(mock_session)
-    
-    # Test that dashboard has polling capability
-    assert hasattr(dashboard, '_schedule_poll')
-    assert hasattr(dashboard, '_poll_once')
+    class FakeDashboard:
+        def __init__(
+            self,
+            _session: Any,
+            refresh_interval: float,
+            splash_manager: Any,
+        ) -> None:
+            self.refresh_interval = refresh_interval
+            self.splash_manager = splash_manager
+            self._received_input_event = False
 
+        def run(self) -> None:
+            run_calls.append("run")
+            if len(run_calls) == 1:
+                raise KeyboardInterrupt()
 
-@pytest.mark.asyncio
-async def test_terminal_dashboard_error_handling():
-    """Test error handling paths."""
-    from ccbt.interface.terminal_dashboard import TerminalDashboard
-    
-    mock_session = AsyncMock()
-    mock_session.get_global_stats = AsyncMock(side_effect=Exception("Test error"))
-    
-    dashboard = TerminalDashboard(mock_session)
-    
-    # Should not raise, but handle gracefully
-    try:
-        await dashboard.update_status()
-    except Exception:
-        # If it raises, that's also acceptable for testing
-        pass
+    monkeypatch.setattr(dashboard_module, "TerminalDashboard", FakeDashboard)
+    def fake_monotonic() -> float:
+        return next(monotonic_values, original_monotonic())
 
+    monkeypatch.setattr(dashboard_module.time, "monotonic", fake_monotonic)
+
+    dashboard_module.run_dashboard(
+        session=object(),
+        refresh=1.0,
+        dev_mode=False,
+        splash_manager=None,
+    )
+
+    assert run_calls == ["run", "run"]

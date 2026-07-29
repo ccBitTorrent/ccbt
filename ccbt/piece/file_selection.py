@@ -10,7 +10,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     from ccbt.models import TorrentInfo
@@ -177,6 +177,32 @@ class FileSelectionManager:
                     file_index,
                     self.torrent_info.files[file_index].name,
                 )
+                # Emit FILE_SELECTION_CHANGED event
+                try:
+                    from ccbt.utils.events import Event, emit_event
+
+                    info_hash_hex = (
+                        self.torrent_info.info_hash.hex()
+                        if hasattr(self.torrent_info, "info_hash")
+                        else ""
+                    )
+                    state = self.file_states[file_index]
+                    await emit_event(
+                        Event(
+                            event_type="file_selection_changed",
+                            data={
+                                "info_hash": info_hash_hex,
+                                "file_index": file_index,
+                                "selected": True,
+                                "priority": state.priority.name if state else "normal",
+                                "progress": state.progress if state else 0.0,
+                            },
+                        )
+                    )
+                except Exception as e:
+                    self.logger.debug(
+                        "Failed to emit FILE_SELECTION_CHANGED event: %s", e
+                    )
 
     async def deselect_file(self, file_index: int) -> None:
         """Deselect a file from download.
@@ -193,6 +219,32 @@ class FileSelectionManager:
                     file_index,
                     self.torrent_info.files[file_index].name,
                 )
+                # Emit FILE_SELECTION_CHANGED event
+                try:
+                    from ccbt.utils.events import Event, emit_event
+
+                    info_hash_hex = (
+                        self.torrent_info.info_hash.hex()
+                        if hasattr(self.torrent_info, "info_hash")
+                        else ""
+                    )
+                    state = self.file_states[file_index]
+                    await emit_event(
+                        Event(
+                            event_type="file_selection_changed",
+                            data={
+                                "info_hash": info_hash_hex,
+                                "file_index": file_index,
+                                "selected": False,
+                                "priority": state.priority.name if state else "normal",
+                                "progress": state.progress if state else 0.0,
+                            },
+                        )
+                    )
+                except Exception as e:
+                    self.logger.debug(
+                        "Failed to emit FILE_SELECTION_CHANGED event: %s", e
+                    )
 
     async def set_file_priority(self, file_index: int, priority: FilePriority) -> None:
         """Set priority for a file.
@@ -210,6 +262,32 @@ class FileSelectionManager:
                     file_index,
                     priority,
                 )
+                # Emit FILE_PRIORITY_CHANGED event
+                try:
+                    from ccbt.utils.events import Event, emit_event
+
+                    info_hash_hex = (
+                        self.torrent_info.info_hash.hex()
+                        if hasattr(self.torrent_info, "info_hash")
+                        else ""
+                    )
+                    state = self.file_states[file_index]
+                    await emit_event(
+                        Event(
+                            event_type="file_priority_changed",
+                            data={
+                                "info_hash": info_hash_hex,
+                                "file_index": file_index,
+                                "priority": priority.name,
+                                "selected": state.selected if state else True,
+                                "progress": state.progress if state else 0.0,
+                            },
+                        )
+                    )
+                except Exception as e:
+                    self.logger.debug(
+                        "Failed to emit FILE_PRIORITY_CHANGED event: %s", e
+                    )
 
     async def select_files(self, file_indices: list[int]) -> None:
         """Select multiple files.
@@ -361,7 +439,7 @@ class FileSelectionManager:
             if file_index in self.file_states:
                 self.file_states[file_index].bytes_downloaded = bytes_downloaded
 
-    def get_file_state(self, file_index: int) -> FileSelectionState | None:
+    def get_file_state(self, file_index: int) -> Optional[FileSelectionState]:
         """Get selection state for a file.
 
         Args:

@@ -94,6 +94,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2, 4],
@@ -130,6 +131,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=None,
@@ -164,6 +166,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2, 4],
@@ -206,6 +209,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 2],
@@ -273,6 +277,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0, 5, 10, 15],  # Only 0 and 5 are valid (out of 5 files)
@@ -308,6 +313,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x01" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=None,
@@ -361,6 +367,7 @@ class TestMagnetBEP53Integration:
         magnet_info = MagnetInfo(
             info_hash=b"\x02" * 20,
             display_name="test torrent",
+            swarm_id=None,
             trackers=[],
             web_seeds=[],
             selected_indices=[0],
@@ -384,4 +391,67 @@ class TestMagnetBEP53Integration:
         final_file_state = final_states[0]
         assert final_file_state.selected == initial_file_state.selected
         assert final_file_state.priority == initial_file_state.priority
+
+    @pytest.mark.asyncio
+    async def test_magnet_with_so_applied_after_metadata_merge(
+        self,
+        temp_output_dir,
+    ):
+        """Add magnet with so=0,1, simulate metadata merge, assert BEP 53 file selection applied."""
+        # Magnet with BEP 53 so=0,1 (only files 0 and 1 selected)
+        magnet_uri = (
+            "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
+            "&dn=test_torrent&so=0,1"
+        )
+        session_manager = AsyncSessionManager(output_dir=str(temp_output_dir))
+        session_manager.config.nat.auto_map_ports = False
+
+        # Add magnet (creates session with magnet_info on torrent_data)
+        info_hash_hex = await session_manager.add_magnet(magnet_uri)
+        info_hash = bytes.fromhex(info_hash_hex)
+
+        async with session_manager.lock:
+            session = session_manager.torrents.get(info_hash)
+        assert session is not None
+
+        # Simulate "metadata just merged": add multi-file file_info + pieces_info.
+        # get_torrent_info rejects piece_length <= 0 (magnet placeholder), so set a
+        # real piece length as metadata resolution would.
+        assert isinstance(session.torrent_data, dict)
+        session.torrent_data["file_info"] = {
+            "type": "multi",
+            "files": [
+                {"name": "file0.txt", "length": 32768, "path": ["file0.txt"], "full_path": "file0.txt"},
+                {"name": "file1.txt", "length": 33768, "path": ["file1.txt"], "full_path": "file1.txt"},
+                {"name": "file2.txt", "length": 15384, "path": ["file2.txt"], "full_path": "file2.txt"},
+                {"name": "file3.txt", "length": 16384, "path": ["file3.txt"], "full_path": "file3.txt"},
+                {"name": "file4.txt", "length": 16884, "path": ["file4.txt"], "full_path": "file4.txt"},
+            ],
+        }
+        session.torrent_data["pieces_info"] = {
+            "piece_length": 16384,
+            "num_pieces": 8,
+            "piece_hashes": [b"\x00" * 20] * 8,
+        }
+        session.torrent_data["total_length"] = 115188
+        # Magnet parse stores a flat announce list; TorrentInfo expects BEP 12 tiers.
+        raw_announce = session.torrent_data.get("announce_list") or []
+        session.torrent_data["announce_list"] = [
+            [url] if isinstance(url, str) else url for url in raw_announce
+        ]
+
+        # Create file selection manager from updated torrent_data (simulates post-merge)
+        assert session.ensure_file_selection_manager() is True
+        assert session.file_selection_manager is not None
+
+        # Apply BEP 53 from magnet URI (so=0,1)
+        await session._apply_magnet_file_selection_if_needed()
+
+        # Assert only indices 0 and 1 are selected
+        all_states = session.file_selection_manager.get_all_file_states()
+        assert all_states[0].selected is True
+        assert all_states[1].selected is True
+        assert all_states[2].selected is False
+        assert all_states[3].selected is False
+        assert all_states[4].selected is False
 

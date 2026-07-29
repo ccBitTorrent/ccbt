@@ -38,6 +38,9 @@ exclude = [
     "tests",
     "benchmarks",
     "ccbt/interface",
+    # Offline translation tooling and generated locale payloads (not runtime i18n)
+    "ccbt/i18n/scripts",
+    "ccbt/i18n/locale_data",
 ]
 
 # Line length
@@ -94,6 +97,12 @@ select = [
     "RUF",  # ruff-specific rules
 ]
 
+# Ignore incompatible pydocstyle rules
+ignore = [
+    "D203",  # incorrect-blank-line-before-class - incompatible with D211
+    "D213",  # multi-line-summary-second-line - incompatible with D212
+]
+
 # Allow fix for all enabled rules
 fixable = ["ALL"]
 unfixable = []
@@ -124,6 +133,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "TRY301",   # abstract-raise - raise statements are clear as-is
     "PERF203",  # try-except-in-loop - necessary for async error handling
     "TRY300",   # try-else - async patterns don't always benefit from else blocks
+    "UP045",    # Use X | None - intentionally using Optional[X] for Python 3.8/3.9 compatibility
+    "UP007",    # Use X | Y - intentionally using Union[X, Y] for Python 3.8/3.9 compatibility
+    "UP006",    # Use tuple instead of Tuple - intentionally using Tuple for Python 3.8 compatibility
 ]
 "ccbt/session/session.py" = [
     "SLF001",  # Private member access used for integration points
@@ -132,6 +144,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "ccbt/session/factories.py" = [
     "SLF001",  # Private member access used for dependency injection pattern
 ]
+"ccbt/__main__.py" = [
+    "EXE001",  # Shebang present but file not executable - valid on Unix, Windows doesn't use executable bits
+]
 
 "**/__init__.py" = ["TID252"]
 "**/scripts/**/*.py" = ["T20"]
@@ -139,6 +154,38 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "S101",     # assert statements - standard in pytest tests
     "E402",     # module-level import not at top - common pattern with pytestmark
     "S324",     # SHA-1 usage - required for BEP 47 file SHA-1 verification tests
+]
+"tests/unit/discovery/test_dht_bootstrap_readiness.py" = [
+    "SLF001",
+    "D103",
+    "ARG005",
+    "PLR2004",
+]
+"tests/unit/piece/test_multi_peer_piece_selection.py" = [
+    "SLF001",
+    "D101",
+    "D102",
+    "D103",
+    "PLR0913",
+    "PLR2004",
+]
+"tests/unit/session/test_requestable_driven_tick.py" = [
+    "SLF001",
+    "D103",
+]
+"tests/unit/session/test_immediate_tracker_defer.py" = [
+    "SLF001",
+    "PLR2004",
+]
+"tests/unit/config/test_tracker_immediate_discovery_env.py" = [
+    "PLR2004",
+]
+"tests/unit/config/test_effective_peer_cap_precedence.py" = [
+    "PLR2004",
+    "E501",
+]
+"tests/unit/config/test_windows_network_clamp.py" = [
+    "PLR2004",
 ]
 "tests/performance/bench_*.py" = [
     "T201",     # print statements - required for CLI output
@@ -173,6 +220,15 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "G201",     # logging.exception - logging.error with exc_info is acceptable
     "TRY400",   # logging.exception - logging.error is acceptable for UI code
 ]
+
+# Python 3.8/3.9 Compatibility Rules
+# These rules enforce compatibility patterns from compatibility_tests/COMPREHENSIVE_RESOLUTION_PLAN.md
+[lint.pydocstyle]
+convention = "google"
+
+# Note: Custom compatibility checks are implemented in dev/compatibility_linter.py
+# and integrated into pre-commit hooks. Ruff's pygrep-hooks (PGH) rules are used
+# where possible, but complex pattern matching requires the custom linter.
 
 
 

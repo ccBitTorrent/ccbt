@@ -257,7 +257,7 @@ class SSLConfigScreen(ConfigScreen):  # type: ignore[misc]
 
             performance_metrics.update(Panel(metrics_table))
 
-        except Exception as e:
+        except Exception:
             # Show a simple message if metrics can't be loaded
             try:
                 performance_metrics.update(

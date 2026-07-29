@@ -9,21 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.protocols]
 
 from ccbt.protocols.bittorrent_v2 import (
-    HANDSHAKE_V1_SIZE,
     HANDSHAKE_V2_SIZE,
     INFO_HASH_V1_LEN,
     INFO_HASH_V2_LEN,
     MESSAGE_ID_FILE_TREE_REQUEST,
-    MESSAGE_ID_FILE_TREE_RESPONSE,
-    MESSAGE_ID_PIECE_LAYER_REQUEST,
-    MESSAGE_ID_PIECE_LAYER_RESPONSE,
     PEER_ID_LEN,
     PROTOCOL_STRING,
     PROTOCOL_STRING_LEN,
@@ -34,8 +30,6 @@ from ccbt.protocols.bittorrent_v2 import (
     PieceLayerResponse,
     ProtocolVersion,
     ProtocolVersionError,
-    create_hybrid_handshake,
-    create_v2_handshake,
     detect_protocol_version,
     handle_v2_handshake,
     negotiate_protocol_version,
@@ -159,7 +153,7 @@ class TestV2HandshakeIntegration:
 
         # Read and parse manually since handle_v2_handshake doesn't support 100-byte hybrid
         handshake_bytes = bytes(writer_a.data)
-        
+
         # Detect version
         version = detect_protocol_version(handshake_bytes)
         assert version == ProtocolVersion.HYBRID

@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 
 try:
-    from ccbt.security.key_manager import Ed25519KeyManager
     from ccbt.security.ed25519_handshake import Ed25519Handshake
-    from ccbt.security.messaging import SecureMessaging, SecureMessage
+    from ccbt.security.key_manager import Ed25519KeyManager
+    from ccbt.security.messaging import SecureMessage, SecureMessaging
 except ImportError:
     pytest.skip("cryptography library not available", allow_module_level=True)
 

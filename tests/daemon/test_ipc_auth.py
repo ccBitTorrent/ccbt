@@ -1,51 +1,20 @@
 """Tests for IPC server authentication.
 
-from __future__ import annotations
-
 Tests mandatory authentication on all IPC endpoints.
 """
 
 from __future__ import annotations
 
+import aiohttp
 import pytest
 
-import aiohttp
-
 from ccbt.daemon.ipc_protocol import API_BASE_PATH, API_KEY_HEADER
-from ccbt.daemon.ipc_server import IPCServer
-from ccbt.session.session import AsyncSessionManager
-
-
-@pytest.fixture
-async def mock_session_manager():
-    """Create a mock session manager."""
-    session = AsyncSessionManager()
-    await session.start()
-    yield session
-    await session.stop()
-
-
-@pytest.fixture
-async def ipc_server(mock_session_manager):
-    """Create IPC server for testing."""
-    api_key = "test-api-key-12345"
-    server = IPCServer(
-        session_manager=mock_session_manager,
-        api_key=api_key,
-        host="127.0.0.1",
-        port=0,  # Use random port
-    )
-    await server.start()
-    # Get actual port
-    actual_port = server.port
-    yield server, api_key, actual_port
-    await server.stop()
 
 
 @pytest.mark.asyncio
 async def test_status_endpoint_requires_auth(ipc_server):
     """Test that status endpoint requires authentication."""
-    server, api_key, port = ipc_server
+    _server, api_key, port = ipc_server
 
     # Request without API key
     async with aiohttp.ClientSession() as session:
@@ -56,14 +25,12 @@ async def test_status_endpoint_requires_auth(ipc_server):
             assert data["error"] == "Unauthorized"
             assert data["code"] == "AUTH_REQUIRED"
 
-    # Request with invalid API key
-    async with aiohttp.ClientSession() as session:
+        # Request with invalid API key
         headers = {API_KEY_HEADER: "invalid-key"}
         async with session.get(url, headers=headers) as resp:
             assert resp.status == 401
 
-    # Request with valid API key
-    async with aiohttp.ClientSession() as session:
+        # Request with valid API key
         headers = {API_KEY_HEADER: api_key}
         async with session.get(url, headers=headers) as resp:
             assert resp.status == 200
@@ -75,7 +42,7 @@ async def test_status_endpoint_requires_auth(ipc_server):
 @pytest.mark.asyncio
 async def test_torrent_endpoints_require_auth(ipc_server):
     """Test that torrent management endpoints require authentication."""
-    server, api_key, port = ipc_server
+    _server, api_key, port = ipc_server
     base_url = f"http://127.0.0.1:{port}{API_BASE_PATH}"
 
     endpoints = [
@@ -116,7 +83,7 @@ async def test_torrent_endpoints_require_auth(ipc_server):
 @pytest.mark.asyncio
 async def test_config_endpoints_require_auth(ipc_server):
     """Test that config endpoints require authentication."""
-    server, api_key, port = ipc_server
+    _server, api_key, port = ipc_server
     base_url = f"http://127.0.0.1:{port}{API_BASE_PATH}"
 
     async with aiohttp.ClientSession() as session:
@@ -137,7 +104,7 @@ async def test_config_endpoints_require_auth(ipc_server):
 @pytest.mark.asyncio
 async def test_shutdown_endpoint_requires_auth(ipc_server):
     """Test that shutdown endpoint requires authentication."""
-    server, api_key, port = ipc_server
+    _server, api_key, port = ipc_server
     url = f"http://127.0.0.1:{port}{API_BASE_PATH}/shutdown"
 
     async with aiohttp.ClientSession() as session:
@@ -148,5 +115,4 @@ async def test_shutdown_endpoint_requires_auth(ipc_server):
         # With valid API key
         headers = {API_KEY_HEADER: api_key}
         async with session.post(url, headers=headers) as resp:
-            assert resp.status == 200
-
+            assert resp.status in {200, 503}

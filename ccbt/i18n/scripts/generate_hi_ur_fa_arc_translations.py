@@ -1336,7 +1336,7 @@ msgstr ""
 
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).parent / "locales"
+    base_dir = Path(__file__).parent.parent / "locales"
     template_path = base_dir / "en" / "LC_MESSAGES" / "ccbt.pot"
 
     print(f"Parsing template: {template_path}")

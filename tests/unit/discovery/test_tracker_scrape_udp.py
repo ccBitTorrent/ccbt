@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from unittest.mock import AsyncMock, Mock, patch
+import time
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
@@ -16,6 +17,7 @@ from ccbt.discovery.tracker_udp_client import (
     AsyncUDPTrackerClient,
     TrackerAction,
     TrackerResponse,
+    TrackerSession,
 )
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
@@ -24,7 +26,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 @pytest.fixture
 def client():
     """Create AsyncUDPTrackerClient instance for testing."""
-    return AsyncUDPTrackerClient()
+    return AsyncUDPTrackerClient(test_mode=True)
 
 
 @pytest.fixture
@@ -41,8 +43,10 @@ def torrent_data():
 @pytest_asyncio.fixture
 async def started_client(client):
     """Create and start AsyncUDPTrackerClient."""
-    # Mock transport
-    client.transport = Mock()
+    # Mock transport — avoid real UDP bind (WinError 10013 on CI).
+    transport = Mock()
+    transport.is_closing = Mock(return_value=False)
+    client.transport = transport
     await client.start()
     yield client
     await client.stop()
@@ -205,7 +209,7 @@ class TestScrapeMethod:
         self, started_client, torrent_data
     ):
         """Test scrape when connection fails."""
-        # Mock _connect_to_tracker to raise exception
+        started_client._connect_if_needed = AsyncMock(return_value=False)
         started_client._connect_to_tracker = AsyncMock(
             side_effect=Exception("Connection failed")
         )
@@ -223,11 +227,12 @@ class TestScrapeMethod:
         session = started_client.sessions[session_key]
         session.is_connected = True
         session.connection_id = 0x1234567890ABCDEF
-        session.connection_time = 0.0
+        session.connection_time = time.time()
         session.host = "tracker.example.com"
         session.port = 6969
 
         # Mock wait_for_response to return None
+        started_client._connect_if_needed = AsyncMock(return_value=True)
         started_client._wait_for_response = AsyncMock(return_value=None)
 
         result = await started_client.scrape(torrent_data)
@@ -243,7 +248,7 @@ class TestScrapeMethod:
         session = started_client.sessions[session_key]
         session.is_connected = True
         session.connection_id = 0x1234567890ABCDEF
-        session.connection_time = 0.0
+        session.connection_time = time.time()
         session.host = "tracker.example.com"
         session.port = 6969
 
@@ -255,6 +260,7 @@ class TestScrapeMethod:
             downloaded=500,
             incomplete=30,
         )
+        started_client._connect_if_needed = AsyncMock(return_value=True)
         started_client._wait_for_response = AsyncMock(return_value=response)
 
         result = await started_client.scrape(torrent_data)
@@ -270,6 +276,7 @@ class TestScrapeMethod:
     async def test_scrape_connection_timeout(self, started_client, torrent_data):
         """Test scrape with connection timeout."""
         # Mock _connect_to_tracker to simulate timeout
+        started_client._connect_if_needed = AsyncMock(return_value=False)
         started_client._connect_to_tracker = AsyncMock(
             side_effect=TimeoutError("Connection timeout")
         )
@@ -282,7 +289,18 @@ class TestScrapeMethod:
     async def test_scrape_generic_exception(self, started_client, torrent_data):
         """Test scrape handles generic exceptions."""
         # Cause exception during scrape
+        started_client._connect_if_needed = AsyncMock(return_value=True)
         started_client.transport.sendto = Mock(side_effect=Exception("Send error"))
+
+        # Fresh connected session so scrape reaches sendto
+        session_key = "tracker.example.com:6969"
+        started_client.sessions[session_key] = Mock()
+        session = started_client.sessions[session_key]
+        session.is_connected = True
+        session.connection_id = 0x1234567890ABCDEF
+        session.connection_time = time.time()
+        session.host = "tracker.example.com"
+        session.port = 6969
 
         result = await started_client.scrape(torrent_data)
 
@@ -297,14 +315,16 @@ class TestScrapeMethod:
         session = started_client.sessions[session_key]
         session.is_connected = True
         session.connection_id = None  # No connection ID
-        session.connection_time = 0.0
+        session.connection_time = time.time()
         session.host = "tracker.example.com"
         session.port = 6969
+
+        # Force connect path to keep connection_id None
+        started_client._connect_if_needed = AsyncMock(return_value=False)
 
         result = await started_client.scrape(torrent_data)
 
         assert result == {}
-
 
 class TestHandleResponseScrape:
     """Test handle_response parsing for scrape responses."""
@@ -329,6 +349,10 @@ class TestHandleResponseScrape:
         # Setup pending request
         future = asyncio.Future()
         client.pending_requests[transaction_id] = future
+
+        # Note: Set socket ready flag so handle_response processes the response
+        # Without this, the response is dropped with "socket not ready" warning
+        client._socket_ready = True
 
         # Handle response
         client.handle_response(data, ("127.0.0.1", 6969))
@@ -355,4 +379,37 @@ class TestHandleResponseScrape:
 
         # Future should not be done (response too short)
         assert not future.done()
+
+    def test_handle_response_unmatched_foreign_tracker_category(self, client, caplog):
+        """Unmatched responses from unknown addresses should be categorized as foreign_tracker."""
+        transaction_id = 54321
+        data = struct.pack("!II", TrackerAction.CONNECT.value, transaction_id) + (b"\x00" * 8)
+        client._socket_ready = True
+
+        with caplog.at_level("WARNING"):
+            client.handle_response(data, ("203.0.113.50", 9999))
+
+        assert client._udp_tracker_stale_response_by_category["foreign_tracker"] == 1
+        assert client._udp_tracker_stale_response_total == 1
+
+    def test_handle_response_unmatched_id_collision_category(self, client, caplog):
+        """Unmatched responses against a known tracker with active pending IDs should flag id_collision."""
+        transaction_id = 11111
+        pending_tx = 22222
+        data = struct.pack("!II", TrackerAction.CONNECT.value, transaction_id) + (b"\x00" * 8)
+        client._socket_ready = True
+        client.sessions["127.0.0.1:6969"] = TrackerSession(
+            url="udp://127.0.0.1:6969",
+            host="127.0.0.1",
+            port=6969,
+            is_connected=True,
+        )
+        client.pending_requests[pending_tx] = asyncio.Future()
+        client._pending_request_timestamps[pending_tx] = time.time() - 1.5
+
+        with caplog.at_level("WARNING"):
+            client.handle_response(data, ("127.0.0.1", 6969))
+
+        assert client._udp_tracker_stale_response_by_category["id_collision"] == 1
+        assert client._udp_tracker_stale_response_total == 1
 

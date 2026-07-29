@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 # Try to import aiortc, skip tests if not available
 try:
     from aiortc import (
+        RTCIceCandidate,
         RTCPeerConnection,
         RTCSessionDescription,
-        RTCIceCandidate,
     )
 
     HAS_AIORTC = True
@@ -39,7 +40,7 @@ def webtorrent_protocol():
 
     if webtorrent_module.WebTorrentProtocol is None:  # type: ignore[attr-defined]
         pytest.skip("WebTorrentProtocol not available (aiortc not installed)")
-    
+
     protocol = webtorrent_module.WebTorrentProtocol()  # type: ignore[attr-defined]
     return protocol
 

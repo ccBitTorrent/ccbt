@@ -28,33 +28,20 @@ def compile_po_to_mo(po_path: Path, mo_path: Path) -> bool:
         )
         if result.returncode == 0:
             return True
-    except FileNotFoundError:
-        pass
-
-    # Fallback: Use Python's gettext to compile
-    try:
-        import gettext
-
-        # Read .po file and create .mo file
-        with open(po_path, "rb") as f:
-            po_data = f.read()
-
-        # Parse .po file manually and create .mo
-        # This is a simplified version - for full support, use polib or msgfmt
-        translation = gettext.translation(
-            "ccbt",
-            localedir=str(po_path.parent.parent.parent),
-            languages=[po_path.parent.parent.name],
-            fallback=False,
-        )
-
-        # Write .mo file (simplified - gettext.translation loads from .mo, not creates it)
-        # For proper .mo creation, we need msgfmt or polib
-        print(f"Warning: msgfmt not found. Cannot compile {po_path.name} to .mo")
-        print(f"Please install gettext tools or use: msgfmt {po_path} -o {mo_path}")
+        err = (result.stderr or "").strip()
+        if err:
+            print(f"msgfmt failed for {po_path}: {err}")
+        else:
+            print(
+                f"msgfmt failed for {po_path} (exit {result.returncode}). "
+                "Install gettext or run: msgfmt <po> -o <mo>"
+            )
         return False
-    except Exception as e:
-        print(f"Error compiling {po_path}: {e}")
+    except FileNotFoundError:
+        print(
+            "msgfmt not found on PATH. Install gettext tools, e.g.: "
+            "https://mlocati.github.io/articles/gettext-iconv-windows.html"
+        )
         return False
 
 
@@ -81,10 +68,10 @@ def compile_all() -> None:
 
         print(f"Compiling {lang_dir.name}...")
         if compile_po_to_mo(po_file, mo_file):
-            print(f"  ✓ Compiled {mo_file.name}")
+            print(f"  [OK] Compiled {mo_file.name}")
             compiled += 1
         else:
-            print(f"  ✗ Failed to compile {po_file.name}")
+            print(f"  [ERROR] Failed to compile {po_file.name}")
             failed += 1
 
     print(f"\nCompiled: {compiled}, Failed: {failed}")

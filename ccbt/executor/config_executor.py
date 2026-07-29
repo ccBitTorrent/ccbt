@@ -5,6 +5,8 @@ Handles configuration commands.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ccbt.executor.base import CommandExecutor, CommandResult
 
 
@@ -14,7 +16,7 @@ class ConfigExecutor(CommandExecutor):
     async def execute(
         self,
         command: str,
-        *args: Any,
+        *_args: Any,
         **kwargs: Any,
     ) -> CommandResult:
         """Execute config command.

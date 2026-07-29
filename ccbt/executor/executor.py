@@ -5,19 +5,23 @@ Routes commands to appropriate domain executors.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ccbt.executor.base import CommandExecutor, CommandResult
 from ccbt.executor.config_executor import ConfigExecutor
 from ccbt.executor.file_executor import FileExecutor
+from ccbt.executor.media_executor import MediaExecutor
 from ccbt.executor.nat_executor import NATExecutor
 from ccbt.executor.protocol_executor import ProtocolExecutor
 from ccbt.executor.queue_executor import QueueExecutor
 from ccbt.executor.scrape_executor import ScrapeExecutor
 from ccbt.executor.security_executor import SecurityExecutor
-from ccbt.executor.session_adapter import SessionAdapter
 from ccbt.executor.session_executor import SessionExecutor
 from ccbt.executor.torrent_executor import TorrentExecutor
+
+if TYPE_CHECKING:
+    from ccbt.executor.session_adapter import SessionAdapter
+from ccbt.executor.xet_executor import XetExecutor
 
 
 class UnifiedCommandExecutor(CommandExecutor):
@@ -41,6 +45,8 @@ class UnifiedCommandExecutor(CommandExecutor):
         self.protocol_executor = ProtocolExecutor(adapter)
         self.session_executor = SessionExecutor(adapter)
         self.security_executor = SecurityExecutor(adapter)
+        self.media_executor = MediaExecutor(adapter)
+        self.xet_executor = XetExecutor(adapter)
 
     async def execute(
         self,
@@ -78,6 +84,10 @@ class UnifiedCommandExecutor(CommandExecutor):
             return await self.session_executor.execute(command, *args, **kwargs)
         if command.startswith("security."):
             return await self.security_executor.execute(command, *args, **kwargs)
+        if command.startswith("media."):
+            return await self.media_executor.execute(command, *args, **kwargs)
+        if command.startswith("xet."):
+            return await self.xet_executor.execute(command, *args, **kwargs)
         return CommandResult(
             success=False,
             error=f"Unknown command: {command}",

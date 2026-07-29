@@ -6,12 +6,13 @@ Target: 100% coverage.
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Try to import aiortc, skip tests if not available
 try:
-    from aiortc import RTCPeerConnection, RTCDataChannel, RTCIceCandidate
+    from aiortc import RTCDataChannel, RTCIceCandidate, RTCPeerConnection
 
     HAS_AIORTC = True
 except ImportError:
@@ -230,8 +231,6 @@ class TestDataChannelEventHandlers:
         self, webrtc_manager, mock_rtc_peer_connection, mock_data_channel
     ):
         """Test that data channel open handler is invoked."""
-        from ccbt.protocols.webtorrent import webrtc_manager as webrtc_manager_module
-
         peer_id = "test_peer_1"
         webrtc_manager.connections[peer_id] = mock_rtc_peer_connection
 
@@ -263,8 +262,6 @@ class TestDataChannelEventHandlers:
         self, webrtc_manager, mock_rtc_peer_connection, mock_data_channel
     ):
         """Test that data channel close handler is invoked."""
-        from ccbt.protocols.webtorrent import webrtc_manager as webrtc_manager_module
-
         peer_id = "test_peer_1"
         webrtc_manager.connections[peer_id] = mock_rtc_peer_connection
         webrtc_manager.data_channels[peer_id] = mock_data_channel
@@ -297,8 +294,6 @@ class TestDataChannelEventHandlers:
         self, webrtc_manager, mock_rtc_peer_connection, mock_data_channel
     ):
         """Test that data channel message handler is invoked."""
-        from ccbt.protocols.webtorrent import webrtc_manager as webrtc_manager_module
-
         peer_id = "test_peer_1"
         webrtc_manager.connections[peer_id] = mock_rtc_peer_connection
         webrtc_manager.connection_stats[peer_id] = {"bytes_received": 0}

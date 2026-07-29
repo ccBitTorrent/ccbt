@@ -10,16 +10,240 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Default IPC port; must match DaemonConfig.ipc_port default (models.py) for reconnect consistency
+DEFAULT_IPC_PORT = 64124
+
+
+def _get_daemon_home_dir() -> Path:
+    """Get daemon home directory with consistent path resolution.
+
+    Note: Use multiple methods to ensure consistent path resolution on Windows,
+    especially with spaces in usernames. Normalize the path to handle case/space differences.
+
+    Returns:
+        Path to home directory (normalized/resolved)
+
+    """
+    import os
+    import sys
+
+    # Try multiple methods for maximum compatibility
+    home_paths = []
+
+    # Method 1: os.path.expanduser("~")
+    with contextlib.suppress(Exception):
+        home_paths.append(Path(os.path.expanduser("~")))
+
+    # Method 2: USERPROFILE environment variable (Windows)
+    if sys.platform == "win32":
+        userprofile = os.environ.get("USERPROFILE")
+        if userprofile:
+            home_paths.append(Path(userprofile))
+
+    # Method 3: HOME environment variable
+    home_env = os.environ.get("HOME")
+    if home_env:
+        home_paths.append(Path(home_env))
+
+    # Method 4: Path.home() as fallback
+    with contextlib.suppress(Exception):
+        home_paths.append(Path.home())
+
+    # Use the first valid path and resolve it to get canonical path
+    # This handles case differences and symlinks
+    for home_path in home_paths:
+        try:
+            # Resolve to get canonical path (handles case differences on Windows)
+            resolved = home_path.resolve()
+            if resolved.exists():
+                logger.debug(
+                    "_get_daemon_home_dir: Using resolved path: %s (original: %s)",
+                    resolved,
+                    home_path,
+                )
+                return resolved
+        except Exception as e:
+            logger.debug(
+                "_get_daemon_home_dir: Failed to resolve path %s: %s",
+                home_path,
+                e,
+            )
+            continue
+
+    # Fallback to expanduser if all else fails
+    return Path(os.path.expanduser("~")).resolve()
+
+
+def get_daemon_config_path() -> Path:
+    """Return path to daemon config.json (state_dir/config.json).
+
+    Uses _get_daemon_home_dir() for consistent path resolution with daemon process.
+    """
+    home_dir = _get_daemon_home_dir()
+    return home_dir / ".ccbt" / "daemon" / "config.json"
+
+
+def read_daemon_config() -> Optional[dict[str, Any]]:
+    """Read daemon config.json if present; return dict with ipc_port, api_key, etc. or None."""
+    path = get_daemon_config_path()
+    if not path.exists():
+        return None
+    try:
+        import json
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        logger.debug("Could not read daemon config file %s: %s", path, e)
+        return None
+
+
+def write_daemon_config(
+    ipc_port: int,
+    api_key: str,
+    *,
+    ipc_host: str = "127.0.0.1",
+) -> Path:
+    """Write daemon runtime config.json for CLI/dashboard discovery."""
+    import json
+
+    config_path = get_daemon_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "ipc_port": ipc_port,
+                "api_key": api_key,
+                "ipc_host": ipc_host,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    logger.debug("Wrote daemon config to %s", config_path)
+    return config_path
+
+
+def _resolve_ipc_port_from_cfg(cfg: Any) -> int:
+    if cfg.daemon and cfg.daemon.ipc_port:
+        return int(cfg.daemon.ipc_port)
+    return DEFAULT_IPC_PORT
+
+
+def resolve_daemon_connection_params(
+    cfg: Optional[Any] = None,
+) -> tuple[int, Optional[str], Path]:
+    """Resolve IPC port and API key for connecting to the daemon.
+
+    Prefers ``~/.ccbt/daemon/config.json`` when present (authoritative for a
+    running daemon), then falls back to the loaded application config.
+    """
+    if cfg is None:
+        from ccbt.config.config import get_config
+
+        cfg = get_config()
+
+    config_path = get_daemon_config_path()
+    daemon_config = read_daemon_config()
+    logger.debug(
+        "Daemon connection: config_path=%s, file_exists=%s",
+        config_path,
+        config_path.exists(),
+    )
+
+    if daemon_config:
+        port = daemon_config.get("ipc_port")
+        port = int(port) if port is not None else _resolve_ipc_port_from_cfg(cfg)
+        api_key = daemon_config.get("api_key") or (
+            cfg.daemon.api_key if cfg.daemon else None
+        )
+        logger.debug(
+            "Using daemon config file: port=%d, api_key_present=%s",
+            port,
+            bool(api_key),
+        )
+        return port, api_key, config_path
+
+    port = _resolve_ipc_port_from_cfg(cfg)
+    api_key = cfg.daemon.api_key if cfg.daemon else None
+    return port, api_key, config_path
+
+
+def is_process_alive(pid: int) -> bool:
+    """Return True when ``pid`` refers to a live process."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        tasklist_path = shutil.which("tasklist")
+        if not tasklist_path:
+            tasklist_path = os.path.join(
+                os.environ.get("SYSTEMROOT", "C:\\Windows"),
+                "System32",
+                "tasklist.exe",
+            )
+        try:
+            result = subprocess.run(
+                [tasklist_path, "/FI", f"PID eq {pid}", "/FO", "CSV"],
+                check=False,
+                capture_output=True,
+                timeout=2,
+                text=True,
+            )
+            output = (result.stdout or "").strip()
+            return f'"{pid}"' in output or f",{pid}," in output
+        except Exception as e:
+            logger.debug("Could not verify process %d on Windows: %s", pid, e)
+            return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    else:
+        return True
+
+
+def get_live_daemon_pid() -> Optional[int]:
+    """Return PID when daemon PID or lock file points at a live process."""
+    daemon_manager = DaemonManager()
+    pid = daemon_manager.get_pid()
+    if pid is not None and is_process_alive(pid):
+        return pid
+
+    if daemon_manager.lock_file.exists():
+        try:
+            lock_pid_text = daemon_manager.lock_file.read_text(encoding="utf-8").strip()
+            if lock_pid_text.isdigit():
+                lock_pid = int(lock_pid_text)
+                if is_process_alive(lock_pid):
+                    return lock_pid
+        except OSError as e:
+            logger.debug("Could not read daemon lock file: %s", e)
+
+    return None
+
+
+def is_daemon_ipc_listening(
+    ipc_port: int,
+    host: str = "127.0.0.1",
+    *,
+    timeout: float = 0.5,
+) -> bool:
+    """Return True when the daemon IPC port accepts TCP connections."""
+    from ccbt.utils.port_checker import is_port_listening
+
+    return is_port_listening(host, ipc_port, timeout=timeout)
 
 
 class DaemonManager:
@@ -27,8 +251,8 @@ class DaemonManager:
 
     def __init__(
         self,
-        pid_file: str | Path | None = None,
-        state_dir: str | Path | None = None,
+        pid_file: Optional[str | Path] = None,
+        state_dir: Optional[str | Path] = None,
     ):
         """Initialize daemon manager.
 
@@ -38,7 +262,12 @@ class DaemonManager:
 
         """
         if state_dir is None:
-            state_dir = Path.home() / ".ccbt" / "daemon"
+            # Note: Use consistent path resolution helper
+            home_dir = _get_daemon_home_dir()
+            state_dir = home_dir / ".ccbt" / "daemon"
+            logger.debug(
+                "DaemonManager: Using state_dir=%s (home_dir=%s)", state_dir, home_dir
+            )
         elif isinstance(state_dir, str):
             state_dir = Path(state_dir).expanduser()
 
@@ -66,7 +295,7 @@ class DaemonManager:
         """
         if self.pid_file.exists():
             try:
-                # CRITICAL FIX: Read with retry and validation to handle race conditions
+                # Note: Read with retry and validation to handle race conditions
                 # Multiple CLI commands might read simultaneously
                 pid_text = None
                 for attempt in range(3):
@@ -135,7 +364,7 @@ class DaemonManager:
 
         return True
 
-    def get_pid(self) -> int | None:
+    def get_pid(self) -> Optional[int]:
         """Get daemon PID from file with validation and retry logic.
 
         Returns:
@@ -146,7 +375,7 @@ class DaemonManager:
             return None
 
         try:
-            # CRITICAL FIX: Read with retry to handle race conditions
+            # Note: Read with retry to handle race conditions
             pid_text = None
             for attempt in range(3):
                 try:
@@ -232,117 +461,228 @@ class DaemonManager:
 
         Returns:
             True if lock acquired, False if already locked
+
         """
         try:
             import sys
 
             if sys.platform == "win32":
                 # Windows: use exclusive file creation
-                # CRITICAL FIX: First check if lock file exists and if process is running
+                # Note: First check if lock file exists and if process is running
                 # This handles stale locks from crashed processes
                 if self.lock_file.exists():
                     try:
-                        lock_pid_text = self.lock_file.read_text(encoding="utf-8").strip()
+                        lock_pid_text = self.lock_file.read_text(
+                            encoding="utf-8"
+                        ).strip()
                         if lock_pid_text.isdigit():
                             lock_pid = int(lock_pid_text)
+                            # Same process holds the lock (e.g. CLI started foreground daemon)
+                            if lock_pid == os.getpid():
+                                logger.debug(
+                                    "Lock file held by current process (PID %d), treating as acquired",
+                                    lock_pid,
+                                )
+                                return True
                             # Check if process is running
                             try:
                                 # On Windows, signal 0 doesn't work the same way
                                 # Use a different method to check if process exists
-                                import subprocess
+                                # Find full path to tasklist for security
+                                tasklist_path = shutil.which("tasklist")
+                                if not tasklist_path:
+                                    # Fallback to System32 path on Windows
+                                    if sys.platform == "win32":
+                                        tasklist_path = os.path.join(
+                                            os.environ.get("SYSTEMROOT", "C:\\Windows"),
+                                            "System32",
+                                            "tasklist.exe",
+                                        )
+                                    else:
+                                        tasklist_path = "tasklist"  # Fallback
+
                                 result = subprocess.run(
-                                    ["tasklist", "/FI", f"PID eq {lock_pid}", "/FO", "CSV"],
+                                    [
+                                        tasklist_path,
+                                        "/FI",
+                                        f"PID eq {lock_pid}",
+                                        "/FO",
+                                        "CSV",
+                                    ],
+                                    check=False,
                                     capture_output=True,
                                     timeout=2,
                                 )
-                                if str(lock_pid) in result.stdout.decode("utf-8", errors="ignore"):
+                                if str(lock_pid) in result.stdout.decode(
+                                    "utf-8", errors="ignore"
+                                ):
                                     # Process is running - lock is valid
                                     logger.debug(
-                                        "Lock file exists and process %d is running", lock_pid
-                                    )
-                                    return False
-                                else:
-                                    # Process is dead - remove stale lock
-                                    logger.warning(
-                                        "Lock file exists but process %d is not running, removing stale lock",
+                                        "Lock file exists and process %d is running",
                                         lock_pid,
                                     )
-                                    # Try to remove, but if it's locked by another process, continue anyway
-                                    try:
-                                        self.lock_file.unlink()
-                                    except (OSError, PermissionError) as e:
-                                        logger.warning(
-                                            "Cannot remove stale lock file (may be locked): %s. "
-                                            "Will try to create new lock file anyway.",
-                                            e,
-                                        )
-                                        # Continue - we'll try to create a new lock file
+                                    return False
+                                # Process is dead - remove stale lock
+                                logger.warning(
+                                    "Lock file exists but process %d is not running, removing stale lock",
+                                    lock_pid,
+                                )
+                                # Try to remove, but if it's locked by another process, continue anyway
+                                try:
+                                    self.lock_file.unlink()
+                                except (OSError, PermissionError) as e:
+                                    logger.warning(
+                                        "Cannot remove stale lock file (may be locked): %s. "
+                                        "Will try to create new lock file anyway.",
+                                        e,
+                                    )
+                                    # Continue - we'll try to create a new lock file
                             except Exception as e:
                                 logger.debug("Error checking process existence: %s", e)
                                 # Assume process is dead - try to remove lock
-                                try:
-                                    self.lock_file.unlink()
-                                except (OSError, PermissionError):
-                                    pass  # Ignore - will try to create new lock
+                                with contextlib.suppress(OSError, PermissionError):
+                                    self.lock_file.unlink()  # Ignore - will try to create new lock
                     except Exception as e:
                         logger.debug("Error reading lock file: %s, removing", e)
-                        try:
-                            self.lock_file.unlink()
-                        except (OSError, PermissionError):
-                            pass  # Ignore - will try to create new lock
+                        with contextlib.suppress(OSError, PermissionError):
+                            self.lock_file.unlink()  # Ignore - will try to create new lock
 
-                # Try to create lock file exclusively
-                try:
-                    # Try to create lock file exclusively (fails if exists)
-                    self._lock_handle = open(
-                        self.lock_file, "x"
-                    )  # 'x' mode = exclusive creation
-                    # Write PID to lock file
-                    self._lock_handle.write(str(os.getpid()))
-                    self._lock_handle.flush()
-                    logger.debug("Acquired daemon lock file: %s", self.lock_file)
-                    return True
-                except FileExistsError:
-                    # Lock file was created between check and creation - another process got it
-                    logger.debug("Lock file was created by another process")
-                    return False
-                except (OSError, PermissionError) as e:
-                    # File might be locked by another process
-                    logger.debug("Cannot create lock file (may be locked): %s", e)
-                    return False
-            else:
-                # Unix: use fcntl for file locking
-                try:
-                    import fcntl
-                except ImportError:
-                    # fcntl not available - fall back to simple file existence check
-                    if self.lock_file.exists():
-                        return False
+                # Note: Use atomic lock file creation with retry logic
+                # On Windows, file creation is atomic, but we need to handle race conditions
+                # where multiple processes try to remove stale locks simultaneously
+                max_retries = 3
+                for attempt in range(max_retries):
                     try:
-                        self._lock_handle = open(self.lock_file, "w")
+                        # Try to create lock file exclusively (fails if exists)
+                        # This is atomic on Windows - only one process can succeed
+                        self._lock_handle = open(
+                            self.lock_file, "x"
+                        )  # 'x' mode = exclusive creation
+                        # Write PID to lock file
                         self._lock_handle.write(str(os.getpid()))
                         self._lock_handle.flush()
                         logger.debug("Acquired daemon lock file: %s", self.lock_file)
                         return True
-                    except OSError:
-                        return False
+                    except FileExistsError:
+                        # Lock file exists - check if it's stale or from another process
+                        if attempt < max_retries - 1:
+                            # Wait a bit and retry (another process might be removing stale lock)
+                            import time
 
+                            time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                            # Re-check if lock file still exists
+                            if not self.lock_file.exists():
+                                continue  # Lock was removed, retry creation
+                            # Check if process in lock file is still running
+                            try:
+                                lock_pid_text = self.lock_file.read_text(
+                                    encoding="utf-8"
+                                ).strip()
+                                if lock_pid_text.isdigit():
+                                    lock_pid = int(lock_pid_text)
+                                    # Find full path to tasklist for security
+                                    tasklist_path = shutil.which("tasklist")
+                                    if not tasklist_path:
+                                        # Fallback to System32 path on Windows
+                                        if sys.platform == "win32":
+                                            tasklist_path = os.path.join(
+                                                os.environ.get(
+                                                    "SYSTEMROOT", "C:\\Windows"
+                                                ),
+                                                "System32",
+                                                "tasklist.exe",
+                                            )
+                                        else:
+                                            tasklist_path = "tasklist"  # Fallback
+
+                                    result = subprocess.run(
+                                        [
+                                            tasklist_path,
+                                            "/FI",
+                                            f"PID eq {lock_pid}",
+                                            "/FO",
+                                            "CSV",
+                                        ],
+                                        check=False,
+                                        capture_output=True,
+                                        timeout=2,
+                                    )
+                                    if str(lock_pid) in result.stdout.decode(
+                                        "utf-8", errors="ignore"
+                                    ):
+                                        # Process is running - lock is valid
+                                        logger.debug(
+                                            "Lock file exists and process %d is running",
+                                            lock_pid,
+                                        )
+                                        return False
+                                    # Process is dead - try to remove stale lock
+                                    with contextlib.suppress(OSError, PermissionError):
+                                        self.lock_file.unlink()  # Another process might be removing it
+                                    continue  # Retry after removing stale lock
+                            except Exception:
+                                pass  # Ignore errors during retry check
+                        # Lock file was created by another process or still exists after retries
+                        logger.debug(
+                            "Lock file was created by another process (attempt %d/%d)",
+                            attempt + 1,
+                            max_retries,
+                        )
+                        return False
+                    except (OSError, PermissionError) as e:
+                        # File might be locked by another process
+                        if attempt < max_retries - 1:
+                            import time
+
+                            time.sleep(0.1 * (attempt + 1))
+                            continue
+                        logger.debug("Cannot create lock file (may be locked): %s", e)
+                        return False
+                return False
+            # Unix: use fcntl for file locking
+            # If lock file exists and is held by current process (foreground mode), treat as acquired
+            if self.lock_file.exists():
+                try:
+                    lock_pid_text = self.lock_file.read_text(encoding="utf-8").strip()
+                    if lock_pid_text.isdigit():
+                        lock_pid = int(lock_pid_text)
+                        if lock_pid == os.getpid():
+                            logger.debug(
+                                "Lock file held by current process (PID %d), treating as acquired",
+                                lock_pid,
+                            )
+                            return True
+                except Exception:
+                    pass
+            try:
+                import fcntl
+            except ImportError:
+                # fcntl not available - fall back to simple file existence check
+                if self.lock_file.exists():
+                    return False
                 try:
                     self._lock_handle = open(self.lock_file, "w")
-                    fcntl.flock(
-                        self._lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB
-                    )
-                    # Write PID to lock file
                     self._lock_handle.write(str(os.getpid()))
                     self._lock_handle.flush()
                     logger.debug("Acquired daemon lock file: %s", self.lock_file)
                     return True
-                except (OSError, BlockingIOError):
-                    # Lock is held by another process
-                    if self._lock_handle:
-                        self._lock_handle.close()
-                        self._lock_handle = None
+                except OSError:
                     return False
+
+            try:
+                self._lock_handle = open(self.lock_file, "w")
+                fcntl.flock(self._lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Write PID to lock file
+                self._lock_handle.write(str(os.getpid()))
+                self._lock_handle.flush()
+                logger.debug("Acquired daemon lock file: %s", self.lock_file)
+                return True
+            except (OSError, BlockingIOError):
+                # Lock is held by another process
+                if self._lock_handle:
+                    self._lock_handle.close()
+                    self._lock_handle = None
+                return False
         except Exception as e:
             logger.debug("Error acquiring lock file: %s", e)
             if self._lock_handle:
@@ -386,18 +726,17 @@ class DaemonManager:
         Args:
             acquire_lock: If True, acquire lock before writing (default: True).
                          Set to False if lock is already acquired.
+
         """
         pid = os.getpid()
 
-        # CRITICAL FIX: Acquire lock before writing PID file (if not already acquired)
+        # Note: Acquire lock before writing PID file (if not already acquired)
         # This ensures atomic daemon detection
-        if acquire_lock:
-            if not self.acquire_lock():
-                raise RuntimeError(
-                    "Cannot acquire daemon lock file. Another daemon may be starting."
-                )
+        if acquire_lock and not self.acquire_lock():
+            msg = "Cannot acquire daemon lock file. Another daemon may be starting."
+            raise RuntimeError(msg)
 
-        # CRITICAL FIX: Use atomic write to prevent corruption
+        # Note: Use atomic write to prevent corruption
         # Write to temp file first, then rename atomically
         # This ensures PID file is never in a corrupted state
         temp_file = self.pid_file.with_suffix(self.pid_file.suffix + ".tmp")
@@ -411,33 +750,58 @@ class DaemonManager:
                 self.pid_file.unlink()
             temp_file.replace(self.pid_file)
             logger.debug("Wrote PID %d to %s (atomic write)", pid, self.pid_file)
-        except Exception as e:
+        except Exception:
             # Clean up temp file on error
             with contextlib.suppress(OSError):
                 temp_file.unlink()
             # Release lock on error
             self.release_lock()
-            logger.error("Failed to write PID file: %s", e)
+            logger.exception("Failed to write PID file")
             raise
 
     def remove_pid(self) -> None:
-        """Remove PID file and release lock."""
+        """Remove PID/config files owned by this process and release lock."""
+        current_pid = os.getpid()
+        pid_from_file = self.get_pid()
+
         if self.pid_file.exists():
-            self.pid_file.unlink()
-            logger.debug("Removed PID file: %s", self.pid_file)
+            if pid_from_file is None or pid_from_file == current_pid:
+                self.pid_file.unlink()
+                logger.debug("Removed PID file: %s", self.pid_file)
+            else:
+                logger.debug(
+                    "Skipping PID file removal: file PID %s != current PID %s",
+                    pid_from_file,
+                    current_pid,
+                )
+
+        config_json = self.state_dir / "config.json"
+        if config_json.exists() and pid_from_file == current_pid:
+            with contextlib.suppress(OSError):
+                config_json.unlink()
+            logger.debug("Removed daemon config: %s", config_json)
+        elif config_json.exists() and pid_from_file not in (None, current_pid):
+            logger.debug(
+                "Skipping daemon config removal: owned by PID %s (current PID %s)",
+                pid_from_file,
+                current_pid,
+            )
+
         # Release lock file
         self.release_lock()
 
     def start(
         self,
-        script_path: str | None = None,
+        script_path: Optional[str] = None,
         foreground: bool = False,
+        extra_args: Optional[list[str]] = None,
     ) -> int:
         """Start daemon process.
 
         Args:
             script_path: Path to daemon script (if None, uses current Python)
             foreground: Run in foreground (for debugging)
+            extra_args: Optional list of CLI args to pass to daemon (e.g. --config path)
 
         Returns:
             Process PID
@@ -461,28 +825,37 @@ class DaemonManager:
             args = [script_path, "-m", daemon_module]
         else:
             args = [script_path]
+        if extra_args:
+            args.extend(extra_args)
 
         # Start process
         try:
-            # CRITICAL FIX: Capture stderr to a log file for background mode
+            # Note: Capture stderr to a log file for background mode
             # This allows debugging daemon startup failures
             log_file = self.state_dir / "daemon_startup.log"
-            log_fd: int | Any = subprocess.DEVNULL
+            log_fd: Union[int, Any] = subprocess.DEVNULL
             try:
                 log_fd = open(log_file, "a", encoding="utf-8")
             except Exception:
                 # If we can't open log file, fall back to DEVNULL
                 log_fd = subprocess.DEVNULL
 
-            process = subprocess.Popen(
-                args,
-                stdout=log_fd,
-                stderr=log_fd,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            popen_kwargs: dict[str, Any] = {
+                "args": args,
+                "stdout": log_fd,
+                "stderr": log_fd,
+                "stdin": subprocess.DEVNULL,
+            }
+            if sys.platform == "win32":
+                popen_kwargs["creationflags"] = (
+                    subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                popen_kwargs["start_new_session"] = True
 
-            # CRITICAL FIX: Wait longer and check multiple times
+            process = subprocess.Popen(**popen_kwargs)
+
+            # Note: Wait longer and check multiple times
             # This gives the daemon time to initialize and write PID file
             # Increased to 60.0s to account for slow startup (NAT discovery can take ~35s, DHT bootstrap ~8s, etc.)
             max_wait_time = 60.0  # Maximum time to wait (NAT discovery + DHT bootstrap + IPC server startup)
@@ -526,10 +899,8 @@ class DaemonManager:
                         "Daemon started with PID %d (PID file created)", process.pid
                     )
                     if log_fd != subprocess.DEVNULL:
-                        try:
+                        with contextlib.suppress(Exception):
                             log_fd.close()  # type: ignore[union-attr]
-                        except Exception:
-                            pass
                     return process.pid
 
                 time.sleep(check_interval)
@@ -546,10 +917,8 @@ class DaemonManager:
             )
             logger.info("Daemon started with PID %d", process.pid)
             if log_fd != subprocess.DEVNULL:
-                try:
+                with contextlib.suppress(Exception):
                     log_fd.close()  # type: ignore[union-attr]
-                except Exception:
-                    pass
             return process.pid
 
         except Exception:
@@ -614,7 +983,7 @@ class DaemonManager:
             self.remove_pid()
             return False
 
-    def restart(self, script_path: str | None = None) -> int:
+    def restart(self, script_path: Optional[str] = None) -> int:
         """Restart daemon process.
 
         Args:
@@ -629,27 +998,119 @@ class DaemonManager:
         time.sleep(1.0)  # Brief pause
         return self.start(script_path=script_path)
 
-    def setup_signal_handlers(self, shutdown_callback: Any) -> None:
+    def setup_signal_handlers(
+        self,
+        shutdown_callback: Any,
+        *,
+        respond_to_sigint: bool = True,
+    ) -> None:
         """Set up signal handlers for graceful shutdown.
 
         Args:
             shutdown_callback: Async callback function for shutdown
+            respond_to_sigint: When False, ignore SIGINT (background daemon on Windows)
 
         """
+        # Store reference to shutdown callback for direct access
+        self._shutdown_callback = shutdown_callback
+
+        # Note: Extract daemon instance and shutdown event from callback
+        # This allows us to set the event synchronously in signal handler
+        daemon_instance = None
+        shutdown_event = None
+        if shutdown_callback and hasattr(shutdown_callback, "__self__"):
+            # shutdown_callback is a bound method, get the instance
+            daemon_instance = shutdown_callback.__self__
+            # Use public property if available, fallback to private attribute
+            if hasattr(daemon_instance, "shutdown_event"):
+                shutdown_event = daemon_instance.shutdown_event
+            elif hasattr(daemon_instance, "_shutdown_event"):
+                shutdown_event = daemon_instance._shutdown_event  # noqa: SLF001
 
         def signal_handler(signum: int, _frame: Any) -> None:
             """Handle shutdown signal."""
+            # Note: Prevent multiple signal handler calls
+            # Check if shutdown is already in progress
+            if shutdown_event is not None and shutdown_event.is_set():
+                logger.debug(
+                    "Received signal %d but shutdown already in progress, ignoring",
+                    signum,
+                )
+                return
+
             logger.info("Received signal %d, initiating shutdown", signum)
             self._shutdown_requested = True
-            # Schedule shutdown callback
+
+            # Note: Set global shutdown flag early to suppress verbose logging
+            try:
+                from ccbt.utils.shutdown import set_shutdown
+
+                set_shutdown()
+            except Exception:
+                pass  # Don't fail if shutdown module isn't available
+
+            # CRITICAL: Save checkpoints before shutdown (if daemon instance available)
+            # Note: This is best-effort since we're in a signal handler
+            try:
+                if daemon_instance and hasattr(daemon_instance, "session_manager"):
+                    session_manager = daemon_instance.session_manager
+                    if (
+                        session_manager
+                        and session_manager.config.disk.checkpoint_enabled
+                    ):
+                        # Schedule checkpoint save as async task
+                        # We can't await here, but the daemon's stop() will handle it
+                        logger.info(
+                            "Checkpoint save will be handled during graceful shutdown"
+                        )
+            except Exception as e:
+                logger.debug(
+                    "Error scheduling checkpoint save from signal handler: %s", e
+                )
+
+            # Note: Set shutdown event synchronously FIRST
+            # This ensures shutdown happens even if task creation fails
+            # asyncio.Event.set() is thread-safe and works immediately
+            if shutdown_event is not None:
+                shutdown_event.set()
+                logger.debug("Shutdown event set directly from signal handler")
+
+            # Also schedule shutdown callback as a task (for async cleanup)
+            # This ensures proper async shutdown sequence
             if shutdown_callback:
-                _ = asyncio.create_task(shutdown_callback())
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Create task in the running loop (fire-and-forget for shutdown)
+                    asyncio.create_task(shutdown_callback())  # noqa: RUF006
+                    # Don't await - let it run in background during shutdown
+                except RuntimeError:
+                    # No running loop - try to get event loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.create_task(shutdown_callback())  # noqa: RUF006
+                            # Don't await - let it run in background during shutdown
+                        else:
+                            # Loop not running - schedule for next run
+                            loop.call_soon_threadsafe(
+                                lambda: asyncio.create_task(shutdown_callback())
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            "Could not schedule shutdown callback task: %s. "
+                            "Shutdown event was set directly.",
+                            e,
+                        )
 
         # Register signal handlers
         if sys.platform != "win32":
             signal.signal(signal.SIGTERM, signal_handler)
             signal.signal(signal.SIGHUP, signal_handler)  # Reload signal
-        signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+        if respond_to_sigint:
+            signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+        else:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            logger.debug("SIGINT ignored (background daemon mode)")
 
     @staticmethod
     def daemonize() -> None:

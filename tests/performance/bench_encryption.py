@@ -29,6 +29,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
 try:
@@ -288,7 +289,10 @@ def run_key_derivation_benchmark(iterations: int) -> DHResult:
     latencies = []
     for _ in range(iterations):
         t0 = time.perf_counter()
-        _ = dh.derive_encryption_key(shared_secret, info_hash)
+        _ = dh.derive_encryption_key(
+            shared_secret, info_hash, direction="outbound"
+        )
+
         latencies.append((time.perf_counter() - t0) * 1000)  # Convert to ms
     elapsed = time.perf_counter() - start
 
@@ -641,10 +645,12 @@ async def run_encrypted_connection_setup_benchmark(
         mse = MSEHandshake(dh_key_size=dh_key_size, prefer_rc4=True)
         result = await mse.respond_as_receiver(reader, writer, info_hash)
 
-        if result.success and result.cipher:
-            # Wrap streams
-            encrypted_reader = EncryptedStreamReader(reader, result.cipher)
-            encrypted_writer = EncryptedStreamWriter(writer, result.cipher)
+        in_cipher = result.inbound_cipher
+        out_cipher = result.outbound_cipher
+        if result.success and in_cipher and out_cipher:
+            # Wrap streams (inbound decrypts peer traffic; outbound encrypts our writes)
+            encrypted_reader = EncryptedStreamReader(reader, in_cipher)
+            encrypted_writer = EncryptedStreamWriter(writer, out_cipher)
 
             # Read BitTorrent handshake through encrypted stream
             await encrypted_reader.readexactly(68)
@@ -682,14 +688,12 @@ async def run_encrypted_connection_setup_benchmark(
                     reader, writer, info_hash
                 )
 
-                if result.success and result.cipher:
-                    # Wrap streams
-                    encrypted_reader = EncryptedStreamReader(
-                        reader, result.cipher
-                    )
-                    encrypted_writer = EncryptedStreamWriter(
-                        writer, result.cipher
-                    )
+                in_cipher = result.inbound_cipher
+                out_cipher = result.outbound_cipher
+                if result.success and in_cipher and out_cipher:
+                    # Wrap streams (inbound decrypts peer traffic; outbound encrypts our writes)
+                    encrypted_reader = EncryptedStreamReader(reader, in_cipher)
+                    encrypted_writer = EncryptedStreamWriter(writer, out_cipher)
 
                     # Send BitTorrent handshake through encrypted stream
                     handshake = Handshake(info_hash, peer_id)
@@ -1113,7 +1117,7 @@ def write_json(
     return path
 
 
-def derive_config_name(config_file: str | None) -> str:
+def derive_config_name(config_file: Optional[str]) -> str:
     """Derive config name from config file path."""
     if not config_file:
         return "default"
@@ -1165,6 +1169,12 @@ def main() -> int:
         choices=["auto", "pre-commit", "commit", "both", "none"],
         default="auto",
         help="Recording mode: auto (detect), pre-commit, commit, both, or none",
+    )
+    parser.add_argument(
+        "--json-out",
+        type=Path,
+        default=None,
+        help="Write benchmark JSON artifact to this path (or directory) for CI",
     )
 
     args = parser.parse_args()
@@ -1398,7 +1408,7 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     ensure_artifacts_dir(output_dir)
     config_name = derive_config_name(args.config_file)
-    
+
     # Aggregate all results for recording
     all_results = (
         cipher_results
@@ -1409,12 +1419,16 @@ def main() -> int:
         + transfer_results
         + memory_results
     )
-    
+
     # Record benchmark results using new system
     per_run_path, timeseries_path = record_benchmark_results(
-        "encryption", config_name, all_results, args.record_mode
+        "encryption",
+        config_name,
+        all_results,
+        args.record_mode,
+        json_out=args.json_out,
     )
-    
+
     # Backward compatibility
     out_path = write_json(
         output_dir,
@@ -1429,13 +1443,13 @@ def main() -> int:
         memory_results,
     )
     print(f"\nWrote (legacy): {out_path}")
-    
+
     # Print recording results
     if per_run_path:
         print(f"Recorded per-run: {per_run_path}")
     if timeseries_path:
         print(f"Updated timeseries: {timeseries_path}")
-    
+
     return 0
 
 

@@ -6,11 +6,13 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from typing import Any, Optional
 
 import click
 from rich.console import Console
 from rich.table import Table
 
+from ccbt.i18n import _
 from ccbt.protocols.base import ProtocolType
 
 # IPFS support is optional - handle ImportError gracefully
@@ -19,12 +21,11 @@ try:
 except ImportError:
     IPFSProtocol = None  # type: ignore[assignment, misc]
 
-from ccbt.session.session import AsyncSessionManager
 
 logger = logging.getLogger(__name__)
 
 
-async def _get_ipfs_protocol() -> IPFSProtocol | None:
+async def _get_ipfs_protocol() -> Optional[Any]:  # Optional[IPFSProtocol]
     """Get IPFS protocol instance from session manager.
 
     Note: If daemon is running, this will check via IPC but cannot return
@@ -72,11 +73,11 @@ async def _get_ipfs_protocol() -> IPFSProtocol | None:
             logger.exception("Failed to get IPFS protocol from session")
 
     # Fallback: create temporary session if executor not available
-    # CRITICAL FIX: Use safe local session creation helper
+    # Note: Use safe local session creation helper
     try:
         from ccbt.cli.main import _ensure_local_session_safe
 
-        session = await _ensure_local_session_safe(force_local=True)
+        session = await _ensure_local_session_safe(_force_local=True)
         try:
             # Find IPFS protocol in session's protocols list
             protocols = getattr(session, "protocols", [])
@@ -99,8 +100,13 @@ async def _get_ipfs_protocol() -> IPFSProtocol | None:
 
 @click.command("ipfs-add")
 @click.argument("path", type=click.Path(exists=True, path_type=Path))
-@click.option("--pin/--no-pin", default=False, help="Pin content after adding")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option(
+    "-i/--pin/--no-pin",
+    "pin",
+    default=False,
+    help="Pin content after adding",
+)
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
     """Add file or directory to IPFS."""
     console = Console()
@@ -114,7 +120,7 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
             return
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -127,14 +133,16 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
                 if json_output:
                     console.print(json.dumps({"cid": cid, "pinned": pin}))
                 else:
-                    console.print(f"[green]Added to IPFS:[/green] {cid}")
+                    console.print(
+                        _("[green]Added to IPFS:[/green] {cid}").format(cid=cid)
+                    )
                     if pin:
-                        console.print("[green]Content pinned[/green]")
+                        console.print(_("[green]Content pinned[/green]"))
             else:
-                console.print("[red]Directories not yet supported[/red]")
+                console.print(_("[red]Directories not yet supported[/red]"))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error adding content: {e}[/red]")
-            logger.exception("Failed to add content")
+            console.print(_("[red]Error adding content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to add content"))
 
     asyncio.run(_add())
 
@@ -144,21 +152,21 @@ def ipfs_add(path: Path, pin: bool, json_output: bool) -> None:
 @click.option(
     "--output", "-o", type=click.Path(path_type=Path), help="Output file path"
 )
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-def ipfs_get(cid: str, output: Path | None, json_output: bool) -> None:
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
+def ipfs_get(cid: str, output: Optional[Path], json_output: bool) -> None:
     """Get content from IPFS by CID."""
     console = Console()
 
     async def _get() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
             content = await ipfs.get_content(cid)
             if not content:
-                console.print(f"[red]Content not found: {cid}[/red]")
+                console.print(_("[red]Content not found: {cid}[/red]").format(cid=cid))
                 return
 
             if output:
@@ -166,21 +174,25 @@ def ipfs_get(cid: str, output: Path | None, json_output: bool) -> None:
                 if json_output:
                     console.print(json.dumps({"cid": cid, "saved_to": str(output)}))
                 else:
-                    console.print(f"[green]Content saved to:[/green] {output}")
+                    console.print(
+                        _("[green]Content saved to:[/green] {output}").format(
+                            output=output
+                        )
+                    )
             elif json_output:
                 console.print(json.dumps({"cid": cid, "size": len(content)}))
             else:
                 console.print(content.decode("utf-8", errors="replace"))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting content: {e}[/red]")
-            logger.exception("Failed to get content")
+            console.print(_("[red]Error getting content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get content"))
 
     asyncio.run(_get())
 
 
 @click.command("ipfs-pin")
 @click.argument("cid", type=str)
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_pin(cid: str, json_output: bool) -> None:
     """Pin content in IPFS."""
     console = Console()
@@ -188,7 +200,7 @@ def ipfs_pin(cid: str, json_output: bool) -> None:
     async def _pin() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -196,17 +208,17 @@ def ipfs_pin(cid: str, json_output: bool) -> None:
             if json_output:
                 console.print(json.dumps({"cid": cid, "pinned": True}))
             else:
-                console.print(f"[green]Pinned:[/green] {cid}")
+                console.print(_("[green]Pinned:[/green] {cid}").format(cid=cid))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error pinning content: {e}[/red]")
-            logger.exception("Failed to pin content")
+            console.print(_("[red]Error pinning content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to pin content"))
 
     asyncio.run(_pin())
 
 
 @click.command("ipfs-unpin")
 @click.argument("cid", type=str)
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_unpin(cid: str, json_output: bool) -> None:
     """Unpin content in IPFS."""
     console = Console()
@@ -214,7 +226,7 @@ def ipfs_unpin(cid: str, json_output: bool) -> None:
     async def _unpin() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -222,26 +234,32 @@ def ipfs_unpin(cid: str, json_output: bool) -> None:
             if json_output:
                 console.print(json.dumps({"cid": cid, "pinned": False}))
             else:
-                console.print(f"[green]Unpinned:[/green] {cid}")
+                console.print(_("[green]Unpinned:[/green] {cid}").format(cid=cid))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error unpinning content: {e}[/red]")
-            logger.exception("Failed to unpin content")
+            console.print(_("[red]Error unpinning content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to unpin content"))
 
     asyncio.run(_unpin())
 
 
 @click.command("ipfs-stats")
 @click.argument("cid", type=str, required=False)
-@click.option("--all", "all_stats", is_flag=True, help="Show stats for all content")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
-def ipfs_stats(cid: str | None, all_stats: bool, json_output: bool) -> None:
+@click.option(
+    "-a",
+    "--all",
+    "all_stats",
+    is_flag=True,
+    help="Show stats for all content",
+)
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
+def ipfs_stats(cid: Optional[str], all_stats: bool, json_output: bool) -> None:
     """Show IPFS content statistics."""
     console = Console()
 
     async def _stats() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -273,18 +291,20 @@ def ipfs_stats(cid: str | None, all_stats: bool, json_output: bool) -> None:
                         table.add_row(key, str(value))
                     console.print(table)
                 else:
-                    console.print(f"[red]No stats found for CID: {cid}[/red]")
+                    console.print(
+                        _("[red]No stats found for CID: {cid}[/red]").format(cid=cid)
+                    )
             else:
-                console.print("[red]Specify CID or use --all[/red]")
+                console.print(_("[red]Specify CID or use --all[/red]"))
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting stats: {e}[/red]")
-            logger.exception("Failed to get stats")
+            console.print(_("[red]Error getting stats: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get stats"))
 
     asyncio.run(_stats())
 
 
 @click.command("ipfs-peers")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_peers(json_output: bool) -> None:
     """List connected IPFS peers."""
     console = Console()
@@ -292,7 +312,7 @@ def ipfs_peers(json_output: bool) -> None:
     async def _peers() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -321,14 +341,14 @@ def ipfs_peers(json_output: bool) -> None:
                     )
                 console.print(table)
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting peers: {e}[/red]")
-            logger.exception("Failed to get peers")
+            console.print(_("[red]Error getting peers: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get peers"))
 
     asyncio.run(_peers())
 
 
 @click.command("ipfs-content")
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("-j", "--json", "json_output", is_flag=True, help="Output as JSON")
 def ipfs_content(json_output: bool) -> None:
     """List all IPFS content."""
     console = Console()
@@ -336,7 +356,7 @@ def ipfs_content(json_output: bool) -> None:
     async def _content() -> None:
         ipfs = await _get_ipfs_protocol()
         if not ipfs:
-            console.print("[red]IPFS protocol not available[/red]")
+            console.print(_("[red]IPFS protocol not available[/red]"))
             return
 
         try:
@@ -365,8 +385,8 @@ def ipfs_content(json_output: bool) -> None:
                     )
                 console.print(table)
         except Exception as e:  # pragma: no cover - CLI error handler
-            console.print(f"[red]Error getting content: {e}[/red]")
-            logger.exception("Failed to get content")
+            console.print(_("[red]Error getting content: {e}[/red]").format(e=e))
+            logger.exception(_("Failed to get content"))
 
     asyncio.run(_content())
 

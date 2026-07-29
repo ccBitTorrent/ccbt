@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -393,3 +393,54 @@ class TestAsyncPexManager:
 
         manager.known_peers[("192.168.1.1", 6882)] = PexPeer("192.168.1.1", 6882)
         assert manager.get_peer_count() == 2
+
+    @pytest.mark.asyncio
+    async def test_get_pex_peer_lists_encodes_bep11_payloads(self):
+        manager = AsyncPexManager()
+
+        session = PexSession(peer_key="203.0.113.1:7000", is_supported=True, ut_pex_id=1)
+        manager.sessions[session.peer_key] = session
+
+        manager.get_connected_peers_callback = AsyncMock(
+            return_value=[("203.0.113.2", 7001), ("203.0.113.1", 7000)]
+        )
+
+        added_payload, dropped_payload = await manager._get_pex_peer_lists(
+            session.peer_key
+        )
+
+        from ccbt.core.bencode import BencodeDecoder
+
+        assert added_payload
+        assert dropped_payload == b""
+        decoded = BencodeDecoder(added_payload).decode()
+        assert isinstance(decoded, dict)
+        assert b"added" in decoded
+        assert b"added.f" in decoded
+
+    @pytest.mark.asyncio
+    async def test_pex_message_counts_are_logged_with_bep11(self):
+        manager = AsyncPexManager()
+
+        session = PexSession(peer_key="198.51.100.1:7001", is_supported=True, ut_pex_id=1)
+        manager.sessions[session.peer_key] = session
+
+        manager.logger = MagicMock()
+        manager.get_connected_peers_callback = AsyncMock(
+            return_value=[("198.51.100.2", 7002)]
+        )
+
+        callback_calls = []
+
+        async def mock_send(peer_key: str, message: bytes, is_added: bool = True) -> bool:
+            callback_calls.append((peer_key, message, is_added))
+            return True
+
+        manager.send_pex_callback = mock_send
+
+        await manager._send_pex_to_peer(session)
+
+        assert callback_calls
+        _, added_payload, is_added = callback_calls[0]
+        assert is_added is True
+        assert added_payload

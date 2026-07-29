@@ -1,18 +1,37 @@
 name: Benchmark
 
 on:
-  push:
-    branches: [main, dev]
-    paths:
-      - 'ccbt/**'
-      - 'tests/performance/**'
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base branch/commit to compare against
+        required: false
+        default: main
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  BENCH_BASE_DIR: ${{ github.workspace }}/.ci/benchmark_base
+  BENCH_HEAD_DIR: ${{ github.workspace }}/.ci/benchmark_head
+  BENCH_COMPARE_DIR: ${{ github.workspace }}/docs/en/reports/benchmarks/generated
+  # Canonical examples live under docs/en/examples/ (docs/examples is legacy on older branches).
+  BENCH_CONFIG_FILE: docs/en/examples/example-config-performance.toml
+  BENCH_QUICK: "1"
+  BENCH_KEEP_HISTORY: "20"
+
+concurrency:
+  group: benchmark-write-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   benchmark:
     name: benchmark
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write  # Required to commit benchmark results
+      actions: read
+      pull-requests: read
     
     steps:
       - uses: actions/checkout@v4
@@ -32,43 +51,136 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
-      
-      - name: Run hash verification benchmark
+
+      - name: Run head benchmark suite
         run: |
-          uv run python tests/performance/bench_hash_verify.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run disk I/O benchmark
+          mkdir -p "${BENCH_HEAD_DIR}"
+          QUICK_ARG=""
+          if [ "${BENCH_QUICK}" = "1" ]; then
+            QUICK_ARG="--quick"
+          fi
+          CONFIG_FILE="${BENCH_CONFIG_FILE}"
+          if [ ! -f "${CONFIG_FILE}" ] && [ -f "docs/examples/example-config-performance.toml" ]; then
+            CONFIG_FILE="docs/examples/example-config-performance.toml"
+          fi
+          uv run python dev/scripts/run_benchmark_suite.py \
+            --output-dir "${BENCH_HEAD_DIR}" \
+            --workdir "${{ github.workspace }}" \
+            --config-file "${CONFIG_FILE}" \
+            --record-mode none \
+            --runner python \
+            ${QUICK_ARG}
+
+      - name: Prepare base checkout
         run: |
-          uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run piece assembly benchmark
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_REF="${{ github.event.inputs.base_ref }}"
+          fi
+          rm -rf "${BENCH_BASE_DIR}"
+          mkdir -p "${BENCH_BASE_DIR}"
+          git worktree add --detach "${BENCH_BASE_DIR}" "${BASE_REF}"
+
+      - name: Run base benchmark suite
         run: |
-          uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run loopback throughput benchmark
+          mkdir -p "${BENCH_BASE_DIR}"
+          QUICK_ARG=""
+          if [ "${BENCH_QUICK}" = "1" ]; then
+            QUICK_ARG="--quick"
+          fi
+          # Older main required daemon.api_key but shipped ccbt.toml with it commented out.
+          # Inject a disposable key so base checkout can load Config during comparison runs.
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path("${{ env.BENCH_BASE_DIR }}") / "ccbt.toml"
+          if not path.is_file():
+              raise SystemExit(0)
+          text = path.read_text(encoding="utf-8")
+          daemon = re.search(r"(?ms)^\[daemon\](.*?)(?=^\[|\Z)", text)
+          if daemon and re.search(r"(?m)^\s*api_key\s*=", daemon.group(1)):
+              raise SystemExit(0)
+          if "[daemon]" in text:
+              text = text.replace(
+                  "[daemon]",
+                  '[daemon]\napi_key = "ci-benchmark-base-key"',
+                  1,
+              )
+          else:
+              text += '\n[daemon]\napi_key = "ci-benchmark-base-key"\n'
+          path.write_text(text, encoding="utf-8")
+          print("Injected daemon.api_key into base ccbt.toml for benchmark compatibility")
+          PY
+          # Resolve config relative to the *base* worktree only.
+          # Do not fall back to HEAD's docs/en path — that overwrote the legacy
+          # docs/examples path on older main and made hash_verify produce no JSON.
+          CONFIG_FILE="${BENCH_CONFIG_FILE}"
+          if [ ! -f "${BENCH_BASE_DIR}/${CONFIG_FILE}" ]; then
+            if [ -f "${BENCH_BASE_DIR}/docs/examples/example-config-performance.toml" ]; then
+              CONFIG_FILE="docs/examples/example-config-performance.toml"
+            elif [ -f "${BENCH_BASE_DIR}/docs/en/examples/example-config-performance.toml" ]; then
+              CONFIG_FILE="docs/en/examples/example-config-performance.toml"
+            fi
+          fi
+          if [ ! -f "${BENCH_BASE_DIR}/${CONFIG_FILE}" ]; then
+            echo "ERROR: No performance config found under ${BENCH_BASE_DIR} (tried ${CONFIG_FILE})"
+            exit 1
+          fi
+          echo "Using base benchmark config: ${CONFIG_FILE}"
+          (cd "${BENCH_BASE_DIR}" && uv sync --dev)
+          # Use HEAD's runner script (has current CLI), but execute benchmarks in base workdir.
+          # Do not overlay HEAD's tests/performance onto base — newer harnesses call APIs
+          # (e.g. derive_encryption_key(direction=...)) that older main does not provide.
+          # Legacy scripts emit JSON via --output-dir; the suite runner falls back to that.
+          uv run python dev/scripts/run_benchmark_suite.py \
+            --output-dir "${BENCH_BASE_DIR}" \
+            --workdir "${BENCH_BASE_DIR}" \
+            --config-file "${CONFIG_FILE}" \
+            --record-mode none \
+            --runner uv \
+            ${QUICK_ARG}
+
+      - name: Compare and render benchmark reports
         run: |
-          uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
-      - name: Run encryption benchmark
-        run: |
-          uv run python tests/performance/bench_encryption.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
-      
+          mkdir -p "${BENCH_COMPARE_DIR}"
+          uv run python dev/scripts/compare_benchmark_json.py \
+            --base "${BENCH_BASE_DIR}" \
+            --head "${BENCH_HEAD_DIR}" \
+            --thresholds dev/benchmark_thresholds.toml \
+            --output "${BENCH_COMPARE_DIR}/comparison_latest.json"
+
+          uv run python dev/scripts/render_benchmark_docs.py \
+            --comparison "${BENCH_COMPARE_DIR}/comparison_latest.json" \
+            --history "${BENCH_COMPARE_DIR}/benchmark_history.json" \
+            --out-dir "${BENCH_COMPARE_DIR}" \
+            --keep "${BENCH_KEEP_HISTORY}"
+
       - name: Upload benchmark artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
+          name: benchmark-ci-artifacts
           path: |
-            docs/reports/benchmarks/runs/*.json
-            docs/reports/benchmarks/timeseries/*.json
+            ${{ env.BENCH_BASE_DIR }}/*.json
+            ${{ env.BENCH_HEAD_DIR }}/*.json
+            docs/en/reports/benchmarks/generated/comparison_latest.json
+            docs/en/reports/benchmarks/generated/comparison_latest.md
+            docs/en/reports/benchmarks/generated/trend_charts.md
+            docs/en/reports/benchmarks/generated/benchmark_history.json
           retention-days: 90
       
       - name: Commit benchmark results
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add docs/reports/benchmarks/
-          git diff --staged --quiet || git commit -m "ci: record benchmark results [skip ci]"
-          git push
-
+          git add docs/en/reports/benchmarks/generated/comparison_latest.md \
+            docs/en/reports/benchmarks/generated/comparison_latest.json \
+            docs/en/reports/benchmarks/generated/trend_charts.md \
+            docs/en/reports/benchmarks/generated/benchmark_history.json \
+            docs/en/reports/benchmarks/generated/README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: update benchmark docs artifacts"
+            git push
+          fi

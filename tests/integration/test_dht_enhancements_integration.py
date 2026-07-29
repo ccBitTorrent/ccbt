@@ -13,10 +13,8 @@ Target: Comprehensive integration test coverage for DHT enhancement workflows.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import ipaddress
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -33,7 +31,6 @@ from ccbt.discovery.dht_storage import (
     DHTImmutableData,
     DHTMutableData,
     calculate_immutable_key,
-    calculate_mutable_key,
     decode_storage_value,
     encode_storage_value,
 )
@@ -350,7 +347,7 @@ class TestStorageIntegrationWorkflow:
         }
 
         # Mock successful response for get_data
-        data_value = encode_storage_value(DHTImmutableData(data=b"stored data"))
+        data_value = encode_storage_value(DHTImmutableData(data=b"test data"))
         get_response = {
             b"y": b"r",
             b"r": {
@@ -376,7 +373,6 @@ class TestStorageIntegrationWorkflow:
         mock_transport.receive = mock_receive
 
         # Test put_data (takes value dict, not raw data)
-        from ccbt.discovery.dht_storage import DHTStorageKeyType
 
         key = calculate_immutable_key(b"test data")
         immutable_data = DHTImmutableData(data=b"test data")
@@ -387,10 +383,14 @@ class TestStorageIntegrationWorkflow:
 
         # Test get_data (check signature - may not have mutable param)
         retrieved = await client.get_data(key)
-        # Should retrieve the stored data (get_data returns dict, not DHTImmutableData)
+        # Current implementation returns raw bytes for immutable storage payloads.
         if retrieved:
-            assert isinstance(retrieved, dict)
-            assert b"v" in retrieved
+            assert isinstance(retrieved, bytes)
+            from ccbt.core.bencode import BencodeDecoder
+
+            decoded = BencodeDecoder(retrieved).decode()
+            assert isinstance(decoded, dict)
+            assert decoded.get(b"v") == b"test data"
 
 
 class TestMultiAddressIntegrationWorkflow:
@@ -617,7 +617,11 @@ class TestInfohashIndexingIntegrationWorkflow:
         client.transport = mock_transport
 
         # Mock get_data response with index entry
-        from ccbt.discovery.dht_indexing import DHTIndexEntry, DHTInfohashSample, encode_index_entry
+        from ccbt.discovery.dht_indexing import (
+            DHTIndexEntry,
+            DHTInfohashSample,
+            encode_index_entry,
+        )
 
         samples = [
             DHTInfohashSample(
@@ -627,7 +631,7 @@ class TestInfohashIndexingIntegrationWorkflow:
             )
         ]
         index_entry = DHTIndexEntry(samples=samples, updated_time=int(time.time()))
-        
+
         # encode_index_entry requires keys and seq, and returns DHTMutableData directly
         try:
             from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -746,7 +750,11 @@ class TestCombinedBEPIntegration:
     async def test_storage_indexing_combined(self):
         """Test storage (BEP 44) with indexing (BEP 51) integration."""
         # Index entry uses BEP 44 storage
-        from ccbt.discovery.dht_indexing import DHTIndexEntry, DHTInfohashSample, encode_index_entry
+        from ccbt.discovery.dht_indexing import (
+            DHTIndexEntry,
+            DHTInfohashSample,
+            encode_index_entry,
+        )
 
         samples = [
             DHTInfohashSample(
@@ -756,7 +764,7 @@ class TestCombinedBEPIntegration:
             )
         ]
         entry = DHTIndexEntry(samples=samples, updated_time=int(time.time()))
-        
+
         # encode_index_entry returns DHTMutableData directly
         try:
             from cryptography.hazmat.primitives.asymmetric import ed25519

@@ -8,7 +8,14 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.cli.main import _get_executor
+from ccbt.i18n import _
+
+
+def _get_executor():
+    """Lazy import to avoid circular dependency."""
+    from ccbt.cli.main import _get_executor as _get_executor_impl
+
+    return _get_executor_impl
 
 
 @click.group()
@@ -18,19 +25,21 @@ def queue() -> None:
 
 @queue.command("list")
 @click.pass_context
-def queue_list(ctx) -> None:
+def queue_list(_ctx) -> None:
     """List all torrents in queue with their priorities."""
     console = Console()
 
     async def _list_queue() -> None:
         """Async helper for queue list."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -38,7 +47,7 @@ def queue_list(ctx) -> None:
             result = await executor.execute("queue.list")
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to get queue")
+                raise click.ClickException(result.error or _("Failed to get queue"))
 
             queue_list_response = result.data["queue"]
 
@@ -64,12 +73,22 @@ def queue_list(ctx) -> None:
 
             # Print statistics
             stats = queue_list_response.statistics
-            console.print("\n[bold]Statistics:[/bold]")
-            console.print(f"  Total: {stats.get('total_torrents', 0)}")
-            console.print(f"  Active Downloading: {stats.get('active_downloading', 0)}")
-            console.print(f"  Active Seeding: {stats.get('active_seeding', 0)}")
-            console.print(f"  Queued: {stats.get('queued', 0)}")
-            console.print(f"  Paused: {stats.get('paused', 0)}")
+            console.print(_("\n[bold]Statistics:[/bold]"))
+            console.print(
+                _("  Total: {count}").format(count=stats.get("total_torrents", 0))
+            )
+            console.print(
+                _("  Active Downloading: {count}").format(
+                    count=stats.get("active_downloading", 0)
+                )
+            )
+            console.print(
+                _("  Active Seeding: {count}").format(
+                    count=stats.get("active_seeding", 0)
+                )
+            )
+            console.print(_("  Queued: {count}").format(count=stats.get("queued", 0)))
+            console.print(_("  Paused: {count}").format(count=stats.get("paused", 0)))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -80,7 +99,7 @@ def queue_list(ctx) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
@@ -88,24 +107,27 @@ def queue_list(ctx) -> None:
 @click.argument("info_hash")
 @click.option(
     "--priority",
+    "-p",
     type=click.Choice(["maximum", "high", "normal", "low", "paused"]),
     default="normal",
-    help="Priority level",
+    help=_("Priority level"),
 )
 @click.pass_context
-def queue_add(ctx, info_hash: str, priority: str) -> None:
+def queue_add(_ctx, info_hash: str, priority: str) -> None:
     """Add torrent to queue with specified priority."""
     console = Console()
 
     async def _add_to_queue() -> None:
         """Async helper for queue add."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -117,7 +139,7 @@ def queue_add(ctx, info_hash: str, priority: str) -> None:
             )
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to add to queue")
+                raise click.ClickException(result.error or _("Failed to add to queue"))
 
             console.print(
                 f"[green]Added torrent to queue with priority {priority.upper()}[/green]"
@@ -132,26 +154,28 @@ def queue_add(ctx, info_hash: str, priority: str) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
 @queue.command("remove")
 @click.argument("info_hash")
 @click.pass_context
-def queue_remove(ctx, info_hash: str) -> None:
+def queue_remove(_ctx, info_hash: str) -> None:
     """Remove torrent from queue."""
     console = Console()
 
     async def _remove_from_queue() -> None:
         """Async helper for queue remove."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -160,13 +184,13 @@ def queue_remove(ctx, info_hash: str) -> None:
 
             if not result.success:
                 if "not found" in (result.error or "").lower():
-                    console.print("[yellow]Torrent not found in queue[/yellow]")
+                    console.print(_("[yellow]Torrent not found in queue[/yellow]"))
                     return
                 raise click.ClickException(
-                    result.error or "Failed to remove from queue"
+                    result.error or _("Failed to remove from queue")
                 )
 
-            console.print("[green]Removed torrent from queue[/green]")
+            console.print(_("[green]Removed torrent from queue[/green]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -177,7 +201,7 @@ def queue_remove(ctx, info_hash: str) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
@@ -188,19 +212,21 @@ def queue_remove(ctx, info_hash: str) -> None:
     type=click.Choice(["maximum", "high", "normal", "low", "paused"]),
 )
 @click.pass_context
-def queue_priority(ctx, info_hash: str, priority: str) -> None:
+def queue_priority(_ctx, info_hash: str, priority: str) -> None:
     """Set torrent priority."""
     console = Console()
 
     async def _set_priority() -> None:
         """Async helper for queue priority."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -213,11 +239,15 @@ def queue_priority(ctx, info_hash: str, priority: str) -> None:
 
             if not result.success:
                 if "not found" in (result.error or "").lower():
-                    console.print("[yellow]Torrent not found in queue[/yellow]")
+                    console.print(_("[yellow]Torrent not found in queue[/yellow]"))
                     return
-                raise click.ClickException(result.error or "Failed to set priority")
+                raise click.ClickException(result.error or _("Failed to set priority"))
 
-            console.print(f"[green]Set priority to {priority.upper()}[/green]")
+            console.print(
+                _("[green]Set priority to {priority}[/green]").format(
+                    priority=priority.upper()
+                )
+            )
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -228,7 +258,7 @@ def queue_priority(ctx, info_hash: str, priority: str) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
@@ -236,19 +266,21 @@ def queue_priority(ctx, info_hash: str, priority: str) -> None:
 @click.argument("info_hash")
 @click.argument("position", type=int)
 @click.pass_context
-def queue_reorder(ctx, info_hash: str, position: int) -> None:
+def queue_reorder(_ctx, info_hash: str, position: int) -> None:
     """Move torrent to specific position in queue."""
     console = Console()
 
     async def _reorder_queue() -> None:
         """Async helper for queue reorder."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -264,11 +296,15 @@ def queue_reorder(ctx, info_hash: str, position: int) -> None:
                     "not found" in (result.error or "").lower()
                     or "failed" in (result.error or "").lower()
                 ):
-                    console.print("[yellow]Failed to move torrent[/yellow]")
+                    console.print(_("[yellow]Failed to move torrent[/yellow]"))
                     return
-                raise click.ClickException(result.error or "Failed to move in queue")
+                raise click.ClickException(result.error or _("Failed to move in queue"))
 
-            console.print(f"[green]Moved to position {position}[/green]")
+            console.print(
+                _("[green]Moved to position {position}[/green]").format(
+                    position=position
+                )
+            )
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -279,26 +315,28 @@ def queue_reorder(ctx, info_hash: str, position: int) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
 @queue.command("pause")
 @click.argument("info_hash")
 @click.pass_context
-def queue_pause(ctx, info_hash: str) -> None:
+def queue_pause(_ctx, info_hash: str) -> None:
     """Pause torrent in queue."""
     console = Console()
 
     async def _pause_torrent() -> None:
         """Async helper for queue pause."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -307,11 +345,11 @@ def queue_pause(ctx, info_hash: str) -> None:
 
             if not result.success:
                 if "not found" in (result.error or "").lower():
-                    console.print("[yellow]Torrent not found[/yellow]")
+                    console.print(_("[yellow]Torrent not found[/yellow]"))
                     return
-                raise click.ClickException(result.error or "Failed to pause torrent")
+                raise click.ClickException(result.error or _("Failed to pause torrent"))
 
-            console.print("[green]Paused torrent[/green]")
+            console.print(_("[green]Paused torrent[/green]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -322,26 +360,28 @@ def queue_pause(ctx, info_hash: str) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
 @queue.command("resume")
 @click.argument("info_hash")
 @click.pass_context
-def queue_resume(ctx, info_hash: str) -> None:
+def queue_resume(_ctx, info_hash: str) -> None:
     """Resume paused torrent."""
     console = Console()
 
     async def _resume_torrent() -> None:
         """Async helper for queue resume."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -350,11 +390,13 @@ def queue_resume(ctx, info_hash: str) -> None:
 
             if not result.success:
                 if "not found" in (result.error or "").lower():
-                    console.print("[yellow]Torrent not found[/yellow]")
+                    console.print(_("[yellow]Torrent not found[/yellow]"))
                     return
-                raise click.ClickException(result.error or "Failed to resume torrent")
+                raise click.ClickException(
+                    result.error or _("Failed to resume torrent")
+                )
 
-            console.print("[green]Resumed torrent[/green]")
+            console.print(_("[green]Resumed torrent[/green]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -365,25 +407,27 @@ def queue_resume(ctx, info_hash: str) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
 @queue.command("clear")
 @click.pass_context
-def queue_clear(ctx) -> None:
+def queue_clear(_ctx) -> None:
     """Clear all torrents from queue."""
     console = Console()
 
     async def _clear_queue() -> None:
         """Async helper for queue clear."""
         # Get executor (queue commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Queue management commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Queue management commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -391,9 +435,9 @@ def queue_clear(ctx) -> None:
             result = await executor.execute("queue.clear")
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to clear queue")
+                raise click.ClickException(result.error or _("Failed to clear queue"))
 
-            console.print("[green]Cleared queue[/green]")
+            console.print(_("[green]Cleared queue[/green]"))
         finally:
             # Close IPC client if using daemon adapter
             if hasattr(executor.adapter, "ipc_client"):
@@ -404,5 +448,5 @@ def queue_clear(ctx) -> None:
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e

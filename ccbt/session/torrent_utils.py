@@ -2,18 +2,76 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+import logging
+import time
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ccbt.core.magnet import build_minimal_torrent_data, parse_magnet
 from ccbt.core.torrent import TorrentParser
 from ccbt.models import TorrentInfo as TorrentInfoModel
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+# Rate-limit repeated conversion-failure DEBUG lines (hot paths call this often).
+_CONVERSION_FAIL_LOG: dict[str, float] = {}
+_CONVERSION_FAIL_LOG_TTL_S = 60.0
+
+
+def _torrent_info_conversion_fail_key(torrent_data: dict[str, Any]) -> str:
+    raw = torrent_data.get("info_hash", b"")
+    if isinstance(raw, (bytes, bytearray)) and raw:
+        return raw[:20].hex()
+    return "unknown"
+
+
+def _log_conversion_failure_rate_limited(
+    logger: Any, torrent_data: dict[str, Any]
+) -> None:
+    if not logger or not logger.isEnabledFor(logging.DEBUG):
+        return
+    key = _torrent_info_conversion_fail_key(torrent_data)
+    now = time.monotonic()
+    last = _CONVERSION_FAIL_LOG.get(key)
+    if last is not None and (now - last) < _CONVERSION_FAIL_LOG_TTL_S:
+        return
+    _CONVERSION_FAIL_LOG[key] = now
+    logger.debug("Could not convert torrent_data to TorrentInfo (key=%s)", key)
+
+
+def _normalize_announce_list_for_model(
+    announce_list: Any,
+) -> Optional[list[list[str]]]:
+    """Normalize flat or tiered announce lists to BEP 12 ``list[list[str]]``.
+
+    Magnet parsing and tracker merge helpers store a flat ``list[str]`` on
+    ``torrent_data``; ``TorrentInfo`` requires tiered announce lists.
+    """
+    if announce_list is None:
+        return None
+    if not isinstance(announce_list, list) or not announce_list:
+        return None
+
+    # Flat list[str] from magnet/merge_tracker_urls_into_torrent_data.
+    if all(isinstance(entry, str) for entry in announce_list):
+        return [[url] for url in announce_list if url]
+
+    normalized: list[list[str]] = []
+    for tier in announce_list:
+        if isinstance(tier, str):
+            if tier:
+                normalized.append([tier])
+        elif isinstance(tier, list):
+            urls = [url for url in tier if isinstance(url, str) and url]
+            if urls:
+                normalized.append(urls)
+    return normalized or None
+
 
 def get_torrent_info(
-    torrent_data: dict[str, Any] | TorrentInfoModel,
-    logger: Any | None = None,
-) -> TorrentInfoModel | None:
+    torrent_data: Union[dict[str, Any], TorrentInfoModel],
+    logger: Optional[Any] = None,
+) -> Optional[TorrentInfoModel]:
     """Convert torrent_data to TorrentInfo if possible.
 
     Args:
@@ -28,13 +86,20 @@ def get_torrent_info(
         return torrent_data
 
     if isinstance(torrent_data, dict):
+        _pi = torrent_data.get("pieces_info")
+        if isinstance(_pi, dict):
+            _pl = _pi.get("piece_length")
+        else:
+            _pl = torrent_data.get("piece_length")
+        if _pl is not None and int(_pl) <= 0:
+            return None
         # Try to extract file information from dict
         try:
             # Check if files are in the dict directly
             files = torrent_data.get("files", [])
             if not files:
                 # Check if in file_info
-                # CRITICAL FIX: Handle None values (common for magnet links)
+                # Note: Handle None values (common for magnet links)
                 file_info_dict = torrent_data.get("file_info") or {}
                 if isinstance(file_info_dict, dict) and "files" in file_info_dict:
                     files = file_info_dict["files"]
@@ -80,8 +145,11 @@ def get_torrent_info(
             return TorrentInfoModel(
                 name=torrent_data.get("name", "Unknown"),
                 info_hash=info_hash,
+                swarm_id=torrent_data.get("swarm_id"),
                 announce=torrent_data.get("announce", ""),
-                announce_list=torrent_data.get("announce_list"),
+                announce_list=_normalize_announce_list_for_model(
+                    torrent_data.get("announce_list")
+                ),
                 is_private=torrent_data.get("is_private", False),
                 files=file_info_list,
                 total_length=torrent_data.get("total_length", 0),
@@ -100,14 +168,14 @@ def get_torrent_info(
             )
         except Exception:
             if logger:
-                logger.debug("Could not convert torrent_data to TorrentInfo")
+                _log_conversion_failure_rate_limited(logger, torrent_data)
             return None
 
     return None
 
 
 def extract_is_private(
-    torrent_data: dict[str, Any] | TorrentInfoModel,
+    torrent_data: Union[dict[str, Any], TorrentInfoModel],
 ) -> bool:
     """Extract is_private flag from torrent data (BEP 27).
 
@@ -137,8 +205,8 @@ def extract_is_private(
 
 
 def normalize_torrent_data(
-    td: dict[str, Any] | TorrentInfoModel,
-    logger: Any | None = None,
+    td: Union[dict[str, Any], TorrentInfoModel],
+    logger: Optional[Any] = None,
 ) -> dict[str, Any]:
     """Convert TorrentInfoModel or legacy dict into a normalized dict expected by piece manager.
 
@@ -159,7 +227,7 @@ def normalize_torrent_data(
         TypeError: If torrent_data is a list or invalid type
 
     """
-    # CRITICAL FIX: Validate torrent_data is not a list
+    # Note: Validate torrent_data is not a list
     if isinstance(td, list):
         error_msg = (
             f"torrent_data cannot be a list, got {type(td)}. "
@@ -276,8 +344,8 @@ def normalize_torrent_data(
 
 
 def load_torrent(
-    torrent_path: str | Path, logger: Any | None = None
-) -> dict[str, Any] | None:
+    torrent_path: Union[str, Path], logger: Optional[Any] = None
+) -> Optional[dict[str, Any]]:
     """Load torrent file and return parsed data.
 
     Args:
@@ -314,8 +382,8 @@ def load_torrent(
 
 
 def parse_magnet_link(
-    magnet_uri: str, logger: Any | None = None
-) -> dict[str, Any] | None:
+    magnet_uri: str, logger: Optional[Any] = None
+) -> Optional[dict[str, Any]]:
     """Parse magnet link and return torrent data.
 
     Args:
@@ -334,6 +402,7 @@ def parse_magnet_link(
             magnet_info.info_hash,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.display_name,  # pragma: no cover - Build minimal torrent data from magnet, tested via integration tests
             magnet_info.trackers,
+            magnet_info.web_seeds,  # Note: Pass web seeds from magnet link
         )
     except Exception:  # pragma: no cover - defensive: parse_magnet error handling, returns None on failure
         if logger:

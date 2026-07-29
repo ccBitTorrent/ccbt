@@ -6,7 +6,6 @@ Tests error paths and edge cases in HTTP server implementation.
 from __future__ import annotations
 
 import asyncio
-import socket
 
 import pytest
 
@@ -85,7 +84,7 @@ class TestMetricsCollectorHTTPErrorHandling:
             pytest.skip("HTTP server not started")
 
         # Patch shutdown to raise exception
-        
+
         original_shutdown = metrics._http_server.shutdown
 
         def raise_error():
@@ -180,7 +179,7 @@ class TestMetricsCollectorHTTPErrorHandling:
             await asyncio.sleep(0.2)
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config_enabled(monkeypatch):
     """Mock config with metrics enabled."""
     from unittest.mock import Mock
@@ -192,9 +191,7 @@ def mock_config_enabled(monkeypatch):
     mock_observability.metrics_port = 9090
     mock_config.observability = mock_observability
 
-    from ccbt import config as config_module
-
-    monkeypatch.setattr(config_module, "get_config", lambda: mock_config)
+    monkeypatch.setattr("ccbt.config.config.get_config", lambda: mock_config)
 
     return mock_config
 

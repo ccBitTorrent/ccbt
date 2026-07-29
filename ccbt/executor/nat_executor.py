@@ -5,7 +5,10 @@ Handles NAT traversal commands.
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 from ccbt.executor.base import CommandExecutor, CommandResult
+from ccbt.executor.session_adapter import LocalSessionAdapter
 
 
 class NATExecutor(CommandExecutor):
@@ -14,7 +17,7 @@ class NATExecutor(CommandExecutor):
     async def execute(
         self,
         command: str,
-        *args: Any,
+        *_args: Any,
         **kwargs: Any,
     ) -> CommandResult:
         """Execute NAT command.
@@ -66,7 +69,7 @@ class NATExecutor(CommandExecutor):
     async def _map_nat_port(
         self,
         internal_port: int,
-        external_port: int | None = None,
+        external_port: Optional[int] = None,
         protocol: str = "tcp",
     ) -> CommandResult:
         """Map a port via NAT."""

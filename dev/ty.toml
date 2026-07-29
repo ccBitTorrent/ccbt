@@ -8,9 +8,12 @@ exclude = [
     ".benchmarks/",
     ".ccbt/",
     ".cursor/",
+    "**/_tmp_*.py",
     "tests/",
     "benchmarks/",
     "ccbt/interface/",
+    "ccbt/i18n/scripts/**",
+    "ccbt/i18n/locale_data/**",
     "dev/",
     "dist/",
     "docs/",
@@ -46,5 +49,8 @@ too-many-positional-arguments = "warn"
 invalid-parameter-default = "warn"
 parameter-already-assigned = "warn"
 not-iterable = "warn"
+
+# Optional platform-specific dependencies - ignore import errors
+unresolved-import = "warn"
 
 

@@ -1,127 +1,112 @@
+# CI runs only on PR to main (with manual approval) or via workflow_dispatch.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches: [ main, dev ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [main]  # PRs to dev do not run CI; use workflow_dispatch for other branches
+  workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: [3.8, 3.9, 3.10, 3.11, 3.12]
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pre-commit
-
-    - name: Lint with pre-commit
-      run: pre-commit run --all-files
-
-    - name: Test with pytest
-      run: |
-        pytest tests/ -v --cov=ccbt --cov-report=xml --cov-report=html
-
-    - name: Upload coverage to Codecov
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-
-  security:
+  lint:
+    name: lint
     runs-on: ubuntu-latest
+    environment: approval-required
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Run Ruff linting
+        run: |
+          uv run ruff --config dev/ruff.toml check ccbt/ --fix --exit-non-zero-on-fix
+      
+      - name: Run Ruff formatting check
+        run: |
+          uv run ruff --config dev/ruff.toml format --check ccbt/
+      
+      - name: Run compatibility linter
+        run: |
+          uv run python dev/compatibility_linter.py ccbt/
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install bandit safety
-
-    - name: Run bandit security scan
-      run: bandit -r ccbt/ -f json -o bandit-report.json
-
-    - name: Run safety check
-      run: safety check
-
-  performance:
+  type-check:
+    name: type-check
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: approval-required
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Run Ty type checking
+        run: |
+          uv run ty check --config-file=dev/ty.toml --output-format=concise
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Run performance benchmarks
-      run: |
-        python benchmarks/bench_throughput.py
-        python benchmarks/bench_disk.py
-        python benchmarks/bench_hash_verification.py
-
-  build:
-    runs-on: ${{ matrix.os }}
-    needs: [test, security]
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
+  i18n:
+    name: i18n
+    runs-on: ubuntu-latest
+    environment: approval-required
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Build package
-      run: python -m build
+      - name: Install dependencies
+        run: |
+          uv sync --dev
 
-    - name: Check package
-      run: twine check dist/*
+      - name: Extract translatable strings
+        run: |
+          uv run python -m ccbt.i18n.extract ccbt ccbt/i18n/locales/en/LC_MESSAGES/ccbt.pot
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: dist-${{ matrix.os }}
-        path: dist/
+      - name: Validate .po files
+        run: |
+          uv run python -m ccbt.i18n.scripts.validate_po
+
+      - name: Check translation completeness
+        run: |
+          uv run python -m ccbt.i18n.scripts.check_completeness

@@ -4,10 +4,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ccbt.transport.utp import UTPConnection, UTPConnectionState, UTPPacket, UTPPacketType
+from ccbt.transport.utp import (
+    UTPConnection,
+    UTPConnectionState,
+    UTPPacket,
+    UTPPacketType,
+)
 from ccbt.transport.utp_extensions import (
-    SACKExtension,
     SACKBlock,
+    SACKExtension,
     UTPExtensionType,
 )
 
@@ -284,7 +289,7 @@ class TestFastRetransmit:
         assert connection.transport.sendto.call_count >= len(missing_seqs)
 
         # Verify retransmitted packets are marked (if attribute exists)
-        if hasattr(connection, 'retransmitted_packets'):
+        if hasattr(connection, "retransmitted_packets"):
             for seq in missing_seqs:
                 assert seq in connection.retransmitted_packets
 
@@ -324,7 +329,7 @@ class TestSACKIntegration:
         # Enable SACK for tracking
         from ccbt.transport.utp_extensions import UTPExtensionType
         connection.negotiated_extensions.add(UTPExtensionType.SACK)
-        
+
         connection._handle_data_packet(packet1)
         connection._handle_data_packet(packet3)
 

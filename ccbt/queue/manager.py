@@ -7,7 +7,7 @@ import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.models import QueueConfig, QueueEntry, TorrentPriority
 
@@ -35,7 +35,7 @@ class TorrentQueueManager:
     def __init__(
         self,
         session_manager: AsyncSessionManager,
-        config: QueueConfig | None = None,
+        config: Optional[QueueConfig] = None,
     ):
         """Initialize queue manager.
 
@@ -59,8 +59,8 @@ class TorrentQueueManager:
         self._lock = asyncio.Lock()
 
         # Background tasks
-        self._monitor_task: asyncio.Task | None = None
-        self._bandwidth_task: asyncio.Task | None = None
+        self._monitor_task: Optional[asyncio.Task] = None
+        self._bandwidth_task: Optional[asyncio.Task] = None
 
         # Statistics
         self.stats = QueueStatistics()
@@ -107,7 +107,7 @@ class TorrentQueueManager:
     async def add_torrent(
         self,
         info_hash: bytes,
-        priority: TorrentPriority | None = None,
+        priority: Optional[TorrentPriority] = None,
         auto_start: bool = True,
         resume: bool = False,
     ) -> QueueEntry:
@@ -206,6 +206,7 @@ class TorrentQueueManager:
 
             # Reorder remaining entries
             await self._reorder_queue()
+
             await self._update_statistics()
 
         return True
@@ -369,6 +370,118 @@ class TorrentQueueManager:
 
         return True
 
+    async def force_start_torrent(self, info_hash: bytes) -> bool:
+        """Force start torrent (bypass queue limits).
+
+        Forces the torrent to start immediately regardless of queue limits.
+        Sets priority to MAXIMUM and starts the session.
+
+        Args:
+            info_hash: Torrent info hash
+
+        Returns:
+            True if force started, False if not found
+
+        """
+        async with self._lock:
+            # Ensure torrent is in queue (add if not)
+            if info_hash not in self.queue:
+                # Add to queue with MAXIMUM priority
+                entry = QueueEntry(
+                    info_hash=info_hash,
+                    priority=TorrentPriority.MAXIMUM,
+                    queue_position=0,  # Will be reordered
+                    added_time=time.time(),
+                    status="queued",
+                )
+                self.queue[info_hash] = entry
+                self.logger.info(
+                    "Added torrent %s to queue for force start",
+                    info_hash.hex()[:8],
+                )
+
+            entry = self.queue[info_hash]
+
+            # Set priority to MAXIMUM
+            entry.priority = TorrentPriority.MAXIMUM
+            entry.status = "active"
+
+            # Get torrent session
+            session = self.session_manager.torrents.get(info_hash)
+            if not session:
+                self.logger.warning(
+                    "Torrent session not found for force start: %s",
+                    info_hash.hex()[:8],
+                )
+                return False
+
+            # Check status to determine if downloading or seeding
+            try:
+                status = await session.get_status()
+                torrent_status = status.get("status", "stopped")
+                progress = status.get("progress", 0.0)
+                is_seeding = progress >= 1.0 or torrent_status == "seeding"
+            except Exception:
+                # Default to downloading if status check fails
+                is_seeding = False
+
+            # Add to active sets (bypassing limits)
+            if is_seeding:
+                self._active_seeding.add(info_hash)
+            else:
+                self._active_downloading.add(info_hash)
+
+            # Update session info
+            if hasattr(session, "info"):
+                session.info.priority = TorrentPriority.MAXIMUM.value
+                entry = self.queue.get(info_hash)
+                if entry:
+                    session.info.queue_position = entry.queue_position
+
+            # Reorder queue to put MAXIMUM priority at top
+            await self._reorder_queue()
+
+            # Update statistics
+            await self._update_statistics()
+
+        # Start or resume session
+        try:
+            status = await session.get_status()
+            torrent_status = status.get("status", "stopped")
+
+            if torrent_status == "paused":
+                # Resume with timeout
+                await asyncio.wait_for(session.resume(), timeout=30.0)
+            elif torrent_status in ("stopped", "cancelled"):
+                # Start with timeout
+                await asyncio.wait_for(session.start(resume=True), timeout=30.0)
+            # If already active, nothing to do
+
+            self.logger.info(
+                "Force started torrent %s (bypassed queue limits)",
+                info_hash.hex()[:8],
+            )
+            return True
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "Timeout force starting torrent %s - it may still be initializing",
+                info_hash.hex()[:8],
+            )
+            # Don't fail - the torrent might still start in background
+            return True
+        except Exception:
+            self.logger.exception(
+                "Error force starting torrent %s", info_hash.hex()[:8]
+            )
+            # Remove from active sets on error
+            async with self._lock:
+                self._active_downloading.discard(info_hash)
+                self._active_seeding.discard(info_hash)
+                entry = self.queue.get(info_hash)
+                if entry:
+                    entry.status = "queued"
+            return False
+
     async def get_queue_status(self) -> dict[str, Any]:
         """Get current queue status.
 
@@ -405,7 +518,9 @@ class TorrentQueueManager:
                 "entries": entries,
             }
 
-    async def get_torrent_queue_state(self, info_hash: bytes) -> dict[str, Any] | None:
+    async def get_torrent_queue_state(
+        self, info_hash: bytes
+    ) -> Optional[dict[str, Any]]:
         """Get queue state for a specific torrent.
 
         Args:
@@ -539,18 +654,29 @@ class TorrentQueueManager:
                             session.resume(), timeout=30.0
                         )  # pragma: no cover - edge case: paused torrent being started requires specific state
                     elif torrent_status == "stopped":
-                        # Start with timeout to prevent UI blocking
+                        # Start with timeout; use shield() so timeout does NOT cancel
+                        # session.start() (magnet/tracker/DHT can take >30s).
                         self.logger.info(
                             "Queue manager: Calling session.start() for %s",
                             info_hash.hex()[:8],
                         )
-                        await asyncio.wait_for(
-                            session.start(resume=resume), timeout=30.0
-                        )
-                        self.logger.info(
-                            "Queue manager: session.start() completed for %s",
-                            info_hash.hex()[:8],
-                        )
+                        start_task = asyncio.create_task(session.start(resume=resume))
+                        if hasattr(session, "background_start_task"):
+                            session.background_start_task = start_task
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.shield(start_task), timeout=90.0
+                            )
+                            self.logger.info(
+                                "Queue manager: session.start() completed for %s",
+                                info_hash.hex()[:8],
+                            )
+                        except asyncio.TimeoutError:
+                            # Shield ensures start_task is NOT cancelled - it keeps running
+                            self.logger.warning(
+                                "Session start for %s still in progress after 90s (continuing in background)",
+                                info_hash.hex()[:8],
+                            )
                 except asyncio.TimeoutError:
                     self.logger.warning(
                         "Timeout starting torrent %s - it may still be initializing",
@@ -583,7 +709,7 @@ class TorrentQueueManager:
 
     async def _try_start_next_torrent(self) -> None:
         """Try to start the next queued torrent."""
-        info_hash: bytes | None = None
+        info_hash: Optional[bytes] = None
         async with self._lock:
             # Find first queued torrent (already sorted by priority)
             for info_hash_key, entry in self.queue.items():
@@ -681,7 +807,7 @@ class TorrentQueueManager:
             await self._update_statistics()
 
     async def _pause_torrent_internal(self, info_hash: bytes) -> None:
-        """Internal method to pause torrent (assumes lock held)."""
+        """Pause torrent (assumes lock held)."""
         entry = self.queue.get(info_hash)
         if not entry:
             return
@@ -721,18 +847,14 @@ class TorrentQueueManager:
             try:
                 await asyncio.sleep(5.0)  # Check every 5 seconds
 
-                async with self._lock:  # pragma: no cover - tested via integration tests (monitor loop execution)
-                    # Sync active sets with actual session states
-                    await (
-                        self._sync_active_sets()
-                    )  # pragma: no cover - tested via integration tests
+                await (
+                    self._sync_active_sets()
+                )  # pragma: no cover - tested via integration tests
 
-                    # Enforce limits
-                    await (
-                        self._enforce_queue_limits()
-                    )  # pragma: no cover - tested via integration tests
+                await (
+                    self._enforce_queue_limits()
+                )  # pragma: no cover - tested via integration tests
 
-                # Try to start queued torrents (outside lock)
                 await (
                     self._try_start_next_torrent()
                 )  # pragma: no cover - tested via integration tests

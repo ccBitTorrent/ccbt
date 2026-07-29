@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 
@@ -33,41 +34,140 @@ class ManagerBackgroundTasks:
                             to_remove.append(info_hash)
 
                     for info_hash in to_remove:
-                        session = self.manager.torrents.pop(
-                            info_hash
-                        )  # pragma: no cover - Remove stopped session, tested via integration tests
-                        await session.stop()  # pragma: no cover - Stop removed session, tested via integration tests
+                        session = self.manager.torrents.pop(info_hash)
+                        # BEP 27: Remove from private_torrents set during cleanup
+                        self.manager.private_torrents.discard(info_hash)
+                        await session.stop()
                         if self.manager.on_torrent_removed:
-                            await self.manager.on_torrent_removed(
-                                info_hash
-                            )  # pragma: no cover - Torrent removed callback, tested via integration tests with callback registered
+                            await self.manager.on_torrent_removed(info_hash)
 
-            except asyncio.CancelledError:  # pragma: no cover - background loop cancellation, tested via cancellation
-                break  # pragma: no cover
-            except (
-                Exception
-            ):  # pragma: no cover - defensive: cleanup loop error handling
-                self.logger.exception("Cleanup loop error")  # pragma: no cover
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                self.logger.exception("Cleanup loop error")
 
     async def metrics_loop(self) -> None:
         """Background task for metrics collection."""
         while True:
             try:
-                await asyncio.sleep(10)  # Update every 10 seconds
+                start_time = time.time()
 
                 # Collect global metrics
-                if (
-                    hasattr(self.manager, "_metrics_helper")
-                    and self.manager._metrics_helper
-                ):
-                    global_stats = self.manager._metrics_helper.aggregate_torrent_stats(
-                        self.manager.torrents
-                    )
-                    await self.manager._metrics_helper.emit_global_metrics(global_stats)
+                global_stats = self._aggregate_torrent_stats()
 
-            except asyncio.CancelledError:  # pragma: no cover - background loop cancellation, tested via cancellation
-                break  # pragma: no cover
-            except (
-                Exception
-            ):  # pragma: no cover - defensive: metrics loop error handling
-                self.logger.exception("Metrics loop error")  # pragma: no cover
+                # Track per-second rate history for interface graphs
+                sample = {
+                    "timestamp": global_stats["timestamp"],
+                    "download_rate": global_stats["total_download_rate"],
+                    "upload_rate": global_stats["total_upload_rate"],
+                }
+                self.manager.get_rate_history().append(sample)
+
+                # Emit lightweight heartbeat events periodically so observers can detect stalls
+                self.manager.metrics_heartbeat_counter += 1
+                if (
+                    self.manager.metrics_heartbeat_counter
+                    >= self.manager.metrics_heartbeat_interval
+                ):
+                    self.manager.metrics_heartbeat_counter = 0
+                    try:
+                        from ccbt.utils.events import Event, EventType, emit_event
+
+                        await emit_event(
+                            Event(
+                                event_type=EventType.MONITORING_HEARTBEAT.value,
+                                data={
+                                    "timestamp": sample["timestamp"],
+                                    "download_rate": sample["download_rate"],
+                                    "upload_rate": sample["upload_rate"],
+                                    "history_size": len(
+                                        self.manager.get_rate_history()
+                                    ),
+                                },
+                            ),
+                        )
+                    except Exception:  # pragma: no cover - best effort heartbeat
+                        self.logger.debug(
+                            "Failed to emit monitoring heartbeat", exc_info=True
+                        )
+
+                # Emit aggregated metrics at a lower frequency
+                if (
+                    global_stats["timestamp"] - self.manager.last_metrics_emit
+                    >= self.manager.metrics_emit_interval
+                ):
+                    await self._emit_global_metrics(global_stats)
+                    self.manager.last_metrics_emit = global_stats["timestamp"]
+
+                sleep_for = max(
+                    self.manager.metrics_sample_interval - (time.time() - start_time),
+                    0.0,
+                )
+                await asyncio.sleep(sleep_for)
+
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                self.logger.exception("Metrics loop error")
+
+    def _aggregate_torrent_stats(self) -> dict[str, Any]:
+        """Aggregate statistics from all torrents."""
+        from ccbt.session.session import AsyncSessionManager
+
+        total_downloaded = 0
+        total_uploaded = 0
+        total_left = 0
+        total_peers = 0
+        total_download_rate = 0.0
+        total_upload_rate = 0.0
+
+        for torrent in self.manager.torrents.values():
+            total_downloaded += torrent.downloaded_bytes
+            total_uploaded += torrent.uploaded_bytes
+            total_left += torrent.left_bytes
+            cached = getattr(torrent, "_cached_status", None)
+            if isinstance(cached, dict):
+                cached_peer_count = cached.get("connected_peers", None)
+            else:
+                cached_peer_count = None
+            if cached_peer_count is None:
+                peer_state = getattr(torrent, "peers", None)
+                if isinstance(peer_state, dict):
+                    cached_peer_count = peer_state.get("count", 0)
+                else:
+                    cached_peer_count = len(peer_state) if peer_state else 0
+            if isinstance(cached_peer_count, (int, float)):
+                total_peers += int(cached_peer_count)
+            live_down, live_up = AsyncSessionManager.live_transfer_rates(
+                torrent,
+                cached if isinstance(cached, dict) else None,
+            )
+            total_download_rate += float(live_down or 0.0)
+            total_upload_rate += float(live_up or 0.0)
+
+        return {
+            "total_torrents": len(self.manager.torrents),
+            "total_downloaded": total_downloaded,
+            "total_uploaded": total_uploaded,
+            "total_left": total_left,
+            "total_peers": total_peers,
+            "total_download_rate": total_download_rate,
+            "total_upload_rate": total_upload_rate,
+            "timestamp": time.time(),
+        }
+
+    async def _emit_global_metrics(self, stats: dict[str, Any]) -> None:
+        """Emit global metrics event.
+
+        Args:
+            stats: Dictionary with aggregated statistics
+
+        """
+        from ccbt.utils.events import Event, EventType, emit_event
+
+        await emit_event(
+            Event(
+                event_type=EventType.GLOBAL_METRICS_UPDATE.value,
+                data=stats,
+            ),
+        )

@@ -12,7 +12,6 @@ Covers missing lines:
 
 from __future__ import annotations
 
-import socket
 import time
 from io import BytesIO
 from unittest.mock import Mock, patch
@@ -230,16 +229,16 @@ class TestAnnounceHandler:
     def test_do_get_client_address_handling(self):
         """Test do_GET client_address attribute handling (line 89)."""
         handler = self._create_handler()
-        
+
         from urllib.parse import quote
-        
+
         info_hash = b"\x00" * 20
         peer_id = b"\x01" * 20
         handler.path = f"/announce?info_hash={quote(info_hash)}&peer_id={quote(peer_id)}&port=6881"
         handler.client_address = ("192.168.1.100", 54321)
-        
+
         handler.do_GET()
-        
+
         # Should use client_address[0] for IP
         handler.send_response.assert_called_once_with(200)
         # Peer should be announced with client IP
@@ -248,18 +247,18 @@ class TestAnnounceHandler:
     def test_do_get_port_validation_edge_cases(self):
         """Test do_GET port validation edge cases."""
         handler = self._create_handler()
-        
+
         from urllib.parse import quote
-        
+
         info_hash = b"\x00" * 20
         peer_id = b"\x01" * 20
-        
+
         # Test with zero port
         handler.path = f"/announce?info_hash={quote(info_hash)}&peer_id={quote(peer_id)}&port=0"
         handler.wfile = BytesIO()
         handler.do_GET()
         handler.send_response.assert_called_with(200)
-        
+
         # Test with maximum port
         handler.path = f"/announce?info_hash={quote(info_hash)}&peer_id={quote(peer_id)}&port=65535"
         handler.wfile = BytesIO()
@@ -269,16 +268,16 @@ class TestAnnounceHandler:
     def test_do_get_default_event_parameter(self):
         """Test do_GET with default event parameter (line 77)."""
         handler = self._create_handler()
-        
+
         from urllib.parse import quote
-        
+
         info_hash = b"\x00" * 20
         peer_id = b"\x01" * 20
         # No event parameter - should default to empty string
         handler.path = f"/announce?info_hash={quote(info_hash)}&peer_id={quote(peer_id)}&port=6881"
-        
+
         handler.do_GET()
-        
+
         # Should succeed with default event
         handler.send_response.assert_called_once_with(200)
         # Peer should be added (not stopped)
@@ -310,28 +309,23 @@ class TestRunHTTPTracker:
     def test_run_http_tracker_exception_handling(self):
         """Test run_http_tracker with exception.
         
-        Note: Skipped during coverage runs to prevent pytest from interpreting
-        KeyboardInterrupt as a real user interrupt and exiting early.
-        This test intentionally raises KeyboardInterrupt to verify server cleanup on interrupt.
+        Verifies that server_close is called even when serve_forever raises an exception.
         """
-        # Skip only if coverage is running to prevent early test suite exit
-        import sys
-        if any("--cov" in arg or "-m" in arg and "cov" in arg for arg in sys.argv):
-            pytest.skip(
-                "KeyboardInterrupt test skipped in coverage runs to prevent early test suite exit. "
-                "This test intentionally raises KeyboardInterrupt which pytest may interpret as a "
-                "real user interrupt, causing the test suite to exit at 94%. "
-                "Run with --no-cov to execute this test.",
-                allow_module_level=False,
-            )  # pragma: no cover
         with patch("ccbt.discovery.tracker_server_http.HTTPServer") as mock_server_class:
             mock_server = Mock()
             mock_server.serve_forever = Mock(side_effect=KeyboardInterrupt())
             mock_server.server_close = Mock()
             mock_server_class.return_value = mock_server
 
-            # Should still close server on exception
-            run_http_tracker("127.0.0.1", 6969)
+            # Catch KeyboardInterrupt to prevent pytest from treating it as a real interrupt
+            try:
+                run_http_tracker("127.0.0.1", 6969)
+            except KeyboardInterrupt:
+                # Expected - the function should propagate the exception after cleanup
+                pass
 
-            # Verify server_close was called (in finally)
+            # Verify server_close was called (in finally block)
             mock_server.server_close.assert_called_once()
+
+            # Verify serve_forever was called (and raised the exception)
+            mock_server.serve_forever.assert_called_once()

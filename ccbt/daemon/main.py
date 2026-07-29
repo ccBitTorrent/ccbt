@@ -1,23 +1,25 @@
 """Daemon main entry point.
 
-from __future__ import annotations
-
-Main entry point for background daemon process.
+IPC add-torrent / add-magnet handlers await ``AsyncSessionManager.add_*`` before
+reporting success so registration is visible to inbound TCP and
+``get_session_for_info_hash`` immediately after the call returns.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import ssl
+import logging
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 from ccbt.config.config import init_config
+from ccbt.config.env_bootstrap import maybe_load_dotenv_from_env
 from ccbt.daemon.daemon_manager import DaemonManager
+from ccbt.daemon.ipc_protocol import EventType
 from ccbt.daemon.ipc_server import IPCServer  # type: ignore[attr-defined]
 from ccbt.daemon.state_manager import StateManager
 from ccbt.monitoring import init_metrics, shutdown_metrics
@@ -27,12 +29,283 @@ from ccbt.utils.logging_config import get_logger, setup_logging
 logger = get_logger(__name__)
 
 
+def _flush_log_handlers() -> None:
+    """Best-effort flush so shutdown logs reach files before process exit."""
+    for handler in logging.root.handlers:
+        with contextlib.suppress(Exception):
+            handler.flush()
+
+
+def _daemon_event_loop_exception_handler(
+    _loop: asyncio.AbstractEventLoop, context: dict[str, Any]
+) -> None:
+    """Handle unhandled exceptions in background tasks without crashing the daemon."""
+    exception = context.get("exception")
+    message = context.get("message", "Unhandled exception in background task")
+    task = context.get("task")
+    source_traceback = context.get("source_traceback")
+
+    if isinstance(exception, SystemExit):
+        return
+
+    if isinstance(exception, asyncio.CancelledError):
+        from ccbt.utils.shutdown import is_shutting_down
+
+        if is_shutting_down():
+            return
+        logger.debug(
+            "Task cancelled (not during shutdown): %s (task=%s)",
+            message,
+            task,
+        )
+        return
+
+    if isinstance(exception, OSError):
+        error_code = getattr(exception, "winerror", None) or getattr(
+            exception, "errno", None
+        )
+        if error_code == 10055:
+            from ccbt.utils.shutdown import is_shutting_down
+
+            if is_shutting_down():
+                logger.debug(
+                    "WinError 10055 (socket buffer exhaustion) in event loop selector "
+                    "during shutdown. This is a transient Windows issue and can be "
+                    "safely ignored."
+                )
+            else:
+                logger.warning(
+                    "WinError 10055 (socket buffer exhaustion) in event loop selector "
+                    "during normal operation. The selector cannot monitor all sockets "
+                    "due to Windows buffer limits. This may indicate too many "
+                    "concurrent connections. Consider reducing connection limits. "
+                    "The daemon will attempt to continue."
+                )
+            return
+
+    from ccbt.utils.shutdown import is_shutting_down
+
+    if is_shutting_down():
+        if isinstance(exception, Exception):
+            try:
+                from ccbt.utils.exceptions import PeerConnectionError
+
+                connection_errors = (
+                    OSError,
+                    ConnectionError,
+                    PeerConnectionError,
+                    asyncio.CancelledError,
+                )
+            except ImportError:
+                connection_errors = (
+                    OSError,
+                    ConnectionError,
+                    asyncio.CancelledError,
+                )
+
+            if isinstance(exception, connection_errors):
+                return
+            logger.debug(
+                "Exception during shutdown (suppressed verbose logging): %s (task=%s)",
+                type(exception).__name__,
+                task,
+            )
+            return
+        return
+
+    if exception:
+        logger.exception(
+            "Unhandled exception in background task: %s (task=%s, source_traceback=%s)",
+            message,
+            task,
+            source_traceback,
+            exc_info=exception,
+        )
+    else:
+        logger.error(
+            "Unhandled exception in background task: %s (task=%s, source_traceback=%s)",
+            message,
+            task,
+            source_traceback,
+        )
+
+
+def install_daemon_event_loop_exception_handler() -> None:
+    """Install the daemon background-task exception handler on the running loop."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(_daemon_event_loop_exception_handler)
+        logger.debug("Event loop exception handler installed")
+    except RuntimeError as e:
+        logger.warning("Could not set event loop exception handler: %s", e)
+
+
+def _is_workspace_id_hex(workspace_id_hex: str) -> bool:
+    """Return True when workspace ID is canonical 32-byte hex."""
+    if len(workspace_id_hex) != 64:
+        return False
+    try:
+        bytes.fromhex(workspace_id_hex)
+    except ValueError:
+        return False
+    return True
+
+
+def _magnet_uri_for_torrent_state(torrent_state: Any) -> Optional[str]:
+    """Resolve magnet URI for restore, including legacy states without source info."""
+    if torrent_state.magnet_uri:
+        return str(torrent_state.magnet_uri)
+    if torrent_state.torrent_file_path:
+        return None
+    info_hash_hex = str(getattr(torrent_state, "info_hash", "") or "")
+    if not info_hash_hex:
+        return None
+    try:
+        info_hash_bytes = bytes.fromhex(info_hash_hex)
+    except ValueError:
+        return None
+    from ccbt.core.magnet import generate_magnet_link, get_configured_default_trackers
+
+    display_name = getattr(torrent_state, "name", None)
+    if not display_name or display_name == "Unknown":
+        display_name = None
+    return generate_magnet_link(
+        info_hash_bytes,
+        display_name=display_name,
+        trackers=get_configured_default_trackers(),
+    )
+
+
+async def _resolve_restore_magnet_uri(
+    session_manager: Any,
+    torrent_state: Any,
+) -> Optional[str]:
+    """Resolve magnet URI for daemon restore, merging all known tracker sources."""
+    from ccbt.core.magnet import (
+        generate_magnet_link,
+        parse_magnet,
+        resolve_trackers_from_sources,
+    )
+    from ccbt.storage.checkpoint import CheckpointManager
+
+    info_hash_hex = str(getattr(torrent_state, "info_hash", "") or "")
+    if not info_hash_hex:
+        return None
+
+    try:
+        info_hash_bytes = bytes.fromhex(info_hash_hex)
+    except ValueError:
+        return _magnet_uri_for_torrent_state(torrent_state)
+
+    magnet_trackers: list[str] = []
+    base_magnet = _magnet_uri_for_torrent_state(torrent_state)
+    if base_magnet:
+        try:
+            magnet_trackers = list(parse_magnet(base_magnet).trackers)
+        except ValueError:
+            magnet_trackers = []
+
+    checkpoint = None
+    try:
+        checkpoint_manager = CheckpointManager(session_manager.config.disk)
+        checkpoint = await checkpoint_manager.load_checkpoint(info_hash_bytes)
+    except Exception as exc:
+        logger.debug("Checkpoint magnet enrichment failed for restore: %s", exc)
+
+    trackers = resolve_trackers_from_sources(
+        magnet_trackers=magnet_trackers,
+        checkpoint_announce_urls=(
+            list(getattr(checkpoint, "announce_urls", None) or [])
+            if checkpoint
+            else None
+        ),
+        checkpoint_magnet_uri=(
+            getattr(checkpoint, "magnet_uri", None) if checkpoint else None
+        ),
+        supplement_defaults=True,
+    )
+    if not trackers:
+        return base_magnet
+
+    display_name = getattr(torrent_state, "name", None)
+    if not display_name or display_name == "Unknown":
+        display_name = None
+    enriched = generate_magnet_link(
+        info_hash_bytes,
+        display_name=display_name,
+        trackers=trackers,
+    )
+    if base_magnet and "tr=" not in base_magnet:
+        logger.info(
+            "Enriched restore magnet with %d tracker(s) for %s",
+            len(trackers),
+            info_hash_hex[:12],
+        )
+    return enriched
+
+
+def _output_dir_for_torrent_restore(torrent_state: Any) -> Optional[str]:
+    """Return saved output directory when it differs from the default."""
+    output_dir = str(getattr(torrent_state, "output_dir", "") or "").strip()
+    if not output_dir or output_dir == ".":
+        return None
+    return output_dir
+
+
+async def _restore_torrent_config(
+    session_manager: AsyncSessionManager,
+    info_hash_hex: str,
+    torrent_state: Any,
+) -> None:
+    """Restore per-torrent options and rate limits from state.
+
+    Args:
+        session_manager: Session manager instance
+        info_hash_hex: Torrent info hash as hex string
+        torrent_state: TorrentState instance with per_torrent_options and rate_limits
+
+    """
+    try:
+        info_hash_bytes = bytes.fromhex(info_hash_hex)
+        async with session_manager.lock:
+            torrent_session = session_manager.torrents.get(info_hash_bytes)
+            if torrent_session:
+                # Restore per-torrent options
+                if torrent_state.per_torrent_options:
+                    torrent_session.options.update(torrent_state.per_torrent_options)
+                    # Apply the restored options
+                    torrent_session.apply_per_torrent_options()
+                    logger.debug(
+                        "Restored per-torrent options for %s: %s",
+                        info_hash_hex[:12],
+                        list(torrent_state.per_torrent_options.keys()),
+                    )
+
+                # Restore rate limits
+                if torrent_state.rate_limits:
+                    down_kib = torrent_state.rate_limits.get("down_kib", 0)
+                    up_kib = torrent_state.rate_limits.get("up_kib", 0)
+                    await session_manager.set_rate_limits(
+                        info_hash_hex, down_kib, up_kib
+                    )
+                    logger.debug(
+                        "Restored rate limits for %s: down=%d KiB/s, up=%d KiB/s",
+                        info_hash_hex[:12],
+                        down_kib,
+                        up_kib,
+                    )
+    except Exception as e:
+        logger.debug(
+            "Failed to restore per-torrent config for %s: %s", info_hash_hex[:12], e
+        )
+
+
 class DaemonMain:
     """Main daemon process manager."""
 
     def __init__(
         self,
-        config_file: str | Path | None = None,
+        config_file: Optional[str | Path] = None,
         foreground: bool = False,
     ):
         """Initialize daemon main.
@@ -60,17 +333,40 @@ class DaemonMain:
             state_dir=daemon_state_dir,
         )
 
-        self.session_manager: AsyncSessionManager | None = None
-        self.ipc_server: IPCServer | None = None
+        self.session_manager: Optional[AsyncSessionManager] = None
+        self.ipc_server: Optional[IPCServer] = None
 
         self._shutdown_event = asyncio.Event()
-        self._auto_save_task: asyncio.Task | None = None
+        self._auto_save_task: Optional[asyncio.Task] = None
+        self._session_startup_task: Optional[asyncio.Task[None]] = None
+        self._session_startup_complete = asyncio.Event()
+        self._stopping = False  # Flag to prevent double-calling stop()
+
+    @property
+    def shutdown_event(self) -> asyncio.Event:
+        """Get the shutdown event.
+
+        Returns:
+            The shutdown event that can be set to signal shutdown
+
+        """
+        return self._shutdown_event
+
+    @property
+    def is_stopping(self) -> bool:
+        """Check if daemon is stopping.
+
+        Returns:
+            True if daemon is stopping, False otherwise
+
+        """
+        return self._stopping
 
     async def start(self) -> None:
         """Start daemon process."""
         logger.info("Starting ccBitTorrent daemon...")
 
-        # CRITICAL FIX: Acquire lock file EARLY in startup process
+        # Note: Acquire lock file EARLY in startup process
         # This prevents multiple daemon instances from starting simultaneously
         # Must be done BEFORE any initialization to prevent resource conflicts
         if not self.daemon_manager.acquire_lock():
@@ -84,49 +380,64 @@ class DaemonMain:
                         import os
 
                         lock_pid = int(lock_pid_text)
-                        try:
-                            os.kill(lock_pid, 0)  # Check if process exists
-                            raise RuntimeError(
-                                f"Daemon is already running (PID {lock_pid}). "
-                                "Cannot start another instance."
+                        # Lock held by current process (foreground: CLI created lock then we re-check)
+                        if lock_pid == os.getpid():
+                            logger.debug(
+                                "Lock file held by current process (PID %d), continuing",
+                                lock_pid,
                             )
-                        except (OSError, ProcessLookupError):
-                            # Process is dead - remove stale lock and retry
-                            logger.warning(
-                                "Removing stale lock file (process %d not running)", lock_pid
-                            )
-                            with contextlib.suppress(OSError):
-                                self.daemon_manager.lock_file.unlink()
-                            # Retry acquiring lock
-                            if not self.daemon_manager.acquire_lock():
-                                raise RuntimeError(
-                                    "Cannot acquire daemon lock file. "
-                                    "Another daemon may be starting."
+                            # Don't raise - we own the lock
+                        else:
+                            try:
+                                os.kill(lock_pid, 0)  # Check if process exists
+                                error_msg = (
+                                    f"Daemon is already running (PID {lock_pid}). "
+                                    "Cannot start another instance."
                                 )
+                                raise RuntimeError(error_msg)
+                            except (OSError, ProcessLookupError) as e:
+                                # Process is dead - remove stale lock and retry
+                                logger.warning(
+                                    "Removing stale lock file (process %d not running)",
+                                    lock_pid,
+                                )
+                                with contextlib.suppress(OSError):
+                                    self.daemon_manager.lock_file.unlink()
+                                # Retry acquiring lock
+                                if not self.daemon_manager.acquire_lock():
+                                    msg = (
+                                        "Cannot acquire daemon lock file. "
+                                        "Another daemon may be starting."
+                                    )
+                                    raise RuntimeError(msg) from e
                 except Exception as e:
-                    logger.warning("Error checking lock file: %s, removing stale lock", e)
+                    logger.warning(
+                        "Error checking lock file: %s, removing stale lock", e
+                    )
                     with contextlib.suppress(OSError):
                         self.daemon_manager.lock_file.unlink()
                     # Retry acquiring lock
                     if not self.daemon_manager.acquire_lock():
-                        raise RuntimeError(
+                        msg = (
                             "Cannot acquire daemon lock file. "
                             "Another daemon may be starting."
                         )
+                        raise RuntimeError(msg) from e
             else:
-                raise RuntimeError(
-                    "Cannot acquire daemon lock file. "
-                    "Another daemon may be starting."
-                )
+                msg = "Cannot acquire daemon lock file. Another daemon may be starting."
+                raise RuntimeError(msg)
 
         # Setup signal handlers (before writing PID file)
-        self.daemon_manager.setup_signal_handlers(self._shutdown_handler)
+        self.daemon_manager.setup_signal_handlers(
+            self._shutdown_handler,
+            respond_to_sigint=self.foreground,
+        )
 
-        # CRITICAL FIX: Initialize security components BEFORE session manager
+        # Note: Initialize security components BEFORE session manager
         # This ensures API key, Ed25519 keys, and TLS are ready before NAT manager starts
         # Security initialization must happen before any network components
         daemon_config = self.config.daemon
-        api_key = None
+        api_key: Optional[str] = None
         key_manager = None
         tls_enabled = False
 
@@ -142,6 +453,12 @@ class DaemonMain:
                 logger.info("Generated new API key for daemon")
             else:
                 logger.debug("Using existing API key from config")
+        else:
+            # Generate a default API key if daemon_config is None
+            import secrets
+
+            api_key = secrets.token_hex(32)
+            logger.info("Generated default API key for daemon (no daemon config)")
 
             # Initialize Ed25519 key manager
             try:
@@ -157,8 +474,8 @@ class DaemonMain:
                     if not daemon_config.ed25519_public_key:
                         daemon_config.ed25519_public_key = public_key_hex
                         logger.info("Stored Ed25519 public key in daemon config")
-                else:
-                    # Update config if it was just created
+                # Update config if it was just created
+                elif daemon_config:
                     daemon_config.ed25519_public_key = public_key_hex
             except Exception as e:
                 logger.warning(
@@ -180,35 +497,22 @@ class DaemonMain:
         self._tls_enabled = tls_enabled
 
         # Initialize session manager (after security initialization)
-        self.session_manager = AsyncSessionManager(
-            output_dir=".",
+        # Use config.disk.download_dir if set, otherwise default to "."
+        default_output_dir = (
+            self.config.disk.download_dir
+            if self.config.disk.download_dir and self.config.disk.download_dir.strip()
+            else "."
         )
+        self.session_manager = AsyncSessionManager(
+            output_dir=default_output_dir,
+            key_manager=self._key_manager,
+        )
+        self.session_manager.key_manager = self._key_manager
+        self._session_startup_complete.clear()
 
         try:
-            # Start session manager (must be started before restoring torrents)
-            # NAT manager will start as part of session manager startup
-            await self.session_manager.start()
-
-            # Initialize metrics collection
-            try:
-                metrics_collector = await init_metrics()
-                if metrics_collector:
-                    # Set session reference to enable collection of DHT, queue, disk I/O, and tracker metrics
-                    metrics_collector.set_session(self.session_manager)
-                    logger.info(
-                        "Metrics collection initialized and session reference set"
-                    )
-                else:
-                    logger.debug(
-                        "Metrics collection not enabled or failed to initialize"
-                    )
-            except Exception:
-                logger.exception(
-                    "Error initializing metrics collection, continuing without metrics"
-                )
-
-            # CRITICAL FIX: IPC server initialization moved here (after session manager start)
-            # Security components were initialized earlier, so we can use them now
+            # Note: IPC server starts BEFORE session manager so the dashboard can
+            # connect immediately while NAT/DHT/TCP components initialize.
             # Get IPC configuration
             ipc_host = daemon_config.ipc_host if daemon_config else "127.0.0.1"
             ipc_port = daemon_config.ipc_port if daemon_config else 64124
@@ -216,33 +520,28 @@ class DaemonMain:
                 daemon_config.websocket_enabled if daemon_config else True
             )
             websocket_heartbeat = (
-                daemon_config.websocket_heartbeat_interval
-                if daemon_config
-                else 30.0
+                daemon_config.websocket_heartbeat_interval if daemon_config else 30.0
             )
 
-            # CRITICAL FIX: Check if IPC port is available before attempting to bind
+            # Note: Check if IPC port is available before attempting to bind
             from ccbt.utils.port_checker import (
                 get_port_conflict_resolution,
                 is_port_available,
             )
 
-            bind_host = ipc_host if ipc_host != "0.0.0.0" else "127.0.0.1"
+            bind_host = ipc_host if ipc_host != "0.0.0.0" else "127.0.0.1"  # nosec B104 - IPC server converts 0.0.0.0 to 127.0.0.1 for localhost-only binding
             port_available, port_error = is_port_available(bind_host, ipc_port, "tcp")
             if not port_available:
-                # CRITICAL FIX: Distinguish between permission errors and port conflicts
+                # Note: Distinguish between permission errors and port conflicts
                 # Check for permission denied in multiple ways (error code 10013 on Windows, 13 on Unix)
                 from ccbt.utils.port_checker import get_permission_error_resolution
 
-                is_permission_error = (
-                    port_error
-                    and (
-                        "Permission denied" in port_error
-                        or "10013" in str(port_error)
-                        or "WSAEACCES" in str(port_error)
-                        or "EACCES" in str(port_error)
-                        or "forbidden" in str(port_error).lower()
-                    )
+                is_permission_error = port_error and (
+                    "Permission denied" in port_error
+                    or "10013" in str(port_error)
+                    or "WSAEACCES" in str(port_error)
+                    or "EACCES" in str(port_error)
+                    or "forbidden" in str(port_error).lower()
                 )
                 if is_permission_error:
                     resolution = get_permission_error_resolution(ipc_port, "tcp")
@@ -262,6 +561,13 @@ class DaemonMain:
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
 
+            # Ensure api_key is not None (required by IPCServer)
+            if not self._api_key:
+                import secrets
+
+                self._api_key = secrets.token_hex(32)
+                logger.warning("API key was None, generated a new one")
+
             self.ipc_server = IPCServer(
                 session_manager=self.session_manager,
                 api_key=self._api_key,
@@ -271,12 +577,59 @@ class DaemonMain:
                 websocket_enabled=websocket_enabled,
                 websocket_heartbeat_interval=websocket_heartbeat,
                 tls_enabled=self._tls_enabled,
+                shutdown_callback=self._shutdown_handler,
+                shutdown_event=self._shutdown_event,
+                session_startup_complete=self._session_startup_complete,
+            )
+
+            # Note: Set up session manager callbacks to emit WebSocket events
+            # This ensures completion events are properly propagated to clients
+            async def on_torrent_complete_callback(info_hash: bytes, name: str) -> None:
+                """Handle torrent completion and emit WebSocket event."""
+                try:
+                    info_hash_hex = info_hash.hex()
+                    logger.info("Torrent completed: %s (%s)", name, info_hash_hex[:16])
+                    # Emit WebSocket event for completion
+                    if self.ipc_server is not None:
+                        await self.ipc_server.emit_websocket_event(
+                            EventType.TORRENT_COMPLETED,
+                            {"info_hash": info_hash_hex, "name": name},
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to emit WebSocket event for completed torrent %s: %s",
+                        info_hash.hex()[:16] if info_hash else "unknown",
+                        e,
+                        exc_info=True,
+                    )
+
+            # Type cast: on_torrent_complete accepts both sync and async callbacks per type annotation
+            # but type checker may not recognize the union type properly
+            from typing import cast
+
+            self.session_manager.on_torrent_complete = cast(  # type: ignore[assignment]
+                "Optional[Callable[[bytes, str], None] | Callable[[bytes, str], Coroutine[Any, Any, None]]]",
+                on_torrent_complete_callback,
             )
 
             # Start IPC server
             await self.ipc_server.start()
 
-            # CRITICAL FIX: Verify IPC server is actually accepting HTTP connections before writing PID file
+            # Emit SERVICE_STARTED event for IPC server
+            try:
+                await self.ipc_server.emit_websocket_event(
+                    EventType.SERVICE_STARTED,
+                    {"service_name": "ipc_server", "status": "running"},
+                )
+            except Exception as e:
+                logger.debug(
+                    "Failed to emit SERVICE_STARTED event for IPC server: %s", e
+                )
+
+            # Set up event bridge to convert utils.events to IPC WebSocket events
+            await self.ipc_server.setup_event_bridge()
+
+            # Note: Verify IPC server is actually accepting HTTP connections before writing PID file
             # Socket test alone isn't sufficient - aiohttp might not be ready for HTTP yet
             # This ensures CLI can connect immediately after PID file is written
             import aiohttp
@@ -285,11 +638,11 @@ class DaemonMain:
 
             verify_host = (
                 "127.0.0.1"
-                if self.ipc_server.host == "0.0.0.0"
+                if self.ipc_server.host == "0.0.0.0"  # nosec B104 - Verification host for IPC server, converts 0.0.0.0 to 127.0.0.1
                 else self.ipc_server.host
             )
-            max_retries = 15  # More retries for HTTP readiness
-            retry_delay = 0.2
+            max_retries = 5  # Reduced from 15 - sufficient for local server (optimized for faster startup)
+            retry_delay = 0.1  # Reduced from 0.2 - faster checks
             http_ready = False
 
             # Use HTTPS if TLS is enabled, otherwise HTTP
@@ -328,10 +681,11 @@ class DaemonMain:
                         )
                         await asyncio.sleep(retry_delay)
                     else:
-                        raise RuntimeError(
+                        error_msg = (
                             f"IPC server HTTP not ready on {self.ipc_server.host}:{self.ipc_server.port} "
                             f"after {max_retries} attempts (last error: {e})"
                         )
+                        raise RuntimeError(error_msg) from e
                 except Exception as e:
                     if attempt < max_retries - 1:
                         logger.debug(
@@ -343,21 +697,95 @@ class DaemonMain:
                         )
                         await asyncio.sleep(retry_delay)
                     else:
-                        raise RuntimeError(
+                        error_msg = (
                             f"IPC server HTTP verification failed on {self.ipc_server.host}:{self.ipc_server.port} "
                             f"after {max_retries} attempts (last error: {e})"
                         )
+                        raise RuntimeError(error_msg) from e
 
             if not http_ready:
-                raise RuntimeError(
+                error_msg = (
                     f"IPC server HTTP not ready on {self.ipc_server.host}:{self.ipc_server.port} "
                     f"after {max_retries} attempts"
                 )
+                raise RuntimeError(error_msg)
 
-            # CRITICAL FIX: Write PID file ONLY after IPC server is ready
+            # Note: Write PID file ONLY after IPC server is ready
             # This ensures CLI can connect immediately after PID file is written
             # Lock is already acquired at start of this method
             self.daemon_manager.write_pid(acquire_lock=False)
+
+            # Write daemon config.json so CLI/dashboard can discover IPC port and API key
+            # (avoids "Daemon config file not found" and wrong-port connection failures)
+            if self.daemon_manager.state_dir and self._api_key:
+                from ccbt.daemon.daemon_manager import write_daemon_config
+
+                try:
+                    write_daemon_config(
+                        ipc_port,
+                        self._api_key,
+                        ipc_host=ipc_host,
+                    )
+                except Exception as e:
+                    logger.warning("Could not write daemon config.json: %s", e)
+
+            logger.info(
+                "IPC server ready on port %d; starting session manager in background",
+                ipc_port,
+            )
+            self._session_startup_task = asyncio.create_task(
+                self._complete_session_startup(daemon_config),
+                name="daemon_session_startup",
+            )
+        except Exception:
+            # Note: Remove PID file if startup fails
+            # This prevents CLI from thinking daemon is running when it crashed
+            logger.exception("Failed to start daemon, releasing lock")
+            if (
+                self._session_startup_task is not None
+                and not self._session_startup_task.done()
+            ):
+                self._session_startup_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._session_startup_task
+            try:
+                # Only release this process's lock. Do not call remove_pid() here:
+                # a failed startup attempt must not delete config.json or PID files
+                # belonging to an already-running daemon instance.
+                self.daemon_manager.release_lock()
+            except Exception as cleanup_error:
+                logger.warning(
+                    "Failed to remove PID file/lock during cleanup: %s",
+                    cleanup_error,
+                )
+            # Re-raise to let main() handle it
+            raise
+
+    async def _complete_session_startup(self, daemon_config: Any) -> None:
+        """Start session manager, metrics, and restore persisted state."""
+        session_manager = self.session_manager
+        if session_manager is None:
+            logger.error("Session manager not initialized; skipping startup completion")
+            return
+        try:
+            await session_manager.start()
+
+            # Initialize metrics collection (after session manager is running)
+            try:
+                metrics_collector = await init_metrics()
+                if metrics_collector:
+                    metrics_collector.set_session(session_manager)
+                    logger.info(
+                        "Metrics collection initialized and session reference set"
+                    )
+                else:
+                    logger.debug(
+                        "Metrics collection not enabled or failed to initialize"
+                    )
+            except Exception:
+                logger.exception(
+                    "Error initializing metrics collection, continuing without metrics"
+                )
 
             # Start auto-save task
             auto_save_interval = (
@@ -385,30 +813,58 @@ class DaemonMain:
                                 torrent_state.torrent_file_path
                                 and Path(torrent_state.torrent_file_path).exists()
                             ):
-                                await self.session_manager.add_torrent(
+                                await session_manager.add_torrent(
                                     torrent_state.torrent_file_path,
                                     resume=True,
+                                )
+                                await _restore_torrent_config(
+                                    session_manager,
+                                    info_hash_hex,
+                                    torrent_state,
                                 )
                                 restored_count += 1
                                 logger.info(
                                     "Restored torrent from file: %s",
                                     torrent_state.torrent_file_path,
                                 )
-                            elif torrent_state.magnet_uri:
-                                await self.session_manager.add_magnet(
-                                    torrent_state.magnet_uri,
-                                    resume=True,
-                                )
-                                restored_count += 1
-                                logger.info(
-                                    "Restored torrent from magnet: %s",
-                                    torrent_state.magnet_uri[:50] + "...",
-                                )
                             else:
-                                logger.warning(
-                                    "Torrent %s has no source info, skipping",
-                                    info_hash_hex,
+                                magnet_uri = await _resolve_restore_magnet_uri(
+                                    session_manager,
+                                    torrent_state,
                                 )
+                                if magnet_uri:
+                                    restored_from_fallback = (
+                                        not torrent_state.magnet_uri
+                                    )
+                                    await session_manager.add_magnet(
+                                        magnet_uri,
+                                        output_dir=_output_dir_for_torrent_restore(
+                                            torrent_state
+                                        ),
+                                        resume=True,
+                                    )
+                                    await _restore_torrent_config(
+                                        session_manager,
+                                        info_hash_hex,
+                                        torrent_state,
+                                    )
+                                    restored_count += 1
+                                    if restored_from_fallback:
+                                        logger.info(
+                                            "Restored torrent from info_hash "
+                                            "fallback magnet: %s",
+                                            info_hash_hex[:12],
+                                        )
+                                    else:
+                                        logger.info(
+                                            "Restored torrent from magnet: %s",
+                                            magnet_uri[:50] + "...",
+                                        )
+                                else:
+                                    logger.warning(
+                                        "Torrent %s has no source info, skipping",
+                                        info_hash_hex,
+                                    )
                         except Exception:
                             logger.exception(
                                 "Failed to restore torrent %s",
@@ -419,28 +875,97 @@ class DaemonMain:
                         restored_count,
                         len(state.torrents),
                     )
+
+                    xet_metadata_registry = state.metadata.get(
+                        "xet_metadata_registry", {}
+                    )
+                    if isinstance(xet_metadata_registry, dict):
+                        for (
+                            workspace_id_hex,
+                            metadata_hex,
+                        ) in xet_metadata_registry.items():
+                            if (
+                                isinstance(workspace_id_hex, str)
+                                and _is_workspace_id_hex(workspace_id_hex)
+                                and isinstance(metadata_hex, str)
+                            ):
+                                with contextlib.suppress(Exception):
+                                    await session_manager.register_xet_metadata(
+                                        workspace_id_hex,
+                                        bytes.fromhex(metadata_hex),
+                                    )
+
+                    xet_folders = state.metadata.get("xet_folders", [])
+                    restored_xet_count = 0
+                    if isinstance(xet_folders, list):
+                        for folder_state in xet_folders:
+                            if not isinstance(folder_state, dict):
+                                continue
+                            folder_key = folder_state.get("folder_key")
+                            folder_path = folder_state.get("folder_path")
+                            if not folder_key or not folder_path:
+                                continue
+                            metadata_bytes = None
+                            workspace_id = folder_state.get("workspace_id")
+                            metadata_hex = None
+                            if isinstance(workspace_id, str) and _is_workspace_id_hex(
+                                workspace_id
+                            ):
+                                metadata_hex = xet_metadata_registry.get(workspace_id)
+                            elif isinstance(workspace_id, str):
+                                logger.debug(
+                                    "Skipping invalid workspace_id in folder state: %s",
+                                    workspace_id,
+                                )
+                            if metadata_hex is None:
+                                # Legacy fallback for older state files keyed by folder key.
+                                metadata_hex = xet_metadata_registry.get(folder_key)
+                            if isinstance(metadata_hex, str):
+                                with contextlib.suppress(ValueError):
+                                    metadata_bytes = bytes.fromhex(metadata_hex)
+                            try:
+                                await session_manager.add_xet_folder(
+                                    folder_path=folder_path,
+                                    tonic_file=folder_state.get("tonic_source")
+                                    if str(
+                                        folder_state.get("tonic_source", "")
+                                    ).endswith(".tonic")
+                                    else None,
+                                    tonic_link=folder_state.get("tonic_source")
+                                    if str(
+                                        folder_state.get("tonic_source", "")
+                                    ).startswith("tonic?:")
+                                    else None,
+                                    sync_mode=folder_state.get("sync_mode"),
+                                    source_peers=folder_state.get("source_peers"),
+                                    folder_key=folder_key,
+                                    metadata_bytes=metadata_bytes,
+                                    allowlist_path=folder_state.get("allowlist_path"),
+                                    auth_scope=folder_state.get("auth_scope"),
+                                    require_signed_metadata=folder_state.get(
+                                        "require_signed_metadata"
+                                    ),
+                                    hash_algorithm=folder_state.get("hash_algorithm"),
+                                )
+                                restored_xet_count += 1
+                            except Exception:
+                                logger.exception(
+                                    "Failed to restore XET folder %s",
+                                    folder_key,
+                                )
+                    if restored_xet_count:
+                        logger.info(
+                            "Restored %d XET folders from state", restored_xet_count
+                        )
                 else:
                     logger.warning("State validation failed, skipping restoration")
 
-            logger.info("Daemon started successfully")
-        except Exception as e:
-            # CRITICAL FIX: Remove PID file if startup fails
-            # This prevents CLI from thinking daemon is running when it crashed
-            logger.exception(
-                "Failed to start daemon (error: %s), cleaning up PID file and lock",
-                e,
-            )
-            try:
-                # Release lock and remove PID file on error
-                self.daemon_manager.release_lock()
-                self.daemon_manager.remove_pid()
-            except Exception as cleanup_error:
-                logger.warning(
-                    "Failed to remove PID file/lock during cleanup: %s",
-                    cleanup_error,
-                )
-            # Re-raise to let main() handle it
+            logger.info("Daemon session startup completed successfully")
+        except Exception:
+            logger.exception("Background session startup failed")
             raise
+        finally:
+            self._session_startup_complete.set()
 
     async def _shutdown_handler(self) -> None:
         """Handle shutdown signal."""
@@ -475,47 +1000,50 @@ class DaemonMain:
             debug_log_stack,
         )
 
+        install_daemon_event_loop_exception_handler()
+
         try:
             debug_log("DaemonMain.run() called - starting daemon...")
             debug_log_stack("Stack at start of run()")
             await self.start()
-            logger.info("Daemon initialization complete, entering main loop")
-            debug_log("Daemon initialization complete, entering main loop")
+            logger.info(
+                "Daemon IPC ready, entering main loop (session startup may continue in background)"
+            )
+            debug_log("Daemon IPC ready, entering main loop")
             debug_log_event_loop_state()
         except Exception as e:
             debug_log_exception("Fatal error during daemon startup", e)
             debug_log_stack("Stack after startup failure")
-            logger.exception("Fatal error during daemon startup: %s", e)
+            logger.exception("Fatal error during daemon startup")
             # Clean up PID file if startup failed
-            try:
+            with contextlib.suppress(Exception):
                 self.daemon_manager.remove_pid()
-            except Exception:
-                pass
             raise
 
         try:
             # Wait for shutdown signal
-            # CRITICAL FIX: Use an infinite loop with periodic checks instead of await wait()
+            # Note: Use an infinite loop with periodic checks instead of await wait()
             # On Windows, await event.wait() may not keep the event loop alive if there are no other tasks
             # The IPC server site should create tasks, but we need to ensure the loop stays alive
             logger.debug("Waiting for shutdown signal...")
             # CRITICAL: Verify IPC server is still running before waiting
             # Use a more lenient check - just verify the site exists, not the internal sockets
             # The sockets check can be unreliable on Windows and may cause false positives
-            if self.ipc_server and self.ipc_server.site:
-                # Only check if site exists, not the internal socket state
-                # The site will keep the server alive as long as it exists
-                if not hasattr(self.ipc_server.site, "_server"):
-                    logger.warning(
-                        "IPC server site has no _server attribute - this may be a false positive. "
-                        "Continuing anyway - the server should still be running."
-                    )
-                    # Don't raise - just log a warning and continue
-                    # The site.start() already verified the server is listening at startup
-                # Don't check sockets - this can be unreliable and cause false positives
-                # The site.start() already verified the server is listening
+            if (
+                self.ipc_server
+                and self.ipc_server.site
+                and not hasattr(self.ipc_server.site, "_server")
+            ):
+                logger.warning(
+                    "IPC server site has no _server attribute - this may be a false positive. "
+                    "Continuing anyway - the server should still be running."
+                )
+                # Don't raise - just log a warning and continue
+                # The site.start() already verified the server is listening at startup
+            # Don't check sockets - this can be unreliable and cause false positives
+            # The site.start() already verified the server is listening
 
-            # CRITICAL FIX: Use a loop with periodic sleep to keep the event loop alive
+            # Note: Use a loop with periodic sleep to keep the event loop alive
             # This ensures the daemon stays running even on Windows where event.wait() might not be enough
             # The periodic sleep creates tasks that keep the event loop from exiting
             # Also verify IPC server is still running periodically
@@ -525,6 +1053,10 @@ class DaemonMain:
 
             from ccbt.daemon.debug_utils import debug_log, debug_log_event_loop_state
 
+            # Note: Initialize keep_alive to None to ensure it's always in scope
+            # This prevents NameError if exception occurs before task creation
+            keep_alive: Optional[asyncio.Task] = None
+
             # CRITICAL: Create a background task to keep the event loop alive
             # This ensures the loop never exits even if all other tasks complete
             async def keep_alive_task():
@@ -532,7 +1064,20 @@ class DaemonMain:
                 try:
                     debug_log("Keep-alive task started")
                     while not self._shutdown_event.is_set():
-                        await asyncio.sleep(60.0)  # Sleep for 60 seconds
+                        # Use interruptible sleep that checks for shutdown frequently
+                        # This ensures the task responds quickly to shutdown signals
+                        sleep_interval = 5.0  # Check every 5 seconds
+                        elapsed = 0.0
+                        total_sleep = 60.0  # Original sleep duration
+                        while (
+                            elapsed < total_sleep and not self._shutdown_event.is_set()
+                        ):
+                            await asyncio.sleep(sleep_interval)
+                            elapsed += sleep_interval
+
+                        if self._shutdown_event.is_set():
+                            break
+
                         logger.debug("Keep-alive task: event loop is still alive")
                         debug_log("Keep-alive task: event loop is still alive")
                         debug_log_event_loop_state()
@@ -547,9 +1092,43 @@ class DaemonMain:
                 debug_log("Entering main loop - waiting for shutdown signal")
                 while not self._shutdown_event.is_set():
                     try:
-                        # Sleep for 1 second, then check if shutdown was requested
-                        # This creates periodic tasks that keep the event loop alive
-                        await asyncio.sleep(1.0)
+                        # Note: Use wait with timeout for more responsive shutdown
+                        # This allows the loop to check the shutdown event more frequently
+                        # while still keeping the event loop alive
+                        try:
+                            # Wait for shutdown event with 0.1 second timeout
+                            # This makes shutdown more responsive (checks 10 times per second)
+                            await asyncio.wait_for(
+                                self._shutdown_event.wait(), timeout=0.1
+                            )
+                            # If we get here, shutdown event was set
+                            break
+                        except asyncio.TimeoutError:
+                            # Timeout is expected - continue loop to check again
+                            # Note: Check shutdown event immediately after timeout
+                            # This ensures we break immediately if shutdown was requested
+                            if self._shutdown_event.is_set():
+                                break
+                        except KeyboardInterrupt:
+                            # Note: Handle KeyboardInterrupt by setting shutdown event and breaking
+                            # Don't re-raise - let the signal handler and outer handler deal with it
+                            # The signal handler should have already set the shutdown event, but set it here too
+                            logger.info(
+                                "KeyboardInterrupt detected in main loop wait_for()"
+                            )
+                            debug_log(
+                                "KeyboardInterrupt detected in main loop wait_for()"
+                            )
+                            # Set shutdown event to ensure cleanup
+                            self._shutdown_event.set()
+                            # Break out of the loop immediately
+                            break
+
+                        # Note: Check shutdown event again before continuing
+                        # This ensures we break immediately if shutdown was requested during the wait
+                        if self._shutdown_event.is_set():
+                            break
+
                         iteration += 1
                         consecutive_errors = (
                             0  # Reset error counter on successful iteration
@@ -567,10 +1146,8 @@ class DaemonMain:
                         if iteration % 10 == 0:
                             if self.ipc_server and self.ipc_server.site:
                                 # Verify site is still active
-                                if (
-                                    not hasattr(self.ipc_server.site, "_server")
-                                    or not self.ipc_server.site._server
-                                ):
+                                server = getattr(self.ipc_server.site, "_server", None)
+                                if not server:
                                     logger.warning(
                                         "IPC server site lost _server attribute - this may indicate a problem"
                                     )
@@ -598,6 +1175,11 @@ class DaemonMain:
                             debug_log_stack("Stack when loop access failed")
                             break
 
+                        # Note: Check shutdown event one more time before sleep
+                        # This ensures we break immediately if shutdown was requested
+                        if self._shutdown_event.is_set():
+                            break
+
                         # Check if shutdown was requested (will be checked in the while condition)
                     except asyncio.CancelledError:
                         # Cancelled errors are expected during shutdown
@@ -608,21 +1190,32 @@ class DaemonMain:
                             "Main loop iteration cancelled (shutdown in progress)"
                         )
                         break
+                    except KeyboardInterrupt:
+                        # Note: Handle KeyboardInterrupt by setting shutdown event and breaking
+                        # The signal handler should have already set the shutdown event, but set it here too
+                        logger.info(
+                            "KeyboardInterrupt detected in main loop (outer handler)"
+                        )
+                        debug_log(
+                            "KeyboardInterrupt detected in main loop (outer handler)"
+                        )
+                        # Set shutdown event to ensure cleanup
+                        self._shutdown_event.set()
+                        # Break out of the loop immediately - don't re-raise
+                        break
                     except Exception as e:
                         # CRITICAL: Catch any exceptions in the main loop to prevent daemon from exiting
                         from ccbt.daemon.debug_utils import debug_log_exception
 
                         consecutive_errors += 1
                         debug_log_exception(
-                            "Error in daemon main loop iteration (error %d/%d)"
-                            % (consecutive_errors, max_consecutive_errors),
+                            f"Error in daemon main loop iteration (error {consecutive_errors}/{max_consecutive_errors})",
                             e,
                         )
                         logger.exception(
-                            "Error in daemon main loop iteration (error %d/%d): %s",
+                            "Error in daemon main loop iteration (error %d/%d)",
                             consecutive_errors,
                             max_consecutive_errors,
-                            e,
                         )
 
                         # If we get too many consecutive errors, something is seriously wrong
@@ -635,21 +1228,104 @@ class DaemonMain:
                             # Reset counter to allow recovery
                             consecutive_errors = 0
 
+                        # Note: Check shutdown event before sleep
+                        # This ensures we break immediately if shutdown was requested
+                        if self._shutdown_event.is_set():
+                            break
+
                         # Continue the loop - don't exit
                         await asyncio.sleep(1.0)  # Wait before next iteration
 
                 logger.info("Shutdown signal received")
             finally:
                 # Cancel keep-alive task
-                keep_alive.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await keep_alive
+                # Note: Check if keep_alive exists and is not done before cancelling
+                if keep_alive is not None and not keep_alive.done():
+                    keep_alive.cancel()
+                    with contextlib.suppress(
+                        asyncio.CancelledError, asyncio.TimeoutError
+                    ):
+                        # Use wait_for with timeout to prevent hanging
+                        await asyncio.wait_for(keep_alive, timeout=1.0)
         except KeyboardInterrupt:
             logger.info("Received keyboard interrupt")
             from ccbt.daemon.debug_utils import debug_log, debug_log_stack
 
             debug_log("Received keyboard interrupt")
             debug_log_stack("Stack after KeyboardInterrupt")
+            # Note: Set global shutdown flag early to suppress verbose logging
+            try:
+                from ccbt.utils.shutdown import set_shutdown
+
+                set_shutdown()
+            except Exception:
+                pass  # Don't fail if shutdown module isn't available
+
+            # Note: Set shutdown event when KeyboardInterrupt is caught
+            # This ensures shutdown happens even if signal handler didn't execute
+            self._shutdown_event.set()
+            logger.debug("Shutdown event set from KeyboardInterrupt handler")
+
+            # Note: Cancel keep-alive task immediately to ensure quick shutdown
+            # This prevents the task from continuing to run after KeyboardInterrupt
+            if keep_alive is not None and not keep_alive.done():
+                keep_alive.cancel()
+                logger.debug("Keep-alive task cancelled from KeyboardInterrupt handler")
+                # Wait for cancellation to complete with timeout
+                with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                    await asyncio.wait_for(
+                        keep_alive, timeout=1.0
+                    )  # Expected during cancellation
+
+            # Note: Cancel all remaining tasks to ensure clean shutdown
+            # This prevents tasks from blocking shutdown
+            try:
+                current_task = asyncio.current_task()
+                all_tasks = [
+                    t for t in asyncio.all_tasks() if t != current_task and not t.done()
+                ]
+                if all_tasks:
+                    logger.debug("Cancelling %d remaining tasks...", len(all_tasks))
+                    for task in all_tasks:
+                        task.cancel()
+                    # Wait for tasks to cancel with timeout
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(*all_tasks, return_exceptions=True),
+                            timeout=2.0,
+                        )
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        logger.debug("Some tasks did not cancel within timeout")
+            except Exception as e:
+                logger.debug("Error cancelling tasks: %s", e)
+
+            # Note: Call stop() directly in KeyboardInterrupt handler
+            # This ensures proper shutdown even if asyncio.run() cancels the event loop
+            # We do this here instead of relying on the finally block because
+            # asyncio.run() may cancel tasks and close the loop before finally executes
+            try:
+                logger.info("Initiating shutdown from KeyboardInterrupt handler...")
+                # Use wait_for with timeout to ensure shutdown completes
+                # If the event loop is being cancelled, this may still fail, but we try
+                try:
+                    await asyncio.wait_for(self.stop(), timeout=10.0)
+                    logger.info("Shutdown completed from KeyboardInterrupt handler")
+                except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+                    # Timeout or cancellation - event loop may be closing
+                    logger.warning(
+                        "Shutdown %s during KeyboardInterrupt - forcing cleanup",
+                        "timeout"
+                        if isinstance(e, asyncio.TimeoutError)
+                        else "cancelled",
+                    )
+                    # At least try to remove PID file
+                    with contextlib.suppress(Exception):
+                        self.daemon_manager.remove_pid()
+            except Exception:
+                logger.exception("Error during shutdown from KeyboardInterrupt")
+                # At least try to remove PID file
+                with contextlib.suppress(Exception):
+                    self.daemon_manager.remove_pid()
         except Exception as e:
             from ccbt.daemon.debug_utils import (
                 debug_log_event_loop_state,
@@ -660,7 +1336,7 @@ class DaemonMain:
             debug_log_exception("Unexpected error in daemon main loop", e)
             debug_log_stack("Stack after unexpected error")
             debug_log_event_loop_state()
-            logger.exception("Unexpected error in daemon main loop: %s", e)
+            logger.exception("Unexpected error in daemon main loop")
             # CRITICAL: Log the full exception context to help diagnose daemon crashes
             import traceback
 
@@ -675,14 +1351,89 @@ class DaemonMain:
             logger.info("Daemon main loop exiting, starting shutdown...")
             debug_log("Daemon main loop exiting, starting shutdown...")
             debug_log_stack("Stack in finally block before stop()")
-            await self.stop()
-            debug_log("Daemon stop() completed")
+            # Note: Only call stop() if it hasn't been called already
+            # (e.g., from KeyboardInterrupt handler)
+            if not self._stopping:
+                try:
+                    await self.stop()
+                    debug_log("Daemon stop() completed")
+                except Exception as e:
+                    logger.exception("Error in finally block stop()")
+                    debug_log("Error in finally block stop(): %s", e)
+            else:
+                logger.debug("Stop() already called, skipping in finally block")
+                debug_log("Stop() already called, skipping in finally block")
 
     async def stop(self) -> None:
         """Stop daemon process with proper shutdown sequence."""
-        logger.info("Stopping daemon...")
+        # Note: Make stop() idempotent to prevent double-calling
+        if self._stopping:
+            logger.debug("Stop() already in progress, skipping duplicate call")
+            return
 
-        # CRITICAL FIX: Verify daemon is actually running before stopping
+        self._stopping = True
+
+        # Note: Set global shutdown flag early to suppress verbose logging
+        from ccbt.utils.shutdown import set_shutdown
+
+        set_shutdown()
+        logger.info("Daemon shutdown sequence started")
+
+        # Stop accepting inbound peer connections and quiesce sessions before any
+        # long-running cleanup (auto-save drain, metrics shutdown, state save).
+        if self.session_manager:
+            try:
+                if hasattr(self.session_manager, "begin_shutdown_quiesce_async"):
+                    await asyncio.wait_for(
+                        self.session_manager.begin_shutdown_quiesce_async(),
+                        timeout=8.0,
+                    )
+                else:
+                    self.session_manager.begin_shutdown_quiesce()
+                await asyncio.wait_for(
+                    self.session_manager.stop_inbound_listeners(),
+                    timeout=5.0,
+                )
+                logger.debug("Inbound listeners stopped during shutdown quiesce")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timed out stopping inbound listeners; continuing shutdown"
+                )
+            except Exception:
+                logger.exception("Error stopping inbound listeners during shutdown")
+
+        # Stop UDP tracker retries before IPC/metrics teardown so in-flight
+        # connect/announce loops exit within ~100ms instead of multi-second backoff.
+        if self.session_manager and getattr(
+            self.session_manager, "udp_tracker_client", None
+        ):
+            try:
+                abort = getattr(
+                    self.session_manager.udp_tracker_client,
+                    "abort_during_shutdown",
+                    None,
+                )
+                if callable(abort):
+                    abort()
+                from ccbt.discovery.tracker_udp_client import (
+                    shutdown_udp_tracker_client,
+                )
+
+                await asyncio.wait_for(shutdown_udp_tracker_client(), timeout=3.0)
+                self.session_manager.udp_tracker_client = None
+                logger.debug("UDP tracker client stopped during early shutdown quiesce")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "UDP tracker early shutdown timed out; continuing daemon shutdown"
+                )
+            except Exception:
+                logger.exception("Error stopping UDP tracker during early quiesce")
+
+        # Reject new IPC work before tearing down handlers that may hold session locks.
+        if self.ipc_server:
+            self.ipc_server.mark_shutting_down()
+
+        # Note: Verify daemon is actually running before stopping
         # This prevents issues with stale PID files
         try:
             pid = self.daemon_manager.get_pid()
@@ -703,46 +1454,119 @@ class DaemonMain:
         except Exception as e:
             logger.debug("Error verifying daemon process: %s", e)
 
-        # Cancel auto-save task
+        # Wait for background session startup before tearing down components.
+        if (
+            self._session_startup_task is not None
+            and not self._session_startup_task.done()
+        ):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                try:
+                    await asyncio.wait_for(self._session_startup_task, timeout=120.0)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Session startup still running after 120s; cancelling for shutdown"
+                    )
+                    self._session_startup_task.cancel()
+                    await self._session_startup_task
+
+        # Cancel auto-save task (do not wait indefinitely for in-flight save_state)
         if self._auto_save_task:
             self._auto_save_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._auto_save_task
+            with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(self._auto_save_task, timeout=3.0)
 
         # Shutdown metrics collection
         try:
-            await shutdown_metrics()
+            await asyncio.wait_for(shutdown_metrics(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("Metrics shutdown timed out; continuing daemon shutdown")
         except Exception:
             logger.exception("Error shutting down metrics collection")
 
-        # Save state (before stopping services)
-        if self.session_manager:
-            try:
-                await self.state_manager.save_state(self.session_manager)
-                logger.info("State saved")
-            except Exception:
-                logger.exception("Error saving state during shutdown")
-
-        # Stop IPC server (releases IPC port)
+        # Stop IPC server before save_state so no in-flight request holds session_manager.lock.
+        # Several IPC handlers (e.g. peers/list) hold that lock while awaiting; save_state()
+        # needs the lock for get_global_stats() and can hang indefinitely otherwise.
         if self.ipc_server:
             try:
-                await self.ipc_server.stop()
+                await asyncio.wait_for(self.ipc_server.stop(), timeout=5.0)
                 logger.debug("IPC server stopped (port released)")
+            except asyncio.TimeoutError:
+                logger.warning("IPC server stop timed out; continuing daemon shutdown")
             except Exception:
                 logger.exception("Error stopping IPC server")
 
-        # Stop session manager (releases all network ports via TCP server, UDP tracker, DHT, NAT)
+        # Sessions were pre-quiesced at shutdown start; this is idempotent.
         if self.session_manager:
             try:
-                await self.session_manager.stop()
-                logger.debug("Session manager stopped (all ports released)")
+                if hasattr(self.session_manager, "begin_shutdown_quiesce_async"):
+                    await asyncio.wait_for(
+                        self.session_manager.begin_shutdown_quiesce_async(),
+                        timeout=5.0,
+                    )
+                else:
+                    self.session_manager.begin_shutdown_quiesce()
+                logger.debug("Session manager pre-quiesce completed")
+            except asyncio.TimeoutError:
+                logger.warning("Session pre-quiesce timed out; continuing shutdown")
             except Exception:
+                logger.exception("Error in session manager pre-quiesce")
+
+        # Save state (after IPC stopped so no handler blocks lock acquisition)
+        if self.session_manager:
+            try:
+                await asyncio.wait_for(
+                    self.state_manager.save_state(self.session_manager),
+                    timeout=15.0,
+                )
+                logger.info("State saved")
+            except asyncio.TimeoutError:
+                logger.warning("State save timed out; continuing daemon shutdown")
+            except Exception:
+                logger.exception("Error saving state during shutdown")
+
+        # Stop session manager (releases all network ports via TCP server, UDP tracker, DHT, NAT)
+        session_manager_stop_failed = False
+        if self.session_manager:
+            try:
+                # Note: Add delay before stopping session manager on Windows
+                # This prevents socket buffer exhaustion (WinError 10055) when closing many sockets at once
+                import sys
+
+                if sys.platform == "win32":
+                    await asyncio.sleep(0.1)  # Small delay to allow socket cleanup
+                await asyncio.wait_for(self.session_manager.stop(), timeout=60.0)
+                logger.debug("Session manager stopped (all ports released)")
+            except asyncio.TimeoutError:
+                session_manager_stop_failed = True
+                logger.warning(
+                    "Session manager stop timed out after 60s; continuing daemon shutdown"
+                )
+            except OSError as e:
+                # Note: Handle WinError 10055 gracefully during shutdown
+                error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
+                if error_code == 10055:
+                    logger.warning(
+                        "WinError 10055 (socket buffer exhaustion) during session manager shutdown. "
+                        "This is a transient Windows issue. Continuing shutdown..."
+                    )
+                else:
+                    session_manager_stop_failed = True
+                    logger.exception("OSError stopping session manager")
+            except Exception:
+                session_manager_stop_failed = True
                 logger.exception("Error stopping session manager")
+
+        if session_manager_stop_failed:
+            logger.error(
+                "Daemon shutdown incomplete: session manager stop raised errors; "
+                "see logs above. Removing PID file anyway."
+            )
 
         # Remove PID file and release lock (must be last)
         self.daemon_manager.remove_pid()
 
         logger.info("Daemon stopped (all ports released, PID file removed)")
+        _flush_log_handlers()
 
 
 async def main() -> int:
@@ -751,14 +1575,30 @@ async def main() -> int:
 
     parser = argparse.ArgumentParser(description="ccBitTorrent Daemon")
     parser.add_argument(
+        "-c",
         "--config",
         type=str,
         help="Path to config file",
     )
     parser.add_argument(
+        "-f",
         "--foreground",
         action="store_true",
         help="Run in foreground (for debugging)",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
+        help="Increase verbosity (-v: verbose, -vv: debug, -vvv: trace)",
+    )
+    parser.add_argument(
+        "-l",
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set log level directly",
     )
 
     args = parser.parse_args()
@@ -775,9 +1615,39 @@ async def main() -> int:
     # This ensures we can log errors during initialization
     try:
         debug_log("Initializing configuration...")
+        maybe_load_dotenv_from_env()
         config_manager = init_config(args.config)
+        # Set locale from config so any user-facing log or IPC messages use the same locale
+        try:
+            from ccbt.i18n.manager import TranslationManager
+
+            TranslationManager(config_manager.config)
+        except Exception:
+            pass
         debug_log("Configuration initialized, setting up logging...")
-        setup_logging(config_manager.config.observability)
+
+        # Note: Apply verbosity/log-level overrides from CLI arguments
+        # This ensures daemon respects verbosity flags just like CLI commands
+        effective_log_level = config_manager.config.observability.log_level
+        if args.log_level:
+            from ccbt.models import LogLevel
+
+            effective_log_level = LogLevel(args.log_level)
+        elif args.verbose > 0:
+            from ccbt.cli.verbosity import VerbosityManager
+            from ccbt.models import LogLevel
+
+            verbosity_manager = VerbosityManager.from_count(args.verbose)
+            if verbosity_manager.is_trace():
+                effective_log_level = verbosity_manager.logging_level_for_verbosity()
+            elif verbosity_manager.is_debug():
+                effective_log_level = LogLevel.DEBUG
+            elif verbosity_manager.is_verbose():
+                effective_log_level = LogLevel.INFO
+
+        setup_logging(
+            config_manager.config.observability, effective_log_level=effective_log_level
+        )
         # Get logger after setup_logging
         from ccbt.utils.logging_config import get_logger
 
@@ -797,57 +1667,7 @@ async def main() -> int:
         logger = logging.getLogger(__name__)
         logger.warning("Using fallback logging configuration")
 
-    # CRITICAL FIX: Set up event loop exception handler to catch unhandled exceptions
-    # in background tasks. This prevents the daemon from crashing when background tasks
-    # raise unhandled exceptions (e.g., from session.start() creating tasks).
-    # The handler is set up here after the loop is created by asyncio.run()
-    def exception_handler(
-        loop: asyncio.AbstractEventLoop, context: dict[str, Any]
-    ) -> None:
-        """Handle unhandled exceptions in background tasks."""
-        exception = context.get("exception")
-        message = context.get("message", "Unhandled exception in background task")
-        task = context.get("task")
-        source_traceback = context.get("source_traceback")
-
-        # CRITICAL: Check if this is a SystemExit or KeyboardInterrupt - these should exit
-        if isinstance(exception, (SystemExit, KeyboardInterrupt)):
-            # These are expected - let them propagate
-            return
-
-        # Log the exception with full context
-        if exception:
-            logger.exception(
-                "Unhandled exception in background task: %s (task=%s, source_traceback=%s)",
-                message,
-                task,
-                source_traceback,
-                exc_info=exception,
-            )
-        else:
-            logger.error(
-                "Unhandled exception in background task: %s (task=%s, source_traceback=%s)",
-                message,
-                task,
-                source_traceback,
-            )
-
-        # CRITICAL: Don't crash the daemon - just log and continue
-        # The error middleware in IPC server will handle request-level errors
-        # This handler ensures background tasks don't silently fail and crash the daemon
-        # IMPORTANT: We do NOT re-raise the exception - we want the daemon to keep running
-
-    # Set the exception handler on the current event loop
-    # This is safe here because asyncio.run() has already created the loop
-    # CRITICAL: Set this BEFORE creating any tasks to ensure all exceptions are caught
-    try:
-        loop = asyncio.get_running_loop()
-        loop.set_exception_handler(exception_handler)
-        logger.debug("Event loop exception handler installed")
-    except RuntimeError as e:
-        # If we can't get the running loop, log and continue
-        # This should not happen with asyncio.run(), but handle gracefully
-        logger.warning("Could not set event loop exception handler: %s", e)
+    install_daemon_event_loop_exception_handler()
 
     # Create and run daemon
     daemon = None
@@ -861,7 +1681,7 @@ async def main() -> int:
         debug_log("DaemonMain instance created successfully")
         debug_log_stack("Stack after DaemonMain creation")
 
-        # CRITICAL FIX: Run daemon in a way that ensures the event loop stays alive
+        # Note: Run daemon in a way that ensures the event loop stays alive
         # Wrap in try-except to catch any unexpected exits and log them
         try:
             debug_log("Starting daemon.run()...")
@@ -901,7 +1721,7 @@ async def main() -> int:
                     debug_log("Daemon cleanup completed")
                 except Exception as cleanup_error:
                     debug_log_exception("Error during daemon cleanup", cleanup_error)
-                    logger.exception("Error during daemon cleanup: %s", cleanup_error)
+                    logger.exception("Error during daemon cleanup")
             return 1
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user")
@@ -909,23 +1729,21 @@ async def main() -> int:
     except SystemExit as e:
         logger.info("Daemon received system exit signal: %s", e)
         return e.code if isinstance(e.code, int) else 0
-    except Exception as e:
-        logger.exception("Fatal error in daemon: %s", e)
-        # CRITICAL FIX: Ensure PID file is removed on fatal error
+    except Exception:
+        logger.exception("Fatal error in daemon")
+        # Note: Ensure PID file is removed on fatal error
         # This is a safety net in case start() didn't clean up
         if daemon is not None:
             try:
                 daemon.daemon_manager.remove_pid()
                 logger.info("Removed PID file after fatal error")
-            except Exception as cleanup_error:
-                logger.exception(
-                    "Error removing PID file during cleanup: %s", cleanup_error
-                )
+            except Exception:
+                logger.exception("Error removing PID file during cleanup")
         return 1
 
 
 if __name__ == "__main__":
-    # CRITICAL FIX: Suppress ProactorEventLoop _ssock AttributeError on Windows
+    # Note: Suppress ProactorEventLoop _ssock AttributeError on Windows
     # This is a known Python bug where ProactorEventLoop.__del__ tries to access
     # _ssock attribute that doesn't exist in some cases during cleanup
     import sys
@@ -936,9 +1754,17 @@ if __name__ == "__main__":
         original_excepthook = sys.excepthook
 
         def filtered_excepthook(exc_type, exc_value, exc_traceback):
+            """Filter exception hook to suppress known Windows ProactorEventLoop errors.
+
+            Args:
+                exc_type: Exception type
+                exc_value: Exception value
+                exc_traceback: Exception traceback
+
+            """
             # Filter out the known ProactorEventLoop _ssock AttributeError
             if (
-                exc_type == AttributeError
+                exc_type is AttributeError
                 and "_ssock" in str(exc_value)
                 and exc_traceback is not None
             ):
@@ -954,24 +1780,100 @@ if __name__ == "__main__":
 
         sys.excepthook = filtered_excepthook
 
-    # CRITICAL FIX: Add better error handling to prevent premature exit
+    # Note: Use SelectorEventLoop instead of ProactorEventLoop on Windows
+    # ProactorEventLoop has known bugs with UDP sockets (WinError 10022)
+    # SelectorEventLoop uses select() which properly supports UDP on Windows
+    # Note: Policy should already be set in ccbt/__init__.py, but ensure it here as well
+    if sys.platform == "win32":
+        current_policy = asyncio.get_event_loop_policy()
+        # If policy is wrapped by _SafeEventLoopPolicy, check the base
+        base_policy = getattr(current_policy, "_base", None)
+        if base_policy:
+            was_wrapped = True
+        else:
+            base_policy = current_policy
+            was_wrapped = False
+
+        # Only set if we're still using ProactorEventLoopPolicy
+        if isinstance(base_policy, asyncio.WindowsProactorEventLoopPolicy):
+            selector_policy = asyncio.WindowsSelectorEventLoopPolicy()
+            # Re-wrap with _SafeEventLoopPolicy if it was wrapped before
+            if was_wrapped:
+                # Import _SafeEventLoopPolicy from ccbt
+                import ccbt
+
+                safe_policy_class = getattr(ccbt, "_SafeEventLoopPolicy", None)
+                if safe_policy_class:
+                    safe_policy = safe_policy_class(selector_policy)  # type: ignore[attr-defined]
+                    asyncio.set_event_loop_policy(safe_policy)
+                else:
+                    asyncio.set_event_loop_policy(selector_policy)
+            else:
+                asyncio.set_event_loop_policy(selector_policy)
+
+    # Note: Add better error handling to prevent premature exit
     # This ensures the daemon stays alive and handles errors gracefully
     # Note: Event loop exception handler is set inside main() after the loop is created
+    def _run_main_once() -> int:
+        return asyncio.run(main())
+
     try:
-        return_code = asyncio.run(main())
-        sys.exit(return_code)
+        sys.exit(_run_main_once())
     except KeyboardInterrupt:
-        # User interrupted - exit cleanly
         sys.exit(0)
-    except Exception as e:
-        # Log fatal error if possible
+    except OSError as e:
+        error_code = getattr(e, "winerror", None) or getattr(e, "errno", None)
+        if error_code == 10055 or (hasattr(e, "errno") and e.errno == 10055):
+            try:
+                import logging
+                import time
+
+                logger = logging.getLogger(__name__)
+                from ccbt.utils.shutdown import is_shutting_down
+
+                if is_shutting_down():
+                    logger.warning(
+                        "WinError 10055 during shutdown (transient Windows socket limit)."
+                    )
+                    sys.exit(0)
+                logger.warning(
+                    "WinError 10055 during normal operation (transient socket limit). "
+                    "Retrying daemon loop once after backoff..."
+                )
+                time.sleep(3.0)
+                sys.exit(_run_main_once())
+            except OSError as retry_error:
+                retry_code = getattr(retry_error, "winerror", None) or getattr(
+                    retry_error, "errno", None
+                )
+                if retry_code == 10055:
+                    logging.getLogger(__name__).exception(
+                        "WinError 10055 persisted after retry; reduce concurrent connections."
+                    )
+                    sys.exit(1)
+                logging.getLogger(__name__).exception("Fatal OSError on daemon retry")
+                sys.exit(1)
+            except KeyboardInterrupt:
+                sys.exit(0)
+            except Exception:
+                logging.getLogger(__name__).exception("Fatal error on daemon retry")
+                sys.exit(1)
         try:
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.exception("Fatal error in daemon main: %s", e)
+            logger.exception("Fatal OSError in daemon main")
         except Exception:
-            # If logging fails, write to stderr directly
+            sys.stderr.write(f"Fatal OSError in daemon main: {e}\n")
+            sys.stderr.flush()
+        sys.exit(1)
+    except Exception as e:
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.exception("Fatal error in daemon main")
+        except Exception:
             sys.stderr.write(f"Fatal error in daemon main: {e}\n")
             sys.stderr.flush()
         sys.exit(1)

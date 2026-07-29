@@ -1,0 +1,231 @@
+# Docs build: manual only, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
+name: Build Documentation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'dev/mkdocs.yml'
+      - 'dev/.readthedocs.yaml'
+      - 'dev/requirements-rtd.txt'
+      - 'ccbt/**'
+  workflow_dispatch:
+
+concurrency:
+  group: docs-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    # Allow long wait while Test matrix finishes (up to ~2h in the wait script).
+    timeout-minutes: 150
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Wait for CI/CD Pipeline and Test to succeed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const waitForValidation = require('./.github/scripts/wait-for-validation-workflows.js');
+            await waitForValidation({ github, context, core });
+  
+  build-docs:
+    name: build-docs
+    needs: check-validation
+    runs-on: ubuntu-latest
+    environment: approval-required
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success')
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ubuntu-python-3.11-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ubuntu-python-3.11-
+      
+      - name: Cache MkDocs cache
+        uses: actions/cache@v3
+        with:
+          path: .cache
+          key: mkdocs-${{ github.sha }}
+          restore-keys: |
+            mkdocs-
+      
+      - name: Cache pytest cache (for coverage report)
+        uses: actions/cache@v3
+        with:
+          path: .pytest_cache
+          key: pytest-docs-${{ github.sha }}
+          restore-keys: |
+            pytest-docs-
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Check for port conflicts
+        run: |
+          # Check for common test ports that might be in use
+          # This helps detect lingering processes from previous test runs
+          echo "Checking for port conflicts..."
+          if command -v lsof &> /dev/null; then
+            # Unix-like systems (Linux, macOS)
+            PORTS=(6881 6882 6883 5001 8080 8081 8082)
+            for port in "${PORTS[@]}"; do
+              if lsof -i :$port &> /dev/null; then
+                echo "⚠️  Warning: Port $port is in use"
+                lsof -i :$port || true
+              fi
+            done
+          elif command -v netstat &> /dev/null; then
+            # Windows or older Unix systems
+            PORTS=(6881 6882 6883 5001 8080 8081 8082)
+            for port in "${PORTS[@]}"; do
+              if netstat -an | grep -q ":$port "; then
+                echo "⚠️  Warning: Port $port is in use"
+                netstat -an | grep ":$port " || true
+              fi
+            done
+          else
+            echo "⚠️  Port conflict detection tools not available, skipping check"
+          fi
+          echo "Port conflict check complete"
+        continue-on-error: true
+      
+      - name: Ensure report directories exist
+        run: |
+          mkdir -p site/reports/htmlcov
+          mkdir -p docs/reports/bandit
+          mkdir -p docs/en/reports/bandit
+      
+      - name: Generate coverage report
+        run: |
+          uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html:site/reports/htmlcov
+        continue-on-error: true
+      
+      - name: Generate Bandit report
+        run: |
+          uv run python tests/scripts/ensure_bandit_dir.py
+          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks,ccbt/i18n/scripts,ccbt/i18n/locale_data
+        continue-on-error: true
+      
+      - name: Ensure report files exist in documentation location
+        run: |
+          # Ensure coverage directory has at least an index file (even if empty)
+          mkdir -p site/reports/htmlcov
+          if [ ! -f site/reports/htmlcov/index.html ]; then
+            echo '<html><body><h1>Coverage Report</h1><p>Coverage report not available. Run tests to generate coverage data.</p></body></html>' > site/reports/htmlcov/index.html
+          fi
+          
+          # Ensure bandit reports exist in documentation location (docs/en/reports/bandit/)
+          mkdir -p docs/en/reports/bandit
+          
+          # Copy or create bandit-report.json
+          if [ -f docs/reports/bandit/bandit-report.json ]; then
+            cp docs/reports/bandit/bandit-report.json docs/en/reports/bandit/bandit-report.json
+          else
+            echo '{"generated_at": "N/A", "metrics": {}, "results": []}' > docs/en/reports/bandit/bandit-report.json
+          fi
+          
+          # Copy or create bandit-report-all.json
+          if [ -f docs/reports/bandit/bandit-report-all.json ]; then
+            cp docs/reports/bandit/bandit-report-all.json docs/en/reports/bandit/bandit-report-all.json
+          else
+            echo '{"generated_at": "N/A", "metrics": {}, "results": []}' > docs/en/reports/bandit/bandit-report-all.json
+          fi
+          
+          # Create placeholder for upnp-check if it doesn't exist
+          if [ ! -f docs/en/reports/bandit/bandit-upnp-check.json ]; then
+            echo '{"generated_at": "N/A", "metrics": {}, "results": []}' > docs/en/reports/bandit/bandit-upnp-check.json
+          fi
+          
+          echo "✅ All report files ensured in documentation location"
+      
+      - name: Build documentation
+        run: |
+          # Ensure coverage directory exists right before build (in case it was cleaned)
+          mkdir -p site/reports/htmlcov
+          if [ ! -f site/reports/htmlcov/index.html ]; then
+            echo '<html><body><h1>Coverage Report</h1><p>Coverage report not available. Run tests to generate coverage data.</p></body></html>' > site/reports/htmlcov/index.html
+          fi
+          
+          # Use the patched build script which includes all necessary patches:
+          # - i18n plugin fixes (alternates attribute, Locale validation for 'arc')
+          # - git-revision-date-localized plugin fix for 'arc' locale
+          # - Autorefs plugin patch to suppress multiple primary URLs warnings
+          # - Coverage plugin patch to suppress missing directory warnings
+          # - All patches are applied before mkdocs is imported
+          # Set MKDOCS_STRICT=true to enable strict mode in CI
+          MKDOCS_STRICT=true uv run python dev/build_docs_patched_clean.py
+      
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: site/
+          retention-days: 7
+      
+      - name: Trigger Read the Docs build
+        if: env.RTD_API_TOKEN != ''
+        env:
+          RTD_API_TOKEN: ${{ secrets.RTD_API_TOKEN }}
+          RTD_PROJECT_SLUG: ${{ secrets.RTD_PROJECT_SLUG || 'ccbittorrent' }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          echo "Triggering Read the Docs build for branch: $BRANCH_NAME"
+          curl -X POST \
+            -H "Authorization: Token $RTD_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://readthedocs.org/api/v3/projects/$RTD_PROJECT_SLUG/versions/$BRANCH_NAME/builds/" \
+            -d "{}" || echo "⚠️  Failed to trigger Read the Docs build. This may be expected if the branch is not configured in Read the Docs."
+        continue-on-error: true
+      
+      - name: Read the Docs build info
+        if: env.RTD_API_TOKEN == ''
+        run: |
+          echo "ℹ️  Read the Docs API token not configured."
+          echo "   To enable automatic Read the Docs builds from any branch:"
+          echo "   1. Get your Read the Docs API token from https://readthedocs.org/accounts/token/"
+          echo "   2. Add it as a GitHub secret named RTD_API_TOKEN"
+          echo "   3. Optionally set RTD_PROJECT_SLUG secret (defaults to 'ccbittorrent')"
+          echo ""
+          echo "   Note: Read the Docs will only build branches configured in your project settings."
+          echo "   By default, only 'main' and 'dev' branches are built automatically."
+      
+      # Note: Documentation is automatically published to Read the Docs
+      # when changes are pushed to the repository for configured branches (main/dev by default).
+      # To build other branches, configure them in Read the Docs project settings or use the API trigger above.
+

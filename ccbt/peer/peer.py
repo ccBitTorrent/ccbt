@@ -13,11 +13,21 @@ import logging
 import socket
 import struct
 from collections import deque
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Optional, Union
 
 from ccbt.config.config import get_config
 from ccbt.models import MessageType
 from ccbt.models import PeerInfo as PeerInfoModel
+from ccbt.protocols.bittorrent_v2 import (
+    HANDSHAKE_HYBRID_SIZE,
+    HANDSHAKE_V1_SIZE,
+    HANDSHAKE_V2_SIZE,
+    INFO_HASH_V1_LEN,
+    INFO_HASH_V2_LEN,
+    PEER_ID_LEN,
+    PROTOCOL_STRING_LEN,
+)
 from ccbt.utils.exceptions import HandshakeError, MessageError
 
 # MessageType is now imported from models.py
@@ -32,8 +42,13 @@ class PeerState:
         self.am_interested: bool = False  # We are interested in the peer
         self.peer_choking: bool = True  # Peer is choking us
         self.peer_interested: bool = False  # Peer is interested in us
-        self.bitfield: bytes | None = None  # Peer's bitfield (which pieces they have)
+        self.bitfield: Optional[bytes] = (
+            None  # Peer's bitfield (which pieces they have)
+        )
         self.pieces_we_have: set[int] = set()  # Pieces we have downloaded
+        # BEP 6 Fast Extension (wire); optional hints for selection / future request rules
+        self.bep6_suggested_pieces: set[int] = set()
+        self.bep6_allowed_fast_pieces: set[int] = set()
 
     def __str__(self) -> str:
         """Return string representation of peer state."""
@@ -51,6 +66,74 @@ class PeerState:
 # PeerInfo is now imported from models.py as PeerInfoModel
 # Keep backward compatibility
 PeerInfo = PeerInfoModel
+
+
+@dataclass(frozen=True)
+class ParsedInboundPlainHandshake:
+    """Parsed fields from a plaintext BitTorrent handshake.
+
+    Supports v1, v2-only, and hybrid plaintext handshake lengths.
+    """
+
+    protocol_len: int
+    protocol: bytes
+    reserved_bytes: bytes
+    info_hash_v1: Optional[bytes]
+    info_hash_v2: Optional[bytes]
+    peer_id: bytes
+
+
+def parse_plaintext_bittorrent_handshake(data: bytes) -> ParsedInboundPlainHandshake:
+    """Parse plaintext handshake bytes into a canonical structure."""
+    if len(data) not in {
+        HANDSHAKE_V1_SIZE,
+        HANDSHAKE_V2_SIZE,
+        HANDSHAKE_HYBRID_SIZE,
+    }:
+        msg = (
+            f"Invalid plaintext handshake size: {len(data)} (expected "
+            f"{HANDSHAKE_V1_SIZE}, {HANDSHAKE_V2_SIZE}, or {HANDSHAKE_HYBRID_SIZE})"
+        )
+        raise HandshakeError(msg)
+
+    protocol_len = struct.unpack("B", data[0:1])[0]
+    if protocol_len != PROTOCOL_STRING_LEN:
+        msg = f"Invalid protocol length: {protocol_len}"
+        raise HandshakeError(msg)
+
+    protocol_string = data[1 : 1 + PROTOCOL_STRING_LEN]
+    if protocol_string != Handshake.PROTOCOL_STRING:
+        msg = f"Invalid protocol string: {protocol_string}"
+        raise HandshakeError(msg)
+
+    reserved = data[1 + PROTOCOL_STRING_LEN : 1 + PROTOCOL_STRING_LEN + 8]
+    offset = 1 + PROTOCOL_STRING_LEN + 8
+
+    if len(data) == HANDSHAKE_V1_SIZE:
+        info_hash_v1 = data[offset : offset + INFO_HASH_V1_LEN]
+        info_hash_v2 = None
+        peer_id_start = offset + INFO_HASH_V1_LEN
+        peer_id = data[peer_id_start : peer_id_start + PEER_ID_LEN]
+    elif len(data) == HANDSHAKE_V2_SIZE:
+        info_hash_v1 = None
+        info_hash_v2 = data[offset : offset + INFO_HASH_V2_LEN]
+        peer_id_start = offset + INFO_HASH_V2_LEN
+        peer_id = data[peer_id_start : peer_id_start + PEER_ID_LEN]
+    else:
+        info_hash_v1 = data[offset : offset + INFO_HASH_V1_LEN]
+        next_offset = offset + INFO_HASH_V1_LEN
+        info_hash_v2 = data[next_offset : next_offset + INFO_HASH_V2_LEN]
+        peer_id_start = next_offset + INFO_HASH_V2_LEN
+        peer_id = data[peer_id_start : peer_id_start + PEER_ID_LEN]
+
+    return ParsedInboundPlainHandshake(
+        protocol_len=protocol_len,
+        protocol=protocol_string,
+        reserved_bytes=reserved,
+        info_hash_v1=info_hash_v1,
+        info_hash_v2=info_hash_v2,
+        peer_id=peer_id,
+    )
 
 
 class Handshake:
@@ -78,9 +161,9 @@ class Handshake:
         self,
         info_hash: bytes,
         peer_id: bytes,
-        reserved_bytes: bytes | None = None,
-        ed25519_public_key: bytes | None = None,
-        ed25519_signature: bytes | None = None,
+        reserved_bytes: Optional[bytes] = None,
+        ed25519_public_key: Optional[bytes] = None,
+        ed25519_signature: Optional[bytes] = None,
     ) -> None:
         """Initialize handshake.
 
@@ -113,8 +196,8 @@ class Handshake:
         self.reserved_bytes: bytes = (
             reserved_bytes if reserved_bytes is not None else self.RESERVED_BYTES
         )
-        self.ed25519_public_key: bytes | None = ed25519_public_key
-        self.ed25519_signature: bytes | None = ed25519_signature
+        self.ed25519_public_key: Optional[bytes] = ed25519_public_key
+        self.ed25519_signature: Optional[bytes] = ed25519_signature
 
     def encode(self) -> bytes:
         """Encode handshake to bytes.
@@ -145,27 +228,17 @@ class Handshake:
             HandshakeError: If data is invalid
 
         """
-        if len(data) != 68:
-            msg = f"Handshake must be 68 bytes, got {len(data)}"
+        if len(data) != HANDSHAKE_V1_SIZE:
+            msg = f"Handshake must be {HANDSHAKE_V1_SIZE} bytes, got {len(data)}"
             raise HandshakeError(msg)
 
-        # Parse protocol length and string
-        protocol_len = struct.unpack("B", data[0:1])[0]
-        if protocol_len != 19:
-            msg = f"Invalid protocol length: {protocol_len}"
+        parsed = parse_plaintext_bittorrent_handshake(data)
+        if parsed.info_hash_v1 is None:
+            msg = "V1 info hash missing from plaintext handshake decode input"
             raise HandshakeError(msg)
-
-        protocol_string = data[1:20]
-        if protocol_string != cls.PROTOCOL_STRING:
-            msg = f"Invalid protocol string: {protocol_string}"
-            raise HandshakeError(msg)
-
-        # Parse reserved bytes
-        reserved = data[20:28]
-
-        # Parse info hash and peer ID
-        info_hash = data[28:48]
-        peer_id = data[48:68]
+        info_hash = parsed.info_hash_v1
+        peer_id = parsed.peer_id
+        reserved = parsed.reserved_bytes
 
         # Ed25519 fields are not part of standard 68-byte handshake
         # They are sent as extensions after the handshake
@@ -299,9 +372,12 @@ class Handshake:
         self.set_extension_protocol()
 
         # Protocol v2 support (BEP 52)
-        if hasattr(config, "network") and hasattr(config.network, "protocol_v2"):
-            if config.network.protocol_v2.enable_protocol_v2:
-                self.set_v2_support()
+        if (
+            hasattr(config, "network")
+            and hasattr(config.network, "protocol_v2")
+            and config.network.protocol_v2.enable_protocol_v2
+        ):
+            self.set_v2_support()
 
         # DHT support (byte 7, bit 0)
         if hasattr(config, "discovery") and config.discovery.enable_dht:
@@ -748,7 +824,7 @@ class AsyncMessageDecoder:
         # Async message queue
         self.message_queue = asyncio.Queue(maxsize=1000)
         self.buffer = bytearray()
-        self.buffer_view: memoryview | None = None
+        self.buffer_view: Optional[memoryview] = None
 
         # Object pools for message reuse
         self.message_pools = {
@@ -769,7 +845,7 @@ class AsyncMessageDecoder:
 
         self.logger = logging.getLogger(__name__)
 
-    async def feed_data(self, data: bytes | memoryview) -> None:
+    async def feed_data(self, data: Union[bytes, memoryview]) -> None:
         """Feed data to the decoder asynchronously.
 
         Args:
@@ -785,7 +861,7 @@ class AsyncMessageDecoder:
         # Process complete messages from buffer
         await self._process_buffer()
 
-    async def get_message(self) -> PeerMessage | None:
+    async def get_message(self) -> Optional[PeerMessage]:
         """Get the next message from the queue.
 
         Returns:
@@ -1013,7 +1089,7 @@ class OptimizedMessageDecoder:
 
         # Simple buffer for partial messages
         self.buffer = bytearray()
-        self.buffer_view: memoryview | None = None
+        self.buffer_view: Optional[memoryview] = None
 
         # Object pools for message reuse
         self.message_pools = {
@@ -1034,7 +1110,7 @@ class OptimizedMessageDecoder:
 
         self.logger = logging.getLogger(__name__)
 
-    def add_data(self, data: bytes | memoryview) -> list[PeerMessage]:
+    def add_data(self, data: Union[bytes, memoryview]) -> list[PeerMessage]:
         """Add data to the buffer and return any complete messages.
 
         Args:
@@ -1092,7 +1168,7 @@ class OptimizedMessageDecoder:
 
         return messages
 
-    def _decode_next_message(self) -> PeerMessage | None:
+    def _decode_next_message(self) -> Optional[PeerMessage]:
         """Decode the next message from the buffer using memoryview."""
         if self.buffer_size < 4:
             return None  # Need at least 4 bytes for length
@@ -1356,7 +1432,7 @@ class MessageDecoder(AsyncMessageDecoder):
 
 
 def create_message(message_type: MessageType, **kwargs) -> PeerMessage:
-    """Factory function to create messages.
+    """Create message.
 
     Args:
         message_type: Type of message to create
@@ -1589,15 +1665,28 @@ class MessageBuffer:
         }
 
 
-# Global socket optimizer instance
-_socket_optimizer = SocketOptimizer()
+# Global socket optimizer instance (lazy initialization)
+_socket_optimizer: Optional[SocketOptimizer] = None
+
+
+def _get_socket_optimizer() -> SocketOptimizer:
+    """Get the global socket optimizer instance (lazy initialization).
+
+    Returns:
+        SocketOptimizer: The global socket optimizer instance
+
+    """
+    global _socket_optimizer
+    if _socket_optimizer is None:
+        _socket_optimizer = SocketOptimizer()
+    return _socket_optimizer
 
 
 def optimize_socket(sock: socket.socket) -> None:
     """Optimize a socket for high-performance BitTorrent."""
-    _socket_optimizer.optimize_socket(sock)
+    _get_socket_optimizer().optimize_socket(sock)
 
 
 def get_optimal_buffer_sizes(connection_count: int) -> tuple[int, int]:
     """Get optimal socket buffer sizes for the given connection count."""
-    return _socket_optimizer.get_optimal_buffer_sizes(connection_count)
+    return _get_socket_optimizer().get_optimal_buffer_sizes(connection_count)

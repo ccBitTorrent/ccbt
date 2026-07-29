@@ -16,14 +16,14 @@ import pytest_asyncio
 
 # Try to import aiortc, skip tests if not available
 try:
-    from aiortc import RTCPeerConnection, RTCDataChannel, RTCSessionDescription
+    from aiortc import RTCDataChannel, RTCPeerConnection, RTCSessionDescription
 
     HAS_AIORTC = True
 except ImportError:
     HAS_AIORTC = False
 
 from ccbt.peer.peer import PeerInfo
-from ccbt.utils.events import EventType, get_event_bus
+from ccbt.utils.events import get_event_bus
 from tests.conftest import create_test_torrent_dict
 
 # Import WebTorrentProtocol - handle conditional import

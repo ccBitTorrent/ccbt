@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,23 +20,23 @@ class TestWebSeedExtensionCoverage:
         """Test download_piece with session None after start (line 200-202)."""
         extension = WebSeedExtension()
         webseed_id = extension.add_webseed("http://example.com/torrent")
-        
+
         piece_info = PieceInfo(index=0, length=1024, hash=b"x" * 20)
-        
+
         # Mock start to not create session
         original_start = extension.start
-        
+
         async def mock_start():
             # Don't create session
             pass
-        
+
         extension.start = mock_start
-        
+
         # Mock session to be None even after start
         with patch.object(extension, "session", None):
             result = await extension.download_piece(webseed_id, piece_info, b"")
             assert result is None
-        
+
         extension.start = original_start
 
     @pytest.mark.asyncio
@@ -44,7 +44,7 @@ class TestWebSeedExtensionCoverage:
         """Test download_piece_range with session None after start (line 318-320)."""
         extension = WebSeedExtension()
         webseed_id = extension.add_webseed("http://example.com/torrent")
-        
+
         # Mock session to be None even after start
         with patch.object(extension, "session", None):
             result = await extension.download_piece_range(webseed_id, 0, 1024)
@@ -63,7 +63,7 @@ class TestWebSeedExtensionCoverage:
         extension = WebSeedExtension()
         webseed_id = extension.add_webseed("http://example.com/torrent")
         extension.set_webseed_active(webseed_id, False)
-        
+
         result = await extension.health_check(webseed_id)
         assert result is False
 
@@ -72,7 +72,7 @@ class TestWebSeedExtensionCoverage:
         """Test health_check with session None after start (line 479-481)."""
         extension = WebSeedExtension()
         webseed_id = extension.add_webseed("http://example.com/torrent")
-        
+
         # Mock session to be None even after start
         with patch.object(extension, "session", None):
             result = await extension.health_check(webseed_id)
@@ -83,12 +83,12 @@ class TestWebSeedExtensionCoverage:
         """Test health_check exception handling (line 485-488)."""
         extension = WebSeedExtension()
         webseed_id = extension.add_webseed("http://example.com/torrent")
-        
+
         # Mock session.get to raise exception
         mock_session = MagicMock()
         mock_session.head = MagicMock(side_effect=Exception("Connection error"))
         extension.session = mock_session
-        
+
         result = await extension.health_check(webseed_id)
         assert result is False
 

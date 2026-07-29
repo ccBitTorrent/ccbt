@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runtime
     import asyncio
@@ -20,8 +20,8 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only, not executed at runt
     )
 
 from ccbt.peer.peer import (
-    MessageDecoder,
-    PeerInfo,
+    AsyncMessageDecoder,
+    PeerInfoModel,
     PeerState,
 )
 
@@ -49,20 +49,26 @@ class PeerConnectionError(Exception):
 class PeerConnection:
     """Represents an async connection to a single peer."""
 
-    peer_info: PeerInfo
+    peer_info: PeerInfoModel
     torrent_data: dict[str, Any]
-    reader: asyncio.StreamReader | EncryptedStreamReader | None = None
-    writer: asyncio.StreamWriter | EncryptedStreamWriter | None = None
+    reader: Optional[Union[asyncio.StreamReader, EncryptedStreamReader]] = None
+    writer: Optional[Union[asyncio.StreamWriter, EncryptedStreamWriter]] = None
     state: ConnectionState = ConnectionState.DISCONNECTED
     peer_state: PeerState = field(default_factory=PeerState)
-    message_decoder: MessageDecoder = field(default_factory=MessageDecoder)
+    message_decoder: AsyncMessageDecoder = field(default_factory=AsyncMessageDecoder)
     last_activity: float = field(default_factory=time.time)
-    connection_task: asyncio.Task | None = None
-    error_message: str | None = None
+    connection_task: Optional[asyncio.Task] = None
+    error_message: Optional[str] = None
 
     # Encryption support
     is_encrypted: bool = False
     encryption_cipher: Any = None  # CipherSuite instance from MSE handshake
+
+    # Choking state (matching AsyncPeerConnection for compatibility)
+    am_choking: bool = True
+    peer_choking: bool = True
+    am_interested: bool = False
+    peer_interested: bool = False
 
     def __str__(
         self,

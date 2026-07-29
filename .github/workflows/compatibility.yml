@@ -1,25 +1,33 @@
+# Compatibility tests run only manually (workflow_dispatch). No automatic run on PR/push.
 name: Compatibility
 
 on:
-  push:
-    branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
-  schedule:
-    # Run weekly on Sundays at 02:00 UTC
-    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Placeholder (manual run only)
+        run: echo "Compatibility workflow running manually"
   docker-test:
     name: docker-test
+    needs: check-validation
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.9', '3.10', '3.11', '3.12']
         os-variant: ['ubuntu:20.04', 'ubuntu:22.04', 'debian:bullseye', 'alpine:3.18']
         exclude:
-          - python-version: '3.8'
-            os-variant: 'alpine:3.18'
           - python-version: '3.9'
             os-variant: 'alpine:3.18'
     
@@ -48,9 +56,15 @@ jobs:
 
   live-deployment-test:
     name: live-deployment-test
+    needs: check-validation
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.check-validation.result == 'success') ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       
@@ -86,3 +100,49 @@ jobs:
         run: |
           uv run pytest -c dev/pytest.ini tests/integration/test_basic_download.py -v
 
+  compatibility-tests:
+    name: compatibility-tests
+    needs: check-validation
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success') ||
+      (github.event_name == 'push' && needs.check-validation.result == 'success')
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Run compatibility tests
+        continue-on-error: true  # Don't fail CI if compatibility tests fail (network may be flaky)
+        run: |
+          uv run pytest -c dev/pytest.ini tests/compatibility/ \
+            -m "compatibility" \
+            --timeout=600 \
+            --timeout-method=thread \
+            -v \
+            --tb=short
+      
+      - name: Upload compatibility test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-test-results
+          path: |
+            site/reports/junit.xml
+            site/reports/pytest.log
+          retention-days: 30

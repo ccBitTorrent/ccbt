@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -30,17 +30,17 @@ class CommandExecutor:
             session: Async session manager instance (can be DaemonInterfaceAdapter)
         """
         self.session = session  # pragma: no cover - CommandExecutor initialization, tested via integration
-        
+
         # Detect if using DaemonInterfaceAdapter
         from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
         self._is_daemon_session = isinstance(session, DaemonInterfaceAdapter)
-        
+
         # If using DaemonInterfaceAdapter, get IPC client for direct command routing
         if self._is_daemon_session:
             self._ipc_client = session._client  # type: ignore[attr-defined]
         else:
             self._ipc_client = None
-        
+
         # Create a minimal InteractiveCLI instance for command execution
         # We only need the command methods, not the full UI
         from rich.console import (
@@ -55,23 +55,23 @@ class CommandExecutor:
         self._dummy_console = Console(
             file=self._output_buffer, width=120
         )  # pragma: no cover - CommandExecutor initialization
-        
+
         # Use ExecutorManager to get or create executor
         # This ensures we reuse executor instances and maintain session coherence
         from ccbt.executor.manager import ExecutorManager
-        
+
         executor_manager = ExecutorManager.get_instance()
-        
+
         if self._is_daemon_session:
             # For DaemonInterfaceAdapter, get executor via IPC client
             self._executor = executor_manager.get_executor(ipc_client=self._ipc_client)
         else:
             # For local session, get executor via session manager
             self._executor = executor_manager.get_executor(session_manager=session)
-        
+
         # Get adapter from executor
         adapter = self._executor.adapter
-        
+
         # Pass executor, adapter, console, and optionally session
         self._cli = InteractiveCLI(
             executor=self._executor,
@@ -84,19 +84,32 @@ class CommandExecutor:
         self._click_cli = main_cli  # pragma: no cover - CommandExecutor initialization
 
     async def execute_command(
-        self, command: str, args: list[str], current_info_hash: str | None = None
-    ) -> tuple[bool, str, Any]:
-        """Execute a CLI command.
+        self, command: str, *args: Any, **kwargs: Any
+    ) -> Any:
+        """Execute a CLI command or executor command.
 
         Args:
-            command: Command name (e.g., "files", "limits", "config")
-            args: Command arguments
-            current_info_hash: Current torrent info hash (hex) for context
+            command: Command name (e.g., "files", "limits", "config", or "xet.add_xet_folder")
+            *args: Command arguments (for CLI commands)
+            **kwargs: Keyword arguments (for executor commands)
 
         Returns:
-            Tuple of (success: bool, message: str, result: Any)
+            CommandResult or tuple of (success: bool, message: str, result: Any)
         """
         try:  # pragma: no cover - CommandExecutor.execute_command, tested via integration
+            # Check if this is an executor command (starts with "xet.", "torrent.", etc.)
+            if "." in command:
+                # This is an executor command, route directly to executor
+                try:
+                    result = await self._executor.execute(command, *args, **kwargs)
+                    return result
+                except Exception as e:
+                    from ccbt.executor.base import CommandResult
+                    return CommandResult(
+                        success=False,
+                        error=f"Error executing {command}: {e!s}",
+                    )
+
             # Map CLI command names to executor commands for commands that need info_hash
             # All commands now route through executor.execute() for consistency
             command_mapping: dict[str, str] = {
@@ -105,7 +118,10 @@ class CommandExecutor:
                 "stop": "torrent.remove",
                 "remove": "torrent.remove",
             }
-            
+
+            # Handle legacy tuple return format for CLI commands
+            current_info_hash = kwargs.get("current_info_hash")
+
             # If command has a mapping and we have current_info_hash, route through executor
             if command in command_mapping and current_info_hash:
                 executor_command = command_mapping[command]
@@ -115,11 +131,10 @@ class CommandExecutor:
                     if result.success:
                         action = command.replace("_", " ")
                         return (True, f"Torrent {action} successful", result.data)
-                    else:
-                        return (False, result.error or f"Failed to {command}", None)
+                    return (False, result.error or f"Failed to {command}", None)
                 except Exception as e:
                     return (False, f"Error executing {command}: {e!s}", None)
-            
+
             # Set current info hash if provided (for commands that need it)
             if current_info_hash and hasattr(
                 self._cli, "current_info_hash_hex"
@@ -176,8 +191,8 @@ class CommandExecutor:
     async def execute_click_command(
         self,
         command_path: str,
-        args: list[str] | None = None,
-        ctx_obj: dict[str, Any] | None = None,
+        args: Optional[list[str]] = None,
+        ctx_obj: Optional[dict[str, Any]] = None,
     ) -> tuple[bool, str, Any]:
         """Execute a Click command group command.
 

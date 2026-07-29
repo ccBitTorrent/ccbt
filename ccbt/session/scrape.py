@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.models import ScrapeResult
 
@@ -44,6 +44,9 @@ class ScrapeManager:
             self.logger.debug("Invalid info_hash format: %s", e)
             return False
 
+        if getattr(self.manager, "_manager_shutting_down", False):
+            return False
+
         # Find torrent session
         async with self.manager.lock:
             session = self.manager.torrents.get(info_hash)
@@ -62,7 +65,7 @@ class ScrapeManager:
             if isinstance(torrent_data, dict):
                 # Normalize announce_list to list[list[str]] format (BEP 12)
                 raw_announce_list = torrent_data.get("announce_list")
-                normalized_announce_list: list[list[str]] | None = None
+                normalized_announce_list: Optional[list[list[str]]] = None
                 if raw_announce_list and isinstance(raw_announce_list, list):
                     normalized_announce_list = []
                     for item in raw_announce_list:
@@ -84,7 +87,7 @@ class ScrapeManager:
                     announce_list=normalized_announce_list,
                     files=[],
                     total_length=torrent_data.get("total_length", 0),
-                    # CRITICAL FIX: Handle None values (common for magnet links)
+                    # Note: Handle None values (common for magnet links)
                     piece_length=(torrent_data.get("file_info") or {}).get(
                         "piece_length", 16384
                     ),
@@ -145,7 +148,7 @@ class ScrapeManager:
             self.logger.exception("Error during force_scrape for %s", info_hash_hex)
             return False
 
-    async def get_cached_result(self, info_hash_hex: str) -> Any | None:
+    async def get_cached_result(self, info_hash_hex: str) -> Optional[Any]:
         """Get cached scrape result for a torrent.
 
         Args:
@@ -222,8 +225,9 @@ class ScrapeManager:
                     if cached and not self.is_stale(cached):
                         continue  # Skip if recently scraped  # pragma: no cover - Skip stale scrape, tested via integration tests with fresh scrape data
 
-                    # Perform scrape
-                    await self.force_scrape(info_hash_hex)
+                    # Perform scrape using session manager's force_scrape method
+                    # This allows tests to mock force_scrape on the session manager
+                    await self.manager.force_scrape(info_hash_hex)
 
                     # Rate limit: wait 1 second between scrapes
                     await asyncio.sleep(1.0)

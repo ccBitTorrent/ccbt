@@ -10,7 +10,7 @@ import asyncio
 import functools
 import logging
 import time
-from typing import Any, Awaitable, Callable, TypeVar, Union, cast
+from typing import Any, Awaitable, Callable, Optional, TypeVar, Union, cast
 
 T = TypeVar("T")
 AsyncFunc = Callable[..., Awaitable[T]]
@@ -36,7 +36,7 @@ def with_retry(
     exceptions: tuple[type[Exception], ...] = (Exception,),
     max_delay: float = 60.0,
 ) -> Callable[[Func[T]], Func[T]]:
-    """Decorator for retry logic with exponential backoff.
+    """Provide decorator for retry logic with exponential backoff.
 
     Args:
         retries: Number of retry attempts
@@ -118,7 +118,7 @@ def with_retry(
 
 
 def with_timeout(seconds: float) -> Callable[[Func[T]], Func[T]]:
-    """Decorator for timeout handling.
+    """Provide decorator for timeout handling.
 
     Args:
         seconds: Timeout in seconds
@@ -194,7 +194,9 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception: type[Exception] | tuple[type[Exception], ...] = Exception,
+        expected_exception: Union[
+            type[Exception], tuple[type[Exception], ...]
+        ] = Exception,
     ):
         """Initialize circuit breaker.
 
@@ -401,7 +403,7 @@ class RateLimiter:
 def with_rate_limit(
     max_requests: int, time_window: float
 ) -> Callable[[Func[T]], Func[T]]:
-    """Decorator for rate limiting.
+    """Provide decorator for rate limiting.
 
     Args:
         max_requests: Maximum requests allowed in time window
@@ -426,9 +428,21 @@ def with_rate_limit(
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> T:
-            # For sync functions, we need to run the rate limiter in async context
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(rate_limiter.wait_for_permission())
+            try:
+                previous_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                previous_loop = None
+
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(rate_limiter.wait_for_permission())
+            finally:
+                loop.close()
+                if previous_loop is not None and not previous_loop.is_closed():
+                    asyncio.set_event_loop(previous_loop)
+                else:
+                    asyncio.set_event_loop(None)
             return func(*args, **kwargs)
 
         if asyncio.iscoroutinefunction(func):
@@ -457,7 +471,7 @@ class BulkOperationManager:
         self,
         items: list[Any],
         operation: Callable[[list[Any]], Any],
-        error_handler: Callable[[Exception, list[Any]], None] | None = None,
+        error_handler: Optional[Callable[[Exception, list[Any]], None]] = None,
     ) -> list[Any]:
         """Process items in batches.
 

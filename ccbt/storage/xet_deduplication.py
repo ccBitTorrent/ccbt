@@ -6,16 +6,20 @@ using SQLite for local caching and DHT for peer-to-peer chunk discovery.
 
 from __future__ import annotations
 
-import hashlib
+import asyncio
+import json
 import logging
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
-from ccbt.models import PeerInfo
+from ccbt.models import PeerInfo, XetFileMetadata
+from ccbt.utils.compat import sha1_compat, to_thread_compat
 
 logger = logging.getLogger(__name__)
+
+_DB_CLOSED_MSG = "XetDeduplication database is closed"
 
 
 class XetDeduplication:
@@ -34,8 +38,8 @@ class XetDeduplication:
 
     def __init__(
         self,
-        cache_db_path: Path | str,
-        dht_client: Any | None = None,  # type: ignore[assignment]
+        cache_db_path: Union[Path, str],
+        dht_client: Optional[Any] = None,  # type: ignore[assignment]
     ):
         """Initialize deduplication with local cache.
 
@@ -44,18 +48,42 @@ class XetDeduplication:
             dht_client: Optional DHT client instance for global chunk discovery
 
         """
+        # Initialize logger FIRST before _init_database() which uses it
+        self.logger = logging.getLogger(__name__)
+
         self.cache_path = Path(cache_db_path)
         self.chunk_store_path = self.cache_path.parent / "xet_chunks"
         self.chunk_store_path.mkdir(parents=True, exist_ok=True)
 
         self.db = self._init_database()
         self.dht_client = dht_client
-        self.logger = logging.getLogger(__name__)
+        # Serialize DB access: SQLite connection is not thread-safe; run blocking
+        # DB and disk I/O in thread pool so the event loop stays responsive.
+        # Lazily bound to the running loop — Python 3.9 locks capture the loop at
+        # construction, which breaks under pytest-asyncio's per-test loops.
+        self._db_lock: Optional[asyncio.Lock] = None
+
+    def _get_db_lock(self) -> asyncio.Lock:
+        """Return an ``asyncio.Lock`` bound to the current running loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            if self._db_lock is None:
+                self._db_lock = asyncio.Lock()
+            return self._db_lock
+
+        lock = self._db_lock
+        bound_loop = getattr(lock, "_loop", None) if lock is not None else None
+        if lock is None or (bound_loop is not None and bound_loop is not loop):
+            self._db_lock = asyncio.Lock()
+            return self._db_lock
+        return lock
 
     def _init_database(self) -> sqlite3.Connection:
         """Initialize SQLite cache database.
 
         Creates the database file and tables if they don't exist.
+        Supports migration from old schema (chunks only) to new schema.
 
         Returns:
             SQLite database connection
@@ -64,7 +92,74 @@ class XetDeduplication:
         # Ensure parent directory exists
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-        db = sqlite3.connect(str(self.cache_path))
+        # Note: Add retry logic for Windows file locking issues
+        # On Windows, the database file might be locked from a previous run
+        # Retry with exponential backoff to handle transient file locking
+
+        max_retries = 3
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                db = sqlite3.connect(
+                    str(self.cache_path),
+                    timeout=5.0,
+                    check_same_thread=False,
+                )
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower() or "database is locked" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        self.logger.warning(
+                            "Database file is locked (attempt %d/%d), retrying in %.2f seconds...",
+                            attempt + 1,
+                            max_retries,
+                            retry_delay,
+                        )
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        self.logger.exception(
+                            "Failed to connect to database after %d attempts",
+                            max_retries,
+                        )
+                        raise
+                else:
+                    # Not a locking error, re-raise immediately
+                    raise
+            except Exception:
+                # Other errors, re-raise immediately
+                raise
+
+        # Check if schema version table exists (for migration support)
+        cursor = db.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='schema_version'
+        """)
+        schema_version_exists = cursor.fetchone() is not None
+
+        # Create schema version table if it doesn't exist
+        if not schema_version_exists:
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at REAL NOT NULL
+                )
+            """)
+            # Set initial version to 1 (old schema with chunks only)
+            db.execute(
+                """
+                INSERT INTO schema_version (version, applied_at)
+                VALUES (1, ?)
+            """,
+                (time.time(),),
+            )
+
+        # Get current schema version
+        cursor = db.execute("SELECT MAX(version) FROM schema_version")
+        current_version = cursor.fetchone()[0] or 1
+
+        # Create chunks table (always needed)
         db.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
                 hash BLOB PRIMARY KEY,
@@ -81,11 +176,86 @@ class XetDeduplication:
         db.execute("""
             CREATE INDEX IF NOT EXISTS idx_last_accessed ON chunks(last_accessed)
         """)
+
+        # Migrate to version 2: Add file_chunks and file_metadata tables
+        if current_version < 2:
+            # Create file_chunks table to track file-to-chunk references
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS file_chunks (
+                    file_path TEXT NOT NULL,
+                    chunk_hash BLOB NOT NULL,
+                    offset INTEGER NOT NULL,
+                    chunk_size INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (file_path, chunk_hash, offset),
+                    FOREIGN KEY (chunk_hash) REFERENCES chunks(hash) ON DELETE CASCADE
+                )
+            """)
+            # Indexes for file_chunks
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_path
+                ON file_chunks(file_path)
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_chunk_hash
+                ON file_chunks(chunk_hash)
+            """)
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_chunks_file_offset
+                ON file_chunks(file_path, offset)
+            """)
+
+            # Create file_metadata table for persistent file metadata storage
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS file_metadata (
+                    file_path TEXT PRIMARY KEY,
+                    file_hash BLOB NOT NULL,
+                    total_size INTEGER NOT NULL,
+                    chunk_count INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    last_modified REAL NOT NULL,
+                    metadata_json TEXT NOT NULL
+                )
+            """)
+            # Index for file_metadata
+            db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_file_metadata_file_hash
+                ON file_metadata(file_hash)
+            """)
+
+            # Update schema version
+            db.execute(
+                """
+                INSERT INTO schema_version (version, applied_at)
+                VALUES (2, ?)
+            """,
+                (time.time(),),
+            )
+            self.logger.info("Migrated XET deduplication database to schema version 2")
+
         db.commit()
 
         return db
 
-    async def check_chunk_exists(self, chunk_hash: bytes) -> Path | None:
+    def _check_chunk_exists_sync(self, chunk_hash: bytes) -> Optional[Path]:
+        """Synchronous DB read for chunk existence (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        cursor = self.db.execute(
+            "SELECT storage_path FROM chunks WHERE hash = ?",
+            (chunk_hash,),
+        )
+        row = cursor.fetchone()
+        if row:
+            self.db.execute(
+                "UPDATE chunks SET last_accessed = ? WHERE hash = ?",
+                (time.time(), chunk_hash),
+            )
+            self.db.commit()
+            return Path(row[0])
+        return None
+
+    async def check_chunk_exists(self, chunk_hash: bytes) -> Optional[Path]:
         """Check if chunk exists locally.
 
         Queries the database for the chunk hash and updates the
@@ -98,25 +268,65 @@ class XetDeduplication:
             Path to stored chunk if exists, None otherwise
 
         """
-        cursor = self.db.execute(
-            "SELECT storage_path FROM chunks WHERE hash = ?",
+        async with self._get_db_lock():
+            return await to_thread_compat(
+                self._check_chunk_exists_sync,
+                chunk_hash,
+            )
+
+    def _increment_chunk_ref_sync(self, chunk_hash: bytes) -> None:
+        """Synchronous DB update for existing chunk (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        self.db.execute(
+            "UPDATE chunks SET ref_count = ref_count + 1 WHERE hash = ?",
             (chunk_hash,),
         )
-        row = cursor.fetchone()
-        if row:
-            # Update last accessed timestamp
+        self.db.commit()
+
+    def _store_new_chunk_sync(self, chunk_hash: bytes, chunk_data: bytes) -> Path:
+        """Synchronous write and DB insert for new chunk (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        storage_file = self.chunk_store_path / chunk_hash.hex()
+        storage_file.write_bytes(chunk_data)
+        current_time = time.time()
+        try:
             self.db.execute(
-                "UPDATE chunks SET last_accessed = ? WHERE hash = ?",
-                (time.time(), chunk_hash),
+                """INSERT INTO chunks (hash, size, storage_path, created_at, last_accessed)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    chunk_hash,
+                    len(chunk_data),
+                    str(storage_file),
+                    current_time,
+                    current_time,
+                ),
             )
             self.db.commit()
-            return Path(row[0])
-        return None
+            return storage_file
+        except sqlite3.IntegrityError:
+            # Another writer inserted the same chunk hash first. Reuse existing entry.
+            self.db.execute(
+                "UPDATE chunks SET ref_count = ref_count + 1, last_accessed = ? WHERE hash = ?",
+                (current_time, chunk_hash),
+            )
+            cursor = self.db.execute(
+                "SELECT storage_path FROM chunks WHERE hash = ?",
+                (chunk_hash,),
+            )
+            row = cursor.fetchone()
+            self.db.commit()
+            if row and row[0]:
+                return Path(row[0])
+            return storage_file
 
     async def store_chunk(
         self,
         chunk_hash: bytes,
         chunk_data: bytes,
+        file_path: Optional[str] = None,
+        file_offset: Optional[int] = None,
     ) -> Path:
         """Store chunk with deduplication.
 
@@ -127,54 +337,405 @@ class XetDeduplication:
         Args:
             chunk_hash: 32-byte chunk hash
             chunk_data: Chunk data to store
+            file_path: Optional file path that references this chunk
+            file_offset: Optional offset in file where this chunk appears
 
         Returns:
             Path to stored chunk (may be existing or new)
 
         """
-        # Check if already exists
-        existing = await self.check_chunk_exists(chunk_hash)
-        if existing:
-            # Increment reference count
-            self.db.execute(
-                "UPDATE chunks SET ref_count = ref_count + 1 WHERE hash = ?",
-                (chunk_hash,),
-            )
-            self.db.commit()
-            self.logger.debug(
-                "Chunk %s already exists, incremented ref count",
-                chunk_hash.hex()[:16],
-            )
-            return existing
-
-        # Store new chunk
-        storage_file = self.chunk_store_path / chunk_hash.hex()
-        storage_file.write_bytes(chunk_data)
-
-        # Update database
-        current_time = time.time()
-        self.db.execute(
-            """INSERT INTO chunks (hash, size, storage_path, created_at, last_accessed)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
+        async with self._get_db_lock():
+            existing = await to_thread_compat(
+                self._check_chunk_exists_sync,
                 chunk_hash,
-                len(chunk_data),
-                str(storage_file),
+            )
+            if existing:
+                await to_thread_compat(
+                    self._increment_chunk_ref_sync,
+                    chunk_hash,
+                )
+                storage_file = existing
+                self.logger.debug(
+                    "Chunk %s already exists, incremented ref count",
+                    chunk_hash.hex()[:16],
+                )
+            else:
+                storage_file = await to_thread_compat(
+                    self._store_new_chunk_sync,
+                    chunk_hash,
+                    chunk_data,
+                )
+                self.logger.debug(
+                    "Stored new chunk %s (%d bytes)",
+                    chunk_hash.hex()[:16],
+                    len(chunk_data),
+                )
+        if file_path is not None and file_offset is not None:
+            await self.add_file_chunk_reference(
+                file_path, chunk_hash, file_offset, len(chunk_data)
+            )
+        return storage_file
+
+    def _add_file_chunk_reference_sync(
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        offset: int,
+        chunk_size: int,
+    ) -> bool:
+        """Synchronous DB insert for file-chunk reference (run in thread).
+
+        Returns True if reference already existed (skipped), False if inserted.
+        """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        current_time = time.time()
+        cursor = self.db.execute(
+            """SELECT 1 FROM file_chunks
+               WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
+            (file_path, chunk_hash, offset),
+        )
+        if cursor.fetchone():
+            return True
+        self.db.execute(
+            """INSERT INTO file_chunks
+               (file_path, chunk_hash, offset, chunk_size, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (file_path, chunk_hash, offset, chunk_size, current_time),
+        )
+        self.db.commit()
+        return False
+
+    async def add_file_chunk_reference(
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        offset: int,
+        chunk_size: int,
+    ) -> None:
+        """Add a file-to-chunk reference.
+
+        Records that a file references a chunk at a specific offset.
+        This enables file reconstruction from chunks.
+
+        Args:
+            file_path: Path to the file
+            chunk_hash: 32-byte chunk hash
+            offset: Offset in file where chunk appears
+            chunk_size: Size of the chunk in bytes
+
+        """
+        try:
+            async with self._get_db_lock():
+                skipped = await to_thread_compat(
+                    self._add_file_chunk_reference_sync,
+                    file_path,
+                    chunk_hash,
+                    offset,
+                    chunk_size,
+                )
+            if skipped:
+                self.logger.debug(
+                    "File chunk reference already exists: %s @ offset %d",
+                    file_path,
+                    offset,
+                )
+            else:
+                self.logger.debug(
+                    "Added file chunk reference: %s -> %s @ offset %d",
+                    file_path,
+                    chunk_hash.hex()[:16],
+                    offset,
+                )
+        except sqlite3.IntegrityError as e:
+            # Handle duplicate key errors gracefully
+            self.logger.debug(
+                "File chunk reference already exists (integrity error): %s", e
+            )
+        except Exception as e:
+            self.logger.warning(
+                "Failed to add file chunk reference: %s", e, exc_info=True
+            )
+
+    async def remove_file_chunk_reference(
+        self,
+        file_path: str,
+        chunk_hash: bytes,
+        offset: int,
+    ) -> bool:
+        """Remove a file-to-chunk reference.
+
+        Removes the reference and decrements chunk reference count.
+        If ref_count reaches zero, the chunk is deleted.
+
+        Args:
+            file_path: Path to the file
+            chunk_hash: 32-byte chunk hash
+            offset: Offset in file where chunk appears
+
+        Returns:
+            True if chunk was deleted (ref_count reached 0), False otherwise
+
+        """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        try:
+            # Delete file-to-chunk reference
+            cursor = self.db.execute(
+                """DELETE FROM file_chunks
+                   WHERE file_path = ? AND chunk_hash = ? AND offset = ?""",
+                (file_path, chunk_hash, offset),
+            )
+            deleted = cursor.rowcount > 0
+            self.db.commit()
+
+            if not deleted:
+                self.logger.debug(
+                    "File chunk reference not found: %s -> %s @ offset %d",
+                    file_path,
+                    chunk_hash.hex()[:16],
+                    offset,
+                )
+                return False
+
+            # Decrement chunk reference count
+            return self.remove_chunk_reference(chunk_hash)
+
+        except Exception as e:
+            self.logger.warning(
+                "Failed to remove file chunk reference: %s", e, exc_info=True
+            )
+            return False
+
+    async def get_file_chunks(self, file_path: str) -> list[tuple[bytes, int, int]]:
+        """Get ordered list of chunks for a file.
+
+        Retrieves all chunks referenced by a file, ordered by offset.
+        This enables file reconstruction.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            List of tuples (chunk_hash, offset, chunk_size) ordered by offset
+
+        """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        try:
+            cursor = self.db.execute(
+                """SELECT chunk_hash, offset, chunk_size
+                   FROM file_chunks
+                   WHERE file_path = ?
+                   ORDER BY offset ASC""",
+                (file_path,),
+            )
+            rows = cursor.fetchall()
+            return [(row[0], row[1], row[2]) for row in rows]
+        except Exception as e:
+            self.logger.warning("Failed to get file chunks: %s", e, exc_info=True)
+            return []
+
+    async def reconstruct_file_from_chunks(
+        self,
+        file_path: str,
+        output_path: Optional[Path] = None,
+    ) -> Path:
+        """Reconstruct a file from its stored chunks.
+
+        Reads all chunks referenced by the file in order and writes
+        them to the output path to reconstruct the original file.
+
+        Args:
+            file_path: Path to the file (used to look up chunks)
+            output_path: Optional output path (defaults to file_path)
+
+        Returns:
+            Path to reconstructed file
+
+        Raises:
+            FileNotFoundError: If file has no chunk references
+            IOError: If chunk files are missing or cannot be read
+
+        """
+        if output_path is None:
+            output_path = Path(file_path)
+
+        # Get ordered list of chunks
+        chunks = await self.get_file_chunks(file_path)
+        if not chunks:
+            msg = f"No chunks found for file: {file_path}"
+            raise FileNotFoundError(msg)
+
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Reconstruct file by reading chunks in order
+        missing_chunks = []
+        with output_path.open("wb") as output_file:
+            for chunk_hash, offset, chunk_size in chunks:
+                try:
+                    # Read chunk from storage
+                    chunk_path = await self.check_chunk_exists(chunk_hash)
+                    if not chunk_path or not chunk_path.exists():
+                        missing_chunks.append((chunk_hash, offset))
+                        self.logger.warning(
+                            "Missing chunk %s at offset %d for file %s",
+                            chunk_hash.hex()[:16],
+                            offset,
+                            file_path,
+                        )
+                        # Write zeros for missing chunk
+                        output_file.write(b"\x00" * chunk_size)
+                        continue
+
+                    # Read chunk data
+                    chunk_data = chunk_path.read_bytes()
+
+                    # Verify chunk size matches expected
+                    if len(chunk_data) != chunk_size:
+                        self.logger.warning(
+                            "Chunk size mismatch: expected %d, got %d for chunk %s",
+                            chunk_size,
+                            len(chunk_data),
+                            chunk_hash.hex()[:16],
+                        )
+
+                    # Seek to correct offset in output file
+                    output_file.seek(offset)
+                    # Write chunk data
+                    output_file.write(chunk_data)
+
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to read chunk %s at offset %d: %s",
+                        chunk_hash.hex()[:16],
+                        offset,
+                        e,
+                    )
+                    missing_chunks.append((chunk_hash, offset))
+                    # Write zeros for missing chunk
+                    output_file.seek(offset)
+                    output_file.write(b"\x00" * chunk_size)
+
+        if missing_chunks:
+            self.logger.warning(
+                "Reconstructed file %s with %d missing chunks",
+                output_path,
+                len(missing_chunks),
+            )
+
+        self.logger.debug(
+            "Reconstructed file %s from %d chunks",
+            output_path,
+            len(chunks),
+        )
+
+        return output_path
+
+    def _store_file_metadata_sync(
+        self, metadata: XetFileMetadata, metadata_json: str, current_time: float
+    ) -> None:
+        """Synchronous DB insert for file metadata (run in thread)."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        self.db.execute(
+            """INSERT OR REPLACE INTO file_metadata
+               (file_path, file_hash, total_size, chunk_count,
+                created_at, last_modified, metadata_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                metadata.file_path,
+                metadata.file_hash,
+                metadata.total_size,
+                len(metadata.chunk_hashes),
                 current_time,
                 current_time,
+                metadata_json,
             ),
         )
         self.db.commit()
 
-        self.logger.debug(
-            "Stored new chunk %s (%d bytes)",
-            chunk_hash.hex()[:16],
-            len(chunk_data),
+    async def store_file_metadata(self, metadata: XetFileMetadata) -> None:
+        """Store file metadata persistently.
+
+        Serializes XetFileMetadata to JSON and stores it in the database
+        for later retrieval and file reconstruction.
+
+        Args:
+            metadata: XetFileMetadata instance to store
+
+        """
+        try:
+            current_time = time.time()
+            metadata_dict = metadata.model_dump()
+            metadata_dict["file_hash"] = metadata.file_hash.hex()
+            metadata_dict["chunk_hashes"] = [h.hex() for h in metadata.chunk_hashes]
+            metadata_dict["xorb_refs"] = [h.hex() for h in metadata.xorb_refs]
+            metadata_json = json.dumps(metadata_dict)
+
+            async with self._get_db_lock():
+                await to_thread_compat(
+                    self._store_file_metadata_sync,
+                    metadata,
+                    metadata_json,
+                    current_time,
+                )
+            self.logger.debug(
+                "Stored file metadata for %s (%d chunks)",
+                metadata.file_path,
+                len(metadata.chunk_hashes),
+            )
+        except Exception as e:
+            self.logger.warning("Failed to store file metadata: %s", e, exc_info=True)
+
+    def _get_file_metadata_sync(self, file_path: str) -> Optional[dict[str, Any]]:
+        """Synchronous DB read for file metadata (run in thread). Returns raw dict or None."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        cursor = self.db.execute(
+            """SELECT metadata_json FROM file_metadata
+               WHERE file_path = ?""",
+            (file_path,),
         )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return json.loads(row[0])
 
-        return storage_file
+    async def get_file_metadata(self, file_path: str) -> Optional[XetFileMetadata]:
+        """Get file metadata from persistent storage.
 
-    async def query_dht_for_chunk(self, chunk_hash: bytes) -> PeerInfo | None:
+        Retrieves and deserializes XetFileMetadata from the database.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            XetFileMetadata if found, None otherwise
+
+        """
+        try:
+            async with self._get_db_lock():
+                metadata_dict = await to_thread_compat(
+                    self._get_file_metadata_sync,
+                    file_path,
+                )
+            if not metadata_dict:
+                return None
+            metadata_dict["file_hash"] = bytes.fromhex(metadata_dict["file_hash"])
+            metadata_dict["chunk_hashes"] = [
+                bytes.fromhex(h) for h in metadata_dict["chunk_hashes"]
+            ]
+            metadata_dict["xorb_refs"] = [
+                bytes.fromhex(h) for h in metadata_dict.get("xorb_refs", [])
+            ]
+            return XetFileMetadata(**metadata_dict)
+        except Exception as e:
+            self.logger.warning("Failed to get file metadata: %s", e, exc_info=True)
+            return None
+
+    async def query_dht_for_chunk(self, chunk_hash: bytes) -> Optional[PeerInfo]:
         """Query DHT for peers that have this chunk.
 
         Uses existing DHT infrastructure to find peers that have
@@ -208,7 +769,7 @@ class XetDeduplication:
         try:
             # Convert 32-byte chunk hash to 20-byte DHT key
             # Use SHA-1 of the chunk hash to ensure proper DHT distribution
-            dht_key = hashlib.sha1(chunk_hash, usedforsecurity=False).digest()
+            dht_key = sha1_compat(chunk_hash, usedforsecurity=False).digest()
 
             self.logger.debug(
                 "Querying DHT for chunk %s (DHT key: %s)",
@@ -283,7 +844,7 @@ class XetDeduplication:
             )  # pragma: no cover - Same context
             return None  # pragma: no cover - Same context
 
-    def _extract_peer_from_dht_value(self, value: Any) -> PeerInfo | None:  # type: ignore[return]
+    def _extract_peer_from_dht_value(self, value: Any) -> Optional[PeerInfo]:  # type: ignore[return]
         """Extract PeerInfo from DHT stored value (BEP 44).
 
         The value can be in various formats:
@@ -386,7 +947,7 @@ class XetDeduplication:
 
         return None
 
-    def get_chunk_info(self, chunk_hash: bytes) -> dict | None:
+    def get_chunk_info(self, chunk_hash: bytes) -> Optional[dict]:
         """Get information about a stored chunk.
 
         Args:
@@ -396,6 +957,8 @@ class XetDeduplication:
             Dictionary with chunk information or None if not found
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         cursor = self.db.execute(
             """SELECT hash, size, storage_path, ref_count, created_at, last_accessed
                FROM chunks WHERE hash = ?""",
@@ -426,6 +989,8 @@ class XetDeduplication:
             True if chunk was removed, False otherwise
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         # Get current ref count
         cursor = self.db.execute(
             "SELECT ref_count, storage_path FROM chunks WHERE hash = ?",
@@ -474,7 +1039,8 @@ class XetDeduplication:
 
         """
         cutoff_time = time.time() - max_age_seconds
-
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         cursor = self.db.execute(
             """SELECT hash, storage_path FROM chunks
                WHERE last_accessed < ? AND ref_count <= 1""",
@@ -508,6 +1074,8 @@ class XetDeduplication:
             Dictionary with cache statistics
 
         """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
         cursor = self.db.execute(
             """SELECT
                 COUNT(*) as total_chunks,
@@ -525,10 +1093,45 @@ class XetDeduplication:
             "avg_size": row[3] or 0,
         }
 
+    def get_recent_chunks(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return recent chunks ordered by last_accessed for cache info.
+
+        Args:
+            limit: Maximum number of chunks to return.
+
+        Returns:
+            List of dicts with hash, size, ref_count, created_at, last_accessed.
+
+        """
+        if not self.db:
+            return []
+        cursor = self.db.execute(
+            "SELECT hash, size, ref_count, created_at, last_accessed "
+            "FROM chunks ORDER BY last_accessed DESC LIMIT ?",
+            (max(0, limit),),
+        )
+        rows = cursor.fetchall()
+        return [
+            {
+                "hash": row[0],
+                "size": row[1],
+                "ref_count": row[2],
+                "created_at": row[3],
+                "last_accessed": row[4],
+            }
+            for row in rows
+        ]
+
     def close(self) -> None:
-        """Close database connection."""
-        if self.db:
+        """Close database connection (idempotent)."""
+        if self.db is not None:
             self.db.close()
+            self.db = None
+
+    async def aclose(self) -> None:
+        """Close database connection under the DB lock (idempotent)."""
+        async with self._get_db_lock():
+            self.close()
 
     def __enter__(self):
         """Context manager entry."""
@@ -544,4 +1147,4 @@ class XetDeduplication:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        self.close()
+        await self.aclose()

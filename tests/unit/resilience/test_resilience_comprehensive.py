@@ -13,8 +13,6 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import queue
-import threading
 import time
 from unittest.mock import patch
 
@@ -26,7 +24,6 @@ from ccbt.utils.resilience import (
     BulkOperationManager,
     CircuitBreaker,
     CircuitBreakerError,
-    RateLimiter,
     timeout_for_connections,
     timeout_for_tracker_requests,
     with_rate_limit,
@@ -134,11 +131,11 @@ class TestWithRetrySyncWrapper:
             return "sync_result"
 
         decorator = with_retry(retries=2)
-        
+
         # First patch: make decorator think it's async (to get async_wrapper)
         with patch("ccbt.utils.resilience.asyncio.iscoroutinefunction", return_value=True):
             wrapped = decorator(sync_function)
-        
+
         # Second patch: inside async_wrapper, make it think func is sync (line 59->61)
         with patch("ccbt.utils.resilience.asyncio.iscoroutinefunction") as mock_iscoro:
             # At line 104 check, return True (already done above, wrapper is async_wrapper)
@@ -217,7 +214,7 @@ class TestCircuitBreakerAsyncWrapperEdgeCases:
         # First: make decorator return async_wrapper
         with patch("ccbt.utils.resilience.asyncio.iscoroutinefunction", return_value=True):
             wrapped = breaker(sync_function)
-        
+
         # Second: inside async_wrapper, make it treat func as sync (line 211->214)
         with patch("ccbt.utils.resilience.asyncio.iscoroutinefunction") as mock_iscoro:
             mock_iscoro.return_value = False
@@ -384,11 +381,11 @@ class TestWithRateLimitAsyncWrapperEdgeCases:
             return "sync_result"
 
         decorator = with_rate_limit(max_requests=2, time_window=0.1)
-        
+
         # First: make decorator return async_wrapper
         with patch("ccbt.utils.resilience.asyncio.iscoroutinefunction", return_value=True):
             wrapped = decorator(sync_function)
-        
+
         # Second: inside async_wrapper, make it treat func as sync (line 337->339)
         with patch("ccbt.utils.resilience.asyncio.iscoroutinefunction") as mock_iscoro:
             mock_iscoro.return_value = False
@@ -508,7 +505,7 @@ class TestConvenienceFunctions:
         """Test timeout_for_connections with timeout."""
         @timeout_for_connections(seconds=0.1)
         def slow_connection_operation():
-            time.sleep(0.2)
+            time.sleep(0.35)
             return "should_not_reach"
 
         with pytest.raises(TimeoutError):

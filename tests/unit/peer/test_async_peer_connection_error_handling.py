@@ -18,7 +18,6 @@ Covers missing lines:
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,10 +29,9 @@ pytestmark = [pytest.mark.unit, pytest.mark.peer]
 from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
     AsyncPeerConnectionManager,
-    ConnectionState,
     PeerConnectionError,
 )
-from ccbt.peer.peer import Handshake, PeerInfo
+from ccbt.peer.peer import PeerInfo
 from ccbt.protocols.bittorrent_v2 import (
     FileTreeRequest,
     FileTreeResponse,
@@ -60,7 +58,7 @@ def mock_piece_manager():
     return manager
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def mock_config():
     """Create mock config."""
     config = SimpleNamespace()
@@ -82,6 +80,14 @@ def mock_config():
     config.security = SimpleNamespace(
         enable_encryption=False,
         encryption_mode="disabled",
+    )
+    # Note: Add required limits config attribute
+    config.limits = SimpleNamespace(
+        per_peer_up_kib=0,  # Unlimited
+    )
+    # Note: Add required nat config attribute
+    config.nat = SimpleNamespace(
+        auto_map_ports=False,
     )
     return config
 
@@ -304,7 +310,7 @@ class TestEncryptionHandshake:
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
         mock_encryption_mode_class = MagicMock(return_value=EncryptionMode.REQUIRED)
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
@@ -338,7 +344,7 @@ class TestEncryptionHandshake:
 
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
@@ -361,19 +367,18 @@ class TestEncryptionHandshake:
 
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
-        ):
-            with pytest.raises(PeerConnectionError, match="Encryption required but failed"):
-                try:
-                    await mock_mse.initiate_as_initiator(None, None, None)
-                except Exception as e:
-                    # Test the exception path for REQUIRED mode
-                    if EncryptionMode.REQUIRED != EncryptionMode.DISABLED:
-                        err_text = f"Encryption required but failed: {e}"
-                        raise PeerConnectionError(err_text) from e
+        ), pytest.raises(PeerConnectionError, match="Encryption required but failed"):
+            try:
+                await mock_mse.initiate_as_initiator(None, None, None)
+            except Exception as e:
+                # Test the exception path for REQUIRED mode
+                if EncryptionMode.REQUIRED != EncryptionMode.DISABLED:
+                    err_text = f"Encryption required but failed: {e}"
+                    raise PeerConnectionError(err_text) from e
 
     @pytest.mark.asyncio
     async def test_encryption_preferred_exception(self, async_peer_manager):
@@ -386,7 +391,7 @@ class TestEncryptionHandshake:
 
         # Patch imports inside the function
         from ccbt.security.encryption import EncryptionMode
-        
+
         with patch(
             "ccbt.security.mse_handshake.MSEHandshake",
             return_value=mock_mse,
@@ -394,7 +399,7 @@ class TestEncryptionHandshake:
             # PREFERRED mode should log and continue
             try:
                 await mock_mse.initiate_as_initiator(None, None, None)
-            except Exception as e:
+            except Exception:
                 # Test the exception path for PREFERRED mode (should not raise)
                 if EncryptionMode.PREFERRED != EncryptionMode.REQUIRED:
                     # Should log and continue, not raise
@@ -498,6 +503,40 @@ class TestV2ProtocolHandling:
         await async_peer_manager._handle_piece_layer_response(connection, response)
 
         assert callback_called
+
+    @pytest.mark.asyncio
+    async def test_handle_piece_layer_response_calls_update_from_piece_indices(
+        self, async_peer_manager
+    ):
+        """Test piece layer response calls update_peer_availability_from_piece_indices with set."""
+        pieces_root = b"pieces_root_32bytes_123456789012"
+        hash0 = b"hash0_32bytes_SHA256_12345678901"  # exactly 32 bytes
+        hash1 = b"hash1_32bytes_SHA256_12345678901"  # exactly 32 bytes
+        hash2 = b"hash2_32bytes_SHA256_12345678901"  # exactly 32 bytes
+        async_peer_manager.torrent_data["piece_layers"] = {
+            pieces_root: b"layer_data"
+        }
+        async_peer_manager.torrent_data["piece_hashes"] = [hash0, hash1, hash2]
+        async_peer_manager.piece_manager.update_peer_availability_from_piece_indices = (
+            AsyncMock()
+        )
+        async_peer_manager.piece_manager.update_peer_availability = AsyncMock()
+
+        connection = AsyncPeerConnection(
+            PeerInfo(ip="10.0.0.5", port=6881),
+            async_peer_manager.torrent_data,
+        )
+        response = PieceLayerResponse(pieces_root, [hash0, hash1])
+
+        await async_peer_manager._handle_piece_layer_response(connection, response)
+
+        async_peer_manager.piece_manager.update_peer_availability_from_piece_indices.assert_called_once()
+        call_args = (
+            async_peer_manager.piece_manager.update_peer_availability_from_piece_indices.call_args
+        )
+        assert call_args[0][0] == "10.0.0.5:6881"
+        assert call_args[0][1] == {0, 1}
+        async_peer_manager.piece_manager.update_peer_availability.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_file_tree_request(self, async_peer_manager):

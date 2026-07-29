@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from ccbt.storage.checkpoint import CheckpointManager
 from ccbt.config import ConfigManager, init_config
 from ccbt.models import DownloadStats, TorrentCheckpoint
 from ccbt.session import AsyncSessionManager
+from ccbt.storage.checkpoint import CheckpointManager
 
 
 @pytest_asyncio.fixture
@@ -16,7 +16,14 @@ async def session_manager(tmp_path: Path):
     # Initialize config with a temp working directory
     init_config(None)
     sm = AsyncSessionManager(str(tmp_path))
-    sm.config.nat.auto_map_ports = False  # Disable NAT to prevent blocking socket operations
+    sm.config.nat.auto_map_ports = False
+    sm.config.discovery.enable_dht = False
+    sm.config.discovery.enable_pex = False
+    sm.config.discovery.enable_http_trackers = False
+    sm.config.discovery.enable_udp_trackers = False
+    sm.config.network.listen_port = 0
+    sm.config.network.listen_port_tcp = 0
+    sm.config.network.listen_port_udp = 0
     try:
         await sm.start()
         yield sm

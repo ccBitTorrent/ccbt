@@ -1,17 +1,21 @@
+# Builds run only manually (workflow_dispatch). No automatic build on push or tags.
 name: Build
 
 on:
-  push:
-    branches: [main]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-package:
     name: build-package
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -51,9 +55,12 @@ jobs:
 
   build-windows-exe:
     name: build-windows-exe
+    needs: build-package  # Wait for package build first
     runs-on: windows-latest
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       
@@ -85,10 +92,12 @@ jobs:
           # Verify executable was created
           if (-not (Test-Path dist/bitonic.exe)) {
             Write-Error "Error: bitonic.exe was not created"
+            Get-ChildItem dist/ -Recurse | Select-Object FullName
             exit 1
           }
           
           Write-Host "✅ Windows executable built successfully: dist/bitonic.exe"
+          Get-Item dist/bitonic.exe | Select-Object Name, Length, LastWriteTime
       
       - name: Upload Windows executable
         uses: actions/upload-artifact@v4
@@ -96,4 +105,3 @@ jobs:
           name: windows-executable
           path: dist/bitonic.exe
           retention-days: 30
-

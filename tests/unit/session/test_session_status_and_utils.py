@@ -1,9 +1,8 @@
 """Tests for session status and utility methods."""
 
-import pytest
 import time
 
-from ccbt.models import TorrentInfo
+import pytest
 
 
 @pytest.mark.asyncio
@@ -97,7 +96,7 @@ async def test_peers_property(monkeypatch, tmp_path):
 
     class _DM:
         def get_status(self):
-            return {"peers": 5}
+            return {"connected_peers": 5}
 
     td = {
         "name": "test",
@@ -177,9 +176,10 @@ async def test_info_hash_hex_property(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_pause_saves_checkpoint(monkeypatch, tmp_path):
     """Test pause saves checkpoint when enabled."""
-    from ccbt.session.session import AsyncTorrentSession
-    from ccbt.models import TorrentCheckpoint
     import time
+
+    from ccbt.models import TorrentCheckpoint
+    from ccbt.session.session import AsyncTorrentSession
 
     checkpoint_saved = []
 
@@ -216,7 +216,7 @@ async def test_pause_saves_checkpoint(monkeypatch, tmp_path):
     session.checkpoint_manager = _CPM()
     session.piece_manager = _PM()
     session.config.disk.checkpoint_enabled = True
-    
+
     # Create a proper stop event
     import asyncio
     session._stop_event = asyncio.Event()
@@ -247,7 +247,7 @@ async def test_resume_starts_background_tasks(monkeypatch, tmp_path):
     session = AsyncTorrentSession(td, str(tmp_path))
     session._stop_event = type("Event", (), {"clear": lambda: None})()
     session._background_tasks = []
-    
+
     # Mock background task methods
     session._announce_loop = _mock_task
     session._status_loop = _mock_task
@@ -257,4 +257,33 @@ async def test_resume_starts_background_tasks(monkeypatch, tmp_path):
 
     # Tasks should have been started (or at least attempted)
     # Note: actual task creation might be mocked differently
+
+
+@pytest.mark.asyncio
+async def test_is_peer_recently_processed_legacy_set_checkpoint(tmp_path):
+    """Legacy set-based _recently_processed_peers from checkpoint is supported."""
+    from ccbt.session.session import AsyncTorrentSession
+
+    td = {
+        "name": "test",
+        "info_hash": b"1" * 20,
+        "pieces_info": {
+            "num_pieces": 1,
+            "piece_length": 16384,
+            "piece_hashes": [b"x" * 20],
+            "total_length": 16384,
+        },
+        "file_info": {"total_length": 16384},
+    }
+    session = AsyncTorrentSession(td, str(tmp_path))
+    # Simulate checkpoint that persisted the old set format
+    session._recently_processed_peers = {
+        ("1.2.3.4", 6881),
+        ("5.6.7.8", 6882),
+    }
+    assert session.is_peer_recently_processed(("1.2.3.4", 6881)) is True
+    assert session.is_peer_recently_processed(("5.6.7.8", 6882)) is True
+    assert session.is_peer_recently_processed(("9.9.9.9", 9999)) is False
+    assert session.is_peer_recently_processed({"ip": "1.2.3.4", "port": 6881}) is True
+    assert session.is_peer_recently_processed({"ip": "9.9.9.9", "port": 9999}) is False
 

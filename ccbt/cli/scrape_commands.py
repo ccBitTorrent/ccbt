@@ -12,7 +12,15 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from ccbt.cli.main import _get_executor
+from ccbt.i18n import _
+
+
+def _get_executor():
+    """Lazy import to avoid circular dependency."""
+    from ccbt.cli.main import _get_executor as _get_executor_impl
+
+    return _get_executor_impl
+
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +52,22 @@ def scrape_torrent(_ctx, info_hash: str, force: bool):
     console = Console()
 
     # Validate info_hash format
-    invalid_hash_msg = "Invalid info hash format"
+    invalid_hash_msg = _("Invalid info hash format")
     if len(info_hash) != 40:
-        console.print("[red]Error: Info hash must be 40 hex characters[/red]")
+        console.print(_("[red]Error: Info hash must be 40 hex characters[/red]"))
         raise click.ClickException(invalid_hash_msg)
 
     async def _scrape_torrent() -> None:
         """Async helper for scrape torrent."""
         # Get executor (scrape commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Scrape commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Scrape commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -69,11 +79,12 @@ def scrape_torrent(_ctx, info_hash: str, force: bool):
             )
 
             if not result.success:
-                raise click.ClickException(result.error or "Failed to scrape torrent")
+                error_msg = result.error or _("Failed to scrape torrent")
+                raise click.ClickException(error_msg)
 
             scrape_result = result.data["result"]
 
-            table = Table(title="Scrape Results")
+            table = Table(title=_("Scrape Results"))
             table.add_column("Field", style="cyan")
             table.add_column("Value", style="green")
 
@@ -95,7 +106,7 @@ def scrape_torrent(_ctx, info_hash: str, force: bool):
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e
 
 
@@ -113,12 +124,14 @@ def scrape_list(_ctx):
     async def _list_scrape_results() -> None:
         """Async helper for scrape list."""
         # Get executor (scrape commands require daemon)
-        executor, is_daemon = await _get_executor()
+        executor, is_daemon = await _get_executor()()
 
         if not executor or not is_daemon:
             raise click.ClickException(
-                "Daemon is not running. Scrape commands require the daemon to be running.\n"
-                "Start the daemon with: 'btbt daemon start'"
+                _(
+                    "Daemon is not running. Scrape commands require the daemon to be running.\n"
+                    "Start the daemon with: 'btbt daemon start'"
+                )
             )
 
         try:
@@ -126,17 +139,16 @@ def scrape_list(_ctx):
             result = await executor.execute("scrape.list")
 
             if not result.success:
-                raise click.ClickException(
-                    result.error or "Failed to list scrape results"
-                )
+                error_msg = result.error or _("Failed to list scrape results")
+                raise click.ClickException(error_msg)
 
             scrape_list_response = result.data["results"]
 
             if not scrape_list_response.results:
-                console.print("[yellow]No cached scrape results[/yellow]")
+                console.print(_("[yellow]No cached scrape results[/yellow]"))
                 return
 
-            table = Table(title="Cached Scrape Results")
+            table = Table(title=_("Cached Scrape Results"))
             table.add_column("Info Hash", style="cyan")
             table.add_column("Seeders", style="green")
             table.add_column("Leechers", style="yellow")
@@ -167,5 +179,5 @@ def scrape_list(_ctx):
     except click.ClickException:
         raise
     except Exception as e:  # pragma: no cover - CLI error handler, hard to trigger reliably in unit tests
-        console.print(f"[red]Error: {e}[/red]")
+        console.print(_("[red]Error: {e}[/red]").format(e=e))
         raise click.ClickException(str(e)) from e

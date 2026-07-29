@@ -10,7 +10,7 @@ import hashlib
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from ccbt.discovery.dht_storage import (
     DHTMutableData,
@@ -69,7 +69,7 @@ async def store_infohash_sample(
     public_key: bytes,
     private_key: bytes,
     salt: bytes = b"",
-    dht_client: AsyncDHTClient | None = None,
+    dht_client: Optional[AsyncDHTClient] = None,
 ) -> bytes:
     """Store an infohash sample in the index (BEP 51) using BEP 44.
 
@@ -123,15 +123,27 @@ async def store_infohash_sample(
     existing_entry = None
     seq = 0
     try:
-        existing_data = await dht_client.get_data(index_key, public_key=public_key)
+        existing_data = await dht_client.get_data(index_key, _public_key=public_key)
         if existing_data:
+            # Decode bytes to dict first, then decode storage value
+            from ccbt.core.bencode import BencodeDecoder
             from ccbt.discovery.dht_storage import (
                 DHTMutableData,
                 DHTStorageKeyType,
                 decode_storage_value,
             )
 
-            decoded = decode_storage_value(existing_data, DHTStorageKeyType.MUTABLE)
+            try:
+                decoder = BencodeDecoder(existing_data)
+                value_dict = decoder.decode()
+                if isinstance(value_dict, dict):
+                    decoded = decode_storage_value(
+                        value_dict, DHTStorageKeyType.MUTABLE
+                    )
+                else:
+                    decoded = None
+            except Exception:
+                decoded = None
             if isinstance(decoded, DHTMutableData):
                 existing_entry = decode_index_entry(decoded)
                 seq = decoded.seq + 1  # Increment sequence for update
@@ -161,7 +173,11 @@ async def store_infohash_sample(
         from ccbt.discovery.dht_storage import encode_storage_value
 
         encoded_value = encode_storage_value(mutable_data)
-        success_count = await dht_client.put_data(index_key, encoded_value)
+        # Encode dict to bytes for put_data
+        from ccbt.core.bencode import BencodeEncoder
+
+        encoded_bytes = BencodeEncoder().encode(encoded_value)
+        success_count = await dht_client.put_data(index_key, encoded_bytes)
         if success_count > 0:
             logger.debug(
                 "Stored infohash sample in DHT index: key=%s, name=%s",
@@ -185,8 +201,8 @@ async def store_infohash_sample(
 async def query_index(
     query: str,
     max_results: int = 50,
-    dht_client: AsyncDHTClient | None = None,
-    public_key: bytes | None = None,
+    dht_client: Optional[AsyncDHTClient] = None,
+    public_key: Optional[bytes] = None,
 ) -> list[DHTInfohashSample]:
     """Query the index for matching infohash samples (BEP 51) using BEP 44.
 
@@ -233,7 +249,7 @@ async def query_index(
 
         # Wrap DHT query in timeout (10 seconds)
         existing_data = await asyncio.wait_for(
-            dht_client.get_data(index_key, public_key=public_key),
+            dht_client.get_data(index_key, _public_key=public_key),
             timeout=10.0,
         )
 
@@ -241,14 +257,23 @@ async def query_index(
             logger.debug("No index entry found for query: %s", query)
             return []
 
-        # Decode retrieved mutable data
+        # Decode bencoded bytes to dict then to mutable data
+        from ccbt.core.bencode import BencodeDecoder
         from ccbt.discovery.dht_storage import (
             DHTMutableData,
             DHTStorageKeyType,
             decode_storage_value,
         )
 
-        decoded = decode_storage_value(existing_data, DHTStorageKeyType.MUTABLE)
+        try:
+            value_dict = BencodeDecoder(existing_data).decode()
+        except Exception as e:
+            logger.debug("Failed to decode index entry bytes: %s", e)
+            return []
+        if not isinstance(value_dict, dict):
+            logger.debug("Index entry is not a dict")
+            return []
+        decoded = decode_storage_value(value_dict, DHTStorageKeyType.MUTABLE)
         if not isinstance(decoded, DHTMutableData):
             logger.debug("Retrieved data is not a mutable DHT item")
             return []
@@ -301,7 +326,7 @@ async def query_index(
 def update_index_entry(
     key: bytes,  # noqa: ARG001
     sample: DHTInfohashSample,
-    existing_entry: DHTIndexEntry | None = None,
+    existing_entry: Optional[DHTIndexEntry] = None,
     max_samples: int = 8,
 ) -> DHTIndexEntry:
     """Update an index entry with a new sample (BEP 51).

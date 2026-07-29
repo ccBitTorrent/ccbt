@@ -12,6 +12,7 @@ else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -24,6 +25,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
@@ -33,6 +52,10 @@ from ccbt.interface.screens.base import MonitoringScreen
 
 class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display network quality metrics for peers and connections."""
+
+    _reactive_sources = ("global_stats", "torrents_data")
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
+    torrents_data: reactive = reactive([], layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -57,16 +80,38 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
             yield Static(id="peer_quality")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh network quality metrics display."""
         try:
             global_stats_widget = self.query_one("#global_stats", Static)
             content = self.query_one("#content", Static)
             peer_quality = self.query_one("#peer_quality", Static)
 
-            # Get global stats
-            stats = await self.session.get_global_stats()
-            all_status = await self.session.get_status()
+            stats_override = overrides.get("global_stats_override")
+            torrents_override = overrides.get("torrents_data_override")
+            if stats_override is None and isinstance(self.global_stats, dict) and self.global_stats:
+                stats_override = self.global_stats
+            if torrents_override is None and isinstance(self.torrents_data, list) and self.torrents_data:
+                torrents_override = self.torrents_data
+
+            if isinstance(stats_override, dict) and stats_override:
+                stats = stats_override
+                torrents_list = torrents_override if isinstance(torrents_override, list) else []
+                all_status = {
+                    t.get("info_hash") or t.get("info_hash_hex", ""): t
+                    for t in torrents_list
+                    if t.get("info_hash") or t.get("info_hash_hex")
+                }
+            else:
+                # Prefer DataProvider for reads (daemon parity)
+                provider = getattr(self, "_data_provider", None)
+                if provider:
+                    stats = await provider.get_global_stats()
+                    torrents_list = await provider.list_torrents()
+                    all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+                else:
+                    stats = await self.session.get_global_stats()
+                    all_status = await self.session.get_status()
 
             # Global network stats
             global_table = Table(
@@ -95,8 +140,11 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
                 "Global Upload Rate", format_speed(stats.get("upload_rate", 0.0))
             )
 
-            # Calculate bandwidth utilization
-            config = self.session.config
+            # Calculate bandwidth utilization (config: session or get_config for daemon)
+            config = getattr(self.session, "config", None)
+            if not config and provider:
+                from ccbt.config.config import get_config
+                config = get_config()
             if config and hasattr(config, "network"):
                 max_download = getattr(config.network, "max_download_speed", 0)
                 max_upload = getattr(config.network, "max_upload_speed", 0)
@@ -111,6 +159,73 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
                 if max_upload > 0:
                     upload_util = (upload_rate / max_upload) * 100.0
                     global_table.add_row("Upload Utilization", f"{upload_util:.1f}%")
+
+            # Add network connection statistics (RTT, bandwidth, BDP)
+            try:
+                if provider:
+                    perf_data = await provider.get_network_timing_metrics()
+                else:
+                    from ccbt.monitoring import get_metrics_collector
+                    mc = get_metrics_collector()
+                    perf_data = mc.get_performance_metrics()
+
+                # RTT statistics
+                rtt_ms = perf_data.get("network_rtt_ms", 0.0)
+                rtt_min = perf_data.get("network_rtt_min_ms", 0.0)
+                rtt_max = perf_data.get("network_rtt_max_ms", 0.0)
+                rtt_avg = perf_data.get("network_rtt_avg_ms", 0.0)
+
+                if rtt_ms > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row("Network RTT", f"{rtt_ms:.1f} ms")
+                    if rtt_min > 0 and rtt_max > 0:
+                        global_table.add_row(
+                            "RTT Range", f"{rtt_min:.1f} - {rtt_max:.1f} ms"
+                        )
+                    if rtt_avg > 0:
+                        global_table.add_row("Average RTT", f"{rtt_avg:.1f} ms")
+
+                # Bandwidth statistics
+                bandwidth_mbps = perf_data.get("network_bandwidth_mbps", 0.0)
+                bandwidth_bps = perf_data.get("network_bandwidth_bps", 0.0)
+                if bandwidth_bps > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row(
+                        "Measured Bandwidth", f"{bandwidth_mbps:.2f} Mbps"
+                    )
+
+                # Connection statistics
+                total_conn = perf_data.get("network_total_connections", 0)
+                active_conn = perf_data.get("network_active_connections", 0)
+                failed_conn = perf_data.get("network_failed_connections", 0)
+                bytes_sent = perf_data.get("network_bytes_sent", 0)
+                bytes_received = perf_data.get("network_bytes_received", 0)
+
+                if total_conn > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row("Total Connections", f"{total_conn:,}")
+                    global_table.add_row("Active Connections", f"{active_conn:,}")
+                    if failed_conn > 0:
+                        global_table.add_row("Failed Connections", f"{failed_conn:,}")
+                    if bytes_sent > 0 or bytes_received > 0:
+                        global_table.add_row(
+                            "Bytes Sent", f"{bytes_sent / (1024**2):.2f} MB"
+                        )
+                        global_table.add_row(
+                            "Bytes Received", f"{bytes_received / (1024**2):.2f} MB"
+                        )
+
+                # BDP (Bandwidth-Delay Product)
+                bdp_bytes = perf_data.get("network_bdp_bytes", 0)
+                if bdp_bytes > 0:
+                    global_table.add_row("", "")  # Separator
+                    global_table.add_row(
+                        "BDP (Bandwidth-Delay Product)",
+                        f"{bdp_bytes / (1024**2):.2f} MB",
+                    )
+            except Exception:
+                # Metrics not available, skip network connection stats
+                pass
 
             global_stats_widget.update(Panel(global_table))
 
@@ -142,7 +257,10 @@ class NetworkQualityScreen(MonitoringScreen):  # type: ignore[misc]
             # Peer connection quality (for first torrent if available)
             if all_status:
                 first_ih = next(iter(all_status.keys()))
-                peers = await self.session.get_peers_for_torrent(first_ih)
+                if provider:
+                    peers = await provider.get_torrent_peers(first_ih)
+                else:
+                    peers = await self.session.get_peers_for_torrent(first_ih)
                 if peers:
                     # Calculate aggregate peer metrics
                     total_peers = len(peers)

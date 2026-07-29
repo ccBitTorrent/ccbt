@@ -112,113 +112,112 @@ class NATManagementScreen(MonitoringScreen):  # type: ignore[misc]
             performance_metrics = self.query_one("#performance_metrics", Static)
             mappings_panel = self.query_one("#mappings_panel", Static)
 
-            # Try to get status directly from session
-            try:
-                if not self.session.nat_manager:
-                    status_panel.update(
-                        Panel(
-                            "NAT manager not initialized.\n"
-                            "NAT traversal may be disabled in configuration.",
-                            title="NAT Status",
-                            border_style="yellow",
-                        )
-                    )
-                    mappings_panel.update(
-                        Panel(
-                            "No port mappings available.",
-                            title="Port Mappings",
-                            border_style="dim",
-                        )
-                    )
-                    return
+            # Prefer DataProvider in daemon mode (get_nat_status)
+            provider = getattr(self, "_data_provider", None)
+            status = None
+            if provider and hasattr(provider, "get_nat_status"):
+                try:
+                    status = await provider.get_nat_status()
+                except Exception:
+                    status = {}
+            elif getattr(self.session, "nat_manager", None):
+                try:
+                    status = await self.session.nat_manager.get_status()
+                except Exception:
+                    status = None
 
-                status = await self.session.nat_manager.get_status()
-
-                # Build status panel
-                status_lines = [
-                    "[bold]NAT Traversal Status[/bold]\n",
-                ]
-
-                if status.get("active_protocol"):
-                    status_lines.append(
-                        f"[green]Active Protocol:[/green] {status['active_protocol'].upper()}"
-                    )
-                else:
-                    status_lines.append(
-                        "[yellow]Active Protocol:[/yellow] None (not discovered)"
-                    )
-
-                if status.get("external_ip"):
-                    status_lines.append(
-                        f"[green]External IP:[/green] {status['external_ip']}"
-                    )
-                else:
-                    status_lines.append("[yellow]External IP:[/yellow] Not available")
-
-                # Configuration info
-                config = self.session.config
-                if config and hasattr(config, "nat"):
-                    nat_config = config.nat
-                    status_lines.append("\n[bold]Configuration:[/bold]")
-                    status_lines.append(
-                        f"  Auto-map ports: {'[green]Yes[/green]' if nat_config.auto_map_ports else '[red]No[/red]'}"
-                    )
-                    status_lines.append(
-                        f"  NAT-PMP enabled: {'[green]Yes[/green]' if nat_config.enable_nat_pmp else '[red]No[/red]'}"
-                    )
-                    status_lines.append(
-                        f"  UPnP enabled: {'[green]Yes[/green]' if nat_config.enable_upnp else '[red]No[/red]'}"
-                    )
-
-                status_panel.update(Panel("\n".join(status_lines), title="NAT Status"))
-
-                # Build mappings table
-                mappings = status.get("mappings", [])
-                if mappings:
-                    table = Table(title="Active Port Mappings", expand=True)
-                    table.add_column("Protocol", style="cyan", ratio=1)
-                    table.add_column("Internal Port", style="magenta", ratio=1)
-                    table.add_column("External Port", style="yellow", ratio=1)
-                    table.add_column("Source", style="green", ratio=1)
-                    table.add_column("Expires At", style="blue", ratio=2)
-
-                    for mapping in mappings:
-                        expires_str = (
-                            mapping.get("expires_at", "Permanent")
-                            if mapping.get("expires_at")
-                            else "Permanent"
-                        )
-                        table.add_row(
-                            mapping.get("protocol", "N/A").upper(),
-                            str(mapping.get("internal_port", "N/A")),
-                            str(mapping.get("external_port", "N/A")),
-                            mapping.get("source", "N/A").upper(),
-                            str(expires_str),
-                        )
-
-                    mappings_panel.update(Panel(table))
-                else:
-                    mappings_panel.update(
-                        Panel(
-                            "No active port mappings.\n\n"
-                            "Use 'Map Port' to create a port mapping, or enable auto-map in configuration.",
-                            title="Port Mappings",
-                            border_style="dim",
-                        )
-                    )
-            except Exception as e:
+            if not status:
                 status_panel.update(
                     Panel(
-                        f"Error loading NAT status: {e}",
-                        title="Error",
-                        border_style="red",
+                        "NAT manager not initialized or not available.\n"
+                        "NAT traversal may be disabled or daemon does not expose status.",
+                        title="NAT Status",
+                        border_style="yellow",
                     )
                 )
                 mappings_panel.update(
                     Panel(
-                        "Port mappings unavailable.",
+                        "No port mappings available.",
                         title="Port Mappings",
-                        border_style="red",
+                        border_style="dim",
+                    )
+                )
+                performance_metrics.update("")
+                return
+
+            # Build status panel
+            status_lines = [
+                "[bold]NAT Traversal Status[/bold]\n",
+            ]
+
+            if status.get("active_protocol") or status.get("method"):
+                status_lines.append(
+                    f"[green]Active Protocol:[/green] {(status.get('active_protocol') or status.get('method') or 'Unknown').upper()}"
+                )
+            else:
+                status_lines.append(
+                    "[yellow]Active Protocol:[/yellow] None (not discovered)"
+                )
+
+            if status.get("external_ip"):
+                status_lines.append(
+                    f"[green]External IP:[/green] {status['external_ip']}"
+                )
+            else:
+                status_lines.append("[yellow]External IP:[/yellow] Not available")
+
+            # Configuration info (session or get_config for daemon)
+            config = getattr(self.session, "config", None)
+            if not config and provider:
+                from ccbt.config.config import get_config
+                config = get_config()
+            if config and hasattr(config, "nat"):
+                nat_config = config.nat
+                status_lines.append("\n[bold]Configuration:[/bold]")
+                status_lines.append(
+                    f"  Auto-map ports: {'[green]Yes[/green]' if nat_config.auto_map_ports else '[red]No[/red]'}"
+                )
+                status_lines.append(
+                    f"  NAT-PMP enabled: {'[green]Yes[/green]' if nat_config.enable_nat_pmp else '[red]No[/red]'}"
+                )
+                status_lines.append(
+                    f"  UPnP enabled: {'[green]Yes[/green]' if nat_config.enable_upnp else '[red]No[/red]'}"
+                )
+
+            status_panel.update(Panel("\n".join(status_lines), title="NAT Status"))
+
+            # Build mappings table
+            mappings = status.get("mappings", [])
+            if mappings:
+                table = Table(title="Active Port Mappings", expand=True)
+                table.add_column("Protocol", style="cyan", ratio=1)
+                table.add_column("Internal Port", style="magenta", ratio=1)
+                table.add_column("External Port", style="yellow", ratio=1)
+                table.add_column("Source", style="green", ratio=1)
+                table.add_column("Expires At", style="blue", ratio=2)
+
+                for mapping in mappings:
+                    expires_str = (
+                        mapping.get("expires_at", "Permanent")
+                        if mapping.get("expires_at")
+                        else "Permanent"
+                    )
+                    table.add_row(
+                        mapping.get("protocol", "N/A").upper(),
+                        str(mapping.get("internal_port", "N/A")),
+                        str(mapping.get("external_port", "N/A")),
+                        mapping.get("source", "N/A").upper(),
+                        str(expires_str),
+                    )
+
+                mappings_panel.update(Panel(table))
+            else:
+                mappings_panel.update(
+                    Panel(
+                        "No active port mappings.\n\n"
+                        "Use 'Map Port' to create a port mapping, or enable auto-map in configuration.",
+                        title="Port Mappings",
+                        border_style="dim",
                     )
                 )
 

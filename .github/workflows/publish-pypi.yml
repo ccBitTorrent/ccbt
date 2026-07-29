@@ -11,6 +11,10 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: publish-main-pypi
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: publish-to-pypi
@@ -52,16 +56,17 @@ jobs:
       
       - name: Publish to PyPI
         env:
-          UV_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          if [ -z "$UV_PYPI_TOKEN" ]; then
+          if [ -z "$UV_PUBLISH_TOKEN" ]; then
             echo "❌ Error: PYPI_API_TOKEN secret is not set"
             echo "Please add your PyPI API token as a GitHub secret named 'PYPI_API_TOKEN'"
             exit 1
           fi
           
           echo "🚀 Publishing to PyPI..."
-          uv publish
+          # Use --trusted-publishing never to skip OIDC and use token directly
+          uv publish --trusted-publishing never
           
           echo "✅ Successfully published to PyPI!"
           echo "📦 Package: https://pypi.org/project/ccbt/"
@@ -76,6 +81,20 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Published version: $VERSION"
+      
+      - name: Validate version for main branch
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          
+          # Main branch: version must be >= 0.1.0
+          if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 0 ]; then
+            echo "❌ Main branch PyPI publication requires version >= 0.1.0, got $VERSION"
+            echo "   Use dev branch workflow for 0.0.x versions"
+            exit 1
+          fi
+          echo "✅ Version validation passed: $VERSION"
       
       - name: Verify publication
         run: |
@@ -99,4 +118,70 @@ jobs:
           echo "**Package Links:**" >> $GITHUB_STEP_SUMMARY
           echo "- PyPI: https://pypi.org/project/ccbt/" >> $GITHUB_STEP_SUMMARY
           echo "- Installation: \`uv pip install ccbt==$VERSION\`" >> $GITHUB_STEP_SUMMARY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

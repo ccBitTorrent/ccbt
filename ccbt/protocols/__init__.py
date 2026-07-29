@@ -9,13 +9,20 @@ Provides support for:
 
 from __future__ import annotations
 
-from ccbt.protocols.base import Protocol, ProtocolManager, ProtocolType
+from ccbt.protocols.base import (
+    Protocol,
+    ProtocolManager,
+    ProtocolType,
+    get_protocol_manager,
+)
 from ccbt.protocols.bittorrent import BitTorrentProtocol
 
 try:
+    from typing import Optional
+
     from ccbt.protocols.ipfs import IPFSProtocol as _IPFSProtocol
 
-    IPFSProtocol: type[Protocol] | None = _IPFSProtocol  # type: ignore[assignment]
+    IPFSProtocol: Optional[type[Protocol]] = _IPFSProtocol  # type: ignore[assignment]
 except ImportError:
     IPFSProtocol = None  # type: ignore[assignment]  # IPFS support optional
 
@@ -35,4 +42,5 @@ __all__ = [
     "ProtocolManager",
     "ProtocolType",
     "WebTorrentProtocol",
+    "get_protocol_manager",
 ]

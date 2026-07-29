@@ -1,13 +1,11 @@
-"""Encryption Manager for ccBitTorrent.
+"""Encryption helpers and policy types for ccBitTorrent.
 
-from __future__ import annotations
+MSE/PE (BEP 3) support is for **traffic obfuscation and client interop** on
+peer connections, not for cryptographic authentication of peers. Prefer
+`MSEHandshake` at the connection layer for wire handshakes; placeholder
+handshake helpers here must not ship bytes on the wire in production paths.
 
-Provides encryption support including:
-- MSE/PE encryption (BEP 3)
-- Protocol encryption
-- Key exchange
-- Encrypted handshake
-- Cipher suites: RC4, AES, ChaCha20
+Includes cipher-suite utilities (RC4, AES, ChaCha20) where applicable.
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.utils.events import Event, EventType, emit_event
 
@@ -125,7 +123,7 @@ class EncryptionSession:
     last_activity: float = 0.0
     # MSE handshake state (for integration with MSEHandshake)
     mse_handshake: Any = None  # Will store MSEHandshake instance if needed
-    info_hash: bytes | None = None  # Torrent info hash for key derivation
+    info_hash: Optional[bytes] = None  # Torrent info hash for key derivation
 
 
 class EncryptionManager:
@@ -133,7 +131,7 @@ class EncryptionManager:
 
     def __init__(
         self,
-        config: EncryptionConfig | None = None,
+        config: Optional[EncryptionConfig] = None,
         security_config: Any = None,
     ):
         """Initialize encryption manager.
@@ -403,7 +401,7 @@ class EncryptionManager:
         session = self.encryption_sessions[peer_id]
         return session.handshake_complete
 
-    def get_encryption_type(self, peer_id: str) -> EncryptionType | None:
+    def get_encryption_type(self, peer_id: str) -> Optional[EncryptionType]:
         """Get encryption type for a peer."""
         if peer_id not in self.encryption_sessions:
             return None
@@ -423,7 +421,7 @@ class EncryptionManager:
             / max(1, self.stats["bytes_encrypted"] + self.stats["bytes_decrypted"]),
         }
 
-    def get_peer_encryption_info(self, peer_id: str) -> dict[str, Any] | None:
+    def get_peer_encryption_info(self, peer_id: str) -> Optional[dict[str, Any]]:
         """Get encryption information for a peer."""
         if peer_id not in self.encryption_sessions:
             return None
@@ -485,7 +483,7 @@ class EncryptionManager:
         )
 
     def _select_encryption_type(
-        self, peer_capabilities: list[EncryptionType] | None = None
+        self, peer_capabilities: Optional[list[EncryptionType]] = None
     ) -> EncryptionType:
         """Select encryption type based on configuration and peer capabilities.
 

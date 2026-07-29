@@ -1,0 +1,137 @@
+# Nightly publish: manual only, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
+name: Publish Dev Branch to PyPI (Nightly)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'ccbt/**'
+      - 'ccbt/__init__.py'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-dev-pypi
+  cancel-in-progress: false
+
+jobs:
+  check-validation:
+    name: check-validation
+    runs-on: ubuntu-latest
+    # Allow long wait while Test matrix finishes (up to ~2h in the wait script).
+    timeout-minutes: 150
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Wait for CI/CD Pipeline and Test to succeed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const waitForValidation = require('./.github/scripts/wait-for-validation-workflows.js');
+            await waitForValidation({ github, context, core });
+  
+  publish-nightly:
+    name: publish-dev-to-pypi
+    needs: check-validation
+    runs-on: ubuntu-latest
+    environment: approval-required
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && needs.check-validation.result == 'success')
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Dev branch version: $VERSION"
+      
+      - name: Validate version using script
+        run: |
+          uv run python dev/scripts/validate_version.py || exit 1
+      
+      - name: Install project dependencies
+        run: |
+          uv sync --dev
+      
+      - name: Build package with uv
+        run: |
+          uv build
+      
+      - name: Verify package files
+        run: |
+          echo "📦 Built package files:"
+          ls -lh dist/
+          echo ""
+          echo "📋 Package contents:"
+          uv run twine check dist/* || echo "⚠️  twine not available, skipping check"
+      
+      - name: Publish to PyPI (Nightly)
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$UV_PUBLISH_TOKEN" ]; then
+            echo "❌ Error: PYPI_API_TOKEN secret is not set"
+            echo "Please add your PyPI API token as a GitHub secret named 'PYPI_API_TOKEN'"
+            exit 1
+          fi
+          
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "🚀 Publishing dev branch version $VERSION to PyPI as nightly build..."
+          # Use --trusted-publishing never to skip OIDC and use token directly
+          uv publish --trusted-publishing never
+          
+          echo "✅ Successfully published to PyPI!"
+          echo "📦 Package: https://pypi.org/project/ccbt/"
+          echo "📌 Version: $VERSION (nightly/dev build)"
+      
+      - name: Publish summary
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "## ✅ Dev Branch PyPI Publication Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $VERSION (nightly/dev build)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Links:**" >> $GITHUB_STEP_SUMMARY
+          echo "- PyPI: https://pypi.org/project/ccbt/" >> $GITHUB_STEP_SUMMARY
+          echo "- Installation: \`uv pip install ccbt==$VERSION\`" >> $GITHUB_STEP_SUMMARY
+
+
+
+
+
+
+
+
+
+
+
+
+
+

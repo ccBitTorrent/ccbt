@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout
@@ -91,8 +91,8 @@ class ProxyClient:
         self,
         proxy_host: str,
         proxy_port: int,
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
     ) -> str:
         """Build proxy URL for aiohttp.
 
@@ -115,9 +115,9 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
-        timeout: ClientTimeout | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
+        timeout: Optional[ClientTimeout] = None,
     ) -> aiohttp.BaseConnector:
         """Create aiohttp ProxyConnector for proxy connections.
 
@@ -187,10 +187,10 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
-        timeout: ClientTimeout | None = None,
-        headers: dict[str, str] | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
+        timeout: Optional[ClientTimeout] = None,
+        headers: Optional[dict[str, str]] = None,
     ) -> ClientSession:
         """Create aiohttp ClientSession configured for proxy.
 
@@ -216,7 +216,9 @@ class ProxyClient:
             timeout,
         )
 
-        session_headers = {"User-Agent": "ccBitTorrent/0.1.0"}
+        from ccbt.utils.version import get_user_agent
+
+        session_headers = {"User-Agent": get_user_agent()}
         if headers:
             session_headers.update(
                 headers
@@ -233,8 +235,8 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
     ) -> ClientSession:
         """Get or create connection pool for proxy.
 
@@ -275,8 +277,8 @@ class ProxyClient:
         proxy_host: str,
         proxy_port: int,
         proxy_type: str = "http",
-        proxy_username: str | None = None,
-        proxy_password: str | None = None,
+        proxy_username: Optional[str] = None,
+        proxy_password: Optional[str] = None,
         test_url: str = "http://httpbin.org/get",
     ) -> bool:
         """Test proxy connection.
@@ -330,15 +332,50 @@ class ProxyClient:
         async with self._pool_lock:
             for pool_key, session in list(self._pools.items()):
                 try:
-                    await session.close()
-                    logger.debug(
-                        "Closed proxy connection pool: %s", pool_key
-                    )  # pragma: no cover - tested but requires ProxyConnector
+                    if not session.closed:
+                        await session.close()
+                        # Note: Wait for session to fully close (especially on Windows)
+                        import sys
+
+                        if sys.platform == "win32":
+                            await asyncio.sleep(0.2)
+                        else:
+                            await asyncio.sleep(0.1)
+
+                        # Note: Close connector explicitly to ensure complete cleanup
+                        if hasattr(session, "connector") and session.connector:
+                            connector = session.connector
+                            if not connector.closed:
+                                try:
+                                    await connector.close()
+                                    if sys.platform == "win32":
+                                        await asyncio.sleep(
+                                            0.1
+                                        )  # Additional wait for connector cleanup on Windows
+                                except Exception as e:
+                                    logger.debug(
+                                        "Error closing connector for pool %s: %s",
+                                        pool_key,
+                                        e,
+                                    )
+
+                        logger.debug(
+                            "Closed proxy connection pool: %s", pool_key
+                        )  # pragma: no cover - tested but requires ProxyConnector
                 except Exception as e:
                     logger.warning(  # pragma: no cover - tested but requires ProxyConnector
                         "Error closing proxy pool %s: %s", pool_key, e
                     )  # pragma: no cover
-                del self._pools[pool_key]
+                    # Note: Even if close() fails, try to clean up connector
+                    try:
+                        if hasattr(session, "connector") and session.connector:
+                            connector = session.connector
+                            if not connector.closed:
+                                await connector.close()
+                    except Exception:
+                        pass
+                finally:
+                    del self._pools[pool_key]
 
     def get_stats(self) -> ProxyStats:
         """Get proxy connection statistics.
@@ -354,7 +391,7 @@ class ProxyClient:
         target_host: str,
         target_port: int,
         proxy_chain: list[dict[str, Any]],
-        timeout: float | None = None,
+        timeout: Optional[float] = None,
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Connect to target through a chain of proxies using HTTP CONNECT.
 
@@ -396,8 +433,8 @@ class ProxyClient:
         # Connect through chain
         # For now, only HTTP proxies support chaining via CONNECT
         # SOCKS proxies would need special handling
-        reader: asyncio.StreamReader | None = None
-        writer: asyncio.StreamWriter | None = None
+        reader: Optional[asyncio.StreamReader] = None
+        writer: Optional[asyncio.StreamWriter] = None
 
         for i, proxy in enumerate(proxy_chain):
             proxy_host = proxy["host"]
@@ -474,8 +511,8 @@ class ProxyClient:
         self,
         proxy_host: str,
         proxy_port: int,
-        _username: str | None,
-        _password: str | None,
+        _username: Optional[str],
+        _password: Optional[str],
         timeout: float,
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Establish TCP connection to proxy server.
@@ -511,8 +548,8 @@ class ProxyClient:
         writer: asyncio.StreamWriter,
         target_host: str,
         target_port: int,
-        username: str | None,
-        password: str | None,
+        username: Optional[str],
+        password: Optional[str],
     ) -> None:
         """Send HTTP CONNECT request through proxy.
 
@@ -539,7 +576,7 @@ class ProxyClient:
 
     async def _read_connect_response(
         self, reader: asyncio.StreamReader
-    ) -> asyncio.StreamReader | None:
+    ) -> Optional[asyncio.StreamReader]:
         """Read and parse HTTP CONNECT response.
 
         Args:

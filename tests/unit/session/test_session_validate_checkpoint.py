@@ -1,9 +1,10 @@
 """Tests for validate_checkpoint method."""
 
-import pytest
 import time
 
-from ccbt.models import TorrentCheckpoint, PieceState
+import pytest
+
+from ccbt.models import PieceState, TorrentCheckpoint
 
 
 @pytest.mark.asyncio

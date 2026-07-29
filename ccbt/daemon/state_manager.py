@@ -12,7 +12,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 try:
     import msgpack
@@ -33,10 +33,21 @@ from ccbt.utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _is_valid_workspace_id_hex(workspace_id_hex: str) -> bool:
+    """Return True when the workspace identifier is valid 32-byte hex."""
+    if len(workspace_id_hex) != 64:
+        return False
+    try:
+        bytes.fromhex(workspace_id_hex)
+    except ValueError:
+        return False
+    return True
+
+
 class StateManager:
     """Manages daemon state persistence using msgpack format."""
 
-    def __init__(self, state_dir: str | Path | None = None):
+    def __init__(self, state_dir: Optional[str | Path] = None):
         """Initialize state manager.
 
         Args:
@@ -44,7 +55,11 @@ class StateManager:
 
         """
         if state_dir is None:
-            state_dir = Path.home() / ".ccbt" / "daemon"
+            # Note: Use consistent path resolution helper to match daemon
+            from ccbt.daemon.daemon_manager import _get_daemon_home_dir
+
+            home_dir = _get_daemon_home_dir()
+            state_dir = home_dir / ".ccbt" / "daemon"
         elif isinstance(state_dir, str):
             state_dir = Path(state_dir).expanduser()
 
@@ -105,7 +120,7 @@ class StateManager:
                 logger.exception("Error saving state")
                 raise
 
-    async def load_state(self) -> DaemonState | None:
+    async def load_state(self) -> Optional[DaemonState]:
         """Load state from msgpack file.
 
         Returns:
@@ -189,8 +204,8 @@ class StateManager:
                 logger.debug("State loaded from %s", self.state_file)
                 return state
 
-            except Exception as e:
-                logger.exception("Error loading state: %s", e)
+            except Exception:
+                logger.exception("Error loading state")
                 # Try backup
                 if self.backup_file.exists():
                     try:
@@ -216,29 +231,96 @@ class StateManager:
             DaemonState instance
 
         """
-        # Get session status
-        status_dict = await session_manager.get_status()
-        global_stats = await session_manager.get_global_stats()
+        # Get session status (lightweight during shutdown to avoid lock contention).
+        shutting_down = getattr(session_manager, "is_shutting_down", lambda: False)()
+        if shutting_down:
+            status_dict = await session_manager.get_status_summaries_light()
+            global_stats = session_manager.derive_global_stats_from_summaries(
+                status_dict,
+            )
+        else:
+            status_dict = await session_manager.get_status_summaries_light()
+            global_stats = await session_manager.get_global_stats()
 
         # Build torrent states
         torrents = {}
         for info_hash_hex, status in status_dict.items():
+            # Extract per-torrent options and rate limits from session
+            per_torrent_options = None
+            rate_limits = None
+            num_peers = status.get("connected_peers", 0)
+            torrent_file_path = status.get("torrent_file_path")
+            magnet_uri = status.get("magnet_uri")
+            output_dir = status.get("output_dir", ".")
+            added_at = status.get("added_time", time.time())
+
+            try:
+                info_hash_bytes = bytes.fromhex(info_hash_hex)
+                lock_acquired = await session_manager.acquire_lock_timed(
+                    1.0 if shutting_down else 2.0,
+                )
+                if lock_acquired:
+                    try:
+                        torrent_session = session_manager.torrents.get(info_hash_bytes)
+                        if torrent_session:
+                            if not torrent_file_path:
+                                torrent_file_path = getattr(
+                                    torrent_session, "torrent_file_path", None
+                                )
+                            if not magnet_uri:
+                                magnet_uri = getattr(
+                                    torrent_session, "magnet_uri", None
+                                )
+                            session_output_dir = getattr(
+                                torrent_session, "output_dir", None
+                            )
+                            if session_output_dir:
+                                output_dir = str(session_output_dir)
+                            info_obj = getattr(torrent_session, "info", None)
+                            if info_obj is not None:
+                                added_at = float(
+                                    getattr(info_obj, "added_time", added_at)
+                                    or added_at
+                                )
+                            if (
+                                hasattr(torrent_session, "options")
+                                and torrent_session.options
+                            ):
+                                per_torrent_options = dict(torrent_session.options)
+                    finally:
+                        session_manager.release_manager_lock()
+
+                limits = session_manager.get_per_torrent_limits(info_hash_bytes)
+                if limits:
+                    rate_limits = {
+                        "down_kib": limits.get("down_kib", 0),
+                        "up_kib": limits.get("up_kib", 0),
+                    }
+            except Exception as e:
+                logger.debug(
+                    "Failed to extract per-torrent config for %s: %s",
+                    info_hash_hex[:12],
+                    e,
+                )
+
             torrents[info_hash_hex] = TorrentState(
                 info_hash=info_hash_hex,
                 name=status.get("name", "Unknown"),
                 status=status.get("status", "unknown"),
                 progress=status.get("progress", 0.0),
-                output_dir=status.get("output_dir", "."),
-                added_at=status.get("added_time", time.time()),
+                output_dir=output_dir,
+                added_at=added_at,
                 paused=status.get("status") == "paused",
                 download_rate=status.get("download_rate", 0.0),
                 upload_rate=status.get("upload_rate", 0.0),
-                num_peers=status.get("num_peers", 0),
+                num_peers=num_peers,
                 total_size=status.get("total_size", 0),
                 downloaded=status.get("downloaded", 0),
                 uploaded=status.get("uploaded", 0),
-                torrent_file_path=status.get("torrent_file_path"),
-                magnet_uri=status.get("magnet_uri"),
+                torrent_file_path=torrent_file_path,
+                magnet_uri=magnet_uri,
+                per_torrent_options=per_torrent_options,
+                rate_limits=rate_limits,
             )
 
         # Build session state
@@ -278,6 +360,25 @@ class StateManager:
             nat_mapped_ports=nat_mapped_ports,
         )
 
+        xet_folder_records: list[dict[str, Any]] = []
+        if hasattr(session_manager, "list_xet_folders"):
+            try:
+                xet_folder_records = await session_manager.list_xet_folders()
+            except Exception as e:
+                logger.debug("Failed to collect XET folders for state: %s", e)
+
+        # XET metadata registry: keys workspace_id_hex (str), values metadata bytes as hex (str)
+        xet_metadata_registry: dict[str, str] = {}
+        registry = getattr(session_manager, "_xet_metadata_registry", {})
+        if isinstance(registry, dict):
+            xet_metadata_registry = {
+                key: value.hex()
+                for key, value in registry.items()
+                if isinstance(key, str)
+                and _is_valid_workspace_id_hex(key)
+                and isinstance(value, bytes)
+            }
+
         # Create state
         return DaemonState(
             version=STATE_VERSION,
@@ -286,6 +387,10 @@ class StateManager:
             torrents=torrents,
             session=session,
             components=components,
+            metadata={
+                "xet_folders": xet_folder_records,
+                "xet_metadata_registry": xet_metadata_registry,
+            },
         )
 
     async def validate_state(self, state: DaemonState) -> bool:
@@ -345,7 +450,7 @@ class StateManager:
 
     async def _migrate_state(
         self, state: DaemonState, from_version: str
-    ) -> DaemonState | None:
+    ) -> Optional[DaemonState]:
         """Migrate state from an older version to current version.
 
         Args:
@@ -375,8 +480,8 @@ class StateManager:
             #     # Add new fields, transform data, etc.
 
             return state
-        except Exception as e:
-            logger.exception("Error migrating state: %s", e)
+        except Exception:
+            logger.exception("Error migrating state")
             return None
 
     async def export_to_json(self) -> Path:

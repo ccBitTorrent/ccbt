@@ -1,6 +1,6 @@
 # Requirements file for Read the Docs builds
 # This file lists all dependencies needed to build the documentation
-# Read the Docs will use this if .readthedocs.yaml specifies it
+# Read the Docs will use this if dev/.readthedocs.yaml specifies it
 #
 # Note: The project itself is installed separately via pip install -e .
 # which will install all runtime dependencies needed for mkdocstrings
@@ -9,13 +9,21 @@
 mkdocs>=1.6.1
 mkdocs-material>=9.6.22
 
-# MkDocs plugins
-mkdocs-git-revision-date-localized-plugin>=1.4.7
+# MkDocs plugins (matching plugins in dev/mkdocs.yml)
+# - search: built-in plugin, no package needed
+# - i18n: mkdocs-static-i18n
+mkdocs-static-i18n>=1.0.0
+# - mkdocstrings: mkdocstrings[python]
 mkdocstrings[python]>=0.26.1
-mkdocs-codeinclude-plugin>=0.2.1
+# - git-revision-date-localized: mkdocs-git-revision-date-localized-plugin
+mkdocs-git-revision-date-localized-plugin>=1.4.7
+# - codeinclude: removed (unused; see documentation-improvement-plan Section 1c)
+# - blog: mkdocs-blog-plugin
+mkdocs-blog-plugin>=0.25.0
+# - coverage: mkdocs-coverage
 mkdocs-coverage>=1.1.0
 
-# Markdown extensions
+# Markdown extensions (used by pymdownx extensions in mkdocs.yml)
 pymdown-extensions>=10.15
 
 # Additional dependencies that might be needed for documentation generation
@@ -24,4 +32,3 @@ pymdown-extensions>=10.15
 # to ensure they're available even if project install fails
 pydantic>=2.0.0
 pyyaml>=6.0.3
-

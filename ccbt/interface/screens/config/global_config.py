@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.containers import Container, Horizontal, Vertical
+    from textual.reactive import reactive
     from textual.widgets import (
         Button,
         DataTable,
@@ -24,6 +25,7 @@ else:
             Horizontal,
             Vertical,
         )
+        from textual.reactive import reactive
         from textual.widgets import (
             Button,
             DataTable,
@@ -41,6 +43,24 @@ else:
         Footer = None  # type: ignore[assignment, misc]
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
+
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
 
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
@@ -89,6 +109,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and populate sections."""
+        self._data_provider = getattr(self.app, "_data_provider", None)
         sections_table = self.query_one("#sections", DataTable)
         sections_table.add_columns("Section", "Description", "Modified")
 
@@ -139,7 +160,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
             )
         )
 
-    def _extract_row_key_value(self, row_key: Any) -> str | None:
+    def _extract_row_key_value(self, row_key: Any) -> Optional[str]:
         """Extract the actual value from a RowKey object.
 
         Args:
@@ -331,7 +352,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                     else:
                         await self._navigate_to_section()
                 except Exception as e:
-                    self.logger.exception("Error in action_select: %s", e)
+                    self.logger.exception("Error in action_select")
                     try:
                         info = self.query_one("#info", Static)
                         info.update(
@@ -354,7 +375,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                 # Fallback to manual navigation
                 await self._navigate_to_section()
         except Exception as e:
-            self.logger.exception("Error in action_select: %s", e)
+            self.logger.exception("Error in action_select")
             try:
                 info = self.query_one("#info", Static)
                 info.update(
@@ -372,7 +393,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             sections_table = self.query_one("#sections", DataTable)
         except Exception as e:
-            self.logger.exception("Failed to get sections table: %s", e)
+            self.logger.exception("Failed to get sections table")
             # Don't raise - show error to user instead
             try:
                 info = self.query_one("#info", Static)
@@ -462,7 +483,7 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                     GlobalConfigDetailScreen(self.session, section_name=section_name)
                 )
             except Exception as e:
-                self.logger.exception("Failed to push GlobalConfigDetailScreen: %s", e)
+                self.logger.exception("Failed to push GlobalConfigDetailScreen")
                 # Show error to user instead of crashing
                 try:
                     info = self.query_one("#info", Static)
@@ -490,13 +511,15 @@ class GlobalConfigMainScreen(GlobalConfigScreen):  # type: ignore[misc]
                         border_style="red",
                     )
                 )
-            except Exception as e:
-                self.logger.exception("Failed to show error message: %s", e)
+            except Exception:
+                self.logger.exception("Failed to show error message")
                 # Don't raise - prevent app crash
 
 
 class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
     """Detail screen for global configuration section with editable fields."""
+
+    system_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -528,7 +551,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         self.section_name = section_name
         self._editors: dict[str, ConfigValueEditor] = {}
         self._original_config: Any = None
-        self._section_schema: dict[str, Any] | None = None
+        self._section_schema: Optional[dict[str, Any]] = None
 
     def compose(self) -> ComposeResult:  # pragma: no cover
         """Compose the config detail screen."""
@@ -552,7 +575,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
             editors_container = self.query_one("#editors", Container)
             errors_widget = self.query_one("#errors", Static)
         except Exception as e:
-            self.logger.exception("Failed to query widgets in on_mount: %s", e)
+            self.logger.exception("Failed to query widgets in on_mount")
             # Try to show error on screen if possible - query again with error handling
             try:
                 # Query content again with proper error handling
@@ -573,7 +596,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
 
         try:
             # Get config - session.config is a ConfigManager, config.config is the Config model
-            # CRITICAL FIX: Add timeout to prevent hanging
+            # Note: Add timeout to prevent hanging
             try:
                 if hasattr(self.session, "config") and hasattr(
                     self.session.config, "config"
@@ -612,7 +635,7 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                     pass
                 return
         except Exception as e:
-            self.logger.exception("Failed to load config: %s", e)
+            self.logger.exception("Failed to load config")
             try:
                 content.update(
                     Panel(
@@ -783,8 +806,8 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 )
                 self._editors[opt_key] = editor
                 editors_container.mount(editor)
-            except Exception as e:
-                self.logger.exception("Failed to create editor for %s: %s", opt_key, e)
+            except Exception:
+                self.logger.exception("Failed to create editor for %s", opt_key)
                 # Continue with other editors instead of crashing
                 continue
 
@@ -798,14 +821,23 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         async def refresh_metrics_background():
             try:
                 await self._refresh_metrics()
-                # Set up auto-refresh for metrics after initial load
-                self.set_interval(3.0, self._refresh_metrics)
+                try:
+                    from ccbt.interface.terminal_dashboard import TerminalDashboard
+
+                    self.data_bind(system_metrics=TerminalDashboard.system_metrics)  # type: ignore[attr-defined]
+                except Exception as bind_exc:
+                    self.logger.debug("GlobalConfigDetailScreen data_bind skipped: %s", bind_exc)
             except Exception as e:
                 self.logger.debug("Could not refresh metrics: %s", e)
                 # Metrics are optional, don't crash if they fail
 
         # Start metrics refresh in background task
         asyncio.create_task(refresh_metrics_background())
+
+    def watch_system_metrics(self, value: dict[str, Any]) -> None:  # pragma: no cover
+        """Reactive watcher: refresh metrics section when App metrics update (F2.7.3)."""
+        if isinstance(value, dict) and value:
+            asyncio.create_task(self._refresh_metrics())
 
     def _check_unsaved_changes(self) -> bool:  # pragma: no cover
         """Check if there are unsaved changes by comparing current values with originals.
@@ -1055,9 +1087,11 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             from rich.table import Table
 
-            from ccbt.storage.disk_io_init import get_disk_io_manager
+            disk_io = getattr(self.session, "disk_io_manager", None)
+            if disk_io is None:
+                from ccbt.storage.disk_io_init import get_disk_io_manager
 
-            disk_io = get_disk_io_manager()
+                disk_io = get_disk_io_manager()
             if not disk_io or not disk_io._running:  # type: ignore[attr-defined]
                 widget.update("")
                 return
@@ -1104,8 +1138,14 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             from rich.table import Table
 
-            stats = await self.session.get_global_stats()
-            all_status = await self.session.get_status()
+            provider = getattr(self, "_data_provider", None)
+            if provider:
+                stats = await provider.get_global_stats()
+                torrents_list = await provider.list_torrents()
+                all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+            else:
+                stats = await self.session.get_global_stats()
+                all_status = await self.session.get_status()
 
             table = Table(
                 title="Network Quality Metrics",
@@ -1139,11 +1179,9 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 :10
             ]:  # Limit to first 10 torrents to avoid blocking
                 try:
-                    # Use timeout to prevent hanging
+                    get_peers = provider.get_torrent_peers(ih) if provider else self.session.get_peers_for_torrent(ih)
                     task = asyncio.create_task(
-                        asyncio.wait_for(
-                            self.session.get_peers_for_torrent(ih), timeout=1.0
-                        )
+                        asyncio.wait_for(get_peers, timeout=1.0)
                     )
                     peer_count_tasks.append(task)
                 except Exception:
@@ -1304,7 +1342,6 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
 
             from ccbt.config.config import get_config
             from ccbt.config.config_capabilities import SystemCapabilities
-            from ccbt.storage.disk_io_init import get_disk_io_manager
 
             # Start with disk I/O metrics
             await self._display_disk_io_metrics(widget)
@@ -1358,7 +1395,11 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
             )
 
             # Combine with I/O stats if available
-            disk_io = get_disk_io_manager()
+            disk_io = getattr(self.session, "disk_io_manager", None)
+            if disk_io is None:
+                from ccbt.storage.disk_io_init import get_disk_io_manager
+
+                disk_io = get_disk_io_manager()
             if disk_io and disk_io._running:  # type: ignore[attr-defined]
                 stats = disk_io.stats
                 cache_stats = disk_io.get_cache_stats()
@@ -1396,14 +1437,15 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
         try:
             from rich.table import Table
 
-            # Start with network quality metrics (with timeout to prevent blocking)
+            provider = getattr(self, "_data_provider", None)
             try:
-                stats = await asyncio.wait_for(
-                    self.session.get_global_stats(), timeout=2.0
-                )
-                all_status = await asyncio.wait_for(
-                    self.session.get_status(), timeout=2.0
-                )
+                if provider:
+                    stats = await asyncio.wait_for(provider.get_global_stats(), timeout=2.0)
+                    torrents_list = await asyncio.wait_for(provider.list_torrents(), timeout=2.0)
+                    all_status = {t.get("info_hash") or t.get("info_hash_hex", ""): t for t in torrents_list if t.get("info_hash") or t.get("info_hash_hex")}
+                else:
+                    stats = await asyncio.wait_for(self.session.get_global_stats(), timeout=2.0)
+                    all_status = await asyncio.wait_for(self.session.get_status(), timeout=2.0)
             except (asyncio.TimeoutError, Exception):
                 widget.update("")
                 return
@@ -1441,10 +1483,9 @@ class GlobalConfigDetailScreen(GlobalConfigScreen):  # type: ignore[misc]
                 :10
             ]:  # Limit to first 10 torrents to avoid blocking
                 try:
+                    get_peers = provider.get_torrent_peers(ih) if provider else self.session.get_peers_for_torrent(ih)
                     task = asyncio.create_task(
-                        asyncio.wait_for(
-                            self.session.get_peers_for_torrent(ih), timeout=1.0
-                        )
+                        asyncio.wait_for(get_peers, timeout=1.0)
                     )
                     peer_count_tasks.append(task)
                 except Exception:

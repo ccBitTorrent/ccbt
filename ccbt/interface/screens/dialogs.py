@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from ccbt.i18n import _
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ccbt.session.session import AsyncSessionManager
     from textual.screen import ComposeResult
+
+    from ccbt.session.session import AsyncSessionManager
 else:
     try:
         from textual.screen import ComposeResult
@@ -16,9 +22,18 @@ else:
         ComposeResult = None  # type: ignore[assignment, misc]
 
 try:
+    from textual import log
     from textual.containers import Container, Horizontal, Vertical
     from textual.screen import ModalScreen
-    from textual.widgets import Button, DataTable, Input, Select, Static, Switch
+    from textual.widgets import (
+        Button,
+        Checkbox,
+        DataTable,
+        Input,
+        Select,
+        Static,
+        Switch,
+    )
 except ImportError:
     # Fallback for when Textual is not available
     class ModalScreen:  # type: ignore[no-redef]
@@ -51,8 +66,219 @@ except ImportError:
     class Switch:  # type: ignore[no-redef]
         """Switch widget stub."""
 
+    class Checkbox:  # type: ignore[no-redef]
+        """Checkbox widget stub."""
+
 if TYPE_CHECKING:
     from ccbt.session.session import AsyncSessionManager
+
+
+class QuickAddTorrentScreen(ModalScreen):  # type: ignore[misc]
+    """Quick torrent addition screen with simple input.
+
+    Provides a simple UI for quickly adding torrents with default settings.
+    """
+
+    DEFAULT_CSS = """
+    QuickAddTorrentScreen {
+        align: center middle;
+    }
+    #dialog {
+        width: 70;
+        height: auto;
+        border: thick $primary;
+        background: $surface;
+    }
+    #content {
+        height: auto;
+        margin: 1;
+    }
+    #buttons {
+        height: 3;
+        align: center middle;
+        margin: 1;
+    }
+    """
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("escape", "cancel", _("Cancel")),
+        ("ctrl+s", "submit", _("Add")),
+    ]
+
+    def __init__(
+        self,
+        session: AsyncSessionManager,
+        dashboard: Any,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Initialize quick add torrent screen.
+
+        Args:
+            session: Async session manager
+            dashboard: TerminalDashboard instance for callbacks
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+        """
+        super().__init__(*args, **kwargs)
+        self.session = session
+        self.dashboard = dashboard
+        self.torrent_path: str = ""
+
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        """Compose the quick add torrent screen."""
+        with Container(id="dialog"):
+            with Container(id="content"):
+                yield Static(_("Quick Add Torrent"), id="title")
+                yield Static(_("Enter torrent file path or magnet link:"), id="label")
+                yield Input(placeholder=_("Path or magnet://..."), id="torrent-input")
+            with Horizontal(id="buttons"):
+                yield Button(_("Cancel"), id="cancel", variant="default")
+                yield Button(_("Add"), id="submit", variant="primary")
+
+    async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Mount the screen and focus input."""
+        try:
+            input_widget = self.query_one("#torrent-input", Input)  # type: ignore[attr-defined]
+            input_widget.focus()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    async def action_cancel(self) -> None:  # pragma: no cover
+        """Cancel and close screen."""
+        try:
+            self.dismiss(None)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.debug("Error dismissing QuickAddTorrentScreen: %s", e)
+            # Fallback: try to close the screen directly
+            try:
+                if hasattr(self, "app") and self.app:  # type: ignore[attr-defined]
+                    await self.app.pop_screen()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+    async def action_submit(self) -> None:  # pragma: no cover
+        """Submit and add torrent (non-blocking — avoids freezing the modal)."""
+        try:
+            input_widget = self.query_one("#torrent-input", Input)  # type: ignore[attr-defined]
+            path = input_widget.value.strip()  # type: ignore[attr-defined]
+
+            if not path:
+                return
+
+            from rich.text import Text
+
+            try:
+                label = self.query_one("#label", Static)  # type: ignore[attr-defined]
+                label.update(Text(_("Adding torrent..."), style="yellow"))  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            import asyncio
+
+            asyncio.create_task(self._submit_add(path))
+        except Exception as e:
+            logger.debug("Error in quick add: %s", e)
+
+    async def _submit_add(self, path: str) -> None:  # pragma: no cover
+        """Background add with timeout so a dead daemon cannot hang the UI."""
+        from rich.text import Text
+
+        timeout_seconds = 120.0 if path.startswith("magnet:") else 60.0
+        try:
+            if hasattr(self.dashboard, "_command_executor") and self.dashboard._command_executor:
+                result = await asyncio.wait_for(
+                    self.dashboard._command_executor.execute_command(
+                        "torrent.add",
+                        path_or_magnet=path,
+                        output_dir=None,
+                        resume=False,
+                    ),
+                    timeout=timeout_seconds,
+                )
+                if result and result.success:
+                    info_hash_hex = result.data.get("info_hash", "") if result.data else ""
+                    if info_hash_hex:
+                        logger.debug(
+                            "QuickAddTorrentScreen: Torrent added successfully, info_hash: %s",
+                            info_hash_hex,
+                        )
+                        dp = getattr(self.dashboard, "_data_provider", None)
+                        if dp is not None and hasattr(dp, "invalidate_cache"):
+                            dp.invalidate_cache("torrent_list")
+                            dp.invalidate_cache("global_stats")
+                            dp.invalidate_cache("ui_snapshot")
+                        if hasattr(self.dashboard, "_schedule_poll"):
+                            self.dashboard._schedule_poll()  # type: ignore[attr-defined]
+                        if hasattr(self.dashboard, "refresh_ui_bindings"):
+                            self.dashboard.call_later(self.dashboard.refresh_ui_bindings)  # type: ignore[attr-defined]
+                        self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
+                        return
+                    error_msg = "Error: Torrent added but no info hash returned"
+                else:
+                    error_msg = f"Error: {result.error if result else 'Failed to add torrent'}"
+            elif hasattr(self, "session") and self.session is not None:
+                info_hash_hex = await asyncio.wait_for(
+                    self.session.add_torrent(path, resume=False),
+                    timeout=timeout_seconds,
+                )
+                if info_hash_hex:
+                    self.dismiss(info_hash_hex)  # type: ignore[attr-defined]
+                    return
+                error_msg = "Error: Failed to add torrent"
+            else:
+                error_msg = "Error: No command executor or session available"
+        except asyncio.TimeoutError:
+            error_msg = (
+                f"Error: Timed out after {timeout_seconds:.0f}s. "
+                "Is the daemon running? Try: uv run btbt daemon status"
+            )
+        except Exception as e:
+            error_msg = f"Error: {e!s}"
+
+        try:
+            label = self.query_one("#label", Static)  # type: ignore[attr-defined]
+            label.update(Text(error_msg, style="red"))  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+        """Handle button presses.
+        
+        Note: Use call_later to avoid blocking UI thread.
+        Button press handlers should return immediately to prevent screen freezes.
+        """
+        if event.button.id == "cancel":
+            # Schedule cancel action asynchronously
+            async def cancel_async() -> None:
+                try:
+                    await self.action_cancel()
+                except Exception as e:
+                    logger.error("Error in async cancel: %s", e, exc_info=True)
+            asyncio.create_task(cancel_async())
+        elif event.button.id == "submit":
+            # Note: Schedule async work without blocking
+            # Create task immediately to prevent UI freeze
+            async def submit_async() -> None:
+                try:
+                    await self.action_submit()
+                except Exception as e:
+                    logger.error("Error in async submit: %s", e, exc_info=True)
+            # Create task immediately - this returns immediately and doesn't block
+            asyncio.create_task(submit_async())
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:  # pragma: no cover
+        """Submit when Enter is pressed in the torrent path field."""
+        if event.input.id != "torrent-input":
+            return
+
+        async def submit_async() -> None:
+            try:
+                await self.action_submit()
+            except Exception as e:
+                logger.error("Error in async input submit: %s", e, exc_info=True)
+
+        asyncio.create_task(submit_async())
 
 
 class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
@@ -124,10 +350,10 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     """
 
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "cancel", "Cancel"),
-        ("ctrl+n", "next", "Next Step"),
-        ("ctrl+p", "previous", "Previous Step"),
-        ("ctrl+s", "submit", "Submit"),
+        ("escape", "cancel", _("Cancel")),
+        ("ctrl+n", "next", _("Next Step")),
+        ("ctrl+p", "previous", _("Previous Step")),
+        ("ctrl+s", "submit", _("Submit")),
     ]
 
     def __init__(
@@ -211,7 +437,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         )
 
         # Torrent data (loaded after step 1)
-        self.torrent_data: dict[str, Any] | None = (
+        self.torrent_data: Optional[dict[str, Any]] = (
             None  # pragma: no cover - AddTorrentScreen initialization
         )
 
@@ -221,9 +447,9 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             yield Static("", id="step_indicator")
             yield Container(id="content")
             with Horizontal(id="buttons"):
-                yield Button("Cancel", id="cancel", variant="default")
-                yield Button("Previous", id="previous", variant="default")
-                yield Button("Next", id="next", variant="primary")
+                yield Button(_("Cancel"), id="cancel", variant="default")
+                yield Button(_("Previous"), id="previous", variant="default")
+                yield Button(_("Next"), id="next", variant="primary")
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the screen and show first step."""
@@ -238,7 +464,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             for i in range(1, self.total_steps + 1)
         ]
         indicator.update(
-            f"Step {self.current_step}/{self.total_steps}: {' → '.join(steps)}"
+            _("Step {current}/{total}: {steps}").format(
+                current=self.current_step,
+                total=self.total_steps,
+                steps=" → ".join(steps),
+            )
         )
 
         # Clear content
@@ -282,24 +512,26 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         next_btn = self.query_one("#next")
         prev_btn.disabled = self.current_step == 1  # type: ignore[attr-defined]
         if self.current_step == self.total_steps:
-            next_btn.label = "Submit"  # type: ignore[attr-defined]
+            next_btn.label = _("Submit")  # type: ignore[attr-defined]
         else:
-            next_btn.label = "Next"  # type: ignore[attr-defined]
+            next_btn.label = _("Next")  # type: ignore[attr-defined]
 
     async def _show_step1_torrent_input(
         self, content: Container
     ) -> None:  # pragma: no cover
         """Show step 1: Torrent path/magnet input."""
         input_widget = Input(
-            placeholder="Enter torrent file path or magnet link",
+            placeholder=_("Enter torrent file path or magnet link"),
             value=self.torrent_path,
             id="torrent_input",
         )
         help_widget = Static(  # type: ignore[assignment]
-            "Enter the path to a .torrent file or a magnet link:\n\n"
-            "Examples:\n"
-            "  /path/to/file.torrent\n"
-            "  magnet:?xt=urn:btih:...",
+            _(
+                "Enter the path to a .torrent file or a magnet link:\n\n"
+                "Examples:\n"
+                "  /path/to/file.torrent\n"
+                "  magnet:?xt=urn:btih:..."
+            ),
             id="step1_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -311,13 +543,15 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 2: Output directory selection."""
         input_widget = Input(
-            placeholder="Output directory (default: current directory)",
+            placeholder=_("Output directory (default: current directory)"),
             value=self.output_dir,
             id="output_dir_input",
         )
         help_widget = Static(  # type: ignore[assignment]
-            "Enter the directory where files should be downloaded:\n\n"
-            "Leave empty to use current directory.",
+            _(
+                "Enter the directory where files should be downloaded:\n\n"
+                "Leave empty to use current directory."
+            ),
             id="step2_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -330,7 +564,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         """Show step 3: File selection (if torrent has files)."""
         if not self.torrent_data:
             error_widget = Static(  # type: ignore[assignment]
-                "No torrent data loaded. Please go back to step 1.",
+                _("No torrent data loaded. Please go back to step 1."),
                 id="step3_error",
             )
             content.mount(error_widget)  # type: ignore[attr-defined]
@@ -340,7 +574,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         files = self.torrent_data.get("files", [])
         if not files:
             no_files_widget = Static(  # type: ignore[assignment]
-                "This torrent has no files to select.",
+                _("This torrent has no files to select."),
                 id="step3_no_files",
             )
             content.mount(no_files_widget)  # type: ignore[attr-defined]
@@ -348,7 +582,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
         # Create file selection table
         table = DataTable(id="file_selection_table", zebra_stripes=True)
-        table.add_columns("Select", "Priority", "Size", "File Name")
+        table.add_columns(_("Select"), _("Priority"), _("Size"), _("File Name"))
 
         for idx, file_info in enumerate(files):
             selected = "✓" if idx in self.files_selection else " "
@@ -359,16 +593,18 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
                 if size > 1024 * 1024
                 else f"{size / 1024:.2f} KB"
             )
-            name = file_info.get("path", f"File {idx}")
+            name = file_info.get("path", _("File {number}").format(number=idx))
 
             table.add_row(selected, priority, size_str, name, key=str(idx))
 
         help_widget = Static(  # type: ignore[assignment]
-            "Select files to download and set priorities:\n"
-            "  Space: Toggle selection\n"
-            "  P: Change priority\n"
-            "  A: Select all\n"
-            "  D: Deselect all",
+            _(
+                "Select files to download and set priorities:\n"
+                "  Space: Toggle selection\n"
+                "  P: Change priority\n"
+                "  A: Select all\n"
+                "  D: Deselect all"
+            ),
             id="step3_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -380,26 +616,25 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 4: Rate limit configuration."""
         down_input = Input(
-            placeholder="Download limit (KiB/s, 0 = unlimited)",
+            placeholder=_("Download limit (KiB/s, 0 = unlimited)"),
             value=str(self.download_limit) if self.download_limit > 0 else "",
             id="download_limit_input",
         )
         up_input = Input(
-            placeholder="Upload limit (KiB/s, 0 = unlimited)",
+            placeholder=_("Upload limit (KiB/s, 0 = unlimited)"),
             value=str(self.upload_limit) if self.upload_limit > 0 else "",
             id="upload_limit_input",
         )
 
         help_widget = Static(  # type: ignore[assignment]
-            "Set rate limits for this torrent:\n\n"
-            "Enter 0 or leave empty for unlimited.",
+            _("Set rate limits for this torrent:\n\nEnter 0 or leave empty for unlimited."),
             id="step4_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
-        down_label = Static("Download Limit (KiB/s):", id="down_label")  # type: ignore[assignment]
+        down_label = Static(_("Download Limit (KiB/s):"), id="down_label")  # type: ignore[assignment]
         content.mount(down_label)  # type: ignore[attr-defined]
         content.mount(down_input)  # type: ignore[attr-defined]
-        up_label = Static("Upload Limit (KiB/s):", id="up_label")  # type: ignore[assignment]
+        up_label = Static(_("Upload Limit (KiB/s):"), id="up_label")  # type: ignore[assignment]
         content.mount(up_label)  # type: ignore[attr-defined]
         content.mount(up_input)  # type: ignore[attr-defined]
         down_input.focus()
@@ -409,11 +644,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 5: Queue priority selection."""
         priority_options = [
-            ("Maximum", "maximum"),
-            ("High", "high"),
-            ("Normal", "normal"),
-            ("Low", "low"),
-            ("Paused", "paused"),
+            (_("Maximum"), "maximum"),
+            (_("High"), "high"),
+            (_("Normal"), "normal"),
+            (_("Low"), "low"),
+            (_("Paused"), "paused"),
         ]
 
         select_widget = Select(
@@ -423,8 +658,10 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         )
 
         help_widget = Static(  # type: ignore[assignment]
-            "Select queue priority for this torrent:\n\n"
-            "Higher priority torrents will be started first.",
+            _(
+                "Select queue priority for this torrent:\n\n"
+                "Higher priority torrents will be started first."
+            ),
             id="step5_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -441,12 +678,14 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
         )
 
         help_widget = Static(  # type: ignore[assignment]
-            "Resume from checkpoint if available:\n\n"
-            "If enabled, the download will resume from the last checkpoint.",
+            _(
+                "Resume from checkpoint if available:\n\n"
+                "If enabled, the download will resume from the last checkpoint."
+            ),
             id="step6_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined, arg-type]
-        resume_label = Static("Resume from checkpoint:", id="resume_label")  # type: ignore[assignment]
+        resume_label = Static(_("Resume from checkpoint:"), id="resume_label")  # type: ignore[assignment]
         resume_row = Horizontal(  # type: ignore[attr-defined]
             resume_label,
             switch_widget,
@@ -459,9 +698,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 7: Xet protocol options."""
         help_widget = Static(  # type: ignore[assignment]
-            "Xet Protocol Options:\n\n"
-            "Xet enables content-defined chunking and deduplication.\n"
-            "Useful for reducing storage when downloading similar content.",
+            _(
+                "Xet Protocol Options:\n\n"
+                "Xet enables content-defined chunking and deduplication.\n"
+                "Useful for reducing storage when downloading similar content."
+            ),
             id="step7_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -476,7 +717,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.enable_xet,
             id="enable_xet_switch",
         )
-        enable_xet_label = Static("Enable Xet Protocol:", id="enable_xet_label")  # type: ignore[assignment]
+        enable_xet_label = Static(_("Enable Xet Protocol:"), id="enable_xet_label")  # type: ignore[assignment]
         xet_row = Horizontal(  # type: ignore[attr-defined]
             enable_xet_label,
             enable_xet_switch,
@@ -488,7 +729,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.xet_deduplication,
             id="xet_deduplication_switch",
         )
-        dedup_label = Static("Enable Deduplication:", id="xet_deduplication_label")  # type: ignore[assignment]
+        dedup_label = Static(_("Enable Deduplication:"), id="xet_deduplication_label")  # type: ignore[assignment]
         dedup_row = Horizontal(  # type: ignore[attr-defined]
             dedup_label,
             dedup_switch,
@@ -501,7 +742,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             id="xet_p2p_cas_switch",
         )
         p2p_cas_label = Static(
-            "Enable P2P Content-Addressed Storage:", id="xet_p2p_cas_label"
+            _("Enable P2P Content-Addressed Storage:"), id="xet_p2p_cas_label"
         )  # type: ignore[assignment]
         p2p_cas_row = Horizontal(  # type: ignore[attr-defined]
             p2p_cas_label,
@@ -514,7 +755,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.xet_compression,
             id="xet_compression_switch",
         )
-        compression_label = Static("Enable Compression:", id="xet_compression_label")  # type: ignore[assignment]
+        compression_label = Static(_("Enable Compression:"), id="xet_compression_label")  # type: ignore[assignment]
         compression_row = Horizontal(  # type: ignore[attr-defined]
             compression_label,
             compression_switch,
@@ -523,7 +764,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
         # Add link to Xet management screen
         xet_help = Static(  # type: ignore[assignment]
-            "\n[dim]Press Ctrl+X in main dashboard to manage Xet settings globally[/dim]",
+            _("\n[dim]Press Ctrl+X in main dashboard to manage Xet settings globally[/dim]"),
             id="xet_help_link",
         )
         content.mount(xet_help)  # type: ignore[attr-defined]
@@ -537,9 +778,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 8: IPFS protocol options."""
         help_widget = Static(  # type: ignore[assignment]
-            "IPFS Protocol Options:\n\n"
-            "IPFS enables content-addressed storage and peer-to-peer content sharing.\n"
-            "Content can be accessed via IPFS CID after download.",
+            _(
+                "IPFS Protocol Options:\n\n"
+                "IPFS enables content-addressed storage and peer-to-peer content sharing.\n"
+                "Content can be accessed via IPFS CID after download."
+            ),
             id="step8_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -554,7 +797,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.enable_ipfs,
             id="enable_ipfs_switch",
         )
-        enable_ipfs_label = Static("Enable IPFS Protocol:", id="enable_ipfs_label")  # type: ignore[assignment]
+        enable_ipfs_label = Static(_("Enable IPFS Protocol:"), id="enable_ipfs_label")  # type: ignore[assignment]
         ipfs_row = Horizontal(  # type: ignore[attr-defined]
             enable_ipfs_label,
             enable_ipfs_switch,
@@ -566,7 +809,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.ipfs_pin,
             id="ipfs_pin_switch",
         )
-        pin_label = Static("Pin Content in IPFS:", id="ipfs_pin_label")  # type: ignore[assignment]
+        pin_label = Static(_("Pin Content in IPFS:"), id="ipfs_pin_label")  # type: ignore[assignment]
         pin_row = Horizontal(  # type: ignore[attr-defined]
             pin_label,
             pin_switch,
@@ -575,7 +818,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
         # Add link to IPFS management screen
         ipfs_help = Static(  # type: ignore[assignment]
-            "\n[dim]Press Ctrl+I in main dashboard to manage IPFS content and peers[/dim]",
+            _("\n[dim]Press Ctrl+I in main dashboard to manage IPFS content and peers[/dim]"),
             id="ipfs_help_link",
         )
         content.mount(ipfs_help)  # type: ignore[attr-defined]
@@ -588,9 +831,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 9: Scrape options."""
         help_widget = Static(  # type: ignore[assignment]
-            "Scrape Options:\n\n"
-            "Scraping queries tracker statistics (seeders, leechers, completed downloads).\n"
-            "Auto-scrape will automatically scrape the tracker when the torrent is added.",
+            _(
+                "Scrape Options:\n\n"
+                "Scraping queries tracker statistics (seeders, leechers, completed downloads).\n"
+                "Auto-scrape will automatically scrape the tracker when the torrent is added."
+            ),
             id="step9_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -600,7 +845,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.auto_scrape,
             id="auto_scrape_switch",
         )
-        auto_scrape_label = Static("Auto-scrape on Add:", id="auto_scrape_label")  # type: ignore[assignment]
+        auto_scrape_label = Static(_("Auto-scrape on Add:"), id="auto_scrape_label")  # type: ignore[assignment]
         auto_scrape_row = Horizontal(
             auto_scrape_label,
             auto_scrape_switch,
@@ -609,7 +854,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
         # Add link to scrape results screen
         scrape_help = Static(  # type: ignore[assignment]
-            "\n[dim]Press Ctrl+R in main dashboard to view scrape results[/dim]",
+            _("\n[dim]Press Ctrl+R in main dashboard to view scrape results[/dim]"),
             id="scrape_help_link",
         )
         content.mount(scrape_help)  # type: ignore[attr-defined]
@@ -622,9 +867,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 10: uTP protocol options."""
         help_widget = Static(  # type: ignore[assignment]
-            "uTP (uTorrent Transport Protocol) Options:\n\n"
-            "uTP provides reliable, ordered delivery over UDP with delay-based congestion control (BEP 29).\n"
-            "Useful for better performance on networks with high latency or packet loss.",
+            _(
+                "uTP (uTorrent Transport Protocol) Options:\n\n"
+                "uTP provides reliable, ordered delivery over UDP with delay-based congestion control (BEP 29).\n"
+                "Useful for better performance on networks with high latency or packet loss."
+            ),
             id="step10_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -634,7 +881,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             value=self.enable_utp,
             id="enable_utp_switch",
         )
-        enable_utp_label = Static("Enable uTP Transport:", id="enable_utp_label")  # type: ignore[assignment]
+        enable_utp_label = Static(_("Enable uTP Transport:"), id="enable_utp_label")  # type: ignore[assignment]
         utp_row = Horizontal(
             enable_utp_label,
             enable_utp_switch,
@@ -643,7 +890,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
         # Add link to uTP management screen
         utp_help = Static(  # type: ignore[assignment]
-            "\n[dim]Press Ctrl+U in main dashboard to configure uTP settings globally[/dim]",
+            _("\n[dim]Press Ctrl+U in main dashboard to configure uTP settings globally[/dim]"),
             id="utp_help_link",
         )
         content.mount(utp_help)  # type: ignore[attr-defined]
@@ -656,9 +903,11 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
     ) -> None:  # pragma: no cover
         """Show step 11: NAT traversal options."""
         help_widget = Static(  # type: ignore[assignment]
-            "NAT Traversal Options:\n\n"
-            "NAT traversal (NAT-PMP/UPnP) automatically maps ports on your router.\n"
-            "This allows peers to connect to you directly, improving download speeds.",
+            _(
+                "NAT Traversal Options:\n\n"
+                "NAT traversal (NAT-PMP/UPnP) automatically maps ports on your router.\n"
+                "This allows peers to connect to you directly, improving download speeds."
+            ),
             id="step11_help",
         )
         content.mount(help_widget)  # type: ignore[attr-defined]
@@ -669,7 +918,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             id="enable_nat_mapping_switch",
         )
         enable_nat_label = Static(
-            "Enable NAT Port Mapping:", id="enable_nat_mapping_label"
+            _("Enable NAT Port Mapping:"), id="enable_nat_mapping_label"
         )  # type: ignore[assignment]
         nat_row = Horizontal(
             enable_nat_label,
@@ -679,7 +928,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
         # Add link to NAT management screen
         nat_help = Static(  # type: ignore[assignment]
-            "\n[dim]Press Ctrl+N in main dashboard to manage NAT settings globally[/dim]",
+            _("\n[dim]Press Ctrl+N in main dashboard to manage NAT settings globally[/dim]"),
             id="nat_help_link",
         )
         content.mount(nat_help)  # type: ignore[attr-defined]
@@ -730,7 +979,7 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
             torrent_input = self.query_one("#torrent_input")
             path = torrent_input.value.strip()  # type: ignore[attr-defined]
             if not path:
-                self._show_error("Please enter a torrent path or magnet link")
+                self._show_error(_("Please enter a torrent path or magnet link"))
                 return False
             # Try to load torrent to validate (run in thread to avoid blocking UI)
             try:
@@ -744,10 +993,10 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
                         None, self.session.load_torrent, Path(path)
                     )
                 if not self.torrent_data:
-                    self._show_error(f"Could not load torrent: {path}")
+                    self._show_error(_("Could not load torrent: {path}").format(path=path))
                     return False
             except Exception as e:
-                self._show_error(f"Error loading torrent: {e}")
+                self._show_error(_("Error loading torrent: {error}").format(error=e))
                 return False
         return True
 
@@ -805,62 +1054,688 @@ class AddTorrentScreen(ModalScreen):  # type: ignore[misc]
 
     async def _submit(self) -> None:  # pragma: no cover
         """Submit the form and add torrent."""
-        # Build options dict
-        options: dict[str, Any] = {
-            "resume": self.resume,
-            "queue_priority": self.queue_priority,
-        }
+        try:
+            # Note: Validate torrent path before proceeding
+            if not self.torrent_path or not self.torrent_path.strip():
+                self._show_error(_("Please enter a torrent path or magnet link"))
+                return
 
-        # Add output directory (matching CLI --output option)
-        if self.output_dir and self.output_dir != ".":
-            options["output"] = self.output_dir
+            # Build options dict
+            options: dict[str, Any] = {
+                "resume": self.resume,
+                "queue_priority": self.queue_priority,
+            }
 
-        if self.download_limit > 0:
-            options["download_limit"] = self.download_limit
-        if self.upload_limit > 0:
-            options["upload_limit"] = self.upload_limit
-        if self.files_selection:
-            options["files_selection"] = self.files_selection
-        if self.file_priorities:
-            # Convert to list of "index=priority" strings
-            options["file_priorities"] = [
-                f"{idx}={pri}" for idx, pri in self.file_priorities.items()
-            ]
+            # Add output directory (matching CLI --output option)
+            if self.output_dir and self.output_dir != ".":
+                options["output"] = self.output_dir
 
-        # Add Xet options (matching CLI option names)
-        if self.enable_xet:
-            options["enable_xet"] = True
-        if self.xet_deduplication:
-            options["xet_deduplication_enabled"] = True
-        if self.xet_p2p_cas:
-            options["xet_use_p2p_cas"] = True
-        if self.xet_compression:
-            options["xet_compression_enabled"] = True
+            if self.download_limit > 0:
+                options["download_limit"] = self.download_limit
+            if self.upload_limit > 0:
+                options["upload_limit"] = self.upload_limit
+            if self.files_selection:
+                options["files_selection"] = self.files_selection
+            if self.file_priorities:
+                # Convert to list of "index=priority" strings
+                options["file_priorities"] = [
+                    f"{idx}={pri}" for idx, pri in self.file_priorities.items()
+                ]
 
-        # Add IPFS options (note: IPFS options are not in CLI download command,
-        # but we support them for consistency with advanced add screen)
-        if self.enable_ipfs:
-            options["enable_ipfs"] = True
-        if self.ipfs_pin:
-            options["ipfs_pin"] = True
+            # Add Xet options (matching CLI option names)
+            if self.enable_xet:
+                options["enable_xet"] = True
+            if self.xet_deduplication:
+                options["xet_deduplication_enabled"] = True
+            if self.xet_p2p_cas:
+                options["xet_use_p2p_cas"] = True
+            if self.xet_compression:
+                options["xet_compression_enabled"] = True
 
-        # Add Scrape options (note: auto_scrape is not a CLI option,
-        # but we support it for consistency)
-        if self.auto_scrape:
-            options["auto_scrape"] = True
+            # Add IPFS options (note: IPFS options are not in CLI download command,
+            # but we support them for consistency with advanced add screen)
+            if self.enable_ipfs:
+                options["enable_ipfs"] = True
+            if self.ipfs_pin:
+                options["ipfs_pin"] = True
 
-        # Add uTP options (matching CLI option names)
-        if self.enable_utp:
-            options["enable_utp"] = True
+            # Add Scrape options (note: auto_scrape is not a CLI option,
+            # but we support it for consistency)
+            if self.auto_scrape:
+                options["auto_scrape"] = True
 
-        # Add NAT options (matching CLI option names)
-        if self.enable_nat_mapping:
-            options["enable_nat_pmp"] = True
-            options["enable_upnp"] = True
-            options["auto_map_ports"] = True
+            # Add uTP options (matching CLI option names)
+            if self.enable_utp:
+                options["enable_utp"] = True
 
-        # Close screen and call dashboard's _process_add_torrent
-        self.dismiss(True)  # type: ignore[attr-defined]
-        # Access private method for internal dashboard functionality
-        await self.dashboard._process_add_torrent(self.torrent_path, options)
+            # Add NAT options (matching CLI option names)
+            if self.enable_nat_mapping:
+                options["enable_nat_pmp"] = True
+                options["enable_upnp"] = True
+                options["auto_map_ports"] = True
+
+            # Close screen and call dashboard's _process_add_torrent
+            self.dismiss(True)  # type: ignore[attr-defined]
+            # Access private method for internal dashboard functionality
+            # Note: Use asyncio.create_task to avoid blocking UI
+            import asyncio
+            asyncio.create_task(self.dashboard._process_add_torrent(self.torrent_path, options))
+        except Exception as e:
+            logger.error("Error submitting add torrent form: %s", e, exc_info=True)
+            self._show_error(_("Error submitting form: {error}").format(error=str(e)))
+
+
+class LoadingFileListScreen(ModalScreen):  # type: ignore[misc]
+    """Informative loading popup shown while fetching the file list for magnet file selection."""
+
+    DEFAULT_CSS = """
+    LoadingFileListScreen {
+        align: center middle;
+    }
+    LoadingFileListScreen #dialog {
+        width: 50;
+        border: thick $primary;
+        background: $surface;
+    }
+    LoadingFileListScreen #message {
+        width: 100%;
+        height: auto;
+        margin: 1 2;
+        text-align: center;
+    }
+    LoadingFileListScreen #detail {
+        width: 100%;
+        height: auto;
+        margin: 0 2 1 2;
+        text-align: center;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self, dashboard: Any, info_hash: str, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.dashboard = dashboard
+        self.info_hash = info_hash
+
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        with Container(id="dialog"), Vertical():
+            yield Static(_("Loading file list…"), id="message")
+            yield Static(
+                _("Fetching file list for selection. This may take a moment."),
+                id="detail",
+            )
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        asyncio.create_task(self._fetch_files())
+
+    async def _fetch_files(self) -> None:  # pragma: no cover
+        """Invalidate cache, wait, fetch file list; optional retry if empty. Then dismiss with result."""
+        files: list[Any] = []
+        try:
+            if hasattr(self.dashboard._data_provider, "invalidate_cache"):
+                self.dashboard._data_provider.invalidate_cache(
+                    f"torrent_files_{self.info_hash}"
+                )
+            await asyncio.sleep(0.5)
+            try:
+                files = await asyncio.wait_for(
+                    self.dashboard._data_provider.get_torrent_files(self.info_hash),
+                    timeout=10.0,
+                )
+            except (asyncio.TimeoutError, Exception):
+                files = []
+            if not files and hasattr(self.dashboard._data_provider, "invalidate_cache"):
+                self.dashboard._data_provider.invalidate_cache(
+                    f"torrent_files_{self.info_hash}"
+                )
+                await asyncio.sleep(0.5)
+                try:
+                    files = await asyncio.wait_for(
+                        self.dashboard._data_provider.get_torrent_files(
+                            self.info_hash
+                        ),
+                        timeout=10.0,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    pass
+        except Exception as e:
+            logger.debug("LoadingFileListScreen fetch error: %s", e)
+        self.dismiss(files if isinstance(files, list) else [])  # type: ignore[attr-defined]
+
+
+class MetadataLoadingScreen(ModalScreen):  # type: ignore[misc]
+    """Loading screen shown while fetching metadata for magnet links."""
+
+    DEFAULT_CSS = """
+    MetadataLoadingScreen {
+        align: center middle;
+    }
+    #dialog {
+        width: 70;
+        height: auto;
+        min-height: 20;
+        border: thick $primary;
+        background: $surface;
+    }
+    #content {
+        height: 1fr;
+        margin: 1;
+        align: center middle;
+    }
+    #spinner {
+        height: 3;
+        margin: 1;
+        text-align: center;
+    }
+    #status {
+        height: 3;
+        margin: 1;
+        text-align: center;
+    }
+    #progress {
+        height: 1;
+        margin: 1;
+    }
+    #info-message {
+        height: 2;
+        margin: 1;
+        text-align: center;
+        text-style: bold;
+        color: $accent;
+    }
+    #skip-message {
+        height: 2;
+        margin: 1;
+        text-align: center;
+        text-style: dim;
+    }
+    #meta-name, #meta-size, #meta-files {
+        height: 1;
+        margin: 0 1;
+        text-align: center;
+    }
+    """
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("escape", "cancel", _("Cancel")),
+    ]
+
+    def __init__(
+        self,
+        info_hash_hex: str,
+        session: AsyncSessionManager,
+        dashboard: Any,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Initialize metadata loading screen.
+
+        Args:
+            info_hash_hex: Torrent info hash in hex format
+            session: Async session manager
+            dashboard: TerminalDashboard instance
+        """
+        super().__init__(*args, **kwargs)
+        self.info_hash_hex = info_hash_hex
+        self.session = session
+        self.dashboard = dashboard
+        self._status_widget: Optional[Static] = None
+        self._progress_widget: Optional[Static] = None
+        self._check_task: Optional[Any] = None
+        self._cancelled = False
+        self._all_files_selected = True  # Default to selecting all files
+
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        """Compose the loading screen."""
+        with Container(id="dialog"):
+            with Vertical(id="content"):
+                yield Static(_("Fetching Metadata..."), id="spinner")
+                yield Static(_("Connecting to peers..."), id="status")
+                yield Static("", id="progress")
+                yield Static("", id="meta-name")
+                yield Static("", id="meta-size")
+                yield Static("", id="meta-files")
+                yield Static(_("Metadata is loading. File selection will appear when available."), id="info-message")
+                yield Static(_("You can skip waiting and continue with all files selected."), id="skip-message")
+                from textual.widgets import Checkbox
+                yield Checkbox(_("Skip waiting and select all files"), id="skip-checkbox", value=False)
+                with Horizontal(id="buttons"):
+                    yield Button(_("Skip & Continue"), id="skip-button", variant="default")
+                    yield Button(_("Wait for Metadata"), id="wait-button", variant="primary")
+                    yield Button(_("Cancel"), id="cancel-button", variant="error")
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Mount the loading screen and start event-based metadata monitoring."""
+        try:
+            self._status_widget = self.query_one("#status", Static)  # type: ignore[attr-defined]
+            self._progress_widget = self.query_one("#progress", Static)  # type: ignore[attr-defined]
+
+            # Note: Register event callback for METADATA_READY
+            # Handle both AsyncSessionManager and DaemonInterfaceAdapter
+            if hasattr(self.session, "register_event_callback"):
+                from ccbt.daemon.ipc_protocol import EventType
+
+                def on_metadata_ready(data: dict[str, Any]) -> None:
+                    """Handle metadata ready event."""
+                    event_info_hash = data.get("info_hash", "")
+                    if event_info_hash == self.info_hash_hex:
+                        # Note: Event callbacks may run in app thread or different thread
+                        # Use create_task which works in both cases (Textual handles thread safety)
+                        import asyncio
+                        asyncio.create_task(self._handle_metadata_ready())
+
+                self.session.register_event_callback(  # type: ignore[attr-defined]
+                    EventType.METADATA_READY,
+                    on_metadata_ready,
+                )
+            elif hasattr(self.session, "_event_callbacks"):
+                # DaemonInterfaceAdapter - register via adapter
+                from ccbt.daemon.ipc_protocol import EventType
+
+                def on_metadata_ready(data: dict[str, Any]) -> None:
+                    """Handle metadata ready event."""
+                    event_info_hash = data.get("info_hash", "")
+                    if event_info_hash == self.info_hash_hex:
+                        # Note: Event callbacks may run in app thread or different thread
+                        # Use create_task which works in both cases (Textual handles thread safety)
+                        import asyncio
+                        asyncio.create_task(self._handle_metadata_ready())
+
+                if EventType.METADATA_READY not in self.session._event_callbacks:  # type: ignore[attr-defined]
+                    self.session._event_callbacks[EventType.METADATA_READY] = []  # type: ignore[attr-defined]
+                self.session._event_callbacks[EventType.METADATA_READY].append(on_metadata_ready)  # type: ignore[attr-defined]
+
+            # Fallback: Use polling with reduced frequency (every 2 seconds instead of 1)
+            def schedule_check() -> None:
+                """Schedule async check."""
+                import asyncio
+                asyncio.create_task(self._check_metadata_status())
+
+            self._check_task = self.set_interval(2.0, schedule_check)  # type: ignore[attr-defined]
+
+            # Also check immediately
+            schedule_check()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error mounting metadata loading screen: %s", e)
+
+    def on_unmount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Unmount and stop checking."""
+        if self._check_task:
+            self._check_task.stop()  # type: ignore[attr-defined]
+            self._check_task = None
+
+    async def _handle_metadata_ready(self) -> None:  # pragma: no cover
+        """Handle metadata ready event - show file selection."""
+        if self._cancelled:
+            return
+
+        try:
+            # Stop polling
+            if self._check_task:
+                self._check_task.stop()  # type: ignore[attr-defined]
+                self._check_task = None
+
+            # Update status
+            if self._status_widget:
+                self._status_widget.update("Metadata loaded! Opening file selection...")
+
+            # Dismiss and show file selection
+            self.dismiss(True)  # type: ignore[attr-defined]
+            await self.dashboard.push_screen(  # type: ignore[attr-defined]
+                FileSelectionScreen(
+                    self.info_hash_hex,
+                    self.session,
+                    self.dashboard,
+                )
+            )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error handling metadata ready: %s", e)
+
+    def _format_size_ui(self, size_bytes: int) -> str:
+        """Format size for UI display."""
+        size = float(size_bytes)
+        for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} PiB"
+
+    async def _check_metadata_status(self) -> None:  # pragma: no cover
+        """Check if metadata has been loaded (fallback polling method)."""
+        if self._cancelled:
+            return
+
+        try:
+            # Check torrent status to see if metadata is available
+            status = await self.dashboard._data_provider.get_torrent_status(
+                self.info_hash_hex
+            )
+            files: list[Any] = []
+            try:
+                files = await self.dashboard._data_provider.get_torrent_files(
+                    self.info_hash_hex
+                )
+            except Exception:
+                pass
+
+            if files and len(files) > 0:
+                # Update name/size/file count when metadata is available
+                try:
+                    name_w = self.query_one("#meta-name", Static)  # type: ignore[attr-defined]
+                    size_w = self.query_one("#meta-size", Static)  # type: ignore[attr-defined]
+                    count_w = self.query_one("#meta-files", Static)  # type: ignore[attr-defined]
+                    _path_or_name = (
+                        files[0].get("path", files[0].get("name", ""))
+                        if files
+                        else ""
+                    )
+                    name = (status or {}).get("name") or _path_or_name
+                    if isinstance(name, str) and "/" in name:
+                        name = name.split("/")[0] or name
+                    total = sum(
+                        f.get("size", 0) if isinstance(f, dict) else getattr(f, "size", 0)
+                        for f in files
+                    )
+                    name_w.update(_("Name: {name}").format(name=name or "—"))  # type: ignore[attr-defined]
+                    size_w.update(_("Size: {size}").format(size=self._format_size_ui(total)))  # type: ignore[attr-defined]
+                    count_w.update(_("Files: {count}").format(count=len(files)))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+                # Metadata is loaded - automatically show file selection screen
+                await self._handle_metadata_ready()
+                return
+
+            if status and self._status_widget:
+                peers = status.get("connected_peers", 0)
+                self._status_widget.update(  # type: ignore[attr-defined]
+                    _("Connected to {peers} peer(s), fetching metadata...").format(
+                        peers=peers
+                    )
+                )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error checking metadata status: %s", e)
+            if self._status_widget:
+                self._status_widget.update(_("Error: {error}").format(error=e))  # type: ignore[attr-defined]
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+        """Handle button presses."""
+        if event.button.id == "skip-button":
+            # User wants to skip waiting and continue with all files selected
+            if self._check_task:
+                self._check_task.stop()  # type: ignore[attr-defined]
+            self._cancelled = True
+            # Dismiss and indicate all files should be selected
+            self.dismiss({"continue": True, "all_files": True, "skip": True})  # type: ignore[attr-defined]
+        elif event.button.id == "wait-button":
+            # User wants to wait for metadata - do nothing, just keep checking
+            if self._status_widget:
+                self._status_widget.update("Waiting for metadata... (File selection will appear automatically)")
+        elif event.button.id == "cancel-button":
+            self._cancelled = True
+            if self._check_task:
+                self._check_task.stop()  # type: ignore[attr-defined]
+            self.dismiss(False)  # type: ignore[attr-defined]
+
+    def action_cancel(self) -> None:  # pragma: no cover
+        """Cancel metadata fetching."""
+        self._cancelled = True
+        self.dismiss(False)  # type: ignore[attr-defined]
+
+
+class FileSelectionScreen(ModalScreen):  # type: ignore[misc]
+    """File selection screen shown after metadata is loaded."""
+
+    DEFAULT_CSS = """
+    FileSelectionScreen {
+        align: center middle;
+    }
+    #dialog {
+        width: 90;
+        height: 80%;
+        border: thick $primary;
+        background: $surface;
+    }
+    #title {
+        height: 3;
+        margin: 1;
+        text-align: center;
+    }
+    #file-table {
+        height: 1fr;
+        margin: 1;
+    }
+    #buttons {
+        height: 3;
+        margin: 1;
+        align: center middle;
+    }
+    """
+
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("escape", "cancel", _("Cancel")),
+        ("ctrl+s", "submit", _("Submit")),
+        ("ctrl+a", "select_all", _("Select All")),
+        ("ctrl+d", "deselect_all", _("Deselect All")),
+    ]
+
+    def __init__(
+        self,
+        info_hash_hex: str,
+        session: AsyncSessionManager,
+        dashboard: Any,
+        *args: Any,
+        **kwargs: Any,
+    ):
+        """Initialize file selection screen.
+
+        Args:
+            info_hash_hex: Torrent info hash in hex format
+            session: Async session manager
+            dashboard: TerminalDashboard instance
+        """
+        super().__init__(*args, **kwargs)
+        self.info_hash_hex = info_hash_hex
+        self.session = session
+        self.dashboard = dashboard
+        self._file_table: Optional[DataTable] = None
+        self._selected_files: set[int] = set()
+
+    def compose(self) -> ComposeResult:  # pragma: no cover
+        """Compose the file selection screen."""
+        with Container(id="dialog"):
+            yield Static(_("Select Files to Download"), id="title")
+            yield DataTable(id="file-table", zebra_stripes=True)
+            with Horizontal(id="buttons"):
+                yield Button(_("Select All"), id="select-all-button")
+                yield Button(_("Deselect All"), id="deselect-all-button")
+                yield Button(_("Submit"), id="submit-button", variant="primary")
+                yield Button(_("Cancel"), id="cancel-button", variant="error")
+
+    def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
+        """Mount the file selection screen and load files."""
+        try:
+            self._file_table = self.query_one("#file-table", DataTable)  # type: ignore[attr-defined]
+            if self._file_table:
+                self._file_table.add_columns(_("Select"), _("Name"), _("Size"), _("Priority"))
+                self._file_table.zebra_stripes = True
+
+            self.call_later(self._load_files)  # type: ignore[attr-defined]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error mounting file selection screen: %s", e)
+
+    async def _load_files(self) -> None:  # pragma: no cover
+        """Load files from torrent."""
+        if not self._file_table or not self.dashboard._data_provider:
+            return
+
+        try:
+            files = await self.dashboard._data_provider.get_torrent_files(self.info_hash_hex)
+
+            if not files:
+                return
+
+            # Clear existing rows
+            self._file_table.clear()
+
+            # Add files to table
+            for file_info in files:
+                file_index = file_info.get("index", -1)
+                file_name = file_info.get("name", "Unknown")
+                file_size = file_info.get("size", 0)
+                file_selected = file_info.get("selected", True)
+                file_priority = file_info.get("priority", "normal")
+
+                # Format size
+                if file_size > 1024 * 1024 * 1024:
+                    size_str = f"{file_size / (1024 * 1024 * 1024):.2f} GB"
+                elif file_size > 1024 * 1024:
+                    size_str = f"{file_size / (1024 * 1024):.2f} MB"
+                elif file_size > 1024:
+                    size_str = f"{file_size / 1024:.2f} KB"
+                else:
+                    size_str = f"{file_size} B"
+
+                # Add checkbox for selection
+                checkbox = "☑" if file_selected else "☐"
+
+                self._file_table.add_row(
+                    checkbox,
+                    file_name,
+                    size_str,
+                    file_priority,
+                    key=str(file_index),
+                )
+
+                if file_selected:
+                    self._selected_files.add(file_index)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error loading files: %s", e)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:  # pragma: no cover
+        """Handle file row selection (toggle checkbox)."""
+        if not self._file_table:
+            return
+
+        try:
+            row_key = str(event.row_key)
+            file_index = int(row_key)
+
+            # Toggle selection
+            if file_index in self._selected_files:
+                self._selected_files.discard(file_index)
+                checkbox = "☐"
+            else:
+                self._selected_files.add(file_index)
+                checkbox = "☑"
+
+            # Update row
+            row = self._file_table.get_row(row_key)  # type: ignore[attr-defined]
+            if row:
+                row[0] = checkbox  # Update checkbox column
+                self._file_table.update_cell(row_key, "Select", checkbox)  # type: ignore[attr-defined]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error toggling file selection: %s", e)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:  # pragma: no cover
+        """Handle button presses."""
+        if event.button.id == "select-all-button":
+            self.action_select_all()
+        elif event.button.id == "deselect-all-button":
+            self.action_deselect_all()
+        elif event.button.id == "submit-button":
+            self.action_submit()
+        elif event.button.id == "cancel-button":
+            self.action_cancel()
+
+    def action_select_all(self) -> None:  # pragma: no cover
+        """Select all files."""
+        if not self._file_table:
+            return
+
+        try:
+            # Get all file indices from table
+            for row_key in self._file_table.rows:  # type: ignore[attr-defined]
+                file_index = int(str(row_key))
+                self._selected_files.add(file_index)
+                self._file_table.update_cell(row_key, "Select", "☑")  # type: ignore[attr-defined]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error selecting all files: %s", e)
+
+    def action_deselect_all(self) -> None:  # pragma: no cover
+        """Deselect all files."""
+        if not self._file_table:
+            return
+
+        try:
+            # Clear selection
+            self._selected_files.clear()
+
+            # Update all rows
+            for row_key in self._file_table.rows:  # type: ignore[attr-defined]
+                self._file_table.update_cell(row_key, "Select", "☐")  # type: ignore[attr-defined]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error deselecting all files: %s", e)
+
+    async def action_submit(self) -> None:  # pragma: no cover
+        """Submit file selection."""
+        try:
+            # Apply file selection via executor
+            if hasattr(self.dashboard, "_command_executor") and self.dashboard._command_executor:
+                # First, deselect all files
+                try:
+                    # Get all files to deselect unselected ones
+                    files = await self.dashboard._data_provider.get_torrent_files(self.info_hash_hex)
+                    all_indices = [f.get("index", -1) for f in files if f.get("index", -1) >= 0]
+                    unselected_indices = [idx for idx in all_indices if idx not in self._selected_files]
+
+                    if unselected_indices:
+                        await self.dashboard._command_executor.execute_command(
+                            "file.deselect",
+                            info_hash=self.info_hash_hex,
+                            file_indices=unselected_indices,
+                        )
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug("Error deselecting files: %s", e)
+
+                # Then, select chosen files
+                file_indices = list(self._selected_files)
+                if file_indices:
+                    result = await self.dashboard._command_executor.execute_command(
+                        "file.select",
+                        info_hash=self.info_hash_hex,
+                        file_indices=file_indices,
+                    )
+                    if not result or not result.success:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning("Failed to set file selection: %s", result.error if result else "Unknown error")
+
+            self.dismiss(True)  # type: ignore[attr-defined]
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("Error submitting file selection: %s", e)
+            self.dismiss(True)  # type: ignore[attr-defined]
+
+    def action_cancel(self) -> None:  # pragma: no cover
+        """Cancel file selection."""
+        self.dismiss(False)  # type: ignore[attr-defined]
 

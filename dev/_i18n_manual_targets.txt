@@ -1,0 +1,1438 @@
+no
+1-2
+2-4
+4-8
+Add
+CPU
+Low
+MTU
+N/A
+URL
+uTP
+yes
+Dark
+Data
+Disk
+Fair
+Good
+High
+Idle
+Info
+Mode
+Next
+Nord
+Note
+Path
+Peer
+Poor
+Tier
+Time
+fell
+none
+rose
+Apply
+Close
+Count
+Depth
+Error
+Field
+Index
+Light
+Media
+Never
+Rates
+Seeds
+Theme
+Usage
+peers
+Action
+Cancel
+Choked
+Client
+Config
+Errors
+Events
+Exists
+Global
+Graphs
+Health
+Medium
+Memory
+Normal
+Option
+Paused
+Remove
+Scrape
+Select
+Speeds
+Submit
+Uptime
+Visual
+failed
+pieces
+↑ Rate
+↓ Rate
+  {msg}
+Actions
+Current
+Default
+Disk IO
+Dracula
+General
+Gruvbox
+IP:Port
+Latency
+Maximum
+Monokai
+Node ID
+Nodes/Q
+Peers/Q
+Quality
+Queries
+Rainbow
+Refresh
+Section
+Seeding
+Setting
+Stopped
+Storage
+Success
+Summary
+Torrent
+Tracker
+Upload:
+enabled
+unknown
+↑ Speed
+↓ Speed
+⏸ Pause
+Adaptive
+Advanced
+Ban Peer
+Controls
+DHT port
+Duration
+Inactive
+Language
+Max Rate
+Min Rate
+Modified
+One Dark
+Per-Peer
+Previous
+Required
+Resource
+Security
+Strategy
+Timeline
+Trackers
+Up (B/s)
+Uploaded
+disabled
+▶ Resume
+✓ Verify
+🔍 Rehash
+🗑 Remove
+Bandwidth
+Dark Mode
+Download:
+Excellent
+Full Path
+Next Step
+No access
+No pieces
+Open File
+Unlimited
+Uploading
+Warnings:
+succeeded
+unlimited
+Aggressive
+Catppuccin
+DHT Health
+DHT Status
+Down (B/s)
+Enable DHT
+IP Address
+Last Error
+Light Mode
+Monitoring
+Navigation
+Percentage
+SSL config
+Select All
+Set Limits
+Total Size
+WebTorrent
+uTP config
+  {warning}
+Add Tracker
+Avg Quality
+DHT Metrics
+Disable DHT
+Downloaders
+Downloading
+Enable IPv6
+GitHub Dark
+Global KPIs
+Help screen
+Info Hashes
+Last Update
+Listen port
+Not enabled
+Open Folder
+Open in VLC
+PEX: Failed
+Peers Found
+Per-Torrent
+Quick Stats
+Refresh PEX
+Save Config
+Share Ratio
+Stop Stream
+Tokyo Night
+Total Nodes
+Total Peers
+Unavailable
+Upload Rate
+XET Folders
+ACK Interval
+Active Nodes
+Add Torrents
+Availability
+Deselect All
+Disable IPv6
+Disk Workers
+File Browser
+Initial Rate
+Key Bindings
+Metrics port
+Name: {name}
+Peer Details
+Peer Quality
+Proxy config
+Queries Sent
+Scrape Count
+Select Theme
+Set Priority
+Share failed
+Shared Peers
+Size: {size}
+Start Stream
+Storage Type
+Swarm Health
+Textual Dark
+Upload Limit
+VS Code Dark
+Verify Files
+🔄 Reannounce
+  Key: {path}
+  ⚠ {warning}
+Announce sent
+Backup failed
+Closest Nodes
+Configuration
+Current Value
+Down/Up (B/s)
+Download Rate
+Enter path...
+File Explorer
+File {number}
+Global config
+Pause torrent
+Pieces Served
+Previous Step
+Routing Table
+Security scan
+Select folder
+Total Buckets
+Total Queries
+Total queries
+Tracker Error
+Unknown error
+not ready yet
+📊 Refresh PEX
+  Mode: {mode}
+  Type: {type}
+ +{count} more
+Add to Session
+Blacklist Size
+Bytes Uploaded
+Cancel Editing
+Choose a theme
+Copy Info Hash
+Create Torrent
+DHT Statistics
+Daemon stopped
+Download Limit
+Download Trend
+Enable metrics
+Error: {error}
+Files: {count}
+Folder: {name}
+Force Announce
+Media Playback
+NAT management
+Overall Health
+Peer Selection
+Peer not found
+Priority level
+Rehash: Failed
+Remove Tracker
+Restore failed
+Resume torrent
+Scrape results
+Scrape: Failed
+Select Section
+Solarized Dark
+Speed Category
+Swarm Timeline
+Theme: {theme}
+Torrent config
+Torrent paused
+Total Requests
+Total Uploaded
+Whitelist Size
+Xet management
+{key}: {value}
+📥 Export State
+1 MB (adaptive)
+5 ms (adaptive)
+Active Torrents
+Aggressive Mode
+Average Quality
+Avg Upload Rate
+Backup complete
+Bootstrap Nodes
+DHT timeout (s)
+Dashboard Error
+Default (Light)
+Deselect folder
+Disable metrics
+Do Not Download
+Export complete
+Failed Requests
+Hash Chunk Size
+IPFS management
+Max Retransmits
+Max Window Size
+Navigation menu
+Network quality
+Not initialized
+Peer Efficiency
+Per-torrent DHT
+Pieces Received
+Prefer over TCP
+Profile: {name}
+Request Latency
+Request Success
+Resuming {name}
+Security Events
+Select Language
+Select Priority
+Skip & Continue
+Solarized Light
+Torrent Control
+Torrent removed
+Torrent resumed
+{key} = {value}
+≥ 80% available
+  Total: {count}
+  UPnP: {status}
+(no options set)
+25–49% available
+50 ms (adaptive)
+50–79% available
+64 KB (adaptive)
+Alerts dashboard
+Block size (KiB)
+Bootstrap health
+Bytes Downloaded
+Cache Statistics
+Cleanup complete
+Disk I/O workers
+Listen interface
+Metrics explorer
+No file selected
+No peer selected
+No swarm samples
+Node Information
+Output Directory
+Output directory
+Output file path
+PEX interval (s)
+Peer timeout (s)
+Queries Received
+Restart Required
+Restore complete
+System resources
+Template: {name}
+Torrent Controls
+Torrent priority
+Total Downloaded
+Write-Back Cache
+Zero-state count
+[red]{msg}[/red]
+{hours:.1f}h ago
+  Failed: {count}
+  Paused: {count}
+  Queued: {count}
+0.1 ms (adaptive)
+512 KB (adaptive)
+Avg Download Rate
+Blacklisted Peers
+Enable monitoring
+Enter Tracker URL
+Historical trends
+Info hash: {hash}
+Initial send rate
+Last sample {age}
+Maximum send rate
+Minimum send rate
+No playable files
+No trackers found
+Non-Empty Buckets
+Peer Distribution
+Permission denied
+Protocols (Ctrl+)
+Quick Add Torrent
+Quick add torrent
+Recommended Value
+Select torrent...
+System Efficiency
+Toggle Dark/Light
+Torrents with DHT
+Total Connections
+Updated at {time}
+Utilization Range
+Wait for Metadata
+Whitelisted Peers
+uTP Configuration
+  DHT Port: {port}
+  External: {port}
+  Internal: {port}
+  TCP Port: {port}
+  XET port: {port}
+Availability Trend
+Connected Torrents
+Connection Timeout
+Creating backup...
+Editing: {section}
+Enable TCP_NODELAY
+Failed to map port
+File not found: %s
+Loading file list…
+Migration complete
+No files to select
+No peers available
+Overall Efficiency
+Prioritized Pieces
+Request Efficiency
+Responses Received
+Save Configuration
+Search torrents...
+Section: {section}
+Starting daemon...
+Stopping daemon...
+Use memory mapping
+Utilization Median
+[red]BLOCKED[/red]
+enable_dht={value}
+enable_pex={value}
+{minutes:.0f}m ago
+{seconds:.0f}s ago
+  External IP: {ip}
+  Folder key: {key}
+  NAT-PMP: {status}
+  Running: {status}
+  Serving: {status}
+ (checkpoint saved)
+Auto-scrape on Add:
+Blocked Connections
+Connection Duration
+DHT Health (daemon)
+DHT Health Hotspots
+DHT is not running.
+Description: {desc}
+Disable TCP_NODELAY
+Disk I/O Statistics
+Enable Compression:
+Enable UDP trackers
+Enable sparse files
+Failed to get peers
+Failed to get queue
+Failed to get stats
+Failed to set alias
+Network Performance
+No checkpoint found
+No tracker selected
+Path does not exist
+Path to config file
+Paused {info_hash}…
+Performance metrics
+Pipeline Rejections
+Rate Limits (KiB/s)
+Reputation Tracking
+Restart daemon now?
+Security Statistics
+Successful Requests
+Torrent Information
+Utilization Samples
+WebSocket error: %s
+Write Batch Timeout
+  Enabled: {enabled}
+  For peers: {value}
+  Protocol: {method}
+  Workspace ID: {id}
+... and {count} more
+Advanced add torrent
+Checkpoint directory
+DHT Aggressive Mode:
+Disable UDP trackers
+Disable sparse files
+Enable HTTP trackers
+Enable TCP transport
+Enable Xet Protocol:
+Enable uTP transport
+Encrypting backup...
+Estimated Read Speed
+Failed to list files
+Failed to start sync
+Failed to unmap port
+Fetching Metadata...
+Filter update failed
+Generate new API key
+Global Configuration
+MMap cache size (MB)
+Maximum global peers
+Metrics interval (s)
+No availability data
+No files to deselect
+No metrics available
+Path or magnet://...
+Pin Content in IPFS:
+Pipeline Utilization
+Protocol v2 (BEP 52)
+Quality Distribution
+Recommended Settings
+Resource Utilization
+Resumed {info_hash}…
+Security Scan Status
+Select File Priority
+Select playable file
+Socket Optimizations
+Top profile entries:
+Tracker added: {url}
+Unchoke interval (s)
+Validation error: %s
+aiortc not installed
+{type} Configuration
+  .tonic file: {path}
+  Certificate: {path}
+  Host: {host}:{port}
+  Successful: {count}
+Active Block Requests
+Auto-tuning warnings:
+Bandwidth Utilization
+Cached Scrape Results
+Compressing backup...
+Configuration options
+Configuration section
+Connection Efficiency
+Cross-Torrent Sharing
+Daemon is not running
+Disable HTTP trackers
+Disable TCP transport
+Disable checkpointing
+Disable uTP transport
+Enable Deduplication:
+Enable IPFS Protocol:
+Enable streaming mode
+Enable uTP Transport:
+Enabled (Not Started)
+Error starting daemon
+Error stopping daemon
+Estimated Write Speed
+Failed to add content
+Failed to add torrent
+Failed to add tracker
+Failed to clear queue
+Failed to get content
+Failed to pin content
+Failed to refresh PEX
+Failed to stop daemon
+Media stream started.
+Media stream stopped.
+Network Configuration
+No commands available
+Opened folder: {path}
+PEX refresh requested
+Pause failed: {error}
+Prioritize last piece
+Select a workflow tab
+Torrent File Explorer
+Total chunks: {count}
+Unknown operation: %s
+Upload Limit (KiB/s):
+[red]Error: {e}[/red]
+uTP transport enabled
+  Bypass list: {value}
+  Current mode: {mode}
+  Protocol: {protocol}
+  Username: {username}
+ (checkpoint restored)
+ (no checkpoint found)
+Available keys: {keys}
+Backup created: {path}
+Browse and add torrent
+Cache entries: {count}
+Command '{cmd}' failed
+Connecting to peers...
+Connection timeout (s)
+Diff written to {path}
+Disable io_uring usage
+Disable memory mapping
+Disk I/O Configuration
+Download force started
+Error creating torrent
+Failed to add to queue
+Failed to discover NAT
+Failed to list aliases
+Failed to remove alias
+Failed to select files
+Failed to set priority
+Failed to share folder
+Global Connected Peers
+Global Torrent Metrics
+Host for web interface
+Invalid peer selection
+List available locales
+Local Node Information
+No magnet URI provided
+Path is not a file: %s
+Port for web interface
+Prioritize first piece
+Remove failed: {error}
+Request pipeline depth
+Resume failed: {error}
+Start interactive mode
+Stuck Pieces Recovered
+Templates: {templates}
+Tracker removed: {url}
+Write batch size (KiB)
+Writing export file...
+[green]ALLOWED[/green]
+  DHT Enabled: {status}
+  For trackers: {value}
+  For webseeds: {value}
+  Source peers: {peers}
+  TCP Enabled: {status}
+  uTP Enabled: {status}
+Backup destination path
+Current chunks: {count}
+Download Limit (KiB/s):
+Error restarting daemon
+Error with profile: {e}
+Exporting checkpoint...
+Failed to get Xet stats
+Failed to get sync mode
+Failed to move in queue
+Failed to pause torrent
+Failed to set sync mode
+Failed to unpin content
+IP filter not available
+Loading peer metrics...
+Maximum UDP packet size
+Peer {ip}:{port} banned
+Restoring checkpoint...
+Resume from checkpoint:
+Resume from checkpoint?
+System recommendations:
+Top 10 Peers by Quality
+Torrent saved to {path}
+Write buffer size (KiB)
+Wrote catalog to {path}
+  - {hash}... ({format})
+  Auth failures: {count}
+  UDP Trackers: {status}
+ACK packet send interval
+Cache size: {size} bytes
+Current locale: {locale}
+Enable NAT Port Mapping:
+Endgame threshold (0..1)
+Error with template: {e}
+Expected info hash (hex)
+Failed to cancel torrent
+Failed to deselect files
+Failed to get NAT status
+Failed to list allowlist
+Failed to remove tracker
+Failed to resume torrent
+Failed to scrape torrent
+Invalid info hash format
+Loading configuration...
+Maximum block size (KiB)
+Minimum block size (KiB)
+Override IPC server port
+Piece Selection Strategy
+Schema written to {path}
+Select Files to Download
+Selected {count} file(s)
+Socket send buffer (KiB)
+Storage Device Detection
+✓ Configuration is valid
+  Active Seeding: {count}
+  HTTP Trackers: {status}
+  Output directory: {dir}
+  Supports DHT: {enabled}
+  Supports PEX: {enabled}
+  Supports XET: {enabled}
+  Total Sessions: {count}
+Blacklisted IPs ({count})
+Could not find file index
+Daemon stopped gracefully
+Failed to add magnet link
+Failed to get sync status
+Hash verification workers
+Invalid tracker selection
+Loading swarm timeline...
+Maximum peers per torrent
+No active stream to stop.
+Peer Quality Distribution
+Per-Torrent Configuration
+Profile applied to {path}
+Remaining chunks: {count}
+Retransmit Timeout Factor
+Torrent file is empty: %s
+Use --force to force kill
+[dim]Output: {path}[/dim]
+[dim]Source: {path}[/dim]
+  Auto Map Ports: {status}
+  Folder key: {folder_key}
+- [yellow]{issue}[/yellow]
+Configuration differences:
+Connection Pool Statistics
+Deselected {count} file(s)
+Enable protocol encryption
+Endgame duplicate requests
+Error creating backup: {e}
+Error listing backups: {e}
+Error reading PID file: %s
+Error stopping session: %s
+Expected type: {type_name}
+Failed to refresh mappings
+Failed to select all files
+Files in torrent {hash}...
+Folder not found: {folder}
+Invalid configuration: {e}
+Invalid magnet link format
+No locales directory found
+No recent security events.
+Profile '{name}' not found
+Recovery & Pipeline Health
+Rule not found: {ip_range}
+Template applied to {path}
+Torrent file not found: %s
+[red]Failed: {error}[/red]
+  Check interval: {seconds}
+  Default sync mode: {mode}
+  [cyan]Mode:[/cyan] {mode}
+Bootstrap recovery attempts
+Cache hit rate: {rate:.2f}%
+Disable protocol encryption
+Enable Protocol v2 (BEP 52)
+Error banning peer: {error}
+Error closing WebSocket: %s
+Error getting daemon status
+Error listing profiles: {e}
+Error loading info: {error}
+Error restoring backup: {e}
+Error with auto-tuning: {e}
+Failed to announce: {error}
+Failed to ban peer: {error}
+Failed to cleanup Xet cache
+Failed to reload checkpoint
+Failed to remove from queue
+Failed to set file priority
+Failed to stop media stream
+Global upload limit (KiB/s)
+Invalid IP address: {error}
+Maximum receive window size
+PEX refresh failed: {error}
+PID file is empty, removing
+Per-Torrent Quality Summary
+Save checkpoint after reset
+Saving torrent to {path}...
+Select a graph type to view
+Shutdown timeout in seconds
+Socket receive buffer (KiB)
+Template '{name}' not found
+Tracker scrape interval (s)
+[bold]Configuration:[/bold]
+[red]Proxy error: {e}[/red]
+[yellow]NAT Status[/yellow]
+  Total Connections: {count}
+  Total connections: {count}
+  [red]✗[/red] {url}: failed
+Available locales: {locales}
+DHT aggressive mode {status}
+Disable Protocol v2 (BEP 52)
+Duplicate Requests Prevented
+Enabled (Dependency Missing)
+Error closing IPC client: %s
+Error comparing configs: {e}
+Error generating schema: {e}
+Error listing templates: {e}
+Error processing file %s: %s
+Error waiting for daemon: %s
+Failed to deselect all files
+Failed to get Xet cache info
+Failed to pause all torrents
+Failed to refresh checkpoint
+Failed to start media stream
+Invalid IP range: {ip_range}
+Invalid info hash format: %s
+Not enabled in configuration
+Select a torrent insight tab
+Verification failed: {error}
+[dim]Trackers: {count}[/dim]
+[green]Cleared queue[/green]
+[green]Pinned:[/green] {cid}
+[green]✓[/green] Tonic link:
+{msg}
+
+PID file path: {path}
+
+[bold]IP Filter Test[/bold]
+
+  Active Downloading: {count}
+  Active Mappings: {mappings}
+  Protocol enabled: {enabled}
+Cannot auto-resume checkpoint
+Choose a playable file first.
+Connection timeout in seconds
+Error adding tracker: {error}
+Error in socket pre-check: %s
+Error opening folder: {error}
+Failed to enable io_uring: %s
+Failed to force start torrent
+Failed to generate tonic link
+Failed to get config: {error}
+Failed to launch media player
+Failed to list scrape results
+Failed to resume all torrents
+File Browser - Error: {error}
+Global download limit (KiB/s)
+Info hash copied to clipboard
+Metrics interval: {interval}s
+No per-torrent data available
+Peer quality - Error: {error}
+Per-Torrent Config: {hash}...
+Please select a torrent first
+Section '{section}' not found
+Select a section to configure
+Starting file verification...
+Swarm health - Error: {error}
+Tracker announce interval (s)
+[dim]Protocol: {method}[/dim]
+[dim]Web seeds: {count}[/dim]
+[green]Content pinned[/green]
+[green]Daemon stopped[/green]
+[green]Paused torrent[/green]
+[red]Metrics error: {e}[/red]
+uTP transport enabled via CLI
+
+[cyan]Status:[/cyan] {status}
+  Sessions with Peers: {count}
+Cleaning up old checkpoints...
+Command executor not available
+Compress backup (default: yes)
+Could not load torrent: {path}
+Error closing HTTP session: %s
+Error loading section: {error}
+Error loading torrent: {error}
+Error selecting files: {error}
+Error submitting form: {error}
+Error verifying files: {error}
+Error waiting for metadata: %s
+Eviction rate: {rate:.2f} /sec
+Failed to add tracker: {error}
+Failed to disable io_uring: %s
+Failed to generate .tonic file
+Failed to save config: {error}
+Found {count} potential issues
+Generating {format} torrent...
+Loading torrent information...
+No peer quality data available
+Output directory not available
+Socket manager not initialized
+Source path does not exist: %s
+Stopping daemon for restart...
+[green]Resumed torrent[/green]
+[green]Unpinned:[/green] {cid}
+[red]File not found: {e}[/red]
+uTP transport disabled via CLI
+
+[cyan]Proxy Statistics:[/cyan]
+
+[yellow]2. DHT Status[/yellow]
+  [cyan]IP Address:[/cyan] {ip}
+  [cyan]Status:[/cyan] {status}
+Error checking daemon stage: %s
+Error forcing announce: {error}
+Error getting daemon status: %s
+Error loading DHT data: {error}
+Error removing tracker: {error}
+Failed to add peer to allowlist
+Failed to add torrent to daemon
+Failed to select files: {error}
+Failed to set priority: {error}
+Maximum retransmission attempts
+No DHT metrics per torrent yet.
+No configuration file to backup
+No section selected for editing
+No significant events detected.
+Node information not available.
+Optimistic unchoke interval (s)
+Press Ctrl+C to stop the daemon
+Step {current}/{total}: {steps}
+Swarm timeline - Error: {error}
+Trend: {trend} ({delta:+.1f}pp)
+[blue]Running: {command}[/blue]
+[green]Checkpoint saved[/green]
+[green]Checkpoint valid[/green]
+[red]Dashboard error: {e}[/red]
+[red]Failed to set option[/red]
+
+[yellow]5. Listen Port[/yellow]
+  [cyan]Allowed:[/cyan] {allows}
+  [cyan]Blocked:[/cyan] {blocks}
+Configuration exported to {path}
+Configuration imported to {path}
+Configuration saved successfully
+Download paused{checkpoint_info}
+Error deselecting files: {error}
+Error getting DHT stats: {error}
+Error loading peer data: {error}
+Failed to calculate progress: %s
+Failed to parse config value: %s
+Generated new API key for daemon
+Invalid info hash format: {hash}
+Network quality - Error: {error}
+Profile config written to {path}
+Recent Security Events ({count})
+UI refresh interval: {interval}s
+WebSocket receive loop error: %s
+[bold]Aliases ({count}):[/bold]
+
+[green]External IP:[/green] {ip}
+[red]Daemon is not running[/red]
+[red]Validation error: {e}[/red]
+[red]✗ Port mapping failed[/red]
+
+[yellow]Session Summary[/yellow]
+  DHT Routing Table: {size} nodes
+  [cyan]Enabled:[/cyan] {enabled}
+  [cyan]Last Update:[/cyan] Never
+Cannot specify both --v2 and --v1
+Configuration saved successfully!
+Disk I/O metrics - Error: {error}
+Download resumed{checkpoint_info}
+Enable fsync after batched writes
+Encrypt backup with generated key
+Failed to copy info hash: {error}
+Failed to deselect files: {error}
+Failed to get per-peer rate limit
+Failed to remove tracker: {error}
+Failed to set DHT aggressive mode
+Failed to set per-peer rate limit
+Global Key Performance Indicators
+Per-Torrent Configuration: {name}
+ID
+IP
+No
+OK
+DHT
+ETA
+Key
+Xet
+Yes
+File
+Help
+IPFS
+Menu
+Name
+Port
+Quit
+Rule
+Size
+Type
+Files
+Pause
+Peers
+VALID
+Value
+Active
+Alerts
+Browse
+Failed
+Metric
+Pieces
+Resume
+Status
+Upload
+Confirm
+Details
+Enabled
+Explore
+History
+Network
+Private
+Running
+Seeders
+Session
+Unknown
+Welcome
+Disabled
+Download
+Leechers
+MIGRATED
+Priority
+Profiles
+Progress
+Property
+Selected
+Severity
+Status: 
+Torrents
+Completed
+Component
+Condition
+Connected
+File Name
+IP Filter
+Info Hash
+Quick Add
+Supported
+Templates
+Timestamp
+Capability
+Commands: 
+Downloaded
+SSL Config
+uTP Config
+Alert Rules
+Description
+Last Scrape
+Performance
+Advanced Add
+Port: {port}
+Proxy Config
+Upload Speed
+Yes (BEP 27)
+Active Alerts
+Global Config
+Not available
+Not supported
+PEX: {status}
+Security Scan
+{count} items
+Config Backups
+Download Speed
+NAT Management
+No alert rules
+No checkpoints
+Nodes: {count}
+Not configured
+Scrape Results
+Torrent Config
+Torrent Status
+Tracker Scrape
+Active: {count}
+Connected Peers
+Announce: Failed
+Download stopped
+No active alerts
+No backups found
+Rehash: {status}
+Scrape: {status}
+Seeders (Scrape)
+System Resources
+{count} features
+Leechers (Scrape)
+No cached results
+No torrent active
+Torrent not found
+Torrents: {count}
+Announce: {status}
+Completed (Scrape)
+Downloading {name}
+Interactive backup
+No peers connected
+Unknown subcommand
+[red]{error}[/red]
+{elapsed:.0f}s ago
+ | Private: {count}
+System Capabilities
+ccBitTorrent Status
+Key not found: {key}
+Rate limits disabled
+Usage: export <path>
+Usage: import <path>
+No profiles available
+Uptime: {uptime:.1f}s
+No templates available
+Rule not found: {name}
+Torrent file not found
+Usage: checkpoint list
+Configuration file path
+Operation not supported
+No config file to backup
+Select files to download
+Skip confirmation prompt
+Snapshot failed: {error}
+Snapshot saved to {path}
+
+[bold]Statistics:[/bold]
+No alert rules configured
+Unknown subcommand: {sub}
+[green]Rule added[/green]
+[red]Error: {error}[/red]
+Error reading scrape cache
+[green]Saved rules[/green]
+[yellow]{warning}[/yellow]
+
+[yellow]Commands:[/yellow]
+Invalid torrent file format
+System Capabilities Summary
+[green]Rule removed[/green]
+
+[bold]File selection[/bold]
+Section not found: {section}
+Usage: config get <key.path>
+Usage: restore <backup_file>
+[red]Invalid arguments[/red]
+ccBitTorrent Interactive CLI
+{msg}
+
+PID file path: {path}
+
+[bold]IP Filter Test[/bold]
+
+
+[bold]Runtime Status:[/bold]
+Rate limits set to 1024 KiB/s
+[cyan]Troubleshooting:[/cyan]
+[green]Rule evaluated[/green]
+[red]Invalid file index[/red]
+
+[cyan]Status:[/cyan] {status}
+Are you sure you want to quit?
+Create backup before migration
+
+[cyan]Proxy Statistics:[/cyan]
+
+[yellow]2. DHT Status[/yellow]
+Set value in global config file
+[red]Key not found: {key}[/red]
+[red]PyYAML not installed[/red]
+
+[yellow]5. Listen Port[/yellow]
+  • Verify NAT/firewall settings
+Usage: backup <info_hash> <dest>
+[bold]Aliases ({count}):[/bold]
+
+[red]Backup failed: {msgs}[/red]
+
+[yellow]Session Summary[/yellow]
+Prefer Protocol v2 when available
+Run in foreground (for debugging)
+Select a sub-tab to view torrents
+Skip waiting and select all files
+System resources - Error: {error}
+Template config written to {path}
+Torrent Controls - Error: {error}
+Use Protocol v2 only (disable v1)
+[bold]Xet Protocol Status[/bold]
+
+[cyan]Restarting daemon...[/cyan]
+[dim]See daemon log: {path}[/dim]
+[green]All files selected[/green]
+[green]Monitoring started[/green]
+[green]Selected all files[/green]
+[red]Daemon process crashed[/red]
+[red]Reload failed: {error}[/red]
+[red]Restore failed: {msgs}[/red]
+[red]Rule not found: {name}[/red]
+[yellow]No active alerts[/yellow]
+[yellow]{key} is not set[/yellow]
+
+[bold]Total: {count} rules[/bold]
+Configuration restored from {path}
+Configuration saved successfully.
+
+Error exporting configuration: {e}
+Error importing configuration: {e}
+Error loading DHT summary: {error}
+Error sending shutdown request: %s
+Failed to force start all torrents
+Invalid profile '{name}': {errors}
+Loading piece selection metrics...
+No torrent path or magnet provided
+No torrents with DHT activity yet.
+Peer distribution - Error: {error}
+PyYAML is required for YAML export
+PyYAML is required for YAML import
+PyYAML is required for YAML output
+Reconnect to peers from checkpoint
+Skip daemon restart even if needed
+Usage: config_diff <file1> <file2>
+Using IPC port %d from main config
+[bold]NAT Traversal Status[/bold]
+
+[cyan]Uptime:[/cyan] {uptime:.1f}s
+[dim]No active port mappings[/dim]
+[green]Connected to daemon[/green]
+[green]Selected file {idx}[/green]
+[green]✓[/green] Sync mode updated
+[red]Failed to reset options[/red]
+[red]Failed to stop: {error}[/red]
+[red]File not found: {error}[/red]
+[red]Invalid public key: {e}[/red]
+[yellow]Torrent not found[/yellow]
+uTP configuration updated: %s = %s
+✓ No system compatibility warnings
+
+[bold]Active Port Mappings:[/bold]
+
+[bold]IP Filter Statistics[/bold]
+
+
+[yellow]Connection Issues[/yellow]
+
+[yellow]TCP Server Status[/yellow]
+  Workspace sync enabled: {enabled}
+Download cancelled{checkpoint_info}
+Error receiving WebSocket event: %s
+Error saving configuration: {error}
+Failed to load global KPIs: {error}
+Failed to set all peers rate limits
+Invalid template '{name}': {errors}
+Model '{model}' not found in Config
+PyYAML is required for YAML patches
+Resume from checkpoint if available
+Set locale (e.g., 'en', 'es', 'fr')
+Set priority to {priority} for file
+Show checkpoints in specific format
+Stopping daemon... ({elapsed:.1f}s)
+Upload limit (KiB/s, 0 = unlimited)
+Use --confirm to proceed with reset
+[bold]Sync Mode for: {path}[/bold]
+
+[bold]Xet Cache Information[/bold]
+
+[green]Added to IPFS:[/green] {cid}
+[green]Deselected all files[/green]
+[green]Loaded {count} rules[/green]
+[red]Content not found: {cid}[/red]
+[red]Error getting peers: {e}[/red]
+[red]Error getting stats: {e}[/red]
+[red]Error setting alias: {e}[/red]
+[red]Error starting sync: {e}[/red]
+[red]Failed to create session[/red]
+[red]Failed to pause: {error}[/red]
+[red]Failed to restart daemon[/red]
+[red]Failed to run tests: {e}[/red]
+[red]Failed to test rule: {e}[/red]
+[red]Invalid IP address: {ip}[/red]
+[red]Invalid info hash format[/red]
+[red]Invalid magnet link: {e}[/red]
+[red]Specify CID or use --all[/red]
+[yellow]Allowlist is empty[/yellow]
+[yellow]No chunks in cache[/yellow]
+
+  [cyan]Matching Rules:[/cyan] None
+
+[green]Diagnostic complete![/green]
+Error loading configuration: {error}
+Error loading security data: {error}
+Error setting file priority: {error}
+Failed to collect custom metrics: %s
+Failed to collect system metrics: %s
+Failed to remove peer from allowlist
+Failed to sign WebSocket request: %s
+Force kill without graceful shutdown
+Maximum upload rate for this torrent
+Network Optimization Recommendations
+Only paths starting with this prefix
+Output format for the option catalog
+Performance metrics - Error: {error}
+Remove checkpoints older than N days
+Set value in project local ccbt.toml
+Start the stream before opening VLC.
+This torrent has no files to select.
+Usage: config set <key.path> <value>
+WebSocket error in batch receive: %s
+[bold green]Share link:[/bold green]
+[green]Cleared active alerts[/green]
+[green]Deselected all files.[/green]
+[green]✓[/green] Folder sync started
+[green]✓[/green] Set {key} = {value}
+[red]Error adding content: {e}[/red]
+[red]Error during cleanup: {e}[/red]
+[red]Error getting status: {e}[/red]
+[red]Error removing alias: {e}[/red]
+[red]Failed to cancel: {error}[/red]
+[red]Failed to load rules: {e}[/red]
+[red]Failed to resume: {error}[/red]
+[red]Failed to save rules: {e}[/red]
+[red]Failed to test proxy: {e}[/red]
+[red]Invalid file index: {idx}[/red]
+[red]Invalid info hash: {hash}[/red]
+[red]Torrent not found: {hash}[/red]
+
+[cyan]Connection Diagnostics[/cyan]
+
+ | Files: {selected}/{total} selected
+Cannot specify both --hybrid and --v1
+Cannot specify both --v2 and --hybrid
+Command '{cmd}' executed successfully
+Download limit (KiB/s, 0 = unlimited)
+Enable P2P Content-Addressed Storage:
+Enable io_uring on Linux if available
+Error loading torrent config: {error}
+Failed to register torrent in session
+Failed to set last piece priority: %s
+File must have .torrent extension: %s
+OK (dry-run — configuration is valid)
+Please fix parse errors before saving
+Press Enter to configure this section
+RTT multiplier for retransmit timeout
+Refresh tracker state from checkpoint
+Use --confirm to proceed with restore
+[bold]Sync Status for: {path}[/bold]
+
+[cyan]Torrents:[/cyan] {num_torrents}
+[cyan]Upload:[/cyan] {rate:.2f} KiB/s
+[green]Applied profile {name}[/green]
+[green]Backup created: {path}[/green]
+[green]Configuration reloaded[/green]
+[green]Configuration restored[/green]
+[green]Imported configuration[/green]
+[green]Wrote metrics to {out}[/green]
+[green]✓ Port mapping removed[/green]
+[green]✓[/green] Xet protocol enabled
+[red]Error getting content: {e}[/red]
+[red]Error listing aliases: {e}[/red]
+[red]Error pinning content: {e}[/red]
+[red]IP filter not initialized.[/red]
+[yellow]All files deselected[/yellow]
+[yellow]No checkpoints found[/yellow]
+[yellow]Proxy is not enabled[/yellow]
+{sub_tab} configuration - Coming soon
+
+[bold cyan]File Selection[/bold cyan]
+
+[yellow]4. NAT Configuration[/yellow]
+  [cyan]Total Checks:[/cyan] {matches}
+Could not get torrent output directory
+Enter torrent file path or magnet link
+Failed to load swarm timeline: {error}
+Failed to refresh media state: {error}
+Failed to set first piece priority: %s
+Invalid configuration after merge: {e}
+Magnet link must start with 'magnet:?'
+Maximum download rate for this torrent
+[green]Added alert rule {name}[/green]
+[green]Applied template {name}[/green]
+[green]Daemon status: {status}[/green]
+[green]Proxy has been disabled[/green]
+[green]Wrote metrics to {path}[/green]
+[green]✓[/green] uTP transport enabled
+[red]Error retrieving stats: {e}[/red]
+[red]IPFS protocol not available[/red]
+[red]Path does not exist: {path}[/red]
+[yellow]Deselected file {idx}[/yellow]
+[yellow]Torrent session ended[/yellow]
+✗ Configuration validation failed: {e}
+
+  [cyan]Matching Rules:[/cyan] {count}
+
+[green]✓ Discovery successful![/green]
+  [cyan]Last Update:[/cyan] {timestamp}
+  [red]✗[/red] Cannot bind to port: {e}
+  • Check if torrent has active seeders
+  • Ensure DHT is enabled: --enable-dht
+Availability {direction} {delta:+.1f}pp
+Count: {count}{file_info}{private_info}
+DHT is running but no active nodes yet.
+Daemon restarted successfully (PID: %d)
+Enable debug mode (deprecated, use -vv)
+Enter torrent file path or magnet link:
+Error checking if restart is needed: %s
+Failed to load DHT health data: {error}
+Failed to load filter file: {file_path}
+Failed to sign request with Ed25519: %s
+Graceful shutdown timeout, forcing stop
+Invalid info hash length in magnet link
+Parsing files and building file tree...
+Routing table statistics not available.
+[cyan]Download:[/cyan] {rate:.2f} KiB/s
+[green]Resuming from checkpoint[/green]
+[green]Selected {count} file(s)[/green]
+[green]Updated {key} to {value}[/green]
+[green]{message}: {config_file}[/green]
+[red]Error getting sync mode: {e}[/red]
+[red]Error listing allowlist: {e}[/red]
+[red]Error restarting daemon: {e}[/red]
+[red]Error setting sync mode: {e}[/red]
+[red]Error unpinning content: {e}[/red]
+[red]Failed to disable proxy: {e}[/red]
+[yellow]Failed to move torrent[/yellow]
+[yellow]No alert rules defined[/yellow]
+[yellow]Optimization cancelled[/yellow]
+[yellow]Select failed: {error}[/yellow]
+[yellow]Unknown command: {cmd}[/yellow]
+  [green]✓[/green] {url}: {loaded} rules
+Auto-tuned configuration saved to {path}
+Error reading PID file after retries: %s
+Failed to save configuration to file: %s
+Using daemon executor for magnet command
+[bold]Allowlist ({count} peers):[/bold]
+
+[bold]Discovering NAT devices...[/bold]
+
+[green]Active Protocol:[/green] {method}
+[green]Cleared all active alerts[/green]
+[green]Daemon stopped gracefully[/green]
+[green]Paused {count} torrent(s)[/green]
+[green]Removed alert rule {name}[/green]
+[green]Selected {count} file(s).[/green]
+[green]✓ Port mappings refreshed[/green]
+[green]✓[/green] Generated tonic?: link:
+[red]Directories not yet supported[/red]
+[red]Error getting SSL status: {e}[/red]
+[red]Error getting Xet status: {e}[/red]
+[red]Failed to add magnet: {error}[/red]
+[red]Failed to set config: {error}[/red]
+[red]Invalid torrent file: {error}[/red]
+[red]No stats found for CID: {cid}[/red]
+[red]✗[/red] Failed to start daemon: {e}
+[yellow]1. Network Connectivity[/yellow]
+[yellow]Fast resume is disabled[/yellow]
+[yellow]Starting fresh download[/yellow]
+[yellow]✓[/yellow] Xet protocol disabled
+http://tracker.example.com:8080/announce
+
+[bold cyan]Cache Statistics:[/bold cyan]
+
+[yellow]Shutting down daemon...[/yellow]
+  [cyan]IPv4 Ranges:[/cyan] {ipv4_ranges}
+  [cyan]IPv6 Ranges:[/cyan] {ipv6_ranges}
+  [cyan]Total Rules:[/cyan] {total_rules}
+  [green]✓[/green] TCP server initialized
+  [red]✗[/red] TCP server not initialized
+All {total} file(s) verified successfully
+Daemon is not running, nothing to restart
+Daemon is not running, restart not needed
+Failed to collect performance metrics: %s

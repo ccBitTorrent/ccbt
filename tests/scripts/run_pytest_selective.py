@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Wrapper script to run pytest with conditional markers based on changed files.
+"""Adaptive wrapper script to run pytest based on changed files and hook mode.
 
-This script is called by pre-commit and:
-1. Reads changed files from command line arguments (provided by pre-commit)
-2. Determines which pytest markers to use
-3. Runs pytest with the appropriate marker filter
-
-Usage:
-    python scripts/run_pytest_selective.py  # for fast pre-commit hook (selective tests)
-    python scripts/run_pytest_selective.py --coverage  # for selective tests with coverage
-    python scripts/run_pytest_selective.py --coverage --full-suite  # for pre-push (all tests with coverage)
+Modes:
+- pre-commit: selective and fast by default (path-targeted first, markers second)
+- pre-push: full suite with coverage gate
+- ci: reserved full validation mode
 """
 
 from __future__ import annotations
@@ -20,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from argparse import ArgumentParser
 from pathlib import Path
 
 # Configure logging
@@ -29,6 +25,18 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 logger = logging.getLogger(__name__)
+
+HIGH_RISK_FILES = {
+    "ccbt/config/config.py",
+    "ccbt/session/session.py",
+    "tests/conftest.py",
+    "dev/pytest.ini",
+    "dev/pre-commit-config.yaml",
+    "dev/.codecov.yml",
+    "tests/scripts/run_pytest_selective.py",
+    "tests/scripts/get_test_markers.py",
+    "tests/scripts/get_dependent_modules.py",
+}
 
 
 def get_test_markers(file_paths: list[str]) -> str:
@@ -142,7 +150,46 @@ def _cleanup_corrupted_coverage_files() -> None:
             )
 
 
-def run_pytest(markers: str, coverage: bool = False) -> int:
+def _candidate_targets_for_ccbt_file(path: str) -> list[str]:
+    """Derive candidate test targets from a changed ccbt file."""
+    normalized = path.replace("\\", "/")
+    if not normalized.startswith("ccbt/") or not normalized.endswith(".py"):
+        return []
+
+    parts = normalized.split("/")
+    if len(parts) < 3:
+        return []
+
+    domain = parts[1]
+    targets: list[str] = []
+    unit_dir = Path("tests/unit") / domain
+    integration_dir = Path("tests/integration")
+    if unit_dir.exists():
+        targets.append(unit_dir.as_posix())
+    # Keep integration broadening minimal and deterministic.
+    if integration_dir.exists():
+        targets.append(integration_dir.as_posix())
+    return targets
+
+
+def _classify_files(file_paths: list[str]) -> tuple[list[str], list[str], list[str]]:
+    changed_tests = [p for p in file_paths if p.startswith("tests/") and p.endswith(".py")]
+    changed_ccbt = [p for p in file_paths if p.startswith("ccbt/") and p.endswith(".py")]
+    other = [p for p in file_paths if p not in changed_tests and p not in changed_ccbt]
+    return changed_tests, changed_ccbt, other
+
+
+def _is_high_risk(file_paths: list[str]) -> bool:
+    normalized = {p.replace("\\", "/") for p in file_paths}
+    return any(p in HIGH_RISK_FILES for p in normalized)
+
+
+def run_pytest(
+    markers: str,
+    coverage: bool = False,
+    targets: list[str] | None = None,
+    allow_no_tests_collected: bool = False,
+) -> int:
     """Run pytest with optional marker filter and coverage.
 
     Args:
@@ -152,7 +199,19 @@ def run_pytest(markers: str, coverage: bool = False) -> int:
     Returns:
         Exit code from pytest
     """
-    cmd = [sys.executable, "-m", "pytest", "-c", "dev/pytest.ini", "tests/"]
+    cmd = [sys.executable, "-m", "pytest", "-c", "dev/pytest.ini"]
+    if targets:
+        cmd.extend(targets)
+    else:
+        cmd.append("tests/")
+
+    # ALWAYS enforce timeouts - explicit timeout flags override any config
+    # Default: 600s (10 minutes) per test, thread-based timeout method
+    # This prevents tests from hanging indefinitely
+    cmd.extend([
+        "--timeout=600",
+        "--timeout-method=thread",
+    ])
 
     # Add marker filter if specified
     if markers:
@@ -206,6 +265,8 @@ def run_pytest(markers: str, coverage: bool = False) -> int:
         ])
 
     logger.info(f"Running: {' '.join(cmd)}")
+    env = os.environ.copy()
+    env.setdefault("CCBT_TEST_MODE", "1")
     # Set timeout: longer for full suite, reasonable for selective tests
     # Since pytest.ini already has per-test timeout (600s), overall timeout is mainly
     # to catch pytest hangs, not individual test failures
@@ -218,7 +279,7 @@ def run_pytest(markers: str, coverage: bool = False) -> int:
     
     try:
         # Use subprocess.run instead of call to support timeout
-        result = subprocess.run(cmd, timeout=timeout_seconds, check=False)
+        result = subprocess.run(cmd, timeout=timeout_seconds, check=False, env=env)
         exit_code = result.returncode
         
         # Handle KeyboardInterrupt gracefully - if tests passed, allow it
@@ -276,6 +337,9 @@ def run_pytest(markers: str, coverage: bool = False) -> int:
                     logger.warning(f"Could not parse junit.xml: {e}")
             # If we can't verify, preserve the interrupt exit code
             return exit_code
+        if exit_code == 5 and allow_no_tests_collected:
+            logger.info("No tests collected for selective target; treating as success")
+            return 0
         return exit_code
     except subprocess.TimeoutExpired:
         logger.error(f"Test execution timed out after {timeout_seconds}s")
@@ -301,42 +365,80 @@ def run_pytest(markers: str, coverage: bool = False) -> int:
 
 def main() -> int:
     """Main entry point."""
-    # Check for flags (remove them from args)
-    coverage = "--coverage" in sys.argv or "-c" in sys.argv
-    full_suite = "--full-suite" in sys.argv or "--full" in sys.argv
-    sys.argv = [
-        arg for arg in sys.argv
-        if arg not in ("--coverage", "-c", "--full-suite", "--full")
-    ]
+    parser = ArgumentParser()
+    parser.add_argument("--coverage", "-c", action="store_true")
+    parser.add_argument("--full-suite", "--full", action="store_true", dest="full_suite")
+    parser.add_argument(
+        "--mode",
+        choices=("pre-commit", "pre-push", "ci"),
+        default="pre-commit",
+    )
+    parser.add_argument("files", nargs="*")
+    args = parser.parse_args()
 
-    # When --full-suite is specified with coverage, run ALL tests (pre-push behavior)
-    # Otherwise, run selective tests even with coverage (pre-commit behavior)
-    if coverage and full_suite:
-        logger.info("Coverage mode with full suite: running all tests for accurate coverage metrics")
-        markers = ""
-    else:
-        # With pass_filenames: true, pre-commit passes filenames as command line args
-        # Filter out only Python files from ccbt/ directory
-        file_paths = [
-            arg
-            for arg in sys.argv[1:]
-            if arg.endswith(".py") and arg.startswith("ccbt/")
-        ]
+    file_paths = [p.replace("\\", "/") for p in args.files if p.endswith(".py")]
 
-        if file_paths:
-            logger.info(f"Processing {len(file_paths)} changed file(s): {file_paths}")
-            markers = get_test_markers(file_paths)
-            if coverage:
-                logger.info(f"Coverage mode with selective tests: running tests with markers: {markers or 'all'}")
-        else:
-            # No ccbt/ Python files changed - skip tests to avoid running full suite unnecessarily
-            # This prevents timeouts and failures when committing non-code changes (config, docs, etc.)
-            logger.info("No ccbt/ Python files changed - skipping tests (commit allowed)")
-            return 0
+    # Explicit full suite behavior for pre-push/ci or forced full-suite.
+    if args.mode in {"pre-push", "ci"} or (args.coverage and args.full_suite):
+        logger.info("Full-suite mode active: running all tests")
+        return run_pytest("", coverage=args.coverage, targets=["tests/"])
 
-    # Run pytest
-    exit_code = run_pytest(markers, coverage=coverage)
-    return exit_code
+    if not file_paths:
+        logger.info("No Python files changed - skipping tests")
+        return 0
+
+    changed_tests, changed_ccbt, _ = _classify_files(file_paths)
+    high_risk = _is_high_risk(file_paths)
+
+    # 1) Path/nodeid-first: changed tests run directly.
+    if changed_tests and not high_risk:
+        logger.info("Running changed test files directly")
+        return run_pytest(
+            "",
+            coverage=args.coverage,
+            targets=changed_tests,
+            allow_no_tests_collected=True,
+        )
+
+    # 2) Source-change impact to candidate test paths.
+    targets: list[str] = []
+    for source_file in changed_ccbt:
+        for target in _candidate_targets_for_ccbt_file(source_file):
+            if target not in targets:
+                targets.append(target)
+
+    # 3) Deterministic escalation: high risk -> broader suite.
+    if high_risk:
+        logger.info("High-risk change detected; running broad suite")
+        broad_targets = ["tests/unit", "tests/integration"]
+        return run_pytest(
+            "",
+            coverage=args.coverage,
+            targets=broad_targets,
+            allow_no_tests_collected=False,
+        )
+
+    # 4) Marker fallback/risk amplifier.
+    markers = get_test_markers(changed_ccbt) if changed_ccbt else ""
+    if markers:
+        logger.info(f"Selective marker expression: {markers}")
+
+    if targets:
+        return run_pytest(
+            markers,
+            coverage=args.coverage,
+            targets=targets,
+            allow_no_tests_collected=True,
+        )
+
+    # 5) Low-confidence fallback: conservative unit run instead of full suite.
+    logger.info("Low-confidence selection; running unit suite fallback")
+    return run_pytest(
+        markers,
+        coverage=args.coverage,
+        targets=["tests/unit"],
+        allow_no_tests_collected=True,
+    )
 
 
 if __name__ == "__main__":

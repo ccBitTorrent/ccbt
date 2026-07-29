@@ -9,7 +9,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from ccbt.discovery.dht import DHTNode
@@ -125,7 +125,7 @@ def encode_multi_address_node(node: DHTNode) -> dict[bytes, Any]:
 
 
 def decode_multi_address_node(
-    data: dict[bytes, Any], node_id: bytes | None = None
+    data: dict[bytes, Any], node_id: Optional[bytes] = None
 ) -> DHTNode:
     """Decode a DHT node from response with multiple addresses (BEP 45).
 
@@ -286,8 +286,8 @@ def validate_address(ip: str, port: int) -> bool:
 async def discover_node_addresses(
     known_addresses: list[tuple[str, int]],
     max_results: int = 4,
-    node_id: bytes | None = None,
-    dht_client: Any | None = None,
+    node_id: Optional[bytes] = None,
+    dht_client: Optional[Any] = None,
 ) -> list[tuple[str, int]]:
     """Discover additional addresses for a node from known addresses and DHT.
 

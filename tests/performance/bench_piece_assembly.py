@@ -12,6 +12,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -21,7 +22,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from ccbt.storage.file_assembler import AsyncFileAssembler  # type: ignore
 from ccbt.models import TorrentInfo, FileInfo  # type: ignore
@@ -77,10 +78,13 @@ def run_case(piece_size: int, block_size: int) -> Result:
 	with tempfile.TemporaryDirectory() as td:
 		assembler = AsyncFileAssembler(torrent_data, td)
 		async def _go() -> None:
-			async with assembler:
-				await assembler.write_piece_to_file(0, view)
-		import asyncio as _asyncio
-		_asyncio.run(_go())
+			try:
+				async with assembler:
+					await assembler.write_piece_to_file(0, view)
+			except asyncio.CancelledError:
+				# Suppress CancelledError during cleanup - this is expected when DiskIOManager stops
+				pass
+		asyncio.run(_go())
 
 	elapsed = time.perf_counter() - start
 	tput = piece_size / max(elapsed, 1e-9)
@@ -104,7 +108,7 @@ def write_json(output_dir: Path, benchmark: str, config_name: str, results: List
 	return path
 
 
-def derive_config_name(config_file: str | None) -> str:
+def derive_config_name(config_file: Optional[str]) -> str:
 	if not config_file:
 		return "default"
 	stem = Path(config_file).stem
@@ -127,6 +131,12 @@ def main() -> int:
 		default="auto",
 		help="Recording mode: auto (detect), pre-commit, commit, both, or none",
 	)
+	parser.add_argument(
+		"--json-out",
+		type=Path,
+		default=None,
+		help="Write benchmark JSON artifact to this path (or directory) for CI",
+	)
 
 	args = parser.parse_args()
 	piece_sizes = [parse_size(s) for s in args.piece_sizes]
@@ -142,7 +152,13 @@ def main() -> int:
 	cfg = derive_config_name(args.config_file)
 	
 	# Record benchmark results using new system
-	per_run_path, timeseries_path = record_benchmark_results("piece_assembly", cfg, results, args.record_mode)
+	per_run_path, timeseries_path = record_benchmark_results(
+		"piece_assembly",
+		cfg,
+		results,
+		args.record_mode,
+		json_out=args.json_out,
+	)
 	
 	# Backward compatibility
 	out = write_json(output_dir, "piece_assembly", cfg, results)

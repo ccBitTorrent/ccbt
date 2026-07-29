@@ -6,14 +6,19 @@ Target: Cover lines 409-447 (message handling error path).
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer]
 
 from ccbt.models import MessageType
+from ccbt.peer.async_peer_connection import (
+    AsyncPeerConnection,
+    AsyncPeerConnectionManager,
+    ConnectionState,
+    PeerConnectionError,
+)
 from ccbt.peer.peer import (
     BitfieldMessage,
     ChokeMessage,
@@ -22,12 +27,6 @@ from ccbt.peer.peer import (
     PeerInfo,
     PieceMessage,
 )
-from ccbt.peer.async_peer_connection import (
-    AsyncPeerConnectionManager,
-    AsyncPeerConnection,
-    ConnectionState,
-)
-from ccbt.peer.peer_connection import PeerConnection
 
 
 @pytest.fixture
@@ -57,24 +56,24 @@ async def test_handle_message_exception_triggers_error_handler(
 ):
     """Test message handling exception triggers error handler (lines 442-449)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     # Create a connection
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
     connection.last_activity = 0.0
-    
+
     # Create a message that will trigger an exception
     message = BitfieldMessage(b"\x00" * 13)
-    
+
     # Mock message handler to raise exception
     error_raised = False
     async def failing_handler(conn, msg):
         nonlocal error_raised
         error_raised = True
         raise RuntimeError("Handler error")
-    
+
     manager.message_handlers = {MessageType.BITFIELD: failing_handler}
-    
+
     # Mock _handle_connection_error
     handle_error_called = False
     async def mock_handle_error(conn, msg):
@@ -82,12 +81,12 @@ async def test_handle_message_exception_triggers_error_handler(
         handle_error_called = True
         assert conn is connection
         assert "Handler error" in msg
-    
+
     manager._handle_connection_error = mock_handle_error
-    
+
     # Call _handle_message
     await manager._handle_message(connection, message)
-    
+
     # Verify error handler was called
     assert error_raised
     assert handle_error_called
@@ -99,27 +98,27 @@ async def test_handle_message_bitfield_handler_exception(
 ):
     """Test bitfield message handler exception (lines 418, 442-449)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
-    
+
     message = BitfieldMessage(b"\x00" * 13)
-    
+
     # Make bitfield handler raise exception
     async def failing_bitfield_handler(conn, msg):
         raise ValueError("Bitfield processing failed")
-    
+
     manager.message_handlers = {MessageType.BITFIELD: failing_bitfield_handler}
-    
+
     error_handler_called = False
     async def mock_error_handler(conn, msg):
         nonlocal error_handler_called
         error_handler_called = True
-    
+
     manager._handle_connection_error = mock_error_handler
-    
+
     await manager._handle_message(connection, message)
-    
+
     assert error_handler_called
 
 
@@ -129,27 +128,27 @@ async def test_handle_message_have_handler_exception(
 ):
     """Test have message handler exception (lines 420, 442-449)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
-    
+
     message = HaveMessage(piece_index=5)
-    
+
     # Make have handler raise exception
     async def failing_have_handler(conn, msg):
         raise RuntimeError("Have handler error")
-    
+
     manager.message_handlers = {MessageType.HAVE: failing_have_handler}
-    
+
     error_handler_called = False
     async def mock_error_handler(conn, msg):
         nonlocal error_handler_called
         error_handler_called = True
-    
+
     manager._handle_connection_error = mock_error_handler
-    
+
     await manager._handle_message(connection, message)
-    
+
     assert error_handler_called
 
 
@@ -159,27 +158,27 @@ async def test_handle_message_piece_handler_exception(
 ):
     """Test piece message handler exception (lines 422, 442-449)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
-    
+
     message = PieceMessage(piece_index=0, begin=0, block=b"data")
-    
+
     # Make piece handler raise exception
     async def failing_piece_handler(conn, msg):
-        raise IOError("Piece handler error")
-    
+        raise OSError("Piece handler error")
+
     manager.message_handlers = {MessageType.PIECE: failing_piece_handler}
-    
+
     error_handler_called = False
     async def mock_error_handler(conn, msg):
         nonlocal error_handler_called
         error_handler_called = True
-    
+
     manager._handle_connection_error = mock_error_handler
-    
+
     await manager._handle_message(connection, message)
-    
+
     assert error_handler_called
 
 
@@ -189,39 +188,39 @@ async def test_handle_message_state_change_exception(
 ):
     """Test state change message exception triggers error handler (lines 424-440, 442-449)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
     connection.peer_choking = False
-    
+
     # Use ChokeMessage which triggers state change path
     message = ChokeMessage()
-    
+
     # Mock logger to raise exception during debug call (line 436-440)
     # This tests the exception path even when state changes succeed
     logger_exception = False
-    
+
     original_debug = manager.logger.debug
-    
+
     def failing_debug(*args, **kwargs):
         nonlocal logger_exception
         logger_exception = True
         raise RuntimeError("Logger error")
-    
+
     manager.logger.debug = failing_debug
-    
+
     error_handler_called = False
     async def mock_error_handler(conn, msg):
         nonlocal error_handler_called
         error_handler_called = True
-    
+
     manager._handle_connection_error = mock_error_handler
-    
+
     await manager._handle_message(connection, message)
-    
+
     # Either logger exception or state change exception should trigger error handler
     assert error_handler_called or logger_exception
-    
+
     # Restore logger
     manager.logger.debug = original_debug
 
@@ -232,15 +231,15 @@ async def test_handle_message_updates_activity(
 ):
     """Test message handling updates connection activity (line 411)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
     # Note: AsyncPeerConnection doesn't track last_activity the same way
     # This test verifies message handling works, not activity tracking
     message = KeepAliveMessage()
-    
+
     await manager._handle_message(connection, message)
-    
+
     # Message handling should complete without error
     assert connection.state in [ConnectionState.ACTIVE, ConnectionState.CHOKED]
 
@@ -251,19 +250,56 @@ async def test_handle_message_keepalive_updates_activity_only(
 ):
     """Test keepalive message only updates activity (lines 414-416)."""
     manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
-    
+
     connection = AsyncPeerConnection(peer_info, mock_torrent_data)
     connection.state = ConnectionState.ACTIVE
     # Note: AsyncPeerConnection doesn't track last_activity the same way
-    
+
     message = KeepAliveMessage()
-    
+
     # Keepalive doesn't use message handlers, so handlers won't be called
     # This is verified by checking that handlers are not accessed for keepalive
-    
+
     await manager._handle_message(connection, message)
-    
+
     # Keepalive is handled in the first branch, not in message handlers
     # Message handling should complete without error
     assert connection.state in [ConnectionState.ACTIVE, ConnectionState.CHOKED]
+
+
+def test_classify_handshake_incomplete_peer_connection_error(
+    mock_torrent_data, mock_piece_manager
+):
+    """Handshake incomplete reads map to handshake_incomplete taxonomy."""
+    manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
+    exc = PeerConnectionError("Handshake incomplete read during prefix: expected 28 bytes, got 3")
+    reason, temp, tclass, transient = manager._classify_connection_failure_detailed(exc)
+    assert reason == "handshake_incomplete"
+    assert temp is True
+    assert tclass == "handshake_incomplete"
+
+
+def test_classify_info_hash_mismatch(mock_torrent_data, mock_piece_manager):
+    """Info hash mismatch maps to protocol_mismatch (non-retry friendly)."""
+    manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
+    exc = PeerConnectionError(
+        "Info hash mismatch: expected aabbccdd, got 00112233"
+    )
+    reason, temp, tclass, transient = manager._classify_connection_failure_detailed(exc)
+    assert reason == "protocol_mismatch"
+    assert temp is False
+    assert tclass == "protocol_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_reconnection_loop_exits_when_process_shutting_down(
+    mock_torrent_data, mock_piece_manager
+):
+    """_reconnection_loop should stop quickly when global shutdown is signaled."""
+    manager = AsyncPeerConnectionManager(mock_torrent_data, mock_piece_manager)
+    manager._running = True
+    with patch(
+        "ccbt.peer.async_peer_connection.is_shutting_down", return_value=True
+    ):
+        await manager._reconnection_loop()
 

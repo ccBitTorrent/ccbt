@@ -1,16 +1,11 @@
 """Tests for session manager new methods and integration."""
 
-import asyncio
-import time
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 pytestmark = [pytest.mark.integration]
 
-from ccbt.session.session import AsyncSessionManager, AsyncTorrentSession
-from ccbt.models import PeerInfo, TorrentInfo
-from ccbt.utils.metrics import Metrics
+from ccbt.session.session import AsyncSessionManager
 
 
 class TestSessionManagerIntegration:
@@ -25,7 +20,8 @@ class TestSessionManagerIntegration:
         """Test session manager initialization."""
         assert self.session_manager.output_dir == "."
         assert isinstance(self.session_manager.torrents, dict)
-        assert isinstance(self.session_manager.metrics, Metrics)
+        # Metrics are lazy-initialized in start(), not __init__()
+        assert self.session_manager.metrics is None
 
     @pytest.mark.asyncio
     async def test_add_peers_to_download_manager(self):
@@ -33,7 +29,7 @@ class TestSessionManagerIntegration:
         # Test getting peers for a torrent
         info_hash = "test_info_hash"
         peers = await self.session_manager.get_peers_for_torrent(info_hash)
-        
+
         # Should return a list (even if empty)
         assert isinstance(peers, list)
 
@@ -42,7 +38,7 @@ class TestSessionManagerIntegration:
         """Test getting peers for non-existent torrent."""
         info_hash = "nonexistent_torrent"
         peers = await self.session_manager.get_peers_for_torrent(info_hash)
-        
+
         # Should return empty list for non-existent torrent
         assert isinstance(peers, list)
 
@@ -51,7 +47,7 @@ class TestSessionManagerIntegration:
         """Test getting torrent status."""
         info_hash = "test_info_hash"
         status = await self.session_manager.get_torrent_status(info_hash)
-        
+
         # Should return None for non-existent torrent
         assert status is None
 
@@ -59,7 +55,7 @@ class TestSessionManagerIntegration:
     async def test_update_torrent_metrics(self):
         """Test getting global stats."""
         stats = await self.session_manager.get_global_stats()
-        
+
         # Should return a dictionary with stats
         assert isinstance(stats, dict)
 
@@ -67,10 +63,10 @@ class TestSessionManagerIntegration:
     async def test_rehash_torrent_success(self):
         """Test torrent rehashing."""
         info_hash = "test_info_hash"
-        
+
         # Test rehashing (will return False for non-existent torrent)
         result = await self.session_manager.rehash_torrent(info_hash)
-        
+
         # Should return False for non-existent torrent
         assert result is False
 
@@ -78,27 +74,27 @@ class TestSessionManagerIntegration:
     async def test_rehash_torrent_invalid_hash(self):
         """Test rehashing torrent with invalid hash."""
         invalid_hash = "invalid_hash"
-        
+
         result = await self.session_manager.rehash_torrent(invalid_hash)
-        
+
         assert result is False
 
     @pytest.mark.asyncio
     async def test_rehash_torrent_not_found(self):
         """Test rehashing non-existent torrent."""
         info_hash = "nonexistent_torrent"
-        
+
         result = await self.session_manager.rehash_torrent(info_hash)
-        
+
         assert result is False
 
     @pytest.mark.asyncio
     async def test_rehash_torrent_without_piece_manager(self):
         """Test rehashing torrent without piece manager."""
         info_hash = "test_info_hash"
-        
+
         result = await self.session_manager.rehash_torrent(info_hash)
-        
+
         assert result is False
 
     @pytest.mark.asyncio
@@ -152,6 +148,14 @@ class TestSessionManagerIntegration:
     async def test_session_manager_lifecycle(self):
         """Test session manager complete lifecycle."""
         # Test that we can start and stop the session manager
+        self.session_manager.config.nat.auto_map_ports = False
+        self.session_manager.config.discovery.enable_dht = False
+        self.session_manager.config.discovery.enable_pex = False
+        self.session_manager.config.discovery.enable_http_trackers = False
+        self.session_manager.config.discovery.enable_udp_trackers = False
+        self.session_manager.config.network.listen_port = 0
+        self.session_manager.config.network.listen_port_tcp = 0
+        self.session_manager.config.network.listen_port_udp = 0
         await self.session_manager.start()
         await self.session_manager.stop()
 
@@ -168,7 +172,7 @@ class TestSessionManagerIntegration:
         # Test with invalid torrent hash
         result = await self.session_manager.rehash_torrent("invalid_hash")
         assert result is False
-        
+
         # Test getting peers for non-existent torrent
         peers = await self.session_manager.get_peers_for_torrent("nonexistent")
         assert isinstance(peers, list)

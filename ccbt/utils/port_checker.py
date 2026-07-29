@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import sys
-from typing import Tuple
+from typing import Optional
 
 
 def is_port_available(
     host: str, port: int, protocol: str = "tcp"
-) -> Tuple[bool, str | None]:
+) -> tuple[bool, Optional[str]]:
     """Check if a port is available for binding.
 
     Args:
@@ -36,10 +37,10 @@ def is_port_available(
 
         # On Windows, SO_REUSEPORT may not be available
         if hasattr(socket, "SO_REUSEPORT") and sys.platform != "win32":
-            try:
-                test_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            except (OSError, AttributeError):
-                pass  # SO_REUSEPORT not available on this system
+            with contextlib.suppress(OSError, AttributeError):
+                test_sock.setsockopt(
+                    socket.SOL_SOCKET, socket.SO_REUSEPORT, 1
+                )  # SO_REUSEPORT not available on this system
 
         test_sock.settimeout(0.1)
 
@@ -68,10 +69,32 @@ def is_port_available(
         return (False, f"Error checking port availability: {e}")
 
 
-def get_port_conflict_resolution(port: int, protocol: str = "tcp") -> str:
+def is_port_listening(
+    host: str,
+    port: int,
+    *,
+    timeout: float = 0.5,
+) -> bool:
+    """Return True when a TCP listener accepts connections on host:port."""
+    # Compare against wildcard bind addresses; this is not a bind call. # nosec B104
+    connect_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host  # nosec B104
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect((connect_host, port))
+    except OSError:
+        return False
+    else:
+        return True
+    finally:
+        with contextlib.suppress(OSError):
+            sock.close()
+
+
+def get_port_conflict_resolution(port: int, _protocol: str = "tcp") -> str:
     """Get resolution steps for port conflicts.
 
-    CRITICAL FIX: Enhanced to check for daemon usage and provide better error messages.
+    Note: Enhanced to check for daemon usage and provide better error messages.
 
     Args:
         port: Port number that's in conflict
@@ -81,12 +104,16 @@ def get_port_conflict_resolution(port: int, protocol: str = "tcp") -> str:
         Formatted string with resolution steps
 
     """
-    # CRITICAL FIX: Check if daemon might be using this port
+    # Note: Check if daemon might be using this port
+    # Note: Use os.path.expanduser for consistent path resolution on Windows
+    # Path.home() can resolve differently in different processes, especially with spaces in usernames
+    import os
     from pathlib import Path
-    
-    daemon_pid_file = Path.home() / ".ccbt" / "daemon" / "daemon.pid"
+
+    home_dir = Path(os.path.expanduser("~"))
+    daemon_pid_file = home_dir / ".ccbt" / "daemon" / "daemon.pid"
     daemon_might_be_running = daemon_pid_file.exists()
-    
+
     if sys.platform == "win32":
         check_cmd = f"netstat -ano | findstr :{port}"
         kill_help = (
@@ -104,9 +131,9 @@ def get_port_conflict_resolution(port: int, protocol: str = "tcp") -> str:
             "  3. Run: kill <PID>"
         )
 
-    resolution = f"Resolution options:\n"
-    
-    # CRITICAL FIX: Prioritize daemon check if PID file exists
+    resolution = "Resolution options:\n"
+
+    # Note: Prioritize daemon check if PID file exists
     if daemon_might_be_running:
         resolution += (
             f"  1. Check if ccBitTorrent daemon is running and using this port:\n"
@@ -125,18 +152,18 @@ def get_port_conflict_resolution(port: int, protocol: str = "tcp") -> str:
             f"     Run: btbt daemon status\n"
             f"     If daemon is running, stop it: btbt daemon stop\n"
         )
-    
+
     resolution += (
-        f"  3. Change the port in your configuration:\n"
-        f"     - Edit ccbt.toml and set the appropriate port (network.listen_port_tcp, network.tracker_udp_port, etc.)\n"
-        f"     - Or set the corresponding CCBT_* environment variable\n"
+        "  3. Change the port in your configuration:\n"
+        "     - Edit ccbt.toml and set the appropriate port (network.listen_port_tcp, network.tracker_udp_port, etc.)\n"
+        "     - Or set the corresponding CCBT_* environment variable\n"
     )
-    
+
     return resolution
 
 
 def get_permission_error_resolution(
-    port: int, protocol: str = "tcp", config_key: str | None = None
+    port: int, protocol: str = "tcp", config_key: Optional[str] = None
 ) -> str:
     """Get resolution steps for permission denied errors.
 
@@ -171,14 +198,13 @@ def get_permission_error_resolution(
             f"     - Windows Firewall may be blocking the port\n"
             f"     - Add an exception for ccBitTorrent in Windows Firewall\n"
         )
-    else:
-        return (
-            f"Permission denied binding to port {port} ({protocol.upper()}).\n"
-            f"Resolution options:\n"
-            f"  1. Run with root privileges (for ports < 1024):\n"
-            f"     - Run: sudo btbt daemon start\n"
-            f"  2. Change to a port >= 1024 (non-privileged port):\n"
-            f"     - Edit ccbt.toml and set {config_key} to a value >= 1024\n"
-            f"     - Or set {env_var} environment variable\n"
-            f"  3. Check if SELinux or AppArmor is blocking the port\n"
-        )
+    return (
+        f"Permission denied binding to port {port} ({protocol.upper()}).\n"
+        f"Resolution options:\n"
+        f"  1. Run with root privileges (for ports < 1024):\n"
+        f"     - Run: sudo btbt daemon start\n"
+        f"  2. Change to a port >= 1024 (non-privileged port):\n"
+        f"     - Edit ccbt.toml and set {config_key} to a value >= 1024\n"
+        f"     - Or set {env_var} environment variable\n"
+        f"  3. Check if SELinux or AppArmor is blocking the port\n"
+    )

@@ -14,10 +14,11 @@ import secrets
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
+from typing import Any, Optional
 
 from ccbt.core import bencode
 from ccbt.models import PeerInfo
+from ccbt.utils.compat import sha1_compat
 from ccbt.utils.events import Event, EventType, emit_event
 
 
@@ -65,7 +66,7 @@ class DHTNode:
 class DHTExtension:
     """DHT (Distributed Hash Table) implementation."""
 
-    def __init__(self, node_id: bytes | None = None):
+    def __init__(self, node_id: Optional[bytes] = None):
         """Initialize DHT implementation."""
         self.node_id = node_id or self._generate_node_id()
         self.nodes: dict[bytes, DHTNode] = {}
@@ -335,7 +336,7 @@ class DHTExtension:
         peer_ip: str,
         peer_port: int,
         data: bytes,
-    ) -> bytes | None:
+    ) -> Optional[bytes]:
         """Handle incoming DHT message."""
         try:
             message = self._decode_dht_message(data)
@@ -441,6 +442,7 @@ class DHTExtension:
             # Announcement was successful
             token = message["a"]["token"]
             info_hash = message.get("a", {}).get("info_hash")
+            info_hash_bytes: Optional[bytes] = None
 
             # Store token for this info_hash if available
             if info_hash:
@@ -467,6 +469,8 @@ class DHTExtension:
                                     info_hash_bytes.hex()
                                     if isinstance(info_hash_bytes, bytes)
                                     else str(info_hash)
+                                    if info_hash
+                                    else ""
                                 ),
                                 "announcement_successful": True,
                                 "token_received": True,
@@ -526,7 +530,7 @@ class DHTExtension:
         """Generate token for peer announcement."""
         # Simple token generation - in production, use HMAC with secret key
         token_data = self.node_id + info_hash + str(time.time()).encode()
-        token = hashlib.sha1(token_data, usedforsecurity=False).hexdigest()[:8]
+        token = sha1_compat(token_data, usedforsecurity=False).hexdigest()[:8]
         self.peer_tokens[info_hash] = token
         return token
 

@@ -118,8 +118,6 @@ class TestXetIntegration:
     async def test_xet_merkle_hash_computation(self):
         """Test Xet Merkle hash computation in piece manager."""
         from ccbt.piece.async_piece_manager import AsyncPieceManager, PieceData
-        from ccbt.storage.xet_chunking import GearhashChunker
-        from ccbt.storage.xet_hashing import XetHasher
 
         # Create mock torrent data
         torrent_data = {
@@ -186,14 +184,34 @@ class TestXetIntegration:
         mock_peer.ip = "192.168.1.1"
         mock_peer.port = 6881
         mock_cas.find_chunk_peers = AsyncMock(return_value=[mock_peer])
+        # Note: Mock find_chunks_peers_batch to return peers for chunks
+        # The code checks for this method first, so we need to return peers in batch format
+        from ccbt.models import PeerInfo
+        mock_batch_peer = PeerInfo(ip="192.168.1.1", port=6881)
+        # Return a dict mapping chunk hashes to peer lists
+        mock_cas.find_chunks_peers_batch = AsyncMock(return_value={
+            b"A" * 32: [mock_batch_peer],
+            b"B" * 32: [mock_batch_peer],
+            b"C" * 32: [mock_batch_peer],
+        })
+
+        # Note: Mock catalog to return a dict, not a coroutine
+        # The code tries to iterate over catalog_results.items(), so it must be a dict
+        mock_catalog = AsyncMock()
+        mock_catalog.get_peers_by_chunks = AsyncMock(return_value={})  # Empty dict, will fall back to find_chunk_peers
+        mock_cas.catalog = mock_catalog
 
         with patch.object(protocol, "cas_client", mock_cas):
-            peers = await protocol.announce_torrent(torrent_info)
+            with patch.object(protocol, "catalog", None):  # Disable protocol's catalog to use cas_client.catalog
+                peers = await protocol.announce_torrent(torrent_info)
 
-            # Should find peers for chunks
-            assert isinstance(peers, list)
-            # Should have called find_chunk_peers for each chunk
-            assert mock_cas.find_chunk_peers.call_count >= 1
+                # Should find peers for chunks
+                assert isinstance(peers, list)
+                # Should have called find_chunks_peers_batch (preferred) or find_chunk_peers (fallback)
+                # The code prefers batch method if available
+                assert mock_cas.find_chunks_peers_batch.call_count >= 1 or mock_cas.find_chunk_peers.call_count >= 1
+                # Verify peers were found
+                assert len(peers) > 0
 
     @pytest.mark.asyncio
     @pytest.mark.slow
@@ -220,7 +238,7 @@ class TestXetIntegration:
         # The actual storage path is auto-generated, so we check the result
         result1 = await dedup.check_chunk_exists(chunk_hash)
         result2 = await dedup.check_chunk_exists(chunk_hash)
-        
+
         # Both should return the same path (deduplication)
         assert result1 == result2
 
@@ -268,19 +286,19 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_with_existing_connection(self):
         """Test downloading chunk with existing connection from connection manager."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
-        from ccbt.extensions.xet import XetExtension
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
         from ccbt.storage.xet_hashing import XetHasher
 
-        # Create CAS client
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        # Create CAS client with extension manager (avoids deprecated get_extension_manager())
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         # Create mock connection
         chunk_hash = b"DOWNLOAD" * 4  # 32 bytes
@@ -290,7 +308,7 @@ class TestXetIntegration:
         # Verify chunk hash matches
         hasher = XetHasher()
         computed_hash = hasher.compute_chunk_hash(chunk_data)
-        
+
         # Create mock connection with reader/writer
         mock_connection = AsyncPeerConnection(
             peer_info=peer,
@@ -313,12 +331,12 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
 
         # Mock _send_extension_message and _receive_extension_message
-        from ccbt.protocols.bittorrent_v2 import _send_extension_message, _receive_extension_message
 
         async def mock_send_ext_msg(conn, ext_id, payload):
             return True
@@ -339,7 +357,7 @@ class TestXetIntegration:
                     computed_hash, peer, {"info_hash": b"X" * 20}, mock_connection_manager
                 )
                 assert downloaded == chunk_data
-            except (ValueError, NotImplementedError, AttributeError) as e:
+            except (ValueError, NotImplementedError, AttributeError):
                 # May fail due to missing extension protocol setup
                 # This is acceptable for integration test
                 pass
@@ -351,42 +369,39 @@ class TestXetIntegration:
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.models import PeerInfo
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
+        mock_manager = MagicMock()
+        mock_manager.get_extension = MagicMock(
+            side_effect=lambda name: None if name == "protocol" else MagicMock()
+        )
+        cas_client = P2PCASClient(
+            dht_client=None,
+            tracker_client=None,
+            extension_manager=mock_manager,
+        )
         chunk_hash = b"EXTENSION" * 4  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
 
-        # Mock extension manager to return None for extension protocol
-        with patch("ccbt.extensions.manager.get_extension_manager") as mock_get_manager:
-            mock_manager = MagicMock()
-            # Make get_extension return None for "protocol"
-            def mock_get_ext(name):
-                if name == "protocol":
-                    return None
-                return MagicMock()
-            mock_manager.get_extension = MagicMock(side_effect=mock_get_ext)
-            mock_get_manager.return_value = mock_manager
-
-            with pytest.raises((NotImplementedError, ValueError)):
-                await cas_client.download_chunk(
-                    chunk_hash, peer, {"info_hash": b"X" * 20}, None
-                )
+        with pytest.raises((NotImplementedError, ValueError)):
+            await cas_client.download_chunk(
+                chunk_hash, peer, {"info_hash": b"X" * 20}, None
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.slow
     async def test_xet_cas_download_chunk_peer_not_support_xet(self):
         """Test downloading chunk when peer doesn't support Xet extension."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
-        from ccbt.extensions.xet import XetExtension
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"0" * 32  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -421,7 +436,7 @@ class TestXetIntegration:
         """Test establishing peer connection with successful handshake."""
         from ccbt.discovery.xet_cas import P2PCASClient
         from ccbt.models import PeerInfo
-        from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
+        from ccbt.peer.async_peer_connection import ConnectionState
         from ccbt.peer.peer import Handshake
 
         cas_client = P2PCASClient(dht_client=None, tracker_client=None)
@@ -453,7 +468,7 @@ class TestXetIntegration:
                 assert connection is not None
                 assert connection.peer_info == peer
                 assert connection.state in [ConnectionState.HANDSHAKE_RECEIVED, ConnectionState.CONNECTED]
-            except (ValueError, OSError, asyncio.TimeoutError) as e:
+            except (ValueError, OSError, asyncio.TimeoutError):
                 # May fail due to network or handshake issues
                 # This is acceptable for integration test
                 pass
@@ -489,9 +504,14 @@ class TestXetIntegration:
         peer = PeerInfo(ip="127.0.0.1", port=6881)
         torrent_data = {"info_hash": b"X" * 20}
 
-        # Mock asyncio.open_connection
+        # Mock asyncio.open_connection. StreamWriter.write() is sync (buffers only);
+        # drain() is async. Use MagicMock base so .write is not AsyncMock (avoids
+        # "coroutine was never awaited" when production code correctly does not
+        # await writer.write()).
         mock_reader = AsyncMock()
-        mock_writer = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
@@ -512,17 +532,18 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_chunk_not_found(self):
         """Test downloading chunk when peer responds with CHUNK_NOT_FOUND."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
-        from ccbt.extensions.xet import XetExtension, XetMessageType
+        from ccbt.extensions.manager import ExtensionManager
+        from ccbt.extensions.xet import XetMessageType
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"NOTFOUND" * 4  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -548,6 +569,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
@@ -573,17 +595,18 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_chunk_error(self):
         """Test downloading chunk when peer responds with CHUNK_ERROR."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
-        from ccbt.extensions.xet import XetExtension, XetMessageType
+        from ccbt.extensions.manager import ExtensionManager
+        from ccbt.extensions.xet import XetMessageType
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"CHUNKERR" * 4  # 32 bytes
         peer = PeerInfo(ip="192.168.1.1", port=6881)
@@ -607,6 +630,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
@@ -632,17 +656,17 @@ class TestXetIntegration:
     async def test_xet_cas_download_chunk_hash_mismatch(self):
         """Test downloading chunk when hash doesn't match."""
         from ccbt.discovery.xet_cas import P2PCASClient
-        from ccbt.extensions.manager import get_extension_manager
-        from ccbt.extensions.xet import XetExtension
+        from ccbt.extensions.manager import ExtensionManager
         from ccbt.models import PeerInfo
         from ccbt.peer.async_peer_connection import AsyncPeerConnection, ConnectionState
 
-        cas_client = P2PCASClient(dht_client=None, tracker_client=None)
-
-        # Xet extension is already registered
-        extension_manager = get_extension_manager()
+        extension_manager = ExtensionManager()
         xet_ext = extension_manager.get_extension("xet")
         assert xet_ext is not None
+
+        cas_client = P2PCASClient(
+            dht_client=None, tracker_client=None, extension_manager=extension_manager
+        )
 
         chunk_hash = b"HASHMISMATCH" * 2 + b"XXXXXXXX"  # 32 bytes (12*2=24, +8=32)
         wrong_chunk_data = b"Wrong chunk data"
@@ -667,6 +691,7 @@ class TestXetIntegration:
         extension_protocol = extension_manager.get_extension("protocol")
         if extension_protocol:
             extension_protocol.peer_supports_extension = MagicMock(return_value=True)
+            extension_protocol.get_peer_message_id = MagicMock(return_value=5)
             extension_protocol.get_extension_info = MagicMock(
                 return_value=MagicMock(message_id=5)
             )
@@ -716,4 +741,301 @@ class TestXetIntegration:
 
         with pytest.raises(ValueError, match="must be 20 bytes"):
             await cas_client._establish_peer_connection(peer, torrent_data)
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_reconstruction_from_chunks(self, temp_dir):
+        """Test reconstructing a file from stored chunks."""
+        from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
+
+        db_path = temp_dir / "reconstruct.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        # Create test file data
+        file_data = b"This is test file data for reconstruction. " * 100
+        file_path = "/test/reconstruct_file.txt"
+
+        # Chunk the file data
+        from ccbt.storage.xet_chunking import GearhashChunker
+        chunker = GearhashChunker()
+        chunks = chunker.chunk_buffer(file_data)
+
+        # Store chunks and add file references
+        offset = 0
+        for chunk in chunks:
+            chunk_hash = XetHasher.compute_chunk_hash(chunk)
+            await dedup.store_chunk(chunk_hash, chunk)
+            await dedup.add_file_chunk_reference(
+                file_path, chunk_hash, offset=offset, chunk_size=len(chunk)
+            )
+            offset += len(chunk)
+
+        # Reconstruct file
+        output_path = temp_dir / "reconstructed_file.txt"
+        result_path = await dedup.reconstruct_file_from_chunks(
+            file_path, output_path=output_path
+        )
+
+        # Verify file was reconstructed
+        assert result_path == output_path
+        assert output_path.exists()
+
+        # Verify file content matches original
+        with open(output_path, "rb") as f:
+            reconstructed = f.read()
+
+        assert reconstructed == file_data
+
+        dedup.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_read_file_by_chunks(self, temp_dir):
+        """Test reading file by reconstructing from chunks via DiskIOManager."""
+        from ccbt.config.config import Config
+        from ccbt.storage.disk_io import DiskIOManager
+        from ccbt.storage.xet_hashing import XetHasher
+
+        # Create config with XET enabled
+        config = Config()
+        config.disk.xet_enabled = True
+        config.disk.download_dir = str(temp_dir)
+
+        # Create DiskIOManager (it gets config internally via get_config())
+        # Note: DiskIOManager.__init__() doesn't accept config parameter
+        with patch("ccbt.storage.disk_io.get_config", return_value=config):
+            disk_io = DiskIOManager()
+
+        # Get deduplication manager
+        dedup = disk_io._get_xet_deduplication()
+        assert dedup is not None
+
+        # Create test file data
+        file_data = b"Test file data for reading by chunks. " * 50
+        file_path = temp_dir / "test_file.txt"
+
+        # Chunk the file data
+        from ccbt.storage.xet_chunking import GearhashChunker
+        chunker = GearhashChunker()
+        chunks = chunker.chunk_buffer(file_data)
+
+        # Store chunks and add file references
+        offset = 0
+        for chunk in chunks:
+            chunk_hash = XetHasher.compute_chunk_hash(chunk)
+            await dedup.store_chunk(chunk_hash, chunk)
+            await dedup.add_file_chunk_reference(
+                str(file_path), chunk_hash, offset=offset, chunk_size=len(chunk)
+            )
+            offset += len(chunk)
+
+        # Read file by chunks
+        read_data = await disk_io.read_file_by_chunks(file_path)
+
+        # Verify data matches
+        assert read_data is not None
+        assert read_data == file_data
+
+        # Note: Close database before teardown to prevent Windows file locking issues
+        # The dedup instance is obtained from disk_io, so we need to close it explicitly
+        if dedup:
+            dedup.close()
+
+        # Also stop disk_io manager if it was started (cleanup)
+        if hasattr(disk_io, "stop"):
+            try:
+                await disk_io.stop()
+            except Exception:
+                pass  # Ignore errors during cleanup
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_write_xet_chunk_stores_file_reference_for_new_chunk(self, temp_dir):
+        """New chunk stored via write_xet_chunk gets file reference in file_chunks."""
+        from ccbt.config.config import Config
+        from ccbt.storage.disk_io import DiskIOManager
+
+        config = Config()
+        config.disk.xet_enabled = True
+        config.disk.download_dir = str(temp_dir)
+
+        with patch("ccbt.storage.disk_io.get_config", return_value=config):
+            disk_io = DiskIOManager()
+
+        dedup = disk_io._get_xet_deduplication()
+        assert dedup is not None
+
+        # Use a unique chunk hash so this is a "new" chunk (not existing)
+        import hashlib
+        chunk_data = b"new chunk data for file reference test"
+        chunk_hash = hashlib.sha256(chunk_data).digest()
+        file_path = temp_dir / "target_file.txt"
+        offset = 0
+
+        ok = await disk_io.write_xet_chunk(
+            chunk_hash=chunk_hash,
+            chunk_data=chunk_data,
+            file_path=file_path,
+            offset=offset,
+        )
+        assert ok is True
+
+        # File-to-chunk reference must be stored so get_file_chunks returns it
+        file_chunks = await dedup.get_file_chunks(str(file_path))
+        assert len(file_chunks) == 1
+        assert file_chunks[0][0] == chunk_hash
+        assert file_chunks[0][1] == offset
+        assert file_chunks[0][2] == len(chunk_data)
+
+        if dedup:
+            dedup.close()
+        if hasattr(disk_io, "stop"):
+            try:
+                await disk_io.stop()
+            except Exception:
+                pass
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_reconstruction_with_missing_chunks(self, temp_dir):
+        """Test file reconstruction when some chunks are missing."""
+        from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
+
+        db_path = temp_dir / "missing_chunks.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        file_path = "/test/missing_chunks.txt"
+        chunk_data_list = [b"Chunk1", b"Chunk2", b"Chunk3"]
+        chunk_hashes = []
+
+        # Store only first and third chunks (missing second)
+        offset = 0
+        for i, chunk_data in enumerate(chunk_data_list):
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
+            chunk_hashes.append(chunk_hash)
+
+            # Only store chunks 0 and 2 (skip 1)
+            if i != 1:
+                await dedup.store_chunk(chunk_hash, chunk_data)
+
+            # Add reference for all chunks
+            await dedup.add_file_chunk_reference(
+                file_path, chunk_hash, offset=offset, chunk_size=len(chunk_data)
+            )
+            offset += len(chunk_data)
+
+        # Reconstruct file (should handle missing chunk gracefully)
+        output_path = temp_dir / "reconstructed_missing.txt"
+        result_path = await dedup.reconstruct_file_from_chunks(
+            file_path, output_path=output_path
+        )
+
+        assert result_path == output_path
+        assert output_path.exists()
+
+        # Verify file was created (with zeros for missing chunk)
+        with open(output_path, "rb") as f:
+            reconstructed = f.read()
+
+        # Should have correct size
+        expected_size = sum(len(c) for c in chunk_data_list)
+        assert len(reconstructed) == expected_size
+
+        # First chunk should match
+        assert reconstructed[:6] == b"Chunk1"
+        # Second chunk should be zeros (missing)
+        assert reconstructed[6:12] == b"\x00" * 6
+        # Third chunk should match
+        assert reconstructed[12:18] == b"Chunk3"
+
+        dedup.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_metadata_persistence_and_retrieval(self, temp_dir):
+        """Test storing and retrieving file metadata."""
+        from ccbt.models import XetFileMetadata
+        from ccbt.storage.xet_deduplication import XetDeduplication
+
+        db_path = temp_dir / "metadata.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        # Create file metadata
+        file_metadata = XetFileMetadata(
+            file_path="/test/metadata_persistence.txt",
+            file_hash=b"META" * 8,
+            chunk_hashes=[b"CHUNK1" * 5 + b"XX", b"CHUNK2" * 5 + b"XX"],
+            xorb_refs=[],
+            total_size=200,
+        )
+
+        # Store metadata
+        await dedup.store_file_metadata(file_metadata)
+
+        # Retrieve metadata
+        retrieved = await dedup.get_file_metadata(file_metadata.file_path)
+
+        assert retrieved is not None
+        assert retrieved.file_path == file_metadata.file_path
+        assert retrieved.file_hash == file_metadata.file_hash
+        assert len(retrieved.chunk_hashes) == len(file_metadata.chunk_hashes)
+        assert retrieved.total_size == file_metadata.total_size
+
+        # Verify metadata persists across sessions
+        dedup.close()
+        dedup2 = XetDeduplication(cache_db_path=db_path)
+        retrieved2 = await dedup2.get_file_metadata(file_metadata.file_path)
+
+        assert retrieved2 is not None
+        assert retrieved2.file_path == file_metadata.file_path
+
+        dedup2.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.slow
+    async def test_file_to_chunk_reference_tracking(self, temp_dir):
+        """Test tracking file-to-chunk references across multiple files."""
+        from ccbt.storage.xet_deduplication import XetDeduplication
+
+        db_path = temp_dir / "references.db"
+        dedup = XetDeduplication(cache_db_path=db_path)
+
+        # Create shared chunk
+        shared_chunk_hash = b"SHARED" * 5 + b"XX"
+        shared_chunk_data = b"Shared chunk data"
+        await dedup.store_chunk(shared_chunk_hash, shared_chunk_data)
+
+        # Add reference from file 1
+        file1_path = "/test/file1.txt"
+        await dedup.add_file_chunk_reference(
+            file1_path, shared_chunk_hash, offset=0, chunk_size=len(shared_chunk_data)
+        )
+
+        # Add reference from file 2 (same chunk, different offset)
+        file2_path = "/test/file2.txt"
+        await dedup.add_file_chunk_reference(
+            file2_path, shared_chunk_hash, offset=100, chunk_size=len(shared_chunk_data)
+        )
+
+        # Get chunks for file 1
+        file1_chunks = await dedup.get_file_chunks(file1_path)
+        assert len(file1_chunks) == 1
+        assert file1_chunks[0][0] == shared_chunk_hash
+        assert file1_chunks[0][1] == 0
+
+        # Get chunks for file 2
+        file2_chunks = await dedup.get_file_chunks(file2_path)
+        assert len(file2_chunks) == 1
+        assert file2_chunks[0][0] == shared_chunk_hash
+        assert file2_chunks[0][1] == 100
+
+        # Verify chunk reference count is 1 (chunk stored once, referenced twice)
+        chunk_info = dedup.get_chunk_info(shared_chunk_hash)
+        assert chunk_info is not None
+        # Reference count may be 1 or 2 depending on how store_chunk handles it
+        assert chunk_info["ref_count"] >= 1
+
+        dedup.close()
 

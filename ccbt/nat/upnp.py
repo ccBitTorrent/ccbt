@@ -7,6 +7,7 @@ import ipaddress
 import logging
 import socket
 import warnings
+from typing import Optional
 from urllib.parse import urljoin
 
 try:
@@ -14,8 +15,8 @@ try:
 except (
     ImportError
 ):  # pragma: no cover - defensive import fallback, tested via integration
-    # Fallback for systems without defusedxml
-    import xml.etree.ElementTree as ET
+    # Fallback for systems without defusedxml (should never happen as defusedxml is required)
+    import xml.etree.ElementTree as ET  # nosec B405 - Fallback only, defusedxml is required dependency
 
     warnings.warn(  # pragma: no cover - defensive import fallback
         "defusedxml not installed. XML parsing may be vulnerable to attacks. "
@@ -45,7 +46,32 @@ UPNP_IGD2_SERVICE_TYPE = "urn:schemas-upnp-org:service:WANIPConnection:2"
 UPNP_IGD_DEVICE_TYPE = "urn:schemas-upnp-org:device:InternetGatewayDevice:1"
 
 
-def build_msearch_request(search_target: str | None = None) -> bytes:
+def _decode_response_bytes(body: bytes, max_len: int = 0) -> tuple[str, bool]:
+    """Decode HTTP response bytes to string for logging; tolerate non-UTF-8.
+
+    Some routers return SOAP with wrong or missing charset (e.g. Windows-1252).
+    Try UTF-8 first, then fall back to latin-1 with replace to avoid UnicodeDecodeError.
+
+    Args:
+        body: Raw response bytes.
+        max_len: If > 0, cap decoded string to this length for logging.
+
+    Returns:
+        Tuple of (decoded string, used_fallback). used_fallback is True if UTF-8 failed.
+    """
+    try:
+        text = body.decode("utf-8")
+        if max_len > 0 and len(text) > max_len:
+            text = text[:max_len] + "..."
+        return text, False
+    except UnicodeDecodeError:
+        text = body.decode("latin-1", errors="replace")
+        if max_len > 0 and len(text) > max_len:
+            text = text[:max_len] + "..."
+        return text, True
+
+
+def build_msearch_request(search_target: Optional[str] = None) -> bytes:
     """Build SSDP M-SEARCH request (UPnP Device Architecture 1.1).
 
     Args:
@@ -57,9 +83,9 @@ def build_msearch_request(search_target: str | None = None) -> bytes:
     """
     if search_target is None:
         search_target = UPNP_IGD_SERVICE_TYPE
-    
+
     # Build M-SEARCH message
-    # CRITICAL FIX: MX (Maximum wait time) should be at least 1-5 seconds
+    # Note: MX (Maximum wait time) should be at least 1-5 seconds
     # Some routers need time to respond, so we use 3 seconds
     msg = (
         f"M-SEARCH * HTTP/1.1\r\n"
@@ -95,7 +121,7 @@ def parse_ssdp_response(response: bytes) -> dict[str, str]:
 async def discover_upnp_devices() -> list[dict[str, str]]:
     """Discover UPnP IGD devices via SSDP with retry logic.
 
-    CRITICAL FIX: Uses asyncio for socket operations and properly joins multicast group.
+    Note: Uses asyncio for socket operations and properly joins multicast group.
     On Windows, multicast requires proper interface binding and group membership.
 
     Returns:
@@ -107,11 +133,13 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
         raise UPnPError(msg)
 
     devices: list[dict[str, str]] = []
-    seen_locations: set[str] = set()  # Cache clearing: track seen devices to avoid duplicates
+    seen_locations: set[str] = (
+        set()
+    )  # Cache clearing: track seen devices to avoid duplicates
 
-    # CRITICAL FIX: Get local network interfaces for proper multicast binding
+    # Note: Get local network interfaces for proper multicast binding
     import sys
-    
+
     # Try to get local IP address for multicast interface binding
     local_ip = None
     try:
@@ -130,31 +158,33 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            
-            # CRITICAL FIX: Windows-specific multicast configuration
+
+            # Note: Windows-specific multicast configuration
             if sys.platform == "win32":
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                
-                # CRITICAL FIX: Set multicast TTL (required on Windows)
+
+                # Note: Set multicast TTL (required on Windows)
                 # TTL of 2 allows packets to traverse one router hop (local network)
                 sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-                
-                # CRITICAL FIX: Set multicast interface BEFORE binding
+
+                # Note: Set multicast interface BEFORE binding
                 # This tells Windows which interface to use for sending multicast
                 if local_ip:
                     try:
                         interface_ip = socket.inet_aton(local_ip)
-                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, interface_ip)
+                        sock.setsockopt(
+                            socket.IPPROTO_IP, socket.IP_MULTICAST_IF, interface_ip
+                        )
                         logger.debug("Set multicast interface to %s", local_ip)
                     except OSError as e:
                         logger.debug("Failed to set multicast interface: %s", e)
                         # Continue - some systems don't require this
 
-            # CRITICAL FIX: Bind to INADDR_ANY (0.0.0.0) to receive on all interfaces
+            # Note: Bind to INADDR_ANY (0.0.0.0) to receive on all interfaces
             # Binding to specific port 0 lets OS choose ephemeral port
             # On Windows, binding to 0.0.0.0:0 is required for multicast
             try:
-                sock.bind(("0.0.0.0", 0))
+                sock.bind(("0.0.0.0", 0))  # nosec B104 - Multicast socket must bind to 0.0.0.0 for SSDP discovery
                 logger.debug("Bound socket to 0.0.0.0:0 for multicast")
             except OSError as e:
                 logger.debug("Failed to bind socket: %s", e)
@@ -166,8 +196,8 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     except OSError as e2:
                         logger.debug("Failed to bind to local IP: %s", e2)
                         raise
-            
-            # CRITICAL FIX: Join multicast group properly
+
+            # Note: Join multicast group properly
             # IP_ADD_MEMBERSHIP is required to receive multicast packets
             multicast_ip = socket.inet_aton(SSDP_MULTICAST_IP)
             if local_ip:
@@ -176,46 +206,68 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     interface_ip = socket.inet_aton(local_ip)
                     mreq = multicast_ip + interface_ip
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                    logger.debug("Joined SSDP multicast group %s on interface %s", SSDP_MULTICAST_IP, local_ip)
+                    logger.debug(
+                        "Joined SSDP multicast group %s on interface %s",
+                        SSDP_MULTICAST_IP,
+                        local_ip,
+                    )
                 except OSError as e:
-                    logger.debug("Failed to join multicast group on %s: %s, trying INADDR_ANY", local_ip, e)
+                    logger.debug(
+                        "Failed to join multicast group on %s: %s, trying INADDR_ANY",
+                        local_ip,
+                        e,
+                    )
                     # Fallback to INADDR_ANY
-                    mreq = multicast_ip + socket.inet_aton("0.0.0.0")
+                    mreq = multicast_ip + socket.inet_aton("0.0.0.0")  # nosec B104 - Multicast membership fallback to INADDR_ANY for SSDP
                     try:
-                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                        logger.debug("Joined SSDP multicast group %s on all interfaces", SSDP_MULTICAST_IP)
+                        sock.setsockopt(
+                            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq
+                        )
+                        logger.debug(
+                            "Joined SSDP multicast group %s on all interfaces",
+                            SSDP_MULTICAST_IP,
+                        )
                     except OSError as e2:
-                        logger.debug("Failed to join multicast group on all interfaces: %s", e2)
+                        logger.debug(
+                            "Failed to join multicast group on all interfaces: %s", e2
+                        )
                         # Continue anyway - some systems don't require explicit membership
             else:
                 # Use INADDR_ANY (0.0.0.0) to receive on all interfaces
-                mreq = multicast_ip + socket.inet_aton("0.0.0.0")
+                mreq = multicast_ip + socket.inet_aton("0.0.0.0")  # nosec B104 - Multicast membership uses INADDR_ANY for all interfaces
                 try:
                     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                    logger.debug("Joined SSDP multicast group %s on all interfaces", SSDP_MULTICAST_IP)
+                    logger.debug(
+                        "Joined SSDP multicast group %s on all interfaces",
+                        SSDP_MULTICAST_IP,
+                    )
                 except OSError as e:
-                    logger.debug("Failed to join multicast group (may be normal): %s", e)
+                    logger.debug(
+                        "Failed to join multicast group (may be normal): %s", e
+                    )
                     # Continue anyway - some systems don't require explicit membership
 
             multicast_addr = (SSDP_MULTICAST_IP, SSDP_MULTICAST_PORT)
 
-            # CRITICAL FIX: Set socket to non-blocking BEFORE sending (required for asyncio)
+            # Note: Set socket to non-blocking BEFORE sending (required for asyncio)
             # This must be done after binding but before sending
             sock.setblocking(False)
 
-            # CRITICAL FIX: Send M-SEARCH requests for both service type and device type
+            # Note: Send M-SEARCH requests for both service type and device type
             # Some routers only respond to device type searches, not service type
             search_targets = [
                 UPNP_IGD_SERVICE_TYPE,  # Try service type first
-                UPNP_IGD_DEVICE_TYPE,   # Fallback to device type
-                "ssdp:all",              # Last resort: search for all devices
+                UPNP_IGD_DEVICE_TYPE,  # Fallback to device type
+                "ssdp:all",  # Last resort: search for all devices
             ]
-            
+
             for search_idx, search_target in enumerate(search_targets):
                 request = build_msearch_request(search_target)
                 try:
                     # Use asyncio for non-blocking sendto on Windows
-                    bytes_sent = await asyncio.get_event_loop().sock_sendto(sock, request, multicast_addr)
+                    bytes_sent = await asyncio.get_event_loop().sock_sendto(
+                        sock, request, multicast_addr
+                    )
                     logger.debug(
                         "Sent M-SEARCH request (attempt %d/%d, target %d/%d: %s): %d bytes to %s:%d",
                         attempt + 1,
@@ -231,14 +283,16 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     if search_idx < len(search_targets) - 1:
                         await asyncio.sleep(0.2)
                 except Exception as e:
-                    logger.debug("Failed to send M-SEARCH request for %s: %s", search_target, e)
+                    logger.debug(
+                        "Failed to send M-SEARCH request for %s: %s", search_target, e
+                    )
 
-            # CRITICAL FIX: Wait a bit after sending before listening for responses
+            # Note: Wait a bit after sending before listening for responses
             # Routers need time to process M-SEARCH and send responses
             # MX header says 3 seconds, so wait at least 0.5s before checking
             await asyncio.sleep(0.5)
-            
-            # CRITICAL FIX: Use asyncio for non-blocking socket operations
+
+            # Note: Use asyncio for non-blocking socket operations
             # Socket is already set to non-blocking above
             start_time = asyncio.get_event_loop().time()
             responses_received = 0
@@ -266,7 +320,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         addr[1],
                         len(data),
                     )
-                    
+
                     headers = parse_ssdp_response(data)
                     logger.debug("SSDP response headers: %s", list(headers.keys()))
 
@@ -274,7 +328,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                     st = headers.get("st", "")
                     nt = headers.get("nt", "")
                     location = headers.get("location", "")
-                    
+
                     logger.debug(
                         "SSDP response: ST=%s, NT=%s, Location=%s",
                         st[:100] if st else "(empty)",
@@ -282,7 +336,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         location[:100] if location else "(empty)",
                     )
 
-                    # CRITICAL FIX: Check multiple UPnP service types
+                    # Note: Check multiple UPnP service types
                     is_igd = (
                         UPNP_IGD_SERVICE_TYPE in st
                         or UPNP_IGD_DEVICE_TYPE in nt
@@ -291,7 +345,7 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         or "WANIPConnection" in st
                         or "WANIPConnection" in nt
                     )
-                    
+
                     if is_igd:
                         if location and location not in seen_locations:
                             seen_locations.add(location)
@@ -308,7 +362,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                                 headers.get("server", "unknown"),
                             )
                         else:
-                            logger.debug("Skipping duplicate device location: %s", location)
+                            logger.debug(
+                                "Skipping duplicate device location: %s", location
+                            )
                     else:
                         logger.debug(
                             "SSDP response is not IGD device (ST=%s, NT=%s)",
@@ -353,7 +409,9 @@ async def discover_upnp_devices() -> list[dict[str, str]]:
                         try:
                             interface_ip = socket.inet_aton(local_ip)
                             mreq = socket.inet_aton(SSDP_MULTICAST_IP) + interface_ip
-                            sock.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
+                            sock.setsockopt(
+                                socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq
+                            )
                         except Exception:
                             pass
                     sock.close()
@@ -400,8 +458,8 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
 
     # Improved error handling with retries for device description fetching
     max_retries = 2
-    last_error: Exception | None = None
-    xml_content: str | None = None
+    last_error: Optional[Exception] = None
+    xml_content: Optional[str] = None
 
     for attempt in range(max_retries):
         try:
@@ -421,7 +479,8 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                         await asyncio.sleep(0.5)
                         continue
                     raise last_error
-                xml_content = await response.text()
+                response_bytes = await response.read()
+                xml_content, _ = _decode_response_bytes(response_bytes)
                 break
         except asyncio.TimeoutError as e:
             last_error = UPnPError(f"Timeout fetching device description: {e}")
@@ -433,7 +492,7 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                 )
                 await asyncio.sleep(0.5)
                 continue
-            raise last_error
+            raise last_error from e
         except aiohttp.ClientError as e:
             last_error = UPnPError(f"Network error fetching device description: {e}")
             if attempt < max_retries - 1:
@@ -445,16 +504,31 @@ async def fetch_device_description(location_url: str) -> dict[str, str]:
                 )
                 await asyncio.sleep(0.5)
                 continue
-            raise last_error
+            raise last_error from e
+        except Exception as e:
+            # Catch any other exceptions (e.g., OSError from ClientSession constructor)
+            last_error = UPnPError(f"Error fetching device description: {e}")
+            if attempt < max_retries - 1:
+                logger.debug(
+                    "Device description fetch error (attempt %d/%d): %s, retrying...",
+                    attempt + 1,
+                    max_retries,
+                    e,
+                )
+                await asyncio.sleep(0.5)
+                continue
+            raise last_error from e
 
     if xml_content is None:
         # All retries exhausted
         if last_error:
             raise last_error
-        raise UPnPError("Failed to fetch device description after retries")
+        msg = "Failed to fetch device description after retries"
+        raise UPnPError(msg)
 
     # Parse XML (UPnP device description from trusted local network)
     # Uses defusedxml.ElementTree for secure parsing (imported above)
+    # xml_content was safe-decoded from response bytes to avoid UnicodeDecodeError
     try:
         root = ET.fromstring(xml_content)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
 
@@ -569,19 +643,29 @@ async def send_soap_action(
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
-            response_xml = await resp.text()
+            response_bytes = await resp.read()
             http_status = resp.status
 
+        # Decode for logging only; parse from bytes so XML encoding declaration is honored
+        response_xml, used_fallback = _decode_response_bytes(response_bytes)
+        if used_fallback:
+            content_type = ""
+            if getattr(resp, "headers", None) is not None:
+                content_type = resp.headers.get("Content-Type", "")
+            logger.debug(
+                "UPnP SOAP response decoded with fallback (UTF-8 failed); Content-Type: %s",
+                content_type,
+            )
+
         # Parse SOAP response (from trusted local network UPnP device)
-        # Uses defusedxml.ElementTree for secure parsing (imported above)
-        # Even on HTTP 500, the response body may contain useful SOAP fault information
+        # ET.fromstring accepts bytes and respects XML encoding declaration
         try:
-            root = ET.fromstring(response_xml)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
-        except ET.ParseError:
+            root = ET.fromstring(response_bytes)  # noqa: S314  # nosec B314 - defusedxml.ElementTree.fromstring
+        except ET.ParseError as e:
             # If we can't parse XML and status is not 200, raise HTTP error
             if http_status != 200:
                 msg = f"SOAP action failed: HTTP {http_status} (response not parseable as XML)"
-                raise UPnPError(msg)
+                raise UPnPError(msg) from e
             raise
 
         # Extract response parameters
@@ -656,6 +740,10 @@ async def send_soap_action(
                     "402": "Invalid Args - Check parameter formats",
                     "501": "Action Failed - Router rejected the request",
                     "714": "NoSuchEntryInArray - Port mapping not found (may already exist)",
+                    "713": (
+                        "SpecifiedArrayIndexInvalid - Router IGD quirk or stale mapping index; "
+                        "try manual port forward, power-cycle IGD, or disable auto port mapping"
+                    ),
                     "715": "WildCardNotPermittedInSrcIP - Invalid remote host parameter",
                     "716": "WildCardNotPermittedInExtPort - Invalid external port",
                     "718": "ConflictInMappingEntry - Port mapping conflict (port may be in use)",
@@ -706,7 +794,7 @@ async def send_soap_action(
 class UPnPClient:
     """Async UPnP IGD client."""
 
-    def __init__(self, device_url: str | None = None):
+    def __init__(self, device_url: Optional[str] = None):
         """Initialize UPnP client.
 
         Args:
@@ -714,7 +802,7 @@ class UPnPClient:
 
         """
         self.device_url = device_url
-        self.control_url: str | None = None
+        self.control_url: Optional[str] = None
         self.service_type: str = UPNP_IGD_SERVICE_TYPE
         self.logger = logging.getLogger(__name__)
 
@@ -859,34 +947,57 @@ class UPnPClient:
             raise UPnPError(msg)
 
         try:
-            # Some routers require deleting existing mapping first
-            # Try to delete any existing mapping for this port/protocol
-            # Try with empty remote_host first (most common case)
-            deleted = await self.delete_port_mapping(
-                external_port,
-                protocol,
-                "",  # Empty remote_host (wildcard)
-            )
-            if deleted:
-                self.logger.debug(
-                    "Deleted existing port mapping for %s:%s before adding new one",
-                    protocol,
-                    external_port,
-                )
-            # If that didn't work and we have a specific remote_host, try with it
-            elif remote_host:
+            # Some routers require deleting existing mapping first.
+            # Best-effort: if DeletePortMapping fails with 501 (Action Failed), many
+            # routers use that when no mapping exists or they reject the delete;
+            # proceed to AddPortMapping anyway.
+            try:
                 deleted = await self.delete_port_mapping(
                     external_port,
                     protocol,
-                    remote_host,
+                    "",  # Empty remote_host (wildcard)
                 )
                 if deleted:
                     self.logger.debug(
-                        "Deleted existing port mapping for %s:%s (remote_host=%s) before adding new one",
+                        "Deleted existing port mapping for %s:%s before adding new one",
                         protocol,
                         external_port,
+                    )
+                elif remote_host:
+                    deleted = await self.delete_port_mapping(
+                        external_port,
+                        protocol,
                         remote_host,
                     )
+                    if deleted:
+                        self.logger.debug(
+                            "Deleted existing port mapping for %s:%s (remote_host=%s) before adding new one",
+                            protocol,
+                            external_port,
+                            remote_host,
+                        )
+            except UPnPError as e:
+                err_msg = str(e)
+                # 501 = Action Failed (router rejected delete, or no mapping exists)
+                # 714 = NoSuchEntryInArray (mapping not found)
+                if "501" in err_msg or "714" in err_msg:
+                    self.logger.debug(
+                        "DeletePortMapping failed (code 501/714), proceeding to AddPortMapping: %s",
+                        err_msg[:200],
+                    )
+                # Response decode/parse failure: router sent non-UTF-8 or unparseable SOAP
+                elif (
+                    "decode" in err_msg.lower()
+                    or "parse" in err_msg.lower()
+                    or "UnicodeDecodeError" in err_msg
+                    or "invalid start byte" in err_msg
+                ):
+                    self.logger.debug(
+                        "DeletePortMapping response unreadable, proceeding to AddPortMapping: %s",
+                        err_msg[:200],
+                    )
+                else:
+                    raise
 
             response = await send_soap_action(
                 self.control_url,
@@ -1037,7 +1148,11 @@ class UPnPClient:
                 except UPnPError as e:
                     # Error 713 or 714 means no more entries (end of list)
                     error_msg = str(e)
-                    if "713" in error_msg or "714" in error_msg or "NoSuchEntryInArray" in error_msg:
+                    if (
+                        "713" in error_msg
+                        or "714" in error_msg
+                        or "NoSuchEntryInArray" in error_msg
+                    ):
                         break
                     # Other errors are unexpected - log and stop
                     self.logger.debug(
@@ -1075,9 +1190,7 @@ class UPnPClient:
         if not self.control_url:
             discovered = await self.discover()
             if not discovered:
-                self.logger.debug(
-                    "Cannot clear mappings: UPnP device not discovered"
-                )
+                self.logger.debug("Cannot clear mappings: UPnP device not discovered")
                 return 0
 
         try:
@@ -1114,9 +1227,7 @@ class UPnPClient:
                                 desc,
                             )
                 except (ValueError, UPnPError) as e:
-                    self.logger.debug(
-                        "Failed to delete mapping during cleanup: %s", e
-                    )
+                    self.logger.debug("Failed to delete mapping during cleanup: %s", e)
                     continue
 
         if deleted_count > 0:

@@ -10,7 +10,7 @@ import hashlib
 import logging
 import ssl
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.config.config import get_config
 
@@ -61,23 +61,38 @@ class SSLContextBuilder:
             ca_path = Path(ssl_config.ssl_ca_certificates).expanduser()
             if not ca_path.exists():
                 msg = f"CA certificates path does not exist: {ca_path}"
+                self.logger.error(msg)
                 raise ValueError(msg)
 
-            if ca_path.is_file():
-                # Single CA certificate file
-                context.load_verify_locations(cafile=str(ca_path))
-            elif ca_path.is_dir():
-                # Directory containing CA certificates
-                context.load_verify_locations(capath=str(ca_path))
-            else:
-                msg = f"CA certificates path is not a file or directory: {ca_path}"
-                raise ValueError(msg)
+            try:
+                if ca_path.is_file():
+                    # Single CA certificate file
+                    context.load_verify_locations(cafile=str(ca_path))
+                elif ca_path.is_dir():
+                    # Directory containing CA certificates
+                    context.load_verify_locations(capath=str(ca_path))
+                else:
+                    msg = f"CA certificates path is not a file or directory: {ca_path}"
+                    self.logger.error(msg)
+                    raise ValueError(msg)
 
-            self.logger.info("Loaded custom CA certificates from %s", ca_path)
+                self.logger.info("Loaded custom CA certificates from %s", ca_path)
+            except ssl.SSLError as e:
+                msg = f"Failed to load CA certificates from {ca_path}: {e}"
+                self.logger.exception(msg)
+                raise OSError(msg) from e
+            except OSError as e:
+                msg = f"Failed to read CA certificates from {ca_path}: {e}"
+                self.logger.exception(msg)
+                raise
 
-        # Set protocol version
-        protocol = self._get_protocol_version(ssl_config.ssl_protocol_version)
-        context.minimum_version = protocol
+        # Public HTTPS trackers require TLS 1.2 compatibility; peer TLS may use a
+        # stricter minimum from config, but tracker announces stay at TLS 1.2+.
+        configured = self._get_protocol_version(ssl_config.ssl_protocol_version)
+        if configured.value > ssl.TLSVersion.TLSv1_2.value:
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+        else:
+            context.minimum_version = configured
 
         # Configure cipher suites if specified
         if ssl_config.ssl_cipher_suites:
@@ -95,17 +110,28 @@ class SSLContextBuilder:
 
             if not cert_path.exists():
                 msg = f"Client certificate file does not exist: {cert_path}"
+                self.logger.error(msg)
                 raise ValueError(msg)
             if not key_path.exists():
                 msg = f"Client key file does not exist: {key_path}"
+                self.logger.error(msg)
                 raise ValueError(msg)
 
-            context.load_cert_chain(str(cert_path), str(key_path))
-            self.logger.info(  # pragma: no cover - Logging statement, tested indirectly via successful SSL context creation
-                "Loaded client certificate from %s with key %s",
-                cert_path,
-                key_path,
-            )
+            try:
+                context.load_cert_chain(str(cert_path), str(key_path))
+                self.logger.info(  # pragma: no cover - Logging statement, tested indirectly via successful SSL context creation
+                    "Loaded client certificate from %s with key %s",
+                    cert_path,
+                    key_path,
+                )
+            except ssl.SSLError as e:
+                msg = f"Failed to load client certificate from {cert_path}: {e}"
+                self.logger.exception(msg)
+                raise OSError(msg) from e
+            except OSError as e:
+                msg = f"Failed to read client certificate from {cert_path}: {e}"
+                self.logger.exception(msg)
+                raise
 
         # Set security options
         # Disable insecure protocols (OP_NO_SSLv2/v3 still needed for older Python versions)
@@ -116,11 +142,18 @@ class SSLContextBuilder:
 
         return context
 
-    def create_peer_context(self, verify_hostname: bool = False) -> ssl.SSLContext:
+    def create_peer_context(
+        self,
+        verify_hostname: bool = False,
+        peer_opportunistic: Optional[bool] = None,
+        peer_strict: Optional[bool] = None,
+    ) -> ssl.SSLContext:
         """Create SSL context for peer connections.
 
         Args:
-            verify_hostname: Whether to verify peer hostname
+            verify_hostname: Backward-compatible strict hostname toggle.
+            peer_opportunistic: Explicitly create an opportunistic peer TLS context.
+            peer_strict: Explicitly create a stricter peer TLS context.
 
         Returns:
             Configured SSL context for peer connections
@@ -128,15 +161,32 @@ class SSLContextBuilder:
         """
         ssl_config = self.config.security.ssl
 
+        # Keep backward-compatible behavior: verify_hostname=True implies strict mode.
+        # Without explicit mode, use global insecure-peer policy for opportunistic mode.
+        if peer_opportunistic is None and peer_strict is None:
+            peer_strict = verify_hostname
+            peer_opportunistic = (
+                not verify_hostname
+            ) and ssl_config.ssl_allow_insecure_peers
+
+        peer_strict = False if peer_strict is None else peer_strict
+        peer_opportunistic = False if peer_opportunistic is None else peer_opportunistic
+        if peer_opportunistic and peer_strict:
+            msg = (
+                "peer_opportunistic and peer_strict are mutually exclusive for peer "
+                "TLS contexts"
+            )
+            raise ValueError(msg)
+
         # Create default context
         context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
 
         # For peers, verification is optional (opportunistic encryption)
         # Must set check_hostname BEFORE verify_mode when disabling verification
-        if ssl_config.ssl_verify_certificates and verify_hostname:
+        if peer_strict:
             context.verify_mode = ssl.CERT_REQUIRED
-            context.check_hostname = True
-        elif ssl_config.ssl_allow_insecure_peers:
+            context.check_hostname = ssl_config.ssl_verify_certificates
+        elif peer_opportunistic:
             # Allow peers with invalid certificates for opportunistic encryption
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
@@ -204,7 +254,7 @@ class SSLContextBuilder:
 
         return version_map[version_str]
 
-    def _load_ca_certificates(self, path: str | Path) -> tuple[list[str], int]:
+    def _load_ca_certificates(self, path: Union[str, Path]) -> tuple[list[str], int]:
         """Load CA certificates from file or directory.
 
         Args:
@@ -241,8 +291,8 @@ class SSLContextBuilder:
         return cert_paths, len(cert_paths)
 
     def _validate_certificate_paths(
-        self, cert_path: str, key_path: str | None = None
-    ) -> tuple[Path, Path | None]:
+        self, cert_path: str, key_path: Optional[str] = None
+    ) -> tuple[Path, Optional[Path]]:
         """Validate certificate file paths.
 
         Args:
@@ -313,7 +363,7 @@ class SSLCertificateValidator:
         )
         return False
 
-    def _extract_common_name(self, cert: dict[str, Any]) -> str | None:
+    def _extract_common_name(self, cert: dict[str, Any]) -> Optional[str]:
         """Extract common name from certificate.
 
         Args:
@@ -352,7 +402,7 @@ class SSLCertificateValidator:
                     sans.append(value)
         return sans
 
-    def _match_hostname(self, hostname: str, pattern: str | None) -> bool:
+    def _match_hostname(self, hostname: str, pattern: Optional[str]) -> bool:
         """Match hostname against certificate pattern.
 
         Supports wildcard certificates (e.g., *.example.com).
@@ -403,7 +453,7 @@ class CertificatePinner:
         self.pinned_certs[hostname.lower()] = fingerprint
         self.logger.info("Pinned certificate for %s: %s", hostname, fingerprint)
 
-    def verify_pin(self, hostname: str, cert: bytes | dict[str, Any]) -> bool:
+    def verify_pin(self, hostname: str, cert: Union[bytes, dict[str, Any]]) -> bool:
         """Verify certificate matches pinned fingerprint.
 
         Args:

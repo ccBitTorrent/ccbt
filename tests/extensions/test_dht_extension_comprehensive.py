@@ -13,14 +13,13 @@ from __future__ import annotations
 import asyncio
 import socket
 import struct
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 
 from ccbt.extensions.dht import DHTExtension, DHTNode
 from ccbt.models import PeerInfo
-from ccbt.utils.events import Event, EventType
-
+from ccbt.utils.events import EventType
 
 pytestmark = [pytest.mark.unit, pytest.mark.extensions]
 

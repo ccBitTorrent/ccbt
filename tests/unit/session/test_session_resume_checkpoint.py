@@ -1,7 +1,7 @@
 """Tests for resume_from_checkpoint functionality."""
 
+
 import pytest
-from pathlib import Path
 
 from ccbt.models import TorrentCheckpoint
 

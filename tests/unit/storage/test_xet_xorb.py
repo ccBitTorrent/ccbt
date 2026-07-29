@@ -10,7 +10,6 @@ import pytest
 
 from ccbt.storage.xet_xorb import MAX_XORB_SIZE, Xorb
 
-
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
 
@@ -341,7 +340,6 @@ class TestXorb:
 
     def test_deserialize_compressed_without_lz4(self, monkeypatch):
         """Test deserializing compressed xorb without LZ4."""
-        from ccbt.storage.xet_xorb import HAS_LZ4
         xorb = Xorb()
         xorb.add_chunk(b"X" * 32, b"test data")
         serialized = xorb.serialize(compress=True)
@@ -434,11 +432,11 @@ class TestXorb:
         import struct
         xorb = Xorb()
         xorb.add_chunk(b"X" * 32, b"test data" * 100)
-        
+
         # Serialize with compression
         data = xorb.serialize(compress=True)
         data = bytearray(data)
-        
+
         # Find the compressed chunk data and corrupt it
         # After header (16 bytes) + chunk count (4 bytes) = 20 bytes
         # Then for each chunk: hash (32) + uncompressed_size (4) + compressed_size (4) + data
@@ -448,13 +446,12 @@ class TestXorb:
         if compressed_size > 0 and len(data) > offset + 4 + 10:
             # Corrupt the compressed data
             data[offset + 4 + 5] = 0xFF  # Corrupt byte in compressed data
-        
+
         # Should raise ValueError on decompression failure
         try:
             Xorb.deserialize(bytes(data))
             # If it doesn't raise, that's okay - corruption might not be detected
             # or compression might not have been applied
-            pass
         except ValueError as e:
             # Should raise ValueError with decompression error
             assert "decompress" in str(e).lower() or "Failed" in str(e)

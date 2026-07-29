@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ccbt.config.config_capabilities import SystemCapabilities
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class ConditionalConfig:
     """Applies conditional configuration based on system capabilities."""
 
-    def __init__(self, capabilities: SystemCapabilities | None = None):
+    def __init__(self, capabilities: Optional[SystemCapabilities] = None):
         """Initialize conditional configuration.
 
         Args:

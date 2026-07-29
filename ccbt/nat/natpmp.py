@@ -9,6 +9,7 @@ import socket
 import struct
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Optional
 
 from ccbt.nat.exceptions import NATPMPError
 
@@ -53,7 +54,7 @@ class NATPMPPortMapping:
 # Gateway discovery functions
 
 
-async def discover_gateway() -> ipaddress.IPv4Address | None:
+async def discover_gateway() -> Optional[ipaddress.IPv4Address]:
     """Discover the NAT gateway using the default gateway method.
 
     RFC 6886 section 3.3: Gateway is typically the default route gateway.
@@ -70,7 +71,7 @@ async def discover_gateway() -> ipaddress.IPv4Address | None:
         return None
 
 
-async def get_gateway_ip() -> ipaddress.IPv4Address | None:
+async def get_gateway_ip() -> Optional[ipaddress.IPv4Address]:
     """Get gateway IP using platform-specific methods."""
     import platform
 
@@ -155,7 +156,7 @@ async def get_gateway_ip() -> ipaddress.IPv4Address | None:
 
     # Fallback: try netifaces if available
     try:
-        import netifaces  # Optional dependency
+        import netifaces  # type: ignore[unresolved-import] # Optional dependency
 
         gateways = netifaces.gateways()
         default = gateways.get("default")
@@ -290,7 +291,7 @@ class NATPMPClient:
 
     def __init__(
         self,
-        gateway_ip: ipaddress.IPv4Address | None = None,
+        gateway_ip: Optional[ipaddress.IPv4Address] = None,
         timeout: float = NAT_PMP_REQUEST_TIMEOUT,
     ):
         """Initialize NAT-PMP client.
@@ -303,8 +304,8 @@ class NATPMPClient:
         self.gateway_ip = gateway_ip
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)
-        self._socket: socket.socket | None = None
-        self._external_ip: ipaddress.IPv4Address | None = None
+        self._socket: Optional[socket.socket] = None
+        self._external_ip: Optional[ipaddress.IPv4Address] = None
         self._last_epoch_time: int = 0
 
     async def _ensure_socket(self) -> socket.socket:
@@ -356,8 +357,20 @@ class NATPMPClient:
 
             except socket.timeout:
                 if attempt == NAT_PMP_MAX_RETRIES - 1:
+                    self.logger.info(
+                        "NAT-PMP timed out to gateway %s after %d attempts "
+                        "(UDP %s may be filtered or gateway may not support NAT-PMP)",
+                        self.gateway_ip,
+                        NAT_PMP_MAX_RETRIES,
+                        NAT_PMP_PORT,
+                    )
                     msg = "Timeout getting external IP"
                     raise NATPMPError(msg) from None
+                self.logger.debug(
+                    "NAT-PMP get external IP attempt %d/%d timed out, retrying",
+                    attempt + 1,
+                    NAT_PMP_MAX_RETRIES,
+                )
                 await asyncio.sleep(1)
             except Exception as e:
                 msg = f"Error getting external IP: {e}"
@@ -424,8 +437,18 @@ class NATPMPClient:
 
             except socket.timeout:
                 if attempt == NAT_PMP_MAX_RETRIES - 1:
+                    self.logger.info(
+                        "NAT-PMP port mapping timed out to gateway %s after %d attempts",
+                        self.gateway_ip,
+                        NAT_PMP_MAX_RETRIES,
+                    )
                     msg = "Timeout adding port mapping"
                     raise NATPMPError(msg) from None
+                self.logger.debug(
+                    "NAT-PMP add mapping attempt %d/%d timed out, retrying",
+                    attempt + 1,
+                    NAT_PMP_MAX_RETRIES,
+                )
                 await asyncio.sleep(1)
             except Exception as e:
                 msg = f"Error adding port mapping: {e}"

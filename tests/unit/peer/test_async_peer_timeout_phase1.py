@@ -14,8 +14,11 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.peer, pytest.mark.network]
 
-from ccbt.peer.async_peer_connection import AsyncPeerConnection, AsyncPeerConnectionManager
 from ccbt.models import PeerInfo
+from ccbt.peer.async_peer_connection import (
+    AsyncPeerConnection,
+    AsyncPeerConnectionManager,
+)
 
 
 @pytest.fixture
@@ -61,9 +64,9 @@ class TestAdaptiveTimeout:
         """Test timeout calculation based on RTT."""
         # Set RTT
         mock_connection.stats.request_latency = 0.1  # 100ms RTT
-        
+
         timeout = peer_connection_manager._calculate_timeout(mock_connection)
-        
+
         # Should be RTT * multiplier, clamped to min/max
         expected = 0.1 * peer_connection_manager.config.network.timeout_rtt_multiplier
         min_timeout = peer_connection_manager.config.network.timeout_min_seconds
@@ -75,9 +78,9 @@ class TestAdaptiveTimeout:
         """Test timeout respects minimum bound."""
         # Very low RTT
         mock_connection.stats.request_latency = 0.001  # 1ms RTT
-        
+
         timeout = peer_connection_manager._calculate_timeout(mock_connection)
-        
+
         # Should be at least min timeout
         assert timeout >= peer_connection_manager.config.network.timeout_min_seconds
 
@@ -85,16 +88,16 @@ class TestAdaptiveTimeout:
         """Test timeout respects maximum bound."""
         # Very high RTT
         mock_connection.stats.request_latency = 10.0  # 10s RTT
-        
+
         timeout = peer_connection_manager._calculate_timeout(mock_connection)
-        
+
         # Should be at most max timeout
         assert timeout <= peer_connection_manager.config.network.timeout_max_seconds
 
     def test_calculate_timeout_no_connection(self, peer_connection_manager):
         """Test timeout calculation with no connection."""
         timeout = peer_connection_manager._calculate_timeout(None)
-        
+
         # Should use default timeout
         assert timeout == peer_connection_manager.config.network.connection_timeout
 
@@ -102,9 +105,9 @@ class TestAdaptiveTimeout:
         """Test timeout calculation with zero RTT."""
         # Zero RTT
         mock_connection.stats.request_latency = 0.0
-        
+
         timeout = peer_connection_manager._calculate_timeout(mock_connection)
-        
+
         # Should use default timeout when RTT is 0
         assert timeout == peer_connection_manager.config.network.connection_timeout
 
@@ -112,9 +115,9 @@ class TestAdaptiveTimeout:
         """Test timeout calculation with negative RTT."""
         # Negative RTT (invalid, should use default)
         mock_connection.stats.request_latency = -0.1
-        
+
         timeout = peer_connection_manager._calculate_timeout(mock_connection)
-        
+
         # Should use default timeout for invalid RTT
         assert timeout == peer_connection_manager.config.network.connection_timeout
 

@@ -13,7 +13,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
+from typing import Any, Optional, Union
 
 from ccbt.models import PeerInfo
 from ccbt.utils.events import Event, EventType, emit_event
@@ -24,6 +24,8 @@ class PEXMessageType(IntEnum):
 
     ADDED = 0
     DROPPED = 1
+    CHUNKS_ADDED = 2  # XET chunk availability
+    CHUNKS_DROPPED = 3  # XET chunk unavailability
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,8 @@ class PeerExchange:
         self.added_peers: set[PEXPeer] = set()
         self.dropped_peers: set[PEXPeer] = set()
         self.peer_flags: dict[tuple[str, int], int] = {}  # (ip, port) -> flags
+        self.FLAG_PREFER_ENCRYPT = 0x01
+        self.FLAG_SEED = 0x02
 
     def encode_compact_peer(self, peer: PEXPeer) -> bytes:
         """Encode peer in compact format."""
@@ -99,18 +103,41 @@ class PeerExchange:
 
         return PEXPeer(ip=ip, port=port)
 
-    def encode_peers_list(self, peers: list[PEXPeer], _is_ipv6: bool = False) -> bytes:
+    @staticmethod
+    def _is_ipv6_peer(ip: str) -> bool:
+        """Check whether peer IP is IPv6."""
+        try:
+            socket.inet_pton(socket.AF_INET6, ip)
+            return True
+        except OSError:
+            return False
+
+    def encode_peers_list(self, peers: list[PEXPeer], is_ipv6: bool = False) -> bytes:
         """Encode list of peers in compact format."""
         if not peers:
             return b""
 
         peer_data = b""
         for peer in peers:
+            if self._is_ipv6_peer(peer.ip) != is_ipv6:
+                continue
             peer_data += self.encode_compact_peer(peer)
 
         return peer_data
 
-    def decode_peers_list(self, data: bytes, is_ipv6: bool = False) -> list[PEXPeer]:
+    def encode_peer_flags(self, peers: list[PEXPeer], is_ipv6: bool = False) -> bytes:
+        """Encode peer flags in compact flag bytes."""
+        if not peers:
+            return b""
+        return bytes(
+            peer.flags & 0xFF
+            for peer in peers
+            if self._is_ipv6_peer(peer.ip) == is_ipv6
+        )
+
+    def decode_peers_list(
+        self, data: bytes, is_ipv6: bool = False, flags: Optional[bytes] = None
+    ) -> list[PEXPeer]:
         """Decode list of peers from compact format."""
         peers = []
 
@@ -118,16 +145,127 @@ class PeerExchange:
             18 if is_ipv6 else 6
         )  # 16 bytes IP + 2 bytes port for IPv6, 4 bytes IP + 2 bytes port for IPv4
 
-        for i in range(0, len(data), peer_size):
-            if i + peer_size <= len(data):
+        peer_flags = flags or b""
+        for idx, offset in enumerate(range(0, len(data), peer_size)):
+            if offset + peer_size <= len(data):
                 try:
-                    peer = self.decode_compact_peer(data[i : i + peer_size], is_ipv6)
-                    peers.append(peer)
+                    peer = self.decode_compact_peer(
+                        data[offset : offset + peer_size], is_ipv6
+                    )
+                    peers.append(
+                        PEXPeer(
+                            ip=peer.ip,
+                            port=peer.port,
+                            flags=peer_flags[idx] if idx < len(peer_flags) else 0,
+                        )
+                    )
                 except ValueError:  # pragma: no cover - Invalid peer data skip, tested via valid peer data
                     # Skip invalid peer data
                     continue
 
         return peers
+
+    def encode_bep11_payload(
+        self,
+        *,
+        added_peers: Optional[list[PEXPeer]] = None,
+        dropped_peers: Optional[list[PEXPeer]] = None,
+    ) -> bytes:
+        """Encode BEP11 payload containing peer list updates."""
+        payload: dict[bytes, bytes] = {}
+
+        added_v4: list[PEXPeer] = []
+        added_v6: list[PEXPeer] = []
+        if added_peers:
+            for peer in added_peers:
+                if self._is_ipv6_peer(peer.ip):
+                    added_v6.append(peer)
+                else:
+                    added_v4.append(peer)
+
+        dropped_v4: list[PEXPeer] = []
+        dropped_v6: list[PEXPeer] = []
+        if dropped_peers:
+            for peer in dropped_peers:
+                if self._is_ipv6_peer(peer.ip):
+                    dropped_v6.append(peer)
+                else:
+                    dropped_v4.append(peer)
+
+        if added_v4:
+            payload[b"added"] = self.encode_peers_list(added_v4, is_ipv6=False)
+            payload[b"added.f"] = self.encode_peer_flags(added_v4, is_ipv6=False)
+        if added_v6:
+            payload[b"added6"] = self.encode_peers_list(added_v6, is_ipv6=True)
+            payload[b"added6.f"] = self.encode_peer_flags(added_v6, is_ipv6=True)
+        if dropped_v4:
+            payload[b"dropped"] = self.encode_peers_list(dropped_v4, is_ipv6=False)
+            payload[b"dropped.f"] = self.encode_peer_flags(dropped_v4, is_ipv6=False)
+        if dropped_v6:
+            payload[b"dropped6"] = self.encode_peers_list(dropped_v6, is_ipv6=True)
+            payload[b"dropped6.f"] = self.encode_peer_flags(dropped_v6, is_ipv6=True)
+
+        if not payload:
+            return b""
+
+        from ccbt.core.bencode import BencodeEncoder
+
+        encoder = BencodeEncoder()
+        return encoder.encode(payload)
+
+    def _extract_bep11_bytes(
+        self, payload: dict[Any, Any], key: Union[str, bytes]
+    ) -> bytes:
+        """Extract a bytes field from a BEP11 payload."""
+        if not isinstance(payload, dict):
+            return b""
+        value = payload.get(key)
+        if value is None and isinstance(key, str):
+            value = payload.get(key.encode())
+        if isinstance(value, bytes):
+            return value
+        return b""
+
+    def decode_bep11_payload(
+        self, payload: bytes
+    ) -> tuple[list[PEXPeer], list[PEXPeer], list[PEXPeer], list[PEXPeer]]:
+        """Decode BEP11 payload.
+
+        Returns:
+            Tuple of (added_peers_v4, added_peers_v6, dropped_peers_v4, dropped_peers_v6).
+        """
+        if not payload:
+            return [], [], [], []
+
+        from ccbt.core.bencode import BencodeDecoder
+
+        decoder = BencodeDecoder(payload)
+        decoded = decoder.decode()
+        if not isinstance(decoded, dict):
+            msg = "Invalid BEP11 payload"
+            raise TypeError(msg)
+
+        added_peers = self.decode_peers_list(
+            self._extract_bep11_bytes(decoded, b"added"),
+            is_ipv6=False,
+            flags=self._extract_bep11_bytes(decoded, b"added.f"),
+        )
+        added_v6 = self.decode_peers_list(
+            self._extract_bep11_bytes(decoded, b"added6"),
+            is_ipv6=True,
+            flags=self._extract_bep11_bytes(decoded, b"added6.f"),
+        )
+        dropped_peers = self.decode_peers_list(
+            self._extract_bep11_bytes(decoded, b"dropped"),
+            is_ipv6=False,
+            flags=self._extract_bep11_bytes(decoded, b"dropped.f"),
+        )
+        dropped_v6 = self.decode_peers_list(
+            self._extract_bep11_bytes(decoded, b"dropped6"),
+            is_ipv6=True,
+            flags=self._extract_bep11_bytes(decoded, b"dropped6.f"),
+        )
+        return added_peers, added_v6, dropped_peers, dropped_v6
 
     def encode_added_peers(self, peers: list[PEXPeer], is_ipv6: bool = False) -> bytes:
         """Encode added peers message."""
@@ -149,6 +287,83 @@ class PeerExchange:
         # Pack message: <length><message_id><peers_data>
         return (
             struct.pack("!IB", len(peers_data) + 1, PEXMessageType.DROPPED) + peers_data
+        )
+
+    def encode_chunks_list(self, chunk_hashes: list[bytes]) -> bytes:
+        """Encode list of chunk hashes in compact format.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Encoded chunk hashes as bytes
+
+        """
+        if not chunk_hashes:
+            return b""
+
+        chunks_data = b""
+        for chunk_hash in chunk_hashes:
+            if len(chunk_hash) != 32:
+                continue
+            chunks_data += chunk_hash
+
+        return chunks_data
+
+    def decode_chunks_list(self, data: bytes) -> list[bytes]:
+        """Decode list of chunk hashes from compact format.
+
+        Args:
+            data: Encoded chunk hashes data
+
+        Returns:
+            List of 32-byte chunk hashes
+
+        """
+        chunks = []
+        chunk_size = 32  # 32 bytes per chunk hash
+
+        for i in range(0, len(data), chunk_size):
+            if i + chunk_size <= len(data):
+                chunk_hash = data[i : i + chunk_size]
+                chunks.append(chunk_hash)
+
+        return chunks
+
+    def encode_added_chunks(self, chunk_hashes: list[bytes]) -> bytes:
+        """Encode added chunks message.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Encoded message bytes
+
+        """
+        chunks_data = self.encode_chunks_list(chunk_hashes)
+
+        # Pack message: <length><message_id><chunks_data>
+        return (
+            struct.pack("!IB", len(chunks_data) + 1, PEXMessageType.CHUNKS_ADDED)
+            + chunks_data
+        )
+
+    def encode_dropped_chunks(self, chunk_hashes: list[bytes]) -> bytes:
+        """Encode dropped chunks message.
+
+        Args:
+            chunk_hashes: List of 32-byte chunk hashes
+
+        Returns:
+            Encoded message bytes
+
+        """
+        chunks_data = self.encode_chunks_list(chunk_hashes)
+
+        # Pack message: <length><message_id><chunks_data>
+        return (
+            struct.pack("!IB", len(chunks_data) + 1, PEXMessageType.CHUNKS_DROPPED)
+            + chunks_data
         )
 
     def decode_pex_message(
@@ -251,12 +466,22 @@ class PeerExchange:
     def is_peer_seed(self, ip: str, port: int) -> bool:
         """Check if peer is a seed."""
         flags = self.get_peer_flags(ip, port)
-        return (flags & 0x01) != 0  # Bit 0 indicates seed
+        return (flags & self.FLAG_SEED) != 0
+
+    def is_peer_encrypt_preferred(self, ip: str, port: int) -> bool:
+        """Check if peer prefers encryption."""
+        flags = self.get_peer_flags(ip, port)
+        return (flags & self.FLAG_PREFER_ENCRYPT) != 0
 
     def is_peer_connectable(self, ip: str, port: int) -> bool:
-        """Check if peer is connectable."""
-        flags = self.get_peer_flags(ip, port)
-        return (flags & 0x02) != 0  # Bit 1 indicates connectable
+        """Return whether peer can be considered connectable.
+
+        BEP 11 flags only define encryption preference and seed/upload-only bits.
+        Because connectability is not explicitly represented, this helper currently
+        returns ``True`` for known peers to preserve compatibility.
+        """
+        _ = self.get_peer_flags(ip, port)
+        return True
 
     def get_peer_statistics(self) -> dict[str, Any]:
         """Get PEX statistics."""
@@ -265,11 +490,9 @@ class PeerExchange:
             "dropped_peers_count": len(self.dropped_peers),
             "total_peers_with_flags": len(self.peer_flags),
             "seeds_count": sum(
-                1 for flags in self.peer_flags.values() if (flags & 0x01) != 0
+                1 for flags in self.peer_flags.values() if (flags & self.FLAG_SEED) != 0
             ),
-            "connectable_peers_count": sum(
-                1 for flags in self.peer_flags.values() if (flags & 0x02) != 0
-            ),
+            "connectable_peers_count": len(self.peer_flags),
         }
 
     def create_peer_from_info(
@@ -278,12 +501,16 @@ class PeerExchange:
         is_seed: bool = False,
         is_connectable: bool = True,
     ) -> PEXPeer:
-        """Create PEX peer from PeerInfo."""
+        """Create PEX peer from PeerInfo.
+
+        Note: ``is_connectable`` maps to the BEP 11 encryption-preference bit
+        (0x01). PEX has no dedicated connectability bit in this implementation.
+        """
         flags = 0
         if is_seed:
-            flags |= 0x01
+            flags |= self.FLAG_SEED
         if is_connectable:
-            flags |= 0x02
+            flags |= self.FLAG_PREFER_ENCRYPT
 
         return PEXPeer(ip=peer_info.ip, port=peer_info.port, flags=flags)
 

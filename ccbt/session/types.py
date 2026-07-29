@@ -1,23 +1,32 @@
+"""Type definitions for session components.
+
+This module provides type aliases and protocol definitions used throughout
+the session management system.
+"""
+
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from ccbt.models import ConnectSubmitResult
 
 
 @runtime_checkable
 class DHTClientProtocol(Protocol):
     """Protocol for DHT client interactions used by the session layer."""
 
-    def add_peer_callback(
+    def add_peer_callback(  # noqa: D102
         self,
         callback: Callable[[list[tuple[str, int]]], None],
-        info_hash: bytes | None = None,
+        info_hash: Optional[bytes] = None,
     ) -> None: ...
 
-    async def get_peers(
+    async def get_peers(  # noqa: D102
         self, info_hash: bytes, max_peers: int = 50
     ) -> list[tuple[str, int]]: ...
 
-    async def wait_for_bootstrap(
+    async def wait_for_bootstrap(  # noqa: D102
         self, timeout: float = 10.0
     ) -> bool:  # optional in implementations
         ...
@@ -27,21 +36,21 @@ class DHTClientProtocol(Protocol):
 class TrackerClientProtocol(Protocol):
     """Protocol for tracker client interactions."""
 
-    async def start(self) -> None: ...
+    async def start(self) -> None: ...  # noqa: D102
 
-    async def stop(self) -> None: ...
+    async def stop(self) -> None: ...  # noqa: D102
 
-    async def announce(  # pragma: no cover - protocol definition only
+    async def announce(  # pragma: no cover - protocol definition only  # noqa: D102
         self,
         torrent_data: dict[str, Any],
         port: int,
         uploaded: int = 0,
         downloaded: int = 0,
-        left: int | None = None,
+        left: Optional[int] = None,
         event: str = "started",
     ) -> Any: ...
 
-    async def announce_to_multiple(  # pragma: no cover - protocol definition only
+    async def announce_to_multiple(  # pragma: no cover - protocol definition only  # noqa: D102
         self,
         torrent_data: dict[str, Any],
         tracker_urls: list[str],
@@ -49,18 +58,20 @@ class TrackerClientProtocol(Protocol):
         event: str = "started",
     ) -> list[Any]: ...
 
-    async def scrape(self, torrent_data: dict[str, Any]) -> dict[str, Any]: ...
+    async def scrape(self, torrent_data: dict[str, Any]) -> dict[str, Any]: ...  # noqa: D102
 
 
 @runtime_checkable
 class PeerManagerProtocol(Protocol):
     """Protocol for peer connection manager."""
 
-    async def start(self) -> None: ...
+    async def start(self) -> None: ...  # noqa: D102
 
-    async def connect_to_peers(self, peers: list[dict[str, Any]]) -> None: ...
+    async def connect_to_peers(  # noqa: D102
+        self, peers: list[dict[str, Any]]
+    ) -> ConnectSubmitResult: ...
 
-    async def broadcast_have(self, piece_index: int) -> Any: ...
+    async def broadcast_have(self, piece_index: int) -> Any: ...  # noqa: D102
 
     # Event hooks (settable attributes in concrete implementations)
     on_peer_connected: Any
@@ -73,11 +84,11 @@ class PeerManagerProtocol(Protocol):
 class PieceManagerProtocol(Protocol):
     """Protocol for piece manager."""
 
-    async def start(self) -> None: ...
+    async def start(self) -> None: ...  # noqa: D102
 
-    async def start_download(self, peer_manager: Any) -> None: ...
+    async def start_download(self, peer_manager: Any) -> None: ...  # noqa: D102
 
-    async def get_checkpoint_state(
+    async def get_checkpoint_state(  # noqa: D102
         self, name: str, info_hash: bytes, output_dir: str
     ) -> Any: ...
 
@@ -92,11 +103,11 @@ class PieceManagerProtocol(Protocol):
 class CheckpointStoreProtocol(Protocol):
     """Protocol for checkpoint storage/manager."""
 
-    async def save_checkpoint(self, checkpoint: Any) -> None: ...
+    async def save_checkpoint(self, checkpoint: Any) -> None: ...  # noqa: D102
 
-    async def load_checkpoint(self, info_hash: bytes) -> Any: ...
+    async def load_checkpoint(self, info_hash: bytes) -> Any: ...  # noqa: D102
 
-    async def backup_checkpoint(
+    async def backup_checkpoint(  # noqa: D102
         self,
         info_hash: bytes,
         destination: Any,

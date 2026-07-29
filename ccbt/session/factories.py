@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from ccbt import session as _session_mod
 
@@ -21,7 +21,7 @@ class ComponentFactory:
         self._di = manager._di
         self.logger = manager.logger
 
-    def create_security_manager(self) -> Any | None:
+    def create_security_manager(self) -> Optional[Any]:
         """Create security manager with DI fallback.
 
         Returns:
@@ -42,7 +42,7 @@ class ComponentFactory:
         except Exception:
             return None
 
-    def create_dht_client(self, bind_ip: str, bind_port: int) -> Any | None:
+    def create_dht_client(self, bind_ip: str, bind_port: int) -> Optional[Any]:
         """Create DHT client with DI fallback.
 
         Args:
@@ -55,7 +55,19 @@ class ComponentFactory:
         """
         if self._di and self._di.dht_client_factory:
             try:
-                return self._di.dht_client_factory(bind_ip=bind_ip, bind_port=bind_port)
+                dht_client = self._di.dht_client_factory(
+                    bind_ip=bind_ip, bind_port=bind_port
+                )
+                if hasattr(self.manager, "private_torrents"):
+                    dht_client.is_private_torrent = (
+                        lambda info_hash: info_hash in self.manager.private_torrents
+                    )
+                    dht_client.is_swarm_discovery_disabled = (
+                        lambda info_hash: self.manager._is_dht_discovery_disabled(
+                            info_hash
+                        )
+                    )
+                return dht_client
             except Exception as e:
                 self.logger.debug(
                     "DI dht_client_factory failed, falling back: %s", e, exc_info=True
@@ -68,15 +80,18 @@ class ComponentFactory:
             # BEP 27: Set callback to check if torrent is private
             # This allows DHT client to skip operations for private torrents
             if hasattr(self.manager, "private_torrents"):
-                dht_client.is_private_torrent = lambda info_hash: info_hash in self.manager.private_torrents
+                dht_client.is_private_torrent = (
+                    lambda info_hash: info_hash in self.manager.private_torrents
+                )
+                dht_client.is_swarm_discovery_disabled = (
+                    lambda info_hash: self.manager._is_dht_discovery_disabled(info_hash)
+                )
             return dht_client
-        except Exception as e:
-            self.logger.error(
-                "Failed to create DHT client: %s", e, exc_info=True
-            )
+        except Exception:
+            self.logger.exception("Failed to create DHT client")
             return None
 
-    def create_nat_manager(self) -> Any | None:
+    def create_nat_manager(self) -> Optional[Any]:
         """Create NAT manager with DI fallback.
 
         Returns:
@@ -97,7 +112,7 @@ class ComponentFactory:
         except Exception:
             return None
 
-    def create_tcp_server(self) -> Any | None:
+    def create_tcp_server(self) -> Optional[Any]:
         """Create TCP server with DI fallback.
 
         Returns:
@@ -115,8 +130,27 @@ class ComponentFactory:
             from ccbt.peer.tcp_server import IncomingPeerServer
 
             return IncomingPeerServer(self.manager, self.manager.config)
-        except Exception as e:
-            self.logger.error(
-                "Failed to create TCP server: %s", e, exc_info=True
-            )
+        except Exception:
+            self.logger.exception("Failed to create TCP server")
             return None
+
+    def create_udp_tracker_client(self) -> Any:
+        """Return UDP tracker client (singleton) with DI fallback.
+
+        Returns:
+            AsyncUDPTrackerClient instance from DI provider or module singleton.
+
+        """
+        if self._di and self._di.udp_tracker_client_provider:
+            try:
+                client = self._di.udp_tracker_client_provider()
+                if client is not None:
+                    return client
+            except Exception:
+                self.logger.debug(
+                    "DI udp_tracker_client_provider failed, falling back",
+                    exc_info=True,
+                )
+        from ccbt.discovery.tracker_udp_client import get_udp_tracker_client
+
+        return get_udp_tracker_client()

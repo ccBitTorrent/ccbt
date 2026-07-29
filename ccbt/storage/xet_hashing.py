@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -38,9 +38,47 @@ class XetHasher:
     """
 
     HASH_SIZE = 32  # 32 bytes for BLAKE3-256 or SHA-256
+    HASH_IDENTITY_PREFIX = "xet-hash:v1:"
 
     @staticmethod
-    def compute_chunk_hash(chunk_data: bytes) -> bytes:
+    def normalize_hash_algorithm(algorithm: Optional[str] = None) -> str:
+        """Normalize a hash algorithm name or network hash identity.
+
+        Accepts algorithm names (`blake3`, `sha256`), network identities
+        (`xet-hash:v1:blake3`), and `auto` (resolved to local default).
+        """
+        value = (algorithm or XetHasher.get_hash_algorithm()).lower()
+        if value == "auto":
+            return XetHasher.get_hash_algorithm()
+        if value.startswith(XetHasher.HASH_IDENTITY_PREFIX):
+            value = value[len(XetHasher.HASH_IDENTITY_PREFIX) :]
+        if value not in {"blake3", "sha256"}:
+            msg = f"Unsupported XET hash algorithm: {value}"
+            raise ValueError(msg)
+        return value
+
+    @staticmethod
+    def get_hash_identity(algorithm: Optional[str] = None) -> str:
+        """Return namespaced network hash identity for handshake negotiation."""
+        normalized = XetHasher.normalize_hash_algorithm(algorithm)
+        return f"{XetHasher.HASH_IDENTITY_PREFIX}{normalized}"
+
+    @staticmethod
+    def _resolve_algorithm(algorithm: Optional[str] = None) -> str:
+        """Resolve the requested hash algorithm."""
+        selected = XetHasher.normalize_hash_algorithm(algorithm)
+        if selected == "blake3" and not HAS_BLAKE3:
+            msg = "BLAKE3 was negotiated but the local runtime does not support it"
+            raise ValueError(msg)
+        return selected
+
+    @staticmethod
+    def get_hash_algorithm() -> str:
+        """Return the concrete hash algorithm used for XET identities."""
+        return "blake3" if HAS_BLAKE3 else "sha256"
+
+    @staticmethod
+    def compute_chunk_hash(chunk_data: bytes, algorithm: Optional[str] = None) -> bytes:
         """Compute BLAKE3-256 hash for a chunk.
 
         Uses BLAKE3 if available for better performance, otherwise
@@ -48,20 +86,22 @@ class XetHasher:
 
         Args:
             chunk_data: Chunk data to hash
+            algorithm: Optional hash algorithm override (`blake3` or `sha256`)
 
         Returns:
             32-byte hash (BLAKE3-256 or SHA-256)
 
         """
-        if HAS_BLAKE3:
+        resolved_algorithm = XetHasher._resolve_algorithm(algorithm)
+        if resolved_algorithm == "blake3":
             return blake3.blake3(chunk_data).digest()
-        # Fallback to SHA-256 (protocol-compatible)
+        # SHA-256 is only used when selected explicitly or as the local default.
         return hashlib.sha256(
             chunk_data
         ).digest()  # pragma: no cover - Fallback tested via monkeypatch in tests
 
     @staticmethod
-    def compute_xorb_hash(xorb_data: bytes) -> bytes:
+    def compute_xorb_hash(xorb_data: bytes, algorithm: Optional[str] = None) -> bytes:
         """Compute hash for xorb data.
 
         Xorbs are collections of chunks stored together. This method
@@ -69,15 +109,18 @@ class XetHasher:
 
         Args:
             xorb_data: Xorb data to hash
+            algorithm: Optional hash algorithm override (`blake3` or `sha256`)
 
         Returns:
             32-byte hash
 
         """
-        return XetHasher.compute_chunk_hash(xorb_data)
+        return XetHasher.compute_chunk_hash(xorb_data, algorithm=algorithm)
 
     @staticmethod
-    def build_merkle_tree(chunks: list[bytes]) -> bytes:
+    def build_merkle_tree(
+        chunks: list[bytes], algorithm: Optional[str] = None
+    ) -> bytes:
         """Build Merkle tree from chunk hashes.
 
         Constructs a binary Merkle tree bottom-up from chunk hashes.
@@ -86,6 +129,7 @@ class XetHasher:
 
         Args:
             chunks: List of chunk data (not hashes - will be hashed)
+            algorithm: Optional hash algorithm override (`blake3` or `sha256`)
 
         Returns:
             32-byte root hash (Merkle tree root)
@@ -95,7 +139,9 @@ class XetHasher:
             return b"\x00" * XetHasher.HASH_SIZE
 
         # Compute chunk hashes
-        hashes = [XetHasher.compute_chunk_hash(chunk) for chunk in chunks]
+        hashes = [
+            XetHasher.compute_chunk_hash(chunk, algorithm=algorithm) for chunk in chunks
+        ]
 
         # Build binary tree bottom-up
         while len(hashes) > 1:
@@ -104,18 +150,24 @@ class XetHasher:
                 if i + 1 < len(hashes):
                     # Pair hashes: combine and hash
                     combined = hashes[i] + hashes[i + 1]
-                    next_level.append(XetHasher.compute_chunk_hash(combined))
+                    next_level.append(
+                        XetHasher.compute_chunk_hash(combined, algorithm=algorithm)
+                    )
                 else:
                     # Odd number, promote single hash (duplicate for pairing)
                     # In Merkle trees, odd nodes are typically duplicated
                     combined = hashes[i] + hashes[i]
-                    next_level.append(XetHasher.compute_chunk_hash(combined))
+                    next_level.append(
+                        XetHasher.compute_chunk_hash(combined, algorithm=algorithm)
+                    )
             hashes = next_level
 
         return hashes[0]
 
     @staticmethod
-    def build_merkle_tree_from_hashes(chunk_hashes: list[bytes]) -> bytes:
+    def build_merkle_tree_from_hashes(
+        chunk_hashes: list[bytes], algorithm: Optional[str] = None
+    ) -> bytes:
         """Build Merkle tree from existing chunk hashes.
 
         This variant takes pre-computed chunk hashes instead of chunk data.
@@ -123,6 +175,7 @@ class XetHasher:
 
         Args:
             chunk_hashes: List of 32-byte chunk hashes
+            algorithm: Optional hash algorithm override (`blake3` or `sha256`)
 
         Returns:
             32-byte root hash (Merkle tree root)
@@ -147,24 +200,29 @@ class XetHasher:
                 if i + 1 < len(hashes):
                     # Pair hashes
                     combined = hashes[i] + hashes[i + 1]
-                    next_level.append(XetHasher.compute_chunk_hash(combined))
+                    next_level.append(
+                        XetHasher.compute_chunk_hash(combined, algorithm=algorithm)
+                    )
                 else:  # pragma: no cover - Odd number handling tested in test_build_merkle_tree_three
                     # Odd number, duplicate for pairing
                     combined = hashes[i] + hashes[i]  # pragma: no cover - Same context
                     next_level.append(
-                        XetHasher.compute_chunk_hash(combined)
+                        XetHasher.compute_chunk_hash(combined, algorithm=algorithm)
                     )  # pragma: no cover - Same context
             hashes = next_level
 
         return hashes[0]
 
     @staticmethod
-    def verify_chunk_hash(chunk_data: bytes, expected_hash: bytes) -> bool:
+    def verify_chunk_hash(
+        chunk_data: bytes, expected_hash: bytes, algorithm: Optional[str] = None
+    ) -> bool:
         """Verify chunk data against expected hash.
 
         Args:
             chunk_data: Chunk data to verify
             expected_hash: Expected hash (32 bytes)
+            algorithm: Optional hash algorithm override (`blake3` or `sha256`)
 
         Returns:
             True if hash matches, False otherwise
@@ -173,13 +231,13 @@ class XetHasher:
         if len(expected_hash) != XetHasher.HASH_SIZE:
             return False
 
-        actual_hash = XetHasher.compute_chunk_hash(chunk_data)
+        actual_hash = XetHasher.compute_chunk_hash(chunk_data, algorithm=algorithm)
         return actual_hash == expected_hash
 
     @staticmethod
     def hash_file_incremental(
         file_path: str,
-        chunk_callback: Callable[[bytes], None] | None = None,
+        chunk_callback: Optional[Callable[[bytes], None]] = None,
     ) -> bytes:
         """Compute file hash incrementally by reading and hashing chunks.
 

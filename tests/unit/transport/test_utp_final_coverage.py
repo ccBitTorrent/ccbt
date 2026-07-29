@@ -1,10 +1,10 @@
 """Final tests to achieve 100% coverage for uTP implementation."""
 
 import asyncio
-import struct
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import pytest_asyncio
 
 from ccbt.transport.utp import (
     UTPConnection,
@@ -13,11 +13,8 @@ from ccbt.transport.utp import (
     UTPPacketType,
 )
 from ccbt.transport.utp_extensions import (
-    ECNExtension,
-    SACKExtension,
     SACKBlock,
     UTPExtensionType,
-    WindowScalingExtension,
 )
 from ccbt.transport.utp_socket import UTPSocketManager
 
@@ -37,7 +34,7 @@ class TestUTPPacketUnpackEdgeCases:
             wnd_size=65535,
         )
         data = packet.pack()
-        
+
         # Manually modify to have extension field set but invalid extension data
         data = bytearray(data)
         data[2] = 1  # Set extension field to indicate extensions present
@@ -64,7 +61,7 @@ class TestUTPPacketUnpackEdgeCases:
             wnd_size=0,
         )
         data = packet.pack()
-        
+
         # Modify version byte
         data = bytearray(data)
         data[1] = 2  # Version 2 (unsupported)
@@ -97,46 +94,42 @@ class TestConnectionInitialization:
     async def test_initialize_transport_with_connection_id_generation(self):
         """Test initialize_transport with connection ID generation."""
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=None)
-        
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance"
-        ) as mock_get_instance:
-            mock_manager = MagicMock()
-            mock_transport = MagicMock()
-            mock_manager.get_transport.return_value = mock_transport
-            mock_manager._generate_connection_id.return_value = 54321
-            mock_manager._initialized = True  # Ensure manager is initialized
-            mock_get_instance.return_value = mock_manager
 
-            await conn.initialize_transport()
+        mock_manager = MagicMock()
+        mock_manager.register_connection = Mock()
+        mock_transport = MagicMock()
+        mock_manager.get_transport.return_value = mock_transport
+        mock_manager.generate_connection_id.return_value = 54321
+        mock_manager._initialized = True  # Ensure manager is initialized
+        conn.socket_manager = mock_manager
 
-            # Connection ID should be generated
-            assert conn.connection_id == 54321
-            assert conn._connection_id_generated
-            mock_manager._generate_connection_id.assert_called_once()
-            mock_manager.register_connection.assert_called_once()
+        await conn.initialize_transport()
+
+        # Connection ID should be generated
+        assert conn.connection_id == 54321
+        assert conn._connection_id_generated
+        mock_manager.generate_connection_id.assert_called_once()
+        mock_manager.register_connection.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_initialize_transport_with_existing_connection_id(self):
         """Test initialize_transport when connection_id already set."""
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
-        
-        with patch(
-            "ccbt.transport.utp_socket.UTPSocketManager.get_instance"
-        ) as mock_get_instance:
-            mock_manager = MagicMock()
-            mock_transport = MagicMock()
-            mock_manager.get_transport.return_value = mock_transport
-            mock_manager._initialized = True
-            mock_get_instance.return_value = mock_manager
 
-            await conn.initialize_transport()
+        mock_manager = MagicMock()
+        mock_manager.register_connection = Mock()
+        mock_transport = MagicMock()
+        mock_manager.get_transport.return_value = mock_transport
+        mock_manager._initialized = True
+        conn.socket_manager = mock_manager
 
-            # Connection ID should remain the same
-            assert conn.connection_id == 12345
-            assert conn._connection_id_generated
-            # Should not call _generate_connection_id
-            mock_manager._generate_connection_id.assert_not_called()
+        await conn.initialize_transport()
+
+        # Connection ID should remain the same
+        assert conn.connection_id == 12345
+        assert conn._connection_id_generated
+        # Should not call generate_connection_id
+        mock_manager.generate_connection_id.assert_not_called()
 
 
 class TestRTTUpdate:
@@ -180,7 +173,7 @@ class TestRTTUpdate:
 
         # Should use timestamp_diff path (send_time > 0 check fails)
         connection._update_rtt(ack, 0.0)
-        
+
         # SRTT should be updated using timestamp_diff
         assert connection.srtt > 0
 
@@ -365,10 +358,10 @@ class TestHandshakeMethods:
 
         # Give async tasks time
         await asyncio.sleep(0.1)
-        
+
         # Should complete handshake
         assert connection.state == UTPConnectionState.CONNECTED
-        
+
         # Cleanup
         await connection.close()
 
@@ -383,10 +376,10 @@ class TestHandshakeMethods:
 
         # Should transition to CONNECTED
         assert connection.state == UTPConnectionState.CONNECTED
-        
+
         # Background tasks should be started
         await asyncio.sleep(0.1)
-        
+
         # Cleanup
         await connection.close()
 
@@ -395,13 +388,13 @@ class TestHandshakeMethods:
         """Test completing handshake with callback."""
         connection.state = UTPConnectionState.SYN_RECEIVED
         connection.transport = MagicMock()
-        
+
         callback_called = False
-        
+
         def on_connected():
             nonlocal callback_called
             callback_called = True
-        
+
         connection.on_connected = on_connected
 
         connection._complete_handshake()
@@ -409,7 +402,7 @@ class TestHandshakeMethods:
         # Should transition to CONNECTED and call callback
         assert connection.state == UTPConnectionState.CONNECTED
         assert callback_called
-        
+
         # Cleanup
         await asyncio.sleep(0.1)
         await connection.close()
@@ -419,17 +412,17 @@ class TestHandshakeMethods:
         """Test completing handshake with callback that raises exception."""
         connection.state = UTPConnectionState.SYN_RECEIVED
         connection.transport = MagicMock()
-        
+
         def on_connected():
             raise Exception("Test exception")
-        
+
         connection.on_connected = on_connected
 
         connection._complete_handshake()
 
         # Should handle exception gracefully
         assert connection.state == UTPConnectionState.CONNECTED
-        
+
         # Cleanup
         await asyncio.sleep(0.1)
         await connection.close()
@@ -477,9 +470,9 @@ class TestSendMethod:
 class TestReceiveMethod:
     """Tests for receive() method edge cases."""
 
-    @pytest.fixture
-    def connection(self):
-        """Create a connected connection."""
+    @pytest_asyncio.fixture
+    async def connection(self):
+        """Create a connected connection on the active event loop."""
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
         conn.transport = MagicMock()
         conn.state = UTPConnectionState.CONNECTED
@@ -557,11 +550,11 @@ class TestBackgroundTasks:
     async def test_retransmission_loop_exception(self, connection):
         """Test retransmission loop handles exceptions."""
         connection.state = UTPConnectionState.CONNECTED
-        
+
         # Mock _check_retransmissions to raise exception
         original_check = connection._check_retransmissions
         call_count = 0
-        
+
         async def mock_check():
             nonlocal call_count
             call_count += 1
@@ -569,17 +562,17 @@ class TestBackgroundTasks:
                 raise Exception("Test exception")
             # After exception, call original
             await original_check()
-        
+
         connection._check_retransmissions = mock_check
-        
+
         task = asyncio.create_task(connection._retransmission_loop())
-        
+
         # Wait a bit for exception to occur and loop to continue
         await asyncio.sleep(0.25)
-        
+
         # Verify loop continued after exception (call_count should be > 1)
         assert call_count > 1, "Loop should continue after exception"
-        
+
         # Cancel task
         task.cancel()
         try:
@@ -591,28 +584,28 @@ class TestBackgroundTasks:
     async def test_send_loop_exception(self, connection):
         """Test send loop handles exceptions."""
         connection.state = UTPConnectionState.CONNECTED
-        
+
         # Mock send to raise exception
         original_send = connection.send
         call_count = 0
-        
+
         async def mock_send(data):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise Exception("Test exception")
             await original_send(data)
-        
+
         connection.send = mock_send
-        
+
         # Add data to queue
         await connection.send_queue.put(b"test")
-        
+
         task = asyncio.create_task(connection._send_loop())
-        
+
         # Wait a bit
         await asyncio.sleep(0.1)
-        
+
         # Cancel task
         task.cancel()
         try:
@@ -624,12 +617,12 @@ class TestBackgroundTasks:
     async def test_send_loop_timeout(self, connection):
         """Test send loop timeout handling."""
         connection.state = UTPConnectionState.CONNECTED
-        
+
         task = asyncio.create_task(connection._send_loop())
-        
+
         # Wait for timeout (1 second)
         await asyncio.sleep(1.1)
-        
+
         # Cancel task
         task.cancel()
         try:
@@ -655,20 +648,20 @@ class TestDelayedAckLoop:
         """Test delayed ACK loop handles exceptions."""
         connection.state = UTPConnectionState.CONNECTED
         connection.ack_delay = 0.01
-        
+
         # Mock _send_batched_acks to raise exception
         original_send = connection._send_batched_acks
         call_count = 0
-        
+
         def mock_send():
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise Exception("Test exception")
             original_send()
-        
+
         connection._send_batched_acks = mock_send
-        
+
         # Add pending ACK
         ack = UTPPacket(
             type=UTPPacketType.ST_STATE,
@@ -678,12 +671,12 @@ class TestDelayedAckLoop:
             wnd_size=65535,
         )
         connection.pending_acks.append(ack)
-        
+
         task = asyncio.create_task(connection._delayed_ack_loop())
-        
+
         # Wait a bit
         await asyncio.sleep(0.05)
-        
+
         # Cancel task
         task.cancel()
         try:
@@ -701,21 +694,18 @@ class TestSACKBlockGeneration:
         conn = UTPConnection(remote_addr=("127.0.0.1", 6881), connection_id=12345)
         conn.transport = MagicMock()
         conn.state = UTPConnectionState.CONNECTED
-        from ccbt.transport.utp_extensions import UTPExtensionType
         conn.negotiated_extensions.add(UTPExtensionType.SACK)
         return conn
 
     def test_process_sack_blocks_empty_list(self, connection):
         """Test processing empty SACK blocks list."""
         connection._process_sack_blocks([])
-        
+
         # Should handle gracefully
         assert True  # No exception
 
     def test_process_sack_blocks_not_instance(self, connection):
         """Test processing SACK blocks with non-SACKBlock items."""
-        from ccbt.transport.utp_extensions import SACKBlock
-        
         # Add packets to send buffer
         for seq in range(100, 110):
             packet = UTPPacket(
@@ -733,7 +723,7 @@ class TestSACKBlockGeneration:
         fake_block = MagicMock()  # Not a SACKBlock
         fake_block.start_seq = 105
         fake_block.end_seq = 110
-        
+
         connection._process_sack_blocks([real_block, fake_block])
 
         # Should process real block but skip fake one (isinstance check fails)
@@ -793,14 +783,14 @@ class TestSACKBlockGeneration:
         """Test generating SACK blocks with no received sequences."""
         connection.received_seqs = set()
         blocks = connection._generate_sack_blocks()
-        
+
         assert len(blocks) == 0
 
     def test_generate_sack_blocks_single(self, connection):
         """Test generating SACK blocks with single sequence."""
         connection.received_seqs = {100}
         blocks = connection._generate_sack_blocks()
-        
+
         assert len(blocks) == 1
         assert blocks[0].start_seq == 100
         assert blocks[0].end_seq == 101
@@ -809,7 +799,7 @@ class TestSACKBlockGeneration:
         """Test generating SACK blocks with contiguous sequences."""
         connection.received_seqs = {100, 101, 102, 103, 104}
         blocks = connection._generate_sack_blocks()
-        
+
         # Should be one contiguous block
         assert len(blocks) == 1
         assert blocks[0].start_seq == 100
@@ -819,7 +809,7 @@ class TestSACKBlockGeneration:
         """Test generating SACK blocks with gaps."""
         connection.received_seqs = {100, 101, 105, 106, 110, 111}
         blocks = connection._generate_sack_blocks()
-        
+
         # Should have 3 blocks
         assert len(blocks) == 3
         assert blocks[0].start_seq == 100
@@ -834,7 +824,7 @@ class TestSACKBlockGeneration:
         # Create more than 4 gaps
         connection.received_seqs = {100, 102, 104, 106, 108, 110, 112, 114, 116}
         blocks = connection._generate_sack_blocks()
-        
+
         # Should be limited to 4 blocks (RFC 2018)
         assert len(blocks) <= 4
 
@@ -847,7 +837,7 @@ class TestSACKBlockGeneration:
         # by creating a block ending at 0xFFFF instead.
         connection.received_seqs = {0xFFFE, 0xFFFF}
         blocks = connection._generate_sack_blocks()
-        
+
         # Should handle wraparound: Since 0xFFFF + 1 wraps to 0, but we can't represent
         # end_seq=0 (must be > start_seq), the code creates a block ending at 0xFFFF
         assert len(blocks) == 1
@@ -1046,7 +1036,7 @@ class TestCalculateSendRate:
         connection.last_timestamp_diff = 0
 
         rate = connection._calculate_send_rate()
-        
+
         # Should return some rate
         assert rate >= 0
 
@@ -1057,14 +1047,12 @@ class TestCalculateSendRate:
         connection.last_rate_update = 0.0
 
         rate = connection._calculate_send_rate()
-        
+
         # Should calculate based on RTT
         assert rate > 0
 
     def test_calculate_send_rate_max_limit(self, connection):
         """Test send rate respects max limit."""
-        from unittest.mock import patch
-        
         connection.srtt = 0.001  # Very small RTT
         connection.last_timestamp_diff = 1000  # Very small delay
         connection.last_rate_update = 0.0
@@ -1075,7 +1063,7 @@ class TestCalculateSendRate:
             connection, "config", MagicMock()
         ):
             rate = connection._calculate_send_rate()
-            
+
             # Should not exceed max rate
             # (actual check depends on config structure)
 
@@ -1086,7 +1074,7 @@ class TestCalculateSendRate:
         connection.last_rate_update = 0.0
 
         rate = connection._calculate_send_rate()
-        
+
         # Should respect minimum rate
         assert rate >= 0
 
@@ -1109,7 +1097,7 @@ class TestUpdateSendWindow:
         connection.last_timestamp_diff = 0
 
         connection._update_send_window()
-        
+
         # Should set some window size
         assert connection.send_window >= 0
 
@@ -1120,7 +1108,7 @@ class TestUpdateSendWindow:
         connection.last_timestamp_diff = 50000  # 50ms
 
         connection._update_send_window()
-        
+
         # Window should be updated
         assert connection.send_window > 0
 

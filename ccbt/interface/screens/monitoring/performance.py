@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
     from textual.containers import Vertical
+    from textual.reactive import reactive
     from textual.widgets import Footer, Header, Static
 else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -24,6 +26,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.panel import Panel
 from rich.table import Table
 
@@ -32,6 +52,9 @@ from ccbt.interface.screens.base import MonitoringScreen
 
 class PerformanceMetricsScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display performance metrics from MetricsCollector and MetricsPlugin."""
+
+    _reactive_sources = ("global_stats",)
+    global_stats: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -60,12 +83,20 @@ class PerformanceMetricsScreen(MonitoringScreen):  # type: ignore[misc]
             yield Static(id="statistics")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh performance metrics display."""
         try:
             content = self.query_one("#content", Static)
             event_metrics = self.query_one("#event_metrics", Static)
             statistics = self.query_one("#statistics", Static)
+
+            stats_override = overrides.get("global_stats_override")
+            if stats_override is None:
+                try:
+                    if isinstance(self.global_stats, dict) and self.global_stats:
+                        stats_override = self.global_stats
+                except Exception:
+                    stats_override = None
 
             # Get performance metrics from MetricsCollector
             perf_metrics = {}
@@ -81,6 +112,16 @@ class PerformanceMetricsScreen(MonitoringScreen):  # type: ignore[misc]
                     )
                 )
                 return
+
+            if isinstance(stats_override, dict) and stats_override:
+                if "download_rate" in stats_override:
+                    perf_metrics["download_speed"] = float(
+                        stats_override.get("download_rate", 0.0)
+                    )
+                if "upload_rate" in stats_override:
+                    perf_metrics["upload_speed"] = float(
+                        stats_override.get("upload_rate", 0.0)
+                    )
 
             # Create performance metrics table
             table = Table(title="Performance Metrics", expand=True)

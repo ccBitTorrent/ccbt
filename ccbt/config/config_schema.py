@@ -8,13 +8,74 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ValidationError
 
 from ccbt.models import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_json_schema_ref(
+    node: dict[str, Any], root_schema: dict[str, Any]
+) -> dict[str, Any]:
+    """Resolve a JSON Schema node following a single ``#/$defs/Name`` ``$ref``."""
+    ref = node.get("$ref")
+    if not ref or not isinstance(ref, str):
+        return node
+    if ref.startswith("#/$defs/"):
+        def_name = ref.removeprefix("#/$defs/")
+        resolved = root_schema.get("$defs", {}).get(def_name)
+        if isinstance(resolved, dict):
+            return resolved
+    return node
+
+
+def _unwrap_optional_object_schema(
+    node: dict[str, Any], root_schema: dict[str, Any]
+) -> dict[str, Any]:
+    """Follow ``$ref`` and optional ``anyOf``/``oneOf`` (e.g. ``T | null``) to an object schema."""
+    cur = _resolve_json_schema_ref(node, root_schema)
+    for union_key in ("anyOf", "oneOf"):
+        branches = cur.get(union_key)
+        if not isinstance(branches, list):
+            continue
+        for br in branches:
+            if not isinstance(br, dict):
+                continue
+            if br == {"type": "null"}:
+                continue
+            resolved = _resolve_json_schema_ref(br, root_schema)
+            if isinstance(resolved.get("properties"), dict):
+                return resolved
+    return cur
+
+
+def _schema_type_label(node: dict[str, Any]) -> str:
+    """Human-readable type label for a JSON Schema fragment."""
+    t = node.get("type")
+    if isinstance(t, list):
+        return "|".join(str(x) for x in t)
+    if t:
+        return str(t)
+    if "enum" in node:
+        return "enum"
+    if "anyOf" in node or "oneOf" in node:
+        return "union"
+    if "$ref" in node:
+        return "ref"
+    return "unknown"
+
+
+def _get_nested_default(model_defaults: dict[str, Any], path: str) -> Any:
+    """Return value at dotted path in a nested dict, or ``None`` if missing."""
+    cur: Any = model_defaults
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
 
 
 class ConfigSchema:
@@ -48,7 +109,7 @@ class ConfigSchema:
         return ConfigSchema.generate_schema(Config)
 
     @staticmethod
-    def get_schema_for_section(section_name: str) -> dict[str, Any] | None:
+    def get_schema_for_section(section_name: str) -> Optional[dict[str, Any]]:
         """Get schema for a specific configuration section.
 
         Args:
@@ -65,15 +126,10 @@ class ConfigSchema:
         if not section_ref:
             return None
 
-        # If it's a reference, resolve it
-        if "$ref" in section_ref:
-            ref_path = section_ref["$ref"]
-            if ref_path.startswith("#/$defs/"):
-                def_name = ref_path[8:]  # Remove "#/$defs/"
-                definitions = full_schema.get("$defs", {})
-                return definitions.get(def_name)
+        if not isinstance(section_ref, dict):
+            return None
 
-        return section_ref
+        return _unwrap_optional_object_schema(section_ref, full_schema)
 
     @staticmethod
     def export_schema(format_type: str = "json") -> str:
@@ -126,7 +182,7 @@ class ConfigDiscovery:
         }
 
     @staticmethod
-    def get_option_metadata(key_path: str) -> dict[str, Any] | None:
+    def get_option_metadata(key_path: str) -> Optional[dict[str, Any]]:
         """Get metadata for specific configuration option.
 
         Args:
@@ -208,6 +264,108 @@ class ConfigDiscovery:
 
         for section_name, section_ref in properties.items():
             _extract_options_from_section(section_name, section_ref)
+
+        return options
+
+    @staticmethod
+    def list_all_options_nested(
+        *,
+        merge_model_defaults: bool = True,
+    ) -> list[dict[str, Any]]:
+        """List every leaf config path (nested dotted paths) with metadata.
+
+        Walks top-level ``Config`` JSON Schema properties, resolves ``$ref`` into
+        ``$defs``, and recurses into object-typed sub-schemas. For each scalar /
+        array / enum leaf, emits one row.
+
+        Args:
+            merge_model_defaults: When True, fill ``default`` from a fresh
+                ``Config().model_dump(mode="json")`` when the schema has no static
+                default, and set ``default_source`` to ``schema`` or ``model``.
+
+        Returns:
+            List of option dicts with keys: ``path``, ``section``, ``type``,
+            ``description``, ``default``, ``default_source``, ``required``.
+
+        """
+        schema = ConfigSchema.generate_full_schema()
+        model_defaults: dict[str, Any] = {}
+        if merge_model_defaults:
+            model_defaults = Config().model_dump(mode="json")
+
+        options: list[dict[str, Any]] = []
+
+        def walk_object(
+            path_prefix: str,
+            obj_schema: dict[str, Any],
+            parent_required: frozenset[str],
+        ) -> None:
+            node = _unwrap_optional_object_schema(obj_schema, schema)
+            props = node.get("properties")
+            if not isinstance(props, dict):
+                return
+            req_here = frozenset(node.get("required", []) or [])
+            for key, sub_raw in props.items():
+                path = f"{path_prefix}.{key}" if path_prefix else key
+                sub = _unwrap_optional_object_schema(sub_raw, schema)
+                sub_props = sub.get("properties")
+                if isinstance(sub_props, dict) and sub_props:
+                    walk_object(path, sub, req_here)
+                    continue
+                # Leaf (primitive, array, enum, union, nested $ref object without props)
+                schema_default = sub.get("default", None)
+                model_default = _get_nested_default(model_defaults, path)
+                if schema_default is not None:
+                    default_val: Any = schema_default
+                    default_source = "schema"
+                elif model_default is not None:
+                    default_val = model_default
+                    default_source = "model"
+                else:
+                    default_val = None
+                    default_source = "model"
+                is_required = key in parent_required
+                options.append(
+                    {
+                        "path": path,
+                        "section": path.split(".", 1)[0] if "." in path else path,
+                        "type": _schema_type_label(sub),
+                        "description": (sub.get("description") or "")[:2000],
+                        "default": default_val,
+                        "default_source": default_source,
+                        "required": is_required,
+                    }
+                )
+
+        root_props = schema.get("properties", {})
+        if not isinstance(root_props, dict):
+            return []
+        top_required = frozenset(schema.get("required", []) or [])
+        for section_name, section_ref in root_props.items():
+            sec = _unwrap_optional_object_schema(section_ref, schema)
+            sec_props = sec.get("properties")
+            if isinstance(sec_props, dict) and sec_props:
+                sec_req = frozenset(sec.get("required", []) or [])
+                walk_object(section_name, sec, sec_req)
+            else:
+                # Unusual: top-level inline non-object
+                schema_default = sec.get("default")
+                model_default = _get_nested_default(model_defaults, section_name)
+                if schema_default is not None:
+                    default_val, default_source = schema_default, "schema"
+                else:
+                    default_val, default_source = model_default, "model"
+                options.append(
+                    {
+                        "path": section_name,
+                        "section": section_name,
+                        "type": _schema_type_label(sec),
+                        "description": (sec.get("description") or "")[:2000],
+                        "default": default_val,
+                        "default_source": default_source,
+                        "required": section_name in top_required,
+                    }
+                )
 
         return options
 

@@ -1,7 +1,5 @@
 """IPC server for daemon communication.
 
-from __future__ import annotations
-
 Provides HTTP REST API and WebSocket endpoints for CLI-daemon communication
 with mandatory authentication.
 """
@@ -14,9 +12,8 @@ import hashlib
 import logging
 import os
 import ssl
-import sys
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 import aiohttp
 from aiohttp import web
@@ -48,6 +45,10 @@ from ccbt.daemon.ipc_protocol import (
     TIMESTAMP_HEADER,
     BlacklistAddRequest,
     BlacklistResponse,
+    DetailedGlobalMetricsResponse,
+    DetailedPeerMetricsResponse,
+    DetailedTorrentMetricsResponse,
+    DiskIOMetricsResponse,
     ErrorResponse,
     EventType,
     ExportStateRequest,
@@ -55,24 +56,43 @@ from ccbt.daemon.ipc_protocol import (
     ExternalPortResponse,
     FilePriorityRequest,
     FileSelectRequest,
+    GlobalPeerListResponse,
+    GlobalPeerMetricsResponse,
     GlobalStatsResponse,
     ImportStateRequest,
     IPFilterStatsResponse,
+    MediaStreamStartRequest,
     NATMapRequest,
+    NetworkTimingMetricsResponse,
     PeerListResponse,
+    PeerPerformanceMetrics,
+    PerTorrentPerformanceResponse,
+    PieceAvailabilityResponse,
     QueueAddRequest,
     QueueMoveRequest,
     RateLimitRequest,
+    RateSamplesResponse,
     ResumeCheckpointRequest,
     ScrapeRequest,
     StatusResponse,
     TorrentAddRequest,
     TorrentListResponse,
+    TorrentStatusResponse,
+    TrackerAddRequest,
+    TrackerInfo,
+    TrackerListResponse,
+    UISnapshotResponse,
     WebSocketEvent,
     WebSocketMessage,
     WebSocketSubscribeRequest,
     WhitelistAddRequest,
     WhitelistResponse,
+    XetDiscoveryStatusResponse,
+    XetFolderEventData,
+    XetFolderStatusResponse,
+    XetSyncModeRequest,
+    XetWorkspacePolicyRequest,
+    XetWorkspacePolicyResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +111,9 @@ class IPCServer:
         websocket_enabled: bool = True,
         websocket_heartbeat_interval: float = 30.0,
         tls_enabled: bool = False,
+        shutdown_callback: Optional[Callable[[], Awaitable[None]]] = None,
+        shutdown_event: Optional[asyncio.Event] = None,
+        session_startup_complete: Optional[asyncio.Event] = None,
     ):
         """Initialize IPC server.
 
@@ -103,10 +126,13 @@ class IPCServer:
             websocket_enabled: Enable WebSocket support
             websocket_heartbeat_interval: WebSocket heartbeat interval in seconds
             tls_enabled: Enable TLS/HTTPS (requires key_manager)
+            shutdown_callback: Optional callback invoked when /shutdown is requested
+            shutdown_event: Optional daemon shutdown event (used for idempotent status)
+            session_startup_complete: Optional event set when session startup finishes
 
         """
         self.session_manager = session_manager
-        # CRITICAL FIX: Use ExecutorManager to get executor
+        # Note: Use ExecutorManager to get executor
         # This ensures we use the same executor instance initialized at daemon startup
         # which has access to all initialized components (UDP tracker, DHT, etc.)
         # ExecutorManager ensures single executor instance per session manager
@@ -114,31 +140,35 @@ class IPCServer:
             from ccbt.executor.manager import ExecutorManager
 
             executor_manager = ExecutorManager.get_instance()
-            self.executor = executor_manager.get_executor(session_manager=session_manager)
+            self.executor = executor_manager.get_executor(
+                session_manager=session_manager
+            )
             logger.debug(
                 "Using executor from ExecutorManager (type: %s)",
                 type(self.executor).__name__,
             )
         except Exception as e:
-            logger.error(
-                "Failed to get executor from ExecutorManager: %s. "
-                "This may indicate initialization order issues.",
-                e,
-                exc_info=True,
+            logger.exception(
+                "Failed to get executor from ExecutorManager. "
+                "This may indicate initialization order issues."
             )
-            raise RuntimeError(f"Failed to get executor: {e}") from e
+            error_msg = f"Failed to get executor: {e}"
+            raise RuntimeError(error_msg) from e
 
-        # CRITICAL FIX: Verify executor is ready
+        # Note: Verify executor is ready
         # The executor should have access to session_manager and all required components
         if not hasattr(self.executor, "adapter") or self.executor.adapter is None:
-            raise RuntimeError("Executor adapter not initialized")
+            error_msg = "Executor adapter not initialized"
+            raise RuntimeError(error_msg)
         if (
             not hasattr(self.executor.adapter, "session_manager")
             or self.executor.adapter.session_manager is None
         ):
-            raise RuntimeError("Executor session_manager not initialized")
+            error_msg = "Executor session_manager not initialized"
+            raise RuntimeError(error_msg)
         if self.executor.adapter.session_manager is not session_manager:
-            raise RuntimeError("Executor session_manager reference mismatch")
+            error_msg = "Executor session_manager reference mismatch"
+            raise RuntimeError(error_msg)
         self.api_key = api_key
         self.key_manager = key_manager
         self.tls_enabled = tls_enabled
@@ -146,16 +176,21 @@ class IPCServer:
         self.port = port
         self.websocket_enabled = websocket_enabled
         self.websocket_heartbeat_interval = websocket_heartbeat_interval
+        self._shutdown_callback = shutdown_callback
+        self._shutdown_event = shutdown_event
+        self._session_startup_complete = session_startup_complete
 
         self.app = web.Application()  # type: ignore[attr-defined]
-        self.runner: web.AppRunner | None = None  # type: ignore[attr-defined]
-        self.site: web.TCPSite | None = None  # type: ignore[attr-defined]
+        self.runner: Optional[web.AppRunner] = None  # type: ignore[attr-defined]
+        self.site: Optional[web.TCPSite] = None  # type: ignore[attr-defined]
         self._start_time = time.time()
 
         # WebSocket connections
         self._websocket_connections: set[web.WebSocketResponse] = set()  # type: ignore[attr-defined]
         self._websocket_subscriptions: dict[web.WebSocketResponse, set[EventType]] = {}  # type: ignore[attr-defined]
+        self._websocket_filters: dict[web.WebSocketResponse, dict[str, Any]] = {}  # type: ignore[attr-defined]
         self._websocket_heartbeat_tasks: dict[web.WebSocketResponse, asyncio.Task] = {}  # type: ignore[attr-defined]
+        self._shutting_down = False
 
         # Setup routes and middleware
         self._setup_middleware()
@@ -169,6 +204,16 @@ class IPCServer:
         async def auth_middleware(request: Request, handler: Any) -> Response:
             """Mandatory authentication middleware."""
             try:
+                # Reject new work once shutdown has started (in-flight handlers may still run).
+                if self._shutting_down and not request.path.endswith("/shutdown"):
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Daemon is shutting down",
+                            code="SHUTTING_DOWN",
+                        ).model_dump(),
+                        status=503,
+                    )
+
                 # Skip authentication for WebSocket upgrade requests (handled separately)
                 if (
                     request.path == f"{API_BASE_PATH}/events"
@@ -295,10 +340,7 @@ class IPCServer:
                 return await handler(request)
             except Exception as auth_error:
                 # Catch any exceptions in auth middleware to prevent daemon crash
-                logger.exception(
-                    "Error in authentication middleware: %s",
-                    auth_error,
-                )
+                logger.exception("Error in authentication middleware")
                 # Fall back to allowing the request through (will be caught by error middleware)
                 # Or return unauthorized if we can't authenticate
                 return web.json_response(  # type: ignore[attr-defined]
@@ -326,11 +368,10 @@ class IPCServer:
                 # This catches all exceptions including HTTP exceptions from aiohttp
                 # We handle them all here to ensure the server never crashes
                 logger.exception(
-                    "Error handling request %s %s from %s: %s",
+                    "Error handling request %s %s from %s",
                     request.method,
                     request.path,
                     request.remote,
-                    e,
                 )
                 # Return error response - never let exceptions crash the server
                 try:
@@ -364,6 +405,64 @@ class IPCServer:
 
         # Metrics endpoint (Prometheus format)
         self.app.router.add_get(f"{API_BASE_PATH}/metrics", self._handle_metrics)
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/rates",
+            self._handle_rate_samples,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/disk-io",
+            self._handle_disk_io_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/network-timing",
+            self._handle_network_timing_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/performance",
+            self._handle_per_torrent_performance,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/peers",
+            self._handle_global_peer_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/peers/{{peer_key}}",
+            self._handle_detailed_peer_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/peers/list",
+            self._handle_global_peer_list,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/detailed",
+            self._handle_detailed_torrent_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/global/detailed",
+            self._handle_detailed_global_metrics,
+        )
+
+        # IMPROVEMENT: New metrics endpoints for trickle improvements
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/dht",
+            self._handle_dht_query_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/peer-quality",
+            self._handle_peer_quality_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/aggressive-discovery",
+            self._handle_aggressive_discovery_status,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/torrents/{{info_hash}}/piece-selection",
+            self._handle_piece_selection_metrics,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/metrics/swarm-health",
+            self._handle_swarm_health,
+        )
 
         # Torrent management endpoints
         self.app.router.add_post(
@@ -380,6 +479,14 @@ class IPCServer:
             self._handle_get_torrent_status,
         )
         self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/media/start",
+            self._handle_start_media_stream,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/media/status",
+            self._handle_get_media_stream_status_for_torrent,
+        )
+        self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/pause",
             self._handle_pause_torrent,
         )
@@ -387,9 +494,92 @@ class IPCServer:
             f"{API_BASE_PATH}/torrents/{{info_hash}}/resume",
             self._handle_resume_torrent,
         )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/restart",
+            self._handle_restart_torrent,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/cancel",
+            self._handle_cancel_torrent,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/force-start",
+            self._handle_force_start_torrent,
+        )
         self.app.router.add_get(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/peers",
             self._handle_get_torrent_peers,
+        )
+        # Batch operations
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/batch/pause",
+            self._handle_batch_pause,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/batch/resume",
+            self._handle_batch_resume,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/batch/restart",
+            self._handle_batch_restart,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/batch/remove",
+            self._handle_batch_remove,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/trackers",
+            self._handle_get_torrent_trackers,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/trackers/add",
+            self._handle_add_tracker,
+        )
+        self.app.router.add_delete(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/trackers/{{tracker_url}}",
+            self._handle_remove_tracker,
+        )
+        # Per-peer rate limit endpoints
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/peers/{{peer_key}}/rate-limit",
+            self._handle_set_per_peer_rate_limit,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/peers/{{peer_key}}/rate-limit",
+            self._handle_get_per_peer_rate_limit,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/peers/rate-limit",
+            self._handle_set_all_peers_rate_limit,
+        )
+        # Per-torrent configuration endpoints
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options",
+            self._handle_set_torrent_option,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options/{{key}}",
+            self._handle_get_torrent_option,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/config",
+            self._handle_get_torrent_config,
+        )
+        self.app.router.add_delete(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options",
+            self._handle_reset_torrent_options,
+        )
+        self.app.router.add_delete(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/options/{{key}}",
+            self._handle_reset_torrent_options,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/checkpoint",
+            self._handle_save_torrent_checkpoint,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/piece-availability",
+            self._handle_get_torrent_piece_availability,
         )
         self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/rate-limits",
@@ -398,6 +588,18 @@ class IPCServer:
         self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/announce",
             self._handle_force_announce,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/pex/refresh",
+            self._handle_refresh_pex,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/rehash",
+            self._handle_rehash_torrent,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/dht/aggressive",
+            self._handle_set_dht_aggressive_mode,
         )
         self.app.router.add_post(
             f"{API_BASE_PATH}/torrents/export-state",
@@ -419,6 +621,16 @@ class IPCServer:
         # Shutdown endpoint
         self.app.router.add_post(f"{API_BASE_PATH}/shutdown", self._handle_shutdown)
 
+        # Service restart endpoints
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/services/{{service_name}}/restart",
+            self._handle_restart_service,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/services/status",
+            self._handle_get_services_status,
+        )
+
         # File selection endpoints
         self.app.router.add_get(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/files",
@@ -439,6 +651,18 @@ class IPCServer:
         self.app.router.add_get(
             f"{API_BASE_PATH}/torrents/{{info_hash}}/files/verify",
             self._handle_verify_files,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/torrents/{{info_hash}}/metadata/status",
+            self._handle_get_metadata_status,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/media/{{stream_id}}/stop",
+            self._handle_stop_media_stream,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/media/{{stream_id}}/status",
+            self._handle_get_media_stream_status,
         )
 
         # Queue endpoints
@@ -497,6 +721,27 @@ class IPCServer:
         self.app.router.add_get(
             f"{API_BASE_PATH}/session/stats", self._handle_get_global_stats
         )
+        # UI snapshot (first-paint hydration: global stats + torrents + services + rate samples)
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/ui/snapshot",
+            self._handle_ui_snapshot,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/global/pause-all",
+            self._handle_global_pause_all,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/global/resume-all",
+            self._handle_global_resume_all,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/global/force-start-all",
+            self._handle_global_force_start_all,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/global/rate-limits",
+            self._handle_global_set_rate_limits,
+        )
 
         # Protocol endpoints
         self.app.router.add_get(
@@ -504,6 +749,37 @@ class IPCServer:
         )
         self.app.router.add_get(
             f"{API_BASE_PATH}/protocols/ipfs", self._handle_get_ipfs_protocol
+        )
+
+        # XET folder endpoints
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/folders/add", self._handle_add_xet_folder
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/folders/share", self._handle_share_xet_folder
+        )
+        self.app.router.add_delete(
+            f"{API_BASE_PATH}/xet/folders/{{folder_key}}",
+            self._handle_remove_xet_folder,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/xet/folders", self._handle_list_xet_folders
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/xet/folders/{{folder_key}}",
+            self._handle_get_xet_folder_status,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/folders/{{folder_key}}/sync-mode",
+            self._handle_set_xet_folder_sync_mode,
+        )
+        self.app.router.add_get(
+            f"{API_BASE_PATH}/xet/discovery-status",
+            self._handle_get_xet_discovery_status,
+        )
+        self.app.router.add_post(
+            f"{API_BASE_PATH}/xet/workspace-policy/{{workspace_id_hex}}",
+            self._handle_set_xet_workspace_policy,
         )
 
         # Security endpoints
@@ -552,29 +828,57 @@ class IPCServer:
             Package version string (e.g., "0.1.0")
 
         """
-        try:
-            import ccbt
+        from ccbt.utils.version import get_version
 
-            return getattr(ccbt, "__version__", "0.1.0")
-        except ImportError:
-            # Fallback if ccbt module not available
-            return "0.1.0"
+        return get_version()
 
     async def _handle_status(self, _request: Request) -> Response:
-        """Handle GET /api/v1/status."""
+        """Handle GET /api/v1/status.
+
+        Keep this handler lightweight: the dashboard probes it repeatedly during
+        startup. Avoid get_global_stats() and other heavy session work here.
+        """
         uptime = time.time() - self._start_time
         pid = os.getpid()
 
-        # Get global stats
-        global_stats = await self.session_manager.get_global_stats()
+        num_torrents = await self.session_manager.get_torrent_count_fast(1.0)
+
+        inbound_top: dict[str, int] = {}
+        try:
+            raw_unknown = await asyncio.wait_for(
+                self.session_manager.get_inbound_unknown_info_hash_metrics(),
+                timeout=0.5,
+            )
+            if isinstance(raw_unknown, dict) and raw_unknown:
+                top_n = 32
+                sorted_items = sorted(
+                    raw_unknown.items(),
+                    key=lambda kv: (-int(kv[1]), str(kv[0])),
+                )[:top_n]
+                inbound_top = {str(k): int(v) for k, v in sorted_items}
+        except asyncio.TimeoutError:
+            logger.debug("status: inbound metrics timed out (non-fatal)")
+        except Exception:
+            logger.debug(
+                "status: inbound unknown info-hash metrics unavailable",
+                exc_info=True,
+            )
 
         status = StatusResponse(
-            status="running",
+            status=(
+                "shutting_down"
+                if self._shutdown_event is not None and self._shutdown_event.is_set()
+                else "starting"
+                if self._session_startup_complete is not None
+                and not self._session_startup_complete.is_set()
+                else "running"
+            ),
             pid=pid,
             uptime=uptime,
             version=self._get_package_version(),
-            num_torrents=global_stats.get("num_torrents", 0),
+            num_torrents=num_torrents,
             ipc_url=f"http://{self.host}:{self.port}",
+            inbound_unknown_info_hash_metrics_top=inbound_top,
         )
 
         return web.json_response(status.model_dump())  # type: ignore[attr-defined]
@@ -608,9 +912,1445 @@ class IPCServer:
                 status=500,
             )
 
+    async def _handle_rate_samples(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/rates - rate history samples."""
+        seconds_param = request.query.get("seconds", "")
+        seconds = 120
+        if seconds_param:
+            try:
+                seconds_val = int(float(seconds_param))
+                seconds = max(1, min(3600, seconds_val))
+            except ValueError:
+                seconds = 120
+
+        try:
+            # Note: session_manager.get_rate_samples() returns list[dict[str, float]]
+            # but RateSamplesResponse expects list[RateSample]
+            samples_dict = await self.session_manager.get_rate_samples(seconds)
+            logger.debug(
+                "IPCServer: Retrieved %d rate samples from session manager",
+                len(samples_dict),
+            )
+
+            # Convert dict samples to RateSample objects
+            from ccbt.daemon.ipc_protocol import RateSample
+
+            rate_samples = [
+                RateSample(
+                    timestamp=sample.get("timestamp", 0.0),
+                    download_rate=sample.get("download_rate", 0.0),
+                    upload_rate=sample.get("upload_rate", 0.0),
+                )
+                for sample in samples_dict
+            ]
+
+            response = RateSamplesResponse(
+                resolution=1.0,
+                seconds=seconds,
+                sample_count=len(rate_samples),
+                samples=rate_samples,
+            )
+            logger.debug(
+                "IPCServer: Returning RateSamplesResponse with %d samples",
+                len(rate_samples),
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get rate samples")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get rate samples: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_disk_io_metrics(self, _request: Request) -> Response:
+        """Handle GET /api/v1/metrics/disk-io - disk I/O metrics."""
+        try:
+            metrics = self.session_manager.get_disk_io_metrics()
+            response = DiskIOMetricsResponse(**metrics)
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get disk I/O metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get disk I/O metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_network_timing_metrics(self, _request: Request) -> Response:
+        """Handle GET /api/v1/metrics/network-timing - network timing metrics."""
+        try:
+            metrics = await self.session_manager.get_network_timing_metrics()
+            response = NetworkTimingMetricsResponse(**metrics)
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get network timing metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get network timing metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_per_torrent_performance(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/torrents/{info_hash}/performance - per-torrent performance metrics."""
+        try:
+            info_hash_hex = request.match_info.get("info_hash")
+            if not info_hash_hex:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing info_hash parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Get torrent status
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Get torrent status
+                status = await self.session_manager.get_torrent_status(info_hash_hex)
+                if not status:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Failed to get torrent status",
+                            code="SERVER_ERROR",
+                        ).model_dump(),
+                        status=500,
+                    )
+
+                # Get peers
+                peers_list = []
+                if hasattr(torrent_session, "peers"):
+                    from ccbt.monitoring import get_metrics_collector
+
+                    metrics_collector = get_metrics_collector()
+
+                    for peer_key, peer in torrent_session.peers.items():
+                        peer_metrics_data = None
+                        if metrics_collector:
+                            peer_metrics = metrics_collector.get_peer_metrics(  # type: ignore[attr-defined]
+                                str(peer_key)
+                            )
+                            if peer_metrics:
+                                peer_metrics_data = {
+                                    "download_rate": peer_metrics.download_rate,
+                                    "upload_rate": peer_metrics.upload_rate,
+                                    "request_latency": peer_metrics.request_latency,
+                                    "pieces_served": peer_metrics.pieces_served,
+                                    "pieces_received": peer_metrics.pieces_received,
+                                    "connection_duration": peer_metrics.connection_duration,
+                                    "consecutive_failures": peer_metrics.consecutive_failures,
+                                    "bytes_downloaded": peer_metrics.bytes_downloaded,
+                                    "bytes_uploaded": peer_metrics.bytes_uploaded,
+                                }
+
+                        # Fallback to peer stats if metrics not available
+                        if not peer_metrics_data and hasattr(peer, "stats"):
+                            peer_stats = peer.stats
+                            peer_metrics_data = {
+                                "download_rate": getattr(
+                                    peer_stats, "download_rate", 0.0
+                                ),
+                                "upload_rate": getattr(peer_stats, "upload_rate", 0.0),
+                                "request_latency": getattr(
+                                    peer_stats, "request_latency", 0.0
+                                ),
+                                "pieces_served": 0,
+                                "pieces_received": 0,
+                                "connection_duration": 0.0,
+                                "consecutive_failures": getattr(
+                                    peer_stats, "consecutive_failures", 0
+                                ),
+                                "bytes_downloaded": 0,
+                                "bytes_uploaded": 0,
+                            }
+
+                        if peer_metrics_data:
+                            peer_key_str = f"{getattr(peer, 'ip', 'unknown')}:{getattr(peer, 'port', 0)}"
+                            # Ensure int fields are properly typed and converted
+                            # Type checker: get() returns Unknown | float | int, so convert explicitly
+                            pieces_served = int(
+                                peer_metrics_data.get("pieces_served", 0) or 0
+                            )  # type: ignore[arg-type]
+                            pieces_received = int(
+                                peer_metrics_data.get("pieces_received", 0) or 0
+                            )  # type: ignore[arg-type]
+                            bytes_downloaded = int(
+                                peer_metrics_data.get("bytes_downloaded", 0) or 0
+                            )  # type: ignore[arg-type]
+                            bytes_uploaded = int(
+                                peer_metrics_data.get("bytes_uploaded", 0) or 0
+                            )  # type: ignore[arg-type]
+                            consecutive_failures = int(
+                                peer_metrics_data.get("consecutive_failures", 0) or 0
+                            )  # type: ignore[arg-type]
+                            # Get other fields with proper defaults
+                            download_rate = float(
+                                peer_metrics_data.get("download_rate", 0.0) or 0.0
+                            )
+                            upload_rate = float(
+                                peer_metrics_data.get("upload_rate", 0.0) or 0.0
+                            )
+                            peers_list.append(
+                                PeerPerformanceMetrics(  # type: ignore[arg-type]
+                                    peer_key=peer_key_str,
+                                    pieces_served=pieces_served,
+                                    pieces_received=pieces_received,
+                                    bytes_downloaded=bytes_downloaded,
+                                    bytes_uploaded=bytes_uploaded,
+                                    consecutive_failures=consecutive_failures,
+                                    download_rate=download_rate,
+                                    upload_rate=upload_rate,
+                                )
+                            )
+
+                # Sort peers by download rate (descending) and take top 10
+                peers_list.sort(key=lambda p: p.download_rate, reverse=True)
+                top_peers = peers_list[:10]
+
+                # Calculate piece download rate
+                piece_download_rate = 0.0
+                if hasattr(torrent_session, "piece_manager"):
+                    # Estimate from download rate and piece size
+                    piece_size = getattr(
+                        torrent_session.piece_manager, "piece_length", 16384
+                    )
+                    if piece_size > 0:
+                        piece_download_rate = (
+                            status.get("download_rate", 0.0) / piece_size
+                        )
+
+                # Calculate swarm availability (simplified)
+                swarm_availability = 0.0
+                if hasattr(torrent_session, "piece_manager"):
+                    piece_manager = torrent_session.piece_manager
+                    if hasattr(piece_manager, "availability"):
+                        avail_list = piece_manager.availability
+                        if avail_list:
+                            swarm_availability = (
+                                sum(avail_list) / len(avail_list)
+                                if len(avail_list) > 0
+                                else 0.0
+                            )
+
+                response = PerTorrentPerformanceResponse(
+                    info_hash=info_hash_hex,
+                    download_rate=status.get("download_rate", 0.0),
+                    upload_rate=status.get("upload_rate", 0.0),
+                    progress=status.get("progress", 0.0),
+                    pieces_completed=status.get("pieces_completed", 0),
+                    pieces_total=status.get("pieces_total", 0),
+                    connected_peers=int(status.get("connected_peers", 0)),
+                    active_peers=int(status.get("active_peers", 0)),
+                    top_peers=top_peers,
+                    bytes_downloaded=status.get("downloaded", 0),
+                    bytes_uploaded=status.get("uploaded", 0),
+                    piece_download_rate=piece_download_rate,
+                    swarm_availability=swarm_availability,
+                )
+                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get per-torrent performance metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get per-torrent performance metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_global_peer_metrics(self, _request: Request) -> Response:
+        """Handle GET /api/v1/metrics/peers - global peer metrics across all torrents."""
+        try:
+            metrics_data = await self.session_manager.get_global_peer_metrics()
+
+            # Convert peer dictionaries to GlobalPeerMetrics objects
+            from ccbt.daemon.ipc_protocol import GlobalPeerMetrics
+
+            peer_metrics = [
+                GlobalPeerMetrics(**peer_data)
+                for peer_data in metrics_data.get("peers", [])
+            ]
+
+            response = GlobalPeerMetricsResponse(
+                total_peers=metrics_data.get("total_peers", 0),
+                active_peers=metrics_data.get("active_peers", 0),
+                peers=peer_metrics,
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get global peer metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get global peer metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_detailed_peer_metrics(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/peers/{peer_key} - detailed metrics for a specific peer."""
+        try:
+            peer_key = request.match_info.get("peer_key")
+            if not peer_key:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing peer_key parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Get peer metrics from session manager's metrics collector
+            peer_metrics = None
+            metrics_collector = self.session_manager.get_session_metrics()
+            if metrics_collector:
+                peer_metrics = metrics_collector.get_peer_metrics(peer_key)
+
+            if not peer_metrics:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=f"Peer metrics not found for {peer_key}",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+
+            # Convert to response model
+            response = DetailedPeerMetricsResponse(
+                peer_key=peer_metrics.peer_key,
+                bytes_downloaded=peer_metrics.bytes_downloaded,
+                bytes_uploaded=peer_metrics.bytes_uploaded,
+                download_rate=peer_metrics.download_rate,
+                upload_rate=peer_metrics.upload_rate,
+                request_latency=peer_metrics.request_latency,
+                consecutive_failures=peer_metrics.consecutive_failures,
+                connection_duration=peer_metrics.connection_duration,
+                pieces_served=peer_metrics.pieces_served,
+                pieces_received=peer_metrics.pieces_received,
+                pieces_per_second=peer_metrics.pieces_per_second,
+                bytes_per_connection=peer_metrics.bytes_per_connection,
+                efficiency_score=peer_metrics.efficiency_score,
+                bandwidth_utilization=peer_metrics.bandwidth_utilization,
+                connection_quality_score=peer_metrics.connection_quality_score,
+                error_rate=peer_metrics.error_rate,
+                success_rate=peer_metrics.success_rate,
+                average_block_latency=peer_metrics.average_block_latency,
+                peak_download_rate=peer_metrics.peak_download_rate,
+                peak_upload_rate=peer_metrics.peak_upload_rate,
+                performance_trend=peer_metrics.performance_trend,
+                piece_download_speeds=peer_metrics.piece_download_speeds,
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get detailed peer metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get detailed peer metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_global_peer_list(self, _request: Request) -> Response:
+        """Handle GET /api/v1/peers/list - global list of all peers across all torrents with metrics."""
+        try:
+            # Get all peer connections from all torrents
+            all_peers: list[dict[str, Any]] = []
+            peer_keys_seen: set[str] = set()
+
+            async with self.session_manager.lock:
+                for info_hash, torrent_session in self.session_manager.torrents.items():
+                    info_hash_hex = info_hash.hex()
+                    if not hasattr(torrent_session, "download_manager"):
+                        continue
+
+                    download_manager = torrent_session.download_manager
+                    if (
+                        not hasattr(download_manager, "peer_manager")
+                        or download_manager.peer_manager is None
+                    ):
+                        continue
+
+                    peer_manager = download_manager.peer_manager
+                    connected_peers = peer_manager.get_connected_peers()
+
+                    for connection in connected_peers:
+                        if not hasattr(connection, "peer_info") or not hasattr(
+                            connection, "stats"
+                        ):
+                            continue
+
+                        peer_key = str(connection.peer_info)
+                        if peer_key in peer_keys_seen:
+                            # Peer already added, skip to avoid duplicates
+                            continue
+                        peer_keys_seen.add(peer_key)
+
+                        stats = connection.stats
+
+                        # Get detailed metrics from metrics collector
+                        peer_metrics = None
+                        metrics_collector = self.session_manager.get_session_metrics()
+                        if metrics_collector:
+                            peer_metrics = metrics_collector.get_peer_metrics(peer_key)
+
+                        # Get connection success rate
+                        connection_success_rate = 0.0
+                        if metrics_collector:
+                            with contextlib.suppress(Exception):
+                                connection_success_rate = (
+                                    await metrics_collector.get_connection_success_rate(
+                                        peer_key
+                                    )
+                                )
+
+                        # Build peer data dictionary with all metrics
+                        peer_data: dict[str, Any] = {
+                            "peer_key": peer_key,
+                            "ip": connection.peer_info.ip,
+                            "port": connection.peer_info.port,
+                            "peer_source": getattr(
+                                connection.peer_info, "peer_source", "unknown"
+                            ),
+                            "info_hash": info_hash_hex,
+                            # Basic stats
+                            "bytes_downloaded": getattr(stats, "bytes_downloaded", 0),
+                            "bytes_uploaded": getattr(stats, "bytes_uploaded", 0),
+                            "download_rate": getattr(stats, "download_rate", 0.0),
+                            "upload_rate": getattr(stats, "upload_rate", 0.0),
+                            "request_latency": getattr(stats, "request_latency", 0.0),
+                            "consecutive_failures": getattr(
+                                stats, "consecutive_failures", 0
+                            ),
+                            "connection_duration": getattr(
+                                stats, "connection_duration", 0.0
+                            ),
+                            "pieces_served": getattr(stats, "pieces_served", 0),
+                            "pieces_received": getattr(stats, "pieces_received", 0),
+                            "connection_success_rate": connection_success_rate,
+                            # Performance metrics
+                            "performance_score": getattr(
+                                stats, "performance_score", 0.0
+                            ),
+                            "efficiency_score": getattr(stats, "efficiency_score", 0.0),
+                            "value_score": getattr(stats, "value_score", 0.0),
+                            "connection_quality_score": getattr(
+                                stats, "connection_quality_score", 0.0
+                            ),
+                            "blocks_delivered": getattr(stats, "blocks_delivered", 0),
+                            "blocks_failed": getattr(stats, "blocks_failed", 0),
+                            "average_block_latency": getattr(
+                                stats, "average_block_latency", 0.0
+                            ),
+                        }
+
+                        # Add enhanced metrics from metrics collector if available
+                        if peer_metrics:
+                            peer_data.update(
+                                {
+                                    "pieces_per_second": peer_metrics.pieces_per_second,
+                                    "bytes_per_connection": peer_metrics.bytes_per_connection,
+                                    "bandwidth_utilization": peer_metrics.bandwidth_utilization,
+                                    "error_rate": peer_metrics.error_rate,
+                                    "success_rate": peer_metrics.success_rate,
+                                    "peak_download_rate": peer_metrics.peak_download_rate,
+                                    "peak_upload_rate": peer_metrics.peak_upload_rate,
+                                    "performance_trend": peer_metrics.performance_trend,
+                                    "piece_download_speeds": peer_metrics.piece_download_speeds,
+                                    "piece_download_times": peer_metrics.piece_download_times,
+                                }
+                            )
+
+                        all_peers.append(peer_data)
+
+            # Sort by performance score (highest first)
+            all_peers.sort(key=lambda p: p.get("performance_score", 0.0), reverse=True)
+
+            response = GlobalPeerListResponse(
+                total_peers=len(peer_keys_seen),
+                peers=all_peers,
+                count=len(all_peers),
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get global peer list")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get global peer list: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_detailed_torrent_metrics(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/torrents/{info_hash}/detailed - detailed metrics for a specific torrent."""
+        try:
+            info_hash_hex = request.match_info.get("info_hash")
+            if not info_hash_hex:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing info_hash parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Get torrent status
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Get torrent status
+                status = await self.session_manager.get_torrent_status(info_hash_hex)
+                if not status:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Failed to get torrent status",
+                            code="SERVER_ERROR",
+                        ).model_dump(),
+                        status=500,
+                    )
+
+                # Get detailed metrics from utils/metrics.py MetricsCollector
+                torrent_metrics = None
+                if hasattr(self.session_manager, "metrics_collector"):
+                    utils_collector = self.session_manager.metrics_collector
+                    if utils_collector:
+                        torrent_metrics = utils_collector.get_torrent_metrics(
+                            info_hash_hex
+                        )
+
+                # Get piece availability if available
+                piece_availability = []
+                if (
+                    hasattr(torrent_session, "piece_manager")
+                    and torrent_session.piece_manager
+                ):
+                    piece_manager = torrent_session.piece_manager
+                    piece_frequency = getattr(piece_manager, "piece_frequency", None)
+                    if piece_frequency:
+                        num_pieces = getattr(piece_manager, "num_pieces", 0)
+                        if num_pieces == 0:
+                            num_pieces = len(getattr(piece_manager, "pieces", []))
+                        for piece_idx in range(num_pieces):
+                            count = piece_frequency.get(piece_idx, 0)
+                            piece_availability.append(count)
+
+                # Get peer download speeds
+                peer_download_speeds = []
+                if hasattr(torrent_session, "peers"):
+                    from ccbt.monitoring import get_metrics_collector
+
+                    metrics_collector = get_metrics_collector()
+                    for peer_key, peer in torrent_session.peers.items():
+                        if metrics_collector:
+                            peer_metrics = metrics_collector.get_peer_metrics(  # type: ignore[attr-defined]
+                                str(peer_key)
+                            )
+                            if peer_metrics:
+                                peer_download_speeds.append(peer_metrics.download_rate)
+                        elif hasattr(peer, "stats"):
+                            peer_download_speeds.append(
+                                getattr(peer.stats, "download_rate", 0.0)
+                            )
+
+                # Build response (canonical status uses downloaded/uploaded; API exposes bytes_*)
+                response_data = {
+                    "info_hash": info_hash_hex,
+                    "bytes_downloaded": status.get(
+                        "downloaded", status.get("bytes_downloaded", 0)
+                    ),
+                    "bytes_uploaded": status.get(
+                        "uploaded", status.get("bytes_uploaded", 0)
+                    ),
+                    "download_rate": status.get("download_rate", 0.0),
+                    "upload_rate": status.get("upload_rate", 0.0),
+                    "pieces_completed": status.get("pieces_completed", 0),
+                    "pieces_total": status.get("pieces_total", 0),
+                    "progress": status.get("progress", 0.0),
+                    "connected_peers": int(status.get("connected_peers", 0)),
+                    "active_peers": int(status.get("active_peers", 0)),
+                }
+
+                # Add enhanced metrics if available
+                if torrent_metrics:
+                    response_data.update(
+                        {
+                            "piece_availability_distribution": torrent_metrics.piece_availability_distribution,
+                            "average_piece_availability": torrent_metrics.average_piece_availability,
+                            "rarest_piece_availability": torrent_metrics.rarest_piece_availability,
+                            "swarm_health_score": torrent_metrics.swarm_health_score,
+                            "peer_performance_distribution": torrent_metrics.peer_performance_distribution,
+                            "average_peer_download_speed": torrent_metrics.average_peer_download_speed,
+                            "median_peer_download_speed": torrent_metrics.median_peer_download_speed,
+                            "fastest_peer_speed": torrent_metrics.fastest_peer_speed,
+                            "slowest_peer_speed": torrent_metrics.slowest_peer_speed,
+                            "piece_completion_rate": torrent_metrics.piece_completion_rate,
+                            "estimated_time_remaining": torrent_metrics.estimated_time_remaining,
+                            "swarm_efficiency": torrent_metrics.swarm_efficiency,
+                            "peer_contribution_balance": torrent_metrics.peer_contribution_balance,
+                        }
+                    )
+                else:
+                    # Calculate from available data
+                    if piece_availability:
+                        from collections import Counter
+
+                        availability_counter = Counter(piece_availability)
+                        response_data["piece_availability_distribution"] = dict(
+                            availability_counter
+                        )
+                        response_data["average_piece_availability"] = (
+                            sum(piece_availability) / len(piece_availability)
+                            if piece_availability
+                            else 0.0
+                        )
+                        response_data["rarest_piece_availability"] = (
+                            min(piece_availability) if piece_availability else 0
+                        )
+                    if peer_download_speeds:
+                        import statistics
+
+                        response_data["average_peer_download_speed"] = statistics.mean(
+                            peer_download_speeds
+                        )
+                        response_data["median_peer_download_speed"] = statistics.median(
+                            peer_download_speeds
+                        )
+                        response_data["fastest_peer_speed"] = max(peer_download_speeds)
+                        response_data["slowest_peer_speed"] = min(peer_download_speeds)
+
+                response = DetailedTorrentMetricsResponse(**response_data)  # type: ignore[arg-type]
+                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get detailed torrent metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get detailed torrent metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_detailed_global_metrics(self, _request: Request) -> Response:
+        """Handle GET /api/v1/metrics/global/detailed - detailed global metrics."""
+        try:
+            # Get global peer metrics
+            global_peer_metrics = await self.session_manager.get_global_peer_metrics()
+
+            # Get system-wide efficiency from session manager's metrics collector
+            system_efficiency = {}
+            connection_success_rate = 0.0
+            metrics_collector = self.session_manager.get_session_metrics()
+            if metrics_collector:
+                system_efficiency = metrics_collector.get_system_wide_efficiency()
+                # Get global connection success rate
+                try:
+                    connection_success_rate = (
+                        await metrics_collector.get_connection_success_rate()
+                    )
+                except Exception as e:
+                    logger.debug("Failed to get connection success rate: %s", e)
+
+            # Combine into response
+            # Type cast: global_peer_metrics and system_efficiency are dicts with mixed types
+            # but response_data accepts Any values
+            from typing import cast
+
+            response_data: dict[str, Any] = {
+                **cast("dict[str, Any]", global_peer_metrics),
+                **cast("dict[str, Any]", system_efficiency),
+                "connection_success_rate": connection_success_rate,
+            }
+
+            # Ensure int fields are properly typed
+            if "total_peers" in response_data:
+                response_data["total_peers"] = int(response_data["total_peers"])
+            if "total_bytes_downloaded" in response_data:
+                response_data["total_bytes_downloaded"] = int(
+                    response_data["total_bytes_downloaded"]
+                )
+            if "total_bytes_uploaded" in response_data:
+                response_data["total_bytes_uploaded"] = int(
+                    response_data["total_bytes_uploaded"]
+                )
+
+            response = DetailedGlobalMetricsResponse(**response_data)
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get detailed global metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get detailed global metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_dht_query_metrics(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/torrents/{info_hash}/dht - DHT query metrics."""
+        from ccbt.daemon.ipc_protocol import DHTQueryMetricsResponse
+
+        try:
+            info_hash_hex = request.match_info.get("info_hash")
+            if not info_hash_hex:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing info_hash parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Get DHT setup if available
+                dht_setup = getattr(torrent_session, "_dht_setup", None)
+                dht_client = getattr(torrent_session, "dht_client", None)
+                aggressive_mode = (
+                    getattr(dht_setup, "_aggressive_mode", False)
+                    if dht_setup
+                    else False
+                )
+
+                # Get DHT query metrics if available
+                dht_metrics = (
+                    getattr(dht_setup, "_dht_query_metrics", None)
+                    if dht_setup
+                    else None
+                )
+
+                # Initialize default metrics
+                metrics = {
+                    "info_hash": info_hash_hex,
+                    "peers_found_per_query": 0.0,
+                    "query_depth_achieved": 0.0,
+                    "nodes_queried_per_query": 0.0,
+                    "total_queries": 0,
+                    "total_peers_found": 0,
+                    "aggressive_mode_enabled": aggressive_mode,
+                    "last_query_duration": 0.0,
+                    "last_query_peers_found": 0,
+                    "last_query_depth": 0,
+                    "last_query_nodes_queried": 0,
+                    "routing_table_size": 0,
+                    "bootstrap_success_count": 0,
+                    "bootstrap_failure_count": 0,
+                    "bootstrap_recovery_attempts": 0,
+                    "bootstrap_health_state": "unknown",
+                    "bootstrap_zero_state_count": 0,
+                    "bootstrap_zero_nodes_last_reason": "",
+                    "rebootstrap_attempt_count": 0,
+                    "rebootstrap_success_count": 0,
+                    "rebootstrap_failure_count": 0,
+                    "rebootstrap_last_outcome": "not_attempted",
+                    "rebootstrap_last_reason": "",
+                    "rebootstrap_last_source": "",
+                    "rebootstrap_health_state": "unknown",
+                    "rebootstrap_consecutive_failures": 0,
+                    "last_bootstrap_reason": "",
+                    "last_bootstrap_failure_reason": "",
+                    "last_zero_node_lookup_at": 0.0,
+                }
+
+                # Use actual metrics if available
+                if dht_metrics:
+                    # Type checker: get() returns Unknown | float | int, so convert explicitly
+                    total_queries = dht_metrics.get("total_queries", 0)
+                    total_peers = dht_metrics.get("total_peers_found", 0)
+                    query_depths = dht_metrics.get("query_depths", [])
+                    nodes_queried = dht_metrics.get("nodes_queried", [])
+                    last_query = dht_metrics.get("last_query", {})
+
+                    metrics["total_queries"] = (
+                        int(total_queries) if total_queries else 0
+                    )  # type: ignore[arg-type]
+                    metrics["total_peers_found"] = (
+                        int(total_peers) if total_peers else 0
+                    )  # type: ignore[arg-type]
+                    metrics["peers_found_per_query"] = (
+                        total_peers / total_queries if total_queries > 0 else 0.0
+                    )
+                    metrics["query_depth_achieved"] = (
+                        sum(query_depths) / len(query_depths) if query_depths else 0.0
+                    )
+                    metrics["nodes_queried_per_query"] = (
+                        sum(nodes_queried) / len(nodes_queried)
+                        if nodes_queried
+                        else 0.0
+                    )
+                    # Ensure proper type conversions for metrics
+                    # Type checker: get() returns Unknown | float | int, so convert explicitly
+                    metrics["last_query_duration"] = float(
+                        last_query.get("duration", 0.0) or 0.0
+                    )  # type: ignore[arg-type]
+                    metrics["last_query_peers_found"] = int(
+                        last_query.get("peers_found", 0) or 0
+                    )  # type: ignore[arg-type]
+                    metrics["last_query_depth"] = int(last_query.get("depth", 0) or 0)  # type: ignore[arg-type]
+                    metrics["last_query_nodes_queried"] = int(
+                        last_query.get("nodes_queried", 0) or 0
+                    )  # type: ignore[arg-type]
+                    metrics["bootstrap_success_count"] = int(
+                        dht_metrics.get("bootstrap_success_count", 0) or 0
+                    )
+                    metrics["bootstrap_failure_count"] = int(
+                        dht_metrics.get("bootstrap_failure_count", 0) or 0
+                    )
+                    metrics["bootstrap_recovery_attempts"] = int(
+                        dht_metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    )
+                    metrics["bootstrap_health_state"] = str(
+                        dht_metrics.get("bootstrap_health_state", "unknown")
+                        or "unknown"
+                    )
+                    metrics["bootstrap_zero_state_count"] = int(
+                        dht_metrics.get("bootstrap_zero_state_count", 0) or 0
+                    )
+                    metrics["bootstrap_zero_nodes_last_reason"] = str(
+                        dht_metrics.get("bootstrap_zero_nodes_last_reason", "") or ""
+                    )
+                    metrics["rebootstrap_attempt_count"] = int(
+                        dht_metrics.get("rebootstrap_attempt_count", 0) or 0
+                    )
+                    metrics["rebootstrap_success_count"] = int(
+                        dht_metrics.get("rebootstrap_success_count", 0) or 0
+                    )
+                    metrics["rebootstrap_failure_count"] = int(
+                        dht_metrics.get("rebootstrap_failure_count", 0) or 0
+                    )
+                    metrics["rebootstrap_last_outcome"] = str(
+                        dht_metrics.get("rebootstrap_last_outcome", "not_attempted")
+                        or "not_attempted"
+                    )
+                    metrics["rebootstrap_last_reason"] = str(
+                        dht_metrics.get("rebootstrap_last_reason", "") or ""
+                    )
+                    metrics["rebootstrap_last_source"] = str(
+                        dht_metrics.get("rebootstrap_last_source", "") or ""
+                    )
+                    metrics["rebootstrap_health_state"] = str(
+                        dht_metrics.get("rebootstrap_health_state", "unknown")
+                        or "unknown"
+                    )
+                    metrics["rebootstrap_consecutive_failures"] = int(
+                        dht_metrics.get("rebootstrap_consecutive_failures", 0) or 0
+                    )
+                    metrics["last_bootstrap_reason"] = str(
+                        dht_metrics.get("last_bootstrap_reason", "") or ""
+                    )
+                    metrics["last_bootstrap_failure_reason"] = str(
+                        dht_metrics.get("last_bootstrap_failure_reason", "") or ""
+                    )
+                    metrics["last_zero_node_lookup_at"] = float(
+                        dht_metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
+                    )
+
+                # Get routing table size from DHT client
+                if dht_client and hasattr(dht_client, "routing_table"):
+                    routing_table = dht_client.routing_table
+                    if hasattr(routing_table, "__len__"):
+                        metrics["routing_table_size"] = len(routing_table)
+                    elif hasattr(routing_table, "get_all_nodes"):
+                        nodes = routing_table.get_all_nodes()
+                        metrics["routing_table_size"] = int(len(nodes) if nodes else 0)
+
+                # Get aggressive mode status from DHT setup
+                if dht_setup:
+                    # Check if aggressive mode is enabled (stored in dht_setup)
+                    aggressive_mode = getattr(dht_setup, "_aggressive_mode", False)
+                    metrics["aggressive_mode_enabled"] = aggressive_mode
+
+                # TODO: Track actual query metrics in DHT setup
+                # For now, return placeholder metrics
+                # Ensure all metrics values are properly typed for Pydantic model
+                typed_metrics: dict[str, Any] = {
+                    "info_hash": str(metrics.get("info_hash", "")),
+                    "peers_found_per_query": float(
+                        metrics.get("peers_found_per_query", 0.0) or 0.0
+                    ),
+                    "query_depth_achieved": float(
+                        metrics.get("query_depth_achieved", 0.0) or 0.0
+                    ),
+                    "nodes_queried_per_query": float(
+                        metrics.get("nodes_queried_per_query", 0.0) or 0.0
+                    ),
+                    "total_queries": int(metrics.get("total_queries", 0) or 0),
+                    "total_peers_found": int(metrics.get("total_peers_found", 0) or 0),
+                    "aggressive_mode_enabled": bool(
+                        metrics.get("aggressive_mode_enabled", False)
+                    ),
+                    "last_query_duration": float(
+                        metrics.get("last_query_duration", 0.0) or 0.0
+                    ),
+                    "last_query_peers_found": int(
+                        metrics.get("last_query_peers_found", 0) or 0
+                    ),
+                    "last_query_depth": int(metrics.get("last_query_depth", 0) or 0),
+                    "last_query_nodes_queried": int(
+                        metrics.get("last_query_nodes_queried", 0) or 0
+                    ),
+                    "routing_table_size": int(
+                        metrics.get("routing_table_size", 0) or 0
+                    ),
+                    "bootstrap_success_count": int(
+                        metrics.get("bootstrap_success_count", 0) or 0
+                    ),
+                    "bootstrap_failure_count": int(
+                        metrics.get("bootstrap_failure_count", 0) or 0
+                    ),
+                    "bootstrap_recovery_attempts": int(
+                        metrics.get("bootstrap_recovery_attempts", 0) or 0
+                    ),
+                    "bootstrap_health_state": str(
+                        metrics.get("bootstrap_health_state", "unknown") or "unknown"
+                    ),
+                    "bootstrap_zero_state_count": int(
+                        metrics.get("bootstrap_zero_state_count", 0) or 0
+                    ),
+                    "bootstrap_zero_nodes_last_reason": str(
+                        metrics.get("bootstrap_zero_nodes_last_reason", "") or ""
+                    ),
+                    "rebootstrap_attempt_count": int(
+                        metrics.get("rebootstrap_attempt_count", 0) or 0
+                    ),
+                    "rebootstrap_success_count": int(
+                        metrics.get("rebootstrap_success_count", 0) or 0
+                    ),
+                    "rebootstrap_failure_count": int(
+                        metrics.get("rebootstrap_failure_count", 0) or 0
+                    ),
+                    "rebootstrap_last_outcome": str(
+                        metrics.get("rebootstrap_last_outcome", "not_attempted")
+                        or "not_attempted"
+                    ),
+                    "rebootstrap_last_reason": str(
+                        metrics.get("rebootstrap_last_reason", "") or ""
+                    ),
+                    "rebootstrap_last_source": str(
+                        metrics.get("rebootstrap_last_source", "") or ""
+                    ),
+                    "rebootstrap_health_state": str(
+                        metrics.get("rebootstrap_health_state", "unknown") or "unknown"
+                    ),
+                    "rebootstrap_consecutive_failures": int(
+                        metrics.get("rebootstrap_consecutive_failures", 0) or 0
+                    ),
+                    "last_bootstrap_reason": str(
+                        metrics.get("last_bootstrap_reason", "") or ""
+                    ),
+                    "last_bootstrap_failure_reason": str(
+                        metrics.get("last_bootstrap_failure_reason", "") or ""
+                    ),
+                    "last_zero_node_lookup_at": float(
+                        metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
+                    ),
+                }
+                response = DHTQueryMetricsResponse(**typed_metrics)  # type: ignore[arg-type]
+                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get DHT query metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get DHT query metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_peer_quality_metrics(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/torrents/{info_hash}/peer-quality - peer quality metrics."""
+        from ccbt.daemon.ipc_protocol import PeerQualityMetricsResponse
+
+        try:
+            info_hash_hex = request.match_info.get("info_hash")
+            if not info_hash_hex:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing info_hash parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            torrent_session = None
+            peer_manager = None
+            peer_quality_metrics = None
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                download_manager = getattr(torrent_session, "download_manager", None)
+                if download_manager is not None:
+                    peer_manager = getattr(download_manager, "peer_manager", None)
+                if peer_manager is None:
+                    peer_manager = getattr(torrent_session, "peer_manager", None)
+
+                peer_helper = getattr(torrent_session, "_peer_helper", None)
+                if peer_helper is not None:
+                    peer_quality_metrics = getattr(
+                        peer_helper,
+                        "_peer_quality_metrics",
+                        None,
+                    )
+
+            quality_scores: list[float] = []
+            top_peers: list[dict[str, Any]] = []
+            high_quality = 0
+            medium_quality = 0
+            low_quality = 0
+            avg_score = 0.0
+
+            if peer_manager and hasattr(peer_manager, "get_active_peers"):
+                active_peers = peer_manager.get_active_peers()
+                for peer in active_peers:
+                    if not hasattr(peer, "peer_info") or not hasattr(peer, "stats"):
+                        continue
+
+                    download_rate = getattr(peer.stats, "download_rate", 0.0)
+                    upload_rate = getattr(peer.stats, "upload_rate", 0.0)
+                    performance_score = getattr(peer.stats, "performance_score", 0.5)
+
+                    max_rate = 10 * 1024 * 1024
+                    upload_norm = (
+                        min(1.0, upload_rate / max_rate) if max_rate > 0 else 0.0
+                    )
+                    download_norm = (
+                        min(1.0, download_rate / max_rate) if max_rate > 0 else 0.0
+                    )
+                    quality_score = (
+                        (upload_norm * 0.6)
+                        + (download_norm * 0.4)
+                        + (performance_score * 0.2)
+                    )
+
+                    quality_scores.append(quality_score)
+                    top_peers.append(
+                        {
+                            "peer_key": str(peer.peer_info),
+                            "ip": peer.peer_info.ip,
+                            "port": peer.peer_info.port,
+                            "quality_score": quality_score,
+                            "download_rate": download_rate,
+                            "upload_rate": upload_rate,
+                        }
+                    )
+
+                top_peers.sort(key=lambda p: p["quality_score"], reverse=True)
+                top_peers = top_peers[:10]
+
+                high_quality = sum(1 for s in quality_scores if s > 0.7)
+                medium_quality = sum(1 for s in quality_scores if 0.3 < s <= 0.7)
+                low_quality = sum(1 for s in quality_scores if s <= 0.3)
+
+                avg_score = (
+                    sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+                )
+
+            if not quality_scores and peer_quality_metrics:
+                last_ranking = peer_quality_metrics.get("last_ranking", {})
+                avg_score = last_ranking.get("average_score", 0.0)
+                high_quality = last_ranking.get("high_quality_count", 0)
+                medium_quality = last_ranking.get("medium_quality_count", 0)
+                low_quality = last_ranking.get("low_quality_count", 0)
+
+                stored_scores = peer_quality_metrics.get("quality_scores", [])
+                if stored_scores:
+                    high_quality = sum(1 for s in stored_scores if s > 0.7)
+                    medium_quality = sum(1 for s in stored_scores if 0.3 < s <= 0.7)
+                    low_quality = sum(1 for s in stored_scores if s <= 0.3)
+                    avg_score = (
+                        sum(stored_scores) / len(stored_scores)
+                        if stored_scores
+                        else 0.0
+                    )
+
+            response = PeerQualityMetricsResponse(
+                info_hash=info_hash_hex,
+                total_peers_ranked=len(quality_scores),
+                average_quality_score=avg_score,
+                high_quality_peers=high_quality,
+                medium_quality_peers=medium_quality,
+                low_quality_peers=low_quality,
+                top_quality_peers=top_peers,
+                quality_distribution={
+                    "high": high_quality,
+                    "medium": medium_quality,
+                    "low": low_quality,
+                },
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get peer quality metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get peer quality metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_piece_selection_metrics(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/torrents/{info_hash}/piece-selection - piece selection metrics."""
+        try:
+            info_hash_hex = request.match_info.get("info_hash")
+            if not info_hash_hex:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing info_hash parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Get piece manager
+                piece_manager = getattr(torrent_session, "piece_manager", None)
+                if not piece_manager:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Piece manager not available",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Get piece selection metrics
+                metrics = piece_manager.get_piece_selection_metrics()
+
+                return web.json_response(metrics)  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get piece selection metrics")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get piece selection metrics: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_swarm_health(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/swarm-health - swarm health matrix with historical samples."""
+        import time
+
+        from ccbt.daemon.ipc_protocol import (
+            SwarmHealthMatrixResponse,
+            SwarmHealthSample,
+        )
+
+        try:
+            # Parse query parameters
+            limit_param = request.query.get("limit", "6")
+
+            limit = 6
+            try:
+                limit = max(1, min(100, int(limit_param)))
+            except ValueError:
+                limit = 6
+
+            # Get all torrents from session manager
+            async with self.session_manager.lock:
+                # Get all torrent statuses
+                all_torrents = []
+                for (
+                    info_hash_bytes,
+                    torrent_session,
+                ) in self.session_manager.torrents.items():
+                    try:
+                        info_hash_hex = info_hash_bytes.hex()
+                        status = await self.session_manager.get_torrent_status(
+                            info_hash_hex
+                        )
+                        if status:
+                            all_torrents.append(
+                                (info_hash_hex, status, torrent_session)
+                            )
+                    except Exception as e:
+                        logger.debug(
+                            "Error getting status for torrent %s: %s",
+                            info_hash_bytes.hex()[:16],
+                            e,
+                        )
+                        continue
+
+                if not all_torrents:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        SwarmHealthMatrixResponse(
+                            samples=[], sample_count=0
+                        ).model_dump()
+                    )
+
+                # Get top torrents by download rate
+                def get_download_rate(item: tuple[str, dict[str, Any], Any]) -> float:
+                    _, status, _ = item
+                    return float(status.get("download_rate", 0.0))
+
+                top_torrents = sorted(
+                    all_torrents,
+                    key=get_download_rate,
+                    reverse=True,
+                )[:limit]
+
+                samples = []
+                current_time = time.time()
+
+                for info_hash_hex, status, torrent_session in top_torrents:
+                    try:
+                        # Get swarm availability from piece manager
+                        swarm_availability = 0.0
+                        if hasattr(torrent_session, "piece_manager"):
+                            piece_manager = torrent_session.piece_manager
+                            if hasattr(piece_manager, "availability"):
+                                avail_list = piece_manager.availability
+                                if avail_list:
+                                    swarm_availability = (
+                                        sum(avail_list) / len(avail_list)
+                                        if len(avail_list) > 0
+                                        else 0.0
+                                    )
+
+                        # Align with session peer manager: connected post-handshake peers,
+                        # not only those with non-zero rate (choked/idle peers still matter).
+                        active_peers = 0
+                        if hasattr(torrent_session, "download_manager"):
+                            download_manager = torrent_session.download_manager
+                            if hasattr(download_manager, "peer_manager"):
+                                peer_manager = download_manager.peer_manager
+                                if peer_manager and hasattr(
+                                    peer_manager, "get_active_peers"
+                                ):
+                                    ap = peer_manager.get_active_peers()
+                                    active_peers = len(ap) if ap else 0
+                                elif peer_manager and hasattr(
+                                    peer_manager, "connections"
+                                ):
+                                    active_peers = len(peer_manager.connections)
+
+                        sample = SwarmHealthSample(
+                            info_hash=info_hash_hex,
+                            name=str(status.get("name", info_hash_hex[:16])),
+                            timestamp=current_time,
+                            swarm_availability=swarm_availability,
+                            download_rate=float(status.get("download_rate", 0.0)),
+                            upload_rate=float(status.get("upload_rate", 0.0)),
+                            connected_peers=int(
+                                status.get("connected_peers", 0),
+                            ),
+                            active_peers=active_peers,
+                            progress=float(status.get("progress", 0.0)),
+                        )
+                        samples.append(sample)
+                    except Exception as e:
+                        logger.debug(
+                            "Error creating swarm health sample for %s: %s",
+                            info_hash_hex[:16],
+                            e,
+                        )
+                        continue
+
+                # Calculate rarity percentiles
+                availabilities = [s.swarm_availability for s in samples]
+                availabilities.sort()
+                n = len(availabilities)
+                percentiles = {}
+                if n > 0:
+                    percentiles["p25"] = (
+                        availabilities[n // 4] if n >= 4 else availabilities[0]
+                    )
+                    percentiles["p50"] = (
+                        availabilities[n // 2] if n >= 2 else availabilities[0]
+                    )
+                    percentiles["p75"] = (
+                        availabilities[3 * n // 4] if n >= 4 else availabilities[-1]
+                    )
+                    percentiles["p90"] = (
+                        availabilities[9 * n // 10] if n >= 10 else availabilities[-1]
+                    )
+
+                response = SwarmHealthMatrixResponse(
+                    samples=samples,
+                    sample_count=len(samples),
+                    resolution=2.5,  # Default resolution
+                    rarity_percentiles=percentiles,
+                )
+                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get swarm health matrix")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get swarm health matrix: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_aggressive_discovery_status(self, request: Request) -> Response:
+        """Handle GET /api/v1/metrics/torrents/{info_hash}/aggressive-discovery - aggressive discovery status."""
+        from ccbt.config.config import get_config
+        from ccbt.daemon.ipc_protocol import AggressiveDiscoveryStatusResponse
+
+        try:
+            info_hash_hex = request.match_info.get("info_hash")
+            if not info_hash_hex:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing info_hash parameter",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Get DHT setup
+                dht_setup = getattr(torrent_session, "_dht_setup", None)
+                aggressive_mode = (
+                    getattr(dht_setup, "_aggressive_mode", False)
+                    if dht_setup
+                    else False
+                )
+
+                # Get current peer count and download rate
+                current_peer_count = 0
+                current_download_rate = 0.0
+
+                if hasattr(torrent_session, "download_manager"):
+                    download_manager = torrent_session.download_manager
+                    if hasattr(download_manager, "peer_manager"):
+                        peer_manager = download_manager.peer_manager
+                        if peer_manager and hasattr(peer_manager, "connections"):
+                            current_peer_count = len(peer_manager.connections)
+
+                    if hasattr(torrent_session, "piece_manager"):
+                        piece_manager = torrent_session.piece_manager
+                        if hasattr(piece_manager, "stats"):
+                            stats = piece_manager.stats
+                            if hasattr(stats, "download_rate"):
+                                current_download_rate = stats.download_rate
+
+                # Determine reason
+                config = get_config()
+                popular_threshold = (
+                    config.discovery.aggressive_discovery_popular_threshold
+                )
+                active_threshold_kib = (
+                    config.discovery.aggressive_discovery_active_threshold_kib
+                )
+
+                reason = "normal"
+                if current_peer_count >= popular_threshold:
+                    reason = "popular"
+                elif current_download_rate / 1024.0 >= active_threshold_kib:
+                    reason = "active"
+
+                # Get query interval
+                query_interval = 15.0  # Default
+                if aggressive_mode:
+                    if reason == "active":
+                        query_interval = (
+                            config.discovery.aggressive_discovery_interval_active
+                        )
+                    elif reason == "popular":
+                        query_interval = (
+                            config.discovery.aggressive_discovery_interval_popular
+                        )
+
+                max_peers_per_query = (
+                    config.discovery.aggressive_discovery_max_peers_per_query
+                    if aggressive_mode
+                    else 50
+                )
+
+                response = AggressiveDiscoveryStatusResponse(
+                    info_hash=info_hash_hex,
+                    enabled=aggressive_mode,
+                    reason=reason,
+                    current_peer_count=current_peer_count,
+                    current_download_rate_kib=current_download_rate / 1024.0,
+                    popular_threshold=popular_threshold,
+                    active_threshold_kib=active_threshold_kib,
+                    query_interval=query_interval,
+                    max_peers_per_query=max_peers_per_query,
+                )
+                return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Failed to get aggressive discovery status")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Failed to get aggressive discovery status: {exc}",
+                    code="METRICS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
     async def _handle_add_torrent(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/add."""
-        info_hash_hex: str | None = None
+        info_hash_hex: Optional[str] = None
+        visibility_ready = True
         path_or_magnet: str = "unknown"
         try:
             # Parse JSON request body with error handling
@@ -631,9 +2371,8 @@ class IPCServer:
                 )
             except Exception as json_error:
                 logger.exception(
-                    "Error parsing JSON in add_torrent request from %s: %s",
+                    "Error parsing JSON in add_torrent request from %s",
                     request.remote,
-                    json_error,
                 )
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
@@ -661,17 +2400,17 @@ class IPCServer:
                     status=400,
                 )
 
-            # CRITICAL FIX: Use executor pattern for consistency with all other handlers
+            # Note: Use executor pattern for consistency with all other handlers
             # Add timeout protection for add operations
             # This prevents the request from hanging indefinitely if something goes wrong
             # The timeout is generous (120s for magnets) to allow for metadata exchange
             try:
                 # Use executor to add torrent/magnet (consistent with all other handlers)
-                # CRITICAL FIX: Increase timeout for magnets to allow metadata exchange
+                # Note: Increase timeout for magnets to allow metadata exchange
                 # Magnet links need time to fetch metadata from peers, which can take 30-120s
                 timeout = 120.0 if req.path_or_magnet.startswith("magnet:") else 60.0
 
-                # CRITICAL FIX: Wrap executor.execute in additional try-except to catch any
+                # Note: Wrap executor.execute in additional try-except to catch any
                 # unexpected exceptions that might not be caught by the executor itself
                 try:
                     result = await asyncio.wait_for(
@@ -684,7 +2423,7 @@ class IPCServer:
                         timeout=timeout,
                     )
                 except asyncio.TimeoutError:
-                    logger.error(
+                    logger.exception(
                         "Timeout adding torrent/magnet: %s (operation took >%.0fs)",
                         req.path_or_magnet[:100],
                         timeout,
@@ -699,9 +2438,8 @@ class IPCServer:
                 except Exception as executor_error:
                     # Log the full exception with context
                     logger.exception(
-                        "Error in executor.execute() for torrent/magnet %s: %s",
+                        "Error in executor.execute() for torrent/magnet %s",
                         req.path_or_magnet[:100],
-                        executor_error,
                     )
                     # Return error response directly instead of re-raising
                     # This prevents the exception from propagating and potentially crashing the daemon
@@ -714,14 +2452,26 @@ class IPCServer:
                     )
 
                 if not result.success:
+                    error_msg = result.error or "Failed to add torrent"
                     logger.warning(
                         "Executor returned failure for torrent/magnet %s: %s",
                         req.path_or_magnet[:100],
-                        result.error,
+                        error_msg,
                     )
+
+                    # Check if torrent already exists - return more user-friendly response
+                    if error_msg and "already exists" in error_msg.lower():
+                        return web.json_response(  # type: ignore[attr-defined]
+                            ErrorResponse(
+                                error=f"Torrent is already in the list. {error_msg}",
+                                code="TORRENT_ALREADY_EXISTS",
+                            ).model_dump(),
+                            status=409,  # 409 Conflict is more appropriate for "already exists"
+                        )
+
                     return web.json_response(  # type: ignore[attr-defined]
                         ErrorResponse(
-                            error=result.error or "Failed to add torrent",
+                            error=error_msg,
                             code="ADD_TORRENT_ERROR",
                         ).model_dump(),
                         status=400,
@@ -740,13 +2490,20 @@ class IPCServer:
                         ).model_dump(),
                         status=400,
                     )
+                # Visibility can lag behind successful add completion.
+                # Preserve this as a signal in the success payload instead of hard-failing.
+                visibility_ready = await self._wait_for_add_visibility(info_hash_hex)
+                if not visibility_ready:
+                    logger.warning(
+                        "Add returned info_hash=%s but session registration is not visible yet",
+                        info_hash_hex,
+                    )
             except Exception as add_error:
                 # Catch any other unexpected errors (shouldn't happen due to inner try-except)
                 # But this is a safety net to ensure the daemon never crashes
                 logger.exception(
-                    "Unexpected error in _handle_add_torrent for %s: %s",
+                    "Unexpected error in _handle_add_torrent for %s",
                     req.path_or_magnet[:100] if "req" in locals() else "unknown",
-                    add_error,
                 )
                 return web.json_response(  # type: ignore[attr-defined]
                     ErrorResponse(
@@ -756,11 +2513,11 @@ class IPCServer:
                     status=500,
                 )
 
-            # CRITICAL FIX: Emit WebSocket event with error isolation
+            # Note: Emit WebSocket event with error isolation
             # WebSocket errors should not prevent the torrent from being added
             # If the torrent was successfully added, return success even if WebSocket fails
             try:
-                await self._emit_websocket_event(
+                await self.emit_websocket_event(
                     EventType.TORRENT_ADDED,
                     {"info_hash": info_hash_hex, "name": req.path_or_magnet},
                 )
@@ -775,12 +2532,20 @@ class IPCServer:
                 )
 
             # Return success if torrent was added (even if WebSocket event failed)
-            # CRITICAL FIX: This check should never be reached if the inner try-except
+            # Note: This check should never be reached if the inner try-except
             # handled the case correctly, but we include it as a safety net
             if info_hash_hex:
-                return web.json_response(
-                    {"info_hash": info_hash_hex, "status": "added"}
-                )  # type: ignore[attr-defined]
+                response_payload: dict[str, Any] = {
+                    "info_hash": info_hash_hex,
+                    "status": "added",
+                    "visibility_ready": visibility_ready,
+                }
+                if not visibility_ready:
+                    response_payload["warning_code"] = "ADD_VISIBILITY_NOT_READY"
+                    response_payload["warning"] = (
+                        "Torrent add completed but registration is not visible yet"
+                    )
+                return web.json_response(response_payload)  # type: ignore[attr-defined]
             # This should never happen due to the check at lines 672-684, but handle it gracefully
             logger.error(
                 "Torrent was not added (info_hash is None) - this should not happen",
@@ -796,14 +2561,37 @@ class IPCServer:
         except Exception as e:
             # Log the full exception with context for debugging
             logger.exception(
-                "Error adding torrent/magnet %s: %s",
+                "Error adding torrent/magnet %s",
                 path_or_magnet[:100] if path_or_magnet != "unknown" else "unknown",
-                e,
             )
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(error=str(e), code="ADD_TORRENT_ERROR").model_dump(),
                 status=400,
             )
+
+    async def _wait_for_add_visibility(
+        self,
+        info_hash_hex: str,
+        *,
+        timeout_s: float = 1.0,
+        poll_interval_s: float = 0.02,
+    ) -> bool:
+        """Wait until add registration is visible to inbound session lookup."""
+        try:
+            info_hash_bytes = bytes.fromhex(info_hash_hex)
+        except (TypeError, ValueError):
+            return False
+
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        while True:
+            session = await self.session_manager.get_session_for_info_hash(
+                info_hash_bytes
+            )
+            if session is not None:
+                return True
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(poll_interval_s)
 
     async def _handle_remove_torrent(self, request: Request) -> Response:
         """Handle DELETE /api/v1/torrents/{info_hash}."""
@@ -815,7 +2603,7 @@ class IPCServer:
             if result.success and result.data.get("removed"):
                 # Emit WebSocket event with error isolation
                 try:
-                    await self._emit_websocket_event(
+                    await self.emit_websocket_event(
                         EventType.TORRENT_REMOVED,
                         {"info_hash": info_hash},
                     )
@@ -835,10 +2623,10 @@ class IPCServer:
                 status=404,
             )
         except Exception as e:
-            logger.exception("Error removing torrent %s: %s", info_hash, e)
+            logger.exception("Error removing torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to remove torrent",
+                    error=str(e),
                     code="REMOVE_TORRENT_ERROR",
                 ).model_dump(),
                 status=500,
@@ -847,25 +2635,33 @@ class IPCServer:
     async def _handle_list_torrents(self, _request: Request) -> Response:
         """Handle GET /api/v1/torrents."""
         try:
-            result = await self.executor.execute("torrent.list")
-
-            if not result.success:
-                return web.json_response(  # type: ignore[attr-defined]
-                    ErrorResponse(
-                        error=result.error or "Failed to list torrents",
-                        code="LIST_FAILED",
-                    ).model_dump(),
-                    status=500,
+            status_dict = await asyncio.wait_for(
+                self.session_manager.get_status_summaries_light(),
+                timeout=8.0,
+            )
+            torrents = [
+                TorrentStatusResponse(
+                    info_hash=info_hash_hex,
+                    name=status.get("name", "Unknown"),
+                    status=status.get("status", "unknown"),
+                    progress=float(status.get("progress", 0.0) or 0.0),
+                    download_rate=float(status.get("download_rate", 0.0) or 0.0),
+                    upload_rate=float(status.get("upload_rate", 0.0) or 0.0),
+                    num_peers=int(status.get("connected_peers", 0) or 0),
+                    num_seeds=int(status.get("active_peers", 0) or 0),
+                    total_size=int(status.get("total_size", 0) or 0),
+                    downloaded=int(status.get("downloaded", 0) or 0),
+                    uploaded=int(status.get("uploaded", 0) or 0),
                 )
-
-            torrents = result.data.get("torrents", [])
+                for info_hash_hex, status in status_dict.items()
+            ]
             response = TorrentListResponse(torrents=torrents)
             return web.json_response(response.model_dump())  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error listing torrents: %s", e)
+            logger.exception("Error listing torrents")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to list torrents",
+                    error=str(e),
                     code="LIST_FAILED",
                 ).model_dump(),
                 status=500,
@@ -889,11 +2685,120 @@ class IPCServer:
             status = result.data["status"]
             return web.json_response(status.model_dump())  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error getting torrent status for %s: %s", info_hash, e)
+            logger.exception("Error getting torrent status for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to get torrent status",
+                    error=str(e),
                     code="GET_STATUS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_start_media_stream(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/media/start."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            payload = MediaStreamStartRequest.model_validate(await request.json())
+            result = await self.executor.execute(
+                "media.start",
+                info_hash=info_hash,
+                file_index=payload.file_index,
+                port=payload.port,
+            )
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to start media stream",
+                        code="MEDIA_STREAM_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            return web.json_response(result.data)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error starting media stream for %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_media_stream_status_for_torrent(
+        self,
+        request: Request,
+    ) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/media/status."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            result = await self.executor.execute("media.status", info_hash=info_hash)
+            status = result.data.get("status") if result.data else None
+            if not result.success or status is None:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Media stream not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(status)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting media status for %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_stop_media_stream(self, request: Request) -> Response:
+        """Handle POST /api/v1/media/{stream_id}/stop."""
+        stream_id = request.match_info["stream_id"]
+        try:
+            result = await self.executor.execute("media.stop", stream_id=stream_id)
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Media stream not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                {"status": "stopped", "stopped": True, "stream_id": stream_id}
+            )
+        except Exception as e:
+            logger.exception("Error stopping media stream %s", stream_id)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_media_stream_status(self, request: Request) -> Response:
+        """Handle GET /api/v1/media/{stream_id}/status."""
+        stream_id = request.match_info["stream_id"]
+        try:
+            result = await self.executor.execute("media.status", stream_id=stream_id)
+            status = result.data.get("status") if result.data else None
+            if not result.success or status is None:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Media stream not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(status)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting media stream status %s", stream_id)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="MEDIA_STREAM_ERROR",
                 ).model_dump(),
                 status=500,
             )
@@ -915,10 +2820,10 @@ class IPCServer:
                 status=404,
             )
         except Exception as e:
-            logger.exception("Error pausing torrent %s: %s", info_hash, e)
+            logger.exception("Error pausing torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to pause torrent",
+                    error=str(e),
                     code="PAUSE_FAILED",
                 ).model_dump(),
                 status=500,
@@ -941,11 +2846,239 @@ class IPCServer:
                 status=404,
             )
         except Exception as e:
-            logger.exception("Error resuming torrent %s: %s", info_hash, e)
+            logger.exception("Error resuming torrent %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=str(e) or "Failed to resume torrent",
+                    error=str(e),
                     code="RESUME_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_restart_torrent(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/restart."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            # Pause then resume
+            pause_result = await self.executor.execute(
+                "torrent.pause", info_hash=info_hash
+            )
+            if not pause_result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=pause_result.error or "Failed to pause torrent",
+                        code="RESTART_FAILED",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Small delay before resume
+            await asyncio.sleep(0.1)
+
+            resume_result = await self.executor.execute(
+                "torrent.resume", info_hash=info_hash
+            )
+            if resume_result.success and resume_result.data.get("resumed"):
+                return web.json_response({"status": "restarted"})  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=resume_result.error or "Failed to resume torrent",
+                    code="RESTART_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error restarting torrent %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="RESTART_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_cancel_torrent(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/cancel."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            result = await self.executor.execute("torrent.cancel", info_hash=info_hash)
+            if result.success and result.data.get("cancelled"):
+                return web.json_response(
+                    {"status": "cancelled", "info_hash": info_hash}
+                )  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to cancel torrent",
+                    code="CANCEL_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error cancelling torrent %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="CANCEL_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_force_start_torrent(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/force-start."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            result = await self.executor.execute(
+                "torrent.force_start", info_hash=info_hash
+            )
+            if result.success and result.data.get("force_started"):
+                return web.json_response(
+                    {"status": "force_started", "info_hash": info_hash}
+                )  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to force start torrent",
+                    code="FORCE_START_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error force starting torrent %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="FORCE_START_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_batch_pause(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/batch/pause."""
+        try:
+            data = await request.json()
+            info_hashes = data.get("info_hashes", [])
+
+            results = []
+            for info_hash in info_hashes:
+                result = await self.executor.execute(
+                    "torrent.pause", info_hash=info_hash
+                )
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                )
+
+            return web.json_response({"results": results})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error in batch pause")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="BATCH_PAUSE_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_batch_resume(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/batch/resume."""
+        try:
+            data = await request.json()
+            info_hashes = data.get("info_hashes", [])
+
+            results = []
+            for info_hash in info_hashes:
+                result = await self.executor.execute(
+                    "torrent.resume", info_hash=info_hash
+                )
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                )
+
+            return web.json_response({"results": results})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error in batch resume")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="BATCH_RESUME_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_batch_restart(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/batch/restart."""
+        try:
+            data = await request.json()
+            info_hashes = data.get("info_hashes", [])
+
+            results = []
+            for info_hash in info_hashes:
+                # Pause then resume
+                pause_result = await self.executor.execute(
+                    "torrent.pause", info_hash=info_hash
+                )
+                await asyncio.sleep(0.1)
+                resume_result = await self.executor.execute(
+                    "torrent.resume", info_hash=info_hash
+                )
+
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": pause_result.success and resume_result.success,
+                        "error": resume_result.error
+                        if not resume_result.success
+                        else pause_result.error,
+                    }
+                )
+
+            return web.json_response({"results": results})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error in batch restart")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="BATCH_RESTART_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_batch_remove(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/batch/remove."""
+        try:
+            data = await request.json()
+            info_hashes = data.get("info_hashes", [])
+            remove_data = data.get("remove_data", False)
+
+            results = []
+            for info_hash in info_hashes:
+                result = await self.executor.execute(
+                    "torrent.remove", info_hash=info_hash, remove_data=remove_data
+                )
+                results.append(
+                    {
+                        "info_hash": info_hash,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                )
+
+            return web.json_response({"results": results})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error in batch remove")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="BATCH_REMOVE_FAILED",
                 ).model_dump(),
                 status=500,
             )
@@ -987,6 +3120,356 @@ class IPCServer:
         )
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
 
+    async def _handle_get_torrent_trackers(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/trackers.
+
+        Returns tracker information including statistics (seeds, peers, downloaders).
+        Statistics are retrieved from TrackerSession.last_complete/incomplete/downloaded
+        fields, which are updated from tracker responses. Falls back to ScrapeManager
+        scrape cache if session statistics are unavailable.
+        """
+        info_hash = request.match_info["info_hash"]
+
+        try:
+            # Convert hex string to bytes for lookup
+            try:
+                info_hash_bytes = bytes.fromhex(info_hash)
+            except ValueError:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Invalid info hash format",
+                        code="INVALID_INFO_HASH",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Get torrent session from session manager
+            torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+            if not torrent_session:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Torrent not found",
+                        code="TORRENT_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+
+            # Get tracker information from torrent session
+            tracker_infos = []
+
+            # Get tracker URLs from torrent data
+            tracker_urls: list[str] = []
+            if hasattr(torrent_session, "torrent_data"):
+                td = torrent_session.torrent_data
+                if isinstance(td, dict):
+                    if "announce" in td:
+                        tracker_urls.append(td["announce"])
+                    if "announce_list" in td:
+                        for tier in td["announce_list"]:
+                            if isinstance(tier, list):
+                                tracker_urls.extend(tier)
+                            else:
+                                tracker_urls.append(tier)
+                elif hasattr(td, "announce"):
+                    tracker_urls.append(td.announce)
+                    if hasattr(td, "announce_list") and td.announce_list:
+                        for tier in td.announce_list:
+                            if isinstance(tier, list):
+                                tracker_urls.extend(tier)
+                            else:
+                                tracker_urls.append(tier)
+
+            # Get tracker status from tracker client
+            if hasattr(torrent_session, "tracker") and torrent_session.tracker:
+                tracker_client = torrent_session.tracker
+                if hasattr(tracker_client, "sessions"):
+                    # Get tracker sessions
+                    for url, tracker_session_obj in tracker_client.sessions.items():
+                        status = "working"
+                        if tracker_session_obj.failure_count > 0:
+                            status = "error"
+                        elif tracker_session_obj.last_announce == 0:
+                            status = "updating"
+
+                        # Get scrape results from tracker session
+                        # Statistics are stored in TrackerSession from last tracker response (announce or scrape)
+                        seeds = (
+                            tracker_session_obj.last_complete
+                            if tracker_session_obj.last_complete is not None
+                            else 0
+                        )
+                        peers = (
+                            tracker_session_obj.last_incomplete
+                            if tracker_session_obj.last_incomplete is not None
+                            else 0
+                        )
+                        downloaders = (
+                            tracker_session_obj.last_downloaded
+                            if tracker_session_obj.last_downloaded is not None
+                            else 0
+                        )
+
+                        # Fallback to scrape cache if session statistics are unavailable
+                        if seeds == 0 and peers == 0 and downloaders == 0:
+                            try:
+                                # Try to get statistics from scrape cache
+                                if hasattr(
+                                    self.session_manager, "scrape_cache"
+                                ) and hasattr(
+                                    self.session_manager, "scrape_cache_lock"
+                                ):
+                                    async with self.session_manager.scrape_cache_lock:
+                                        cached_result = (
+                                            self.session_manager.scrape_cache.get(
+                                                info_hash_bytes
+                                            )
+                                        )
+                                        if cached_result:
+                                            seeds = (
+                                                cached_result.seeders
+                                                if hasattr(cached_result, "seeders")
+                                                else 0
+                                            )
+                                            peers = (
+                                                cached_result.leechers
+                                                if hasattr(cached_result, "leechers")
+                                                else 0
+                                            )
+                                            downloaders = (
+                                                cached_result.completed
+                                                if hasattr(cached_result, "completed")
+                                                else 0
+                                            )
+                            except Exception:
+                                # If fallback fails, use 0 values (already set above)
+                                pass
+
+                        tracker_infos.append(
+                            TrackerInfo(
+                                url=url,
+                                status=status,
+                                seeds=seeds,
+                                peers=peers,
+                                downloaders=downloaders,
+                                last_update=tracker_session_obj.last_announce,
+                                error=None
+                                if tracker_session_obj.failure_count == 0
+                                else f"Failed {tracker_session_obj.failure_count} times",
+                            )
+                        )
+
+            # Add any trackers from announce_list that aren't in sessions yet
+            for url in tracker_urls:
+                if url and not any(t.url == url for t in tracker_infos):
+                    tracker_infos.append(
+                        TrackerInfo(
+                            url=url,
+                            status="updating",
+                            seeds=0,
+                            peers=0,
+                            downloaders=0,
+                            last_update=0.0,
+                            error=None,
+                        )
+                    )
+
+            response = TrackerListResponse(
+                info_hash=info_hash,
+                trackers=tracker_infos,
+                count=len(tracker_infos),
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger.exception("Error getting torrent trackers")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_add_tracker(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/trackers/add."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            # Validate info hash format
+            try:
+                _ = bytes.fromhex(info_hash)
+            except ValueError:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Invalid info hash format",
+                        code="INVALID_INFO_HASH",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Parse request body
+            data = await request.json()
+            req = TrackerAddRequest(**data)
+
+            # Execute command via executor
+            result = await self.executor.execute(
+                "torrent.add_tracker",
+                info_hash=info_hash,
+                tracker_url=req.url,
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to add tracker",
+                        code="ADD_TRACKER_FAILED",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            return web.json_response(result.data)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error adding tracker")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="ADD_TRACKER_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_remove_tracker(self, request: Request) -> Response:
+        """Handle DELETE /api/v1/torrents/{info_hash}/trackers/{tracker_url}."""
+        info_hash = request.match_info["info_hash"]
+        tracker_url = request.match_info.get("tracker_url")
+
+        try:
+            # Validate info hash format
+            try:
+                _ = bytes.fromhex(info_hash)
+            except ValueError:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Invalid info hash format",
+                        code="INVALID_INFO_HASH",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # URL decode tracker URL if needed
+            if tracker_url:
+                from urllib.parse import unquote
+
+                tracker_url = unquote(tracker_url)
+
+            if not tracker_url:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing tracker_url in path",
+                        code="MISSING_TRACKER_URL",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Execute command via executor
+            result = await self.executor.execute(
+                "torrent.remove_tracker",
+                info_hash=info_hash,
+                tracker_url=tracker_url,
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to remove tracker",
+                        code="REMOVE_TRACKER_FAILED",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            return web.json_response(result.data)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error removing tracker")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="REMOVE_TRACKER_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_torrent_piece_availability(
+        self, request: Request
+    ) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/piece-availability."""
+        info_hash = request.match_info["info_hash"]
+
+        try:
+            # Convert hex string to bytes for lookup
+            try:
+                info_hash_bytes = bytes.fromhex(info_hash)
+            except ValueError:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Invalid info hash format",
+                        code="INVALID_INFO_HASH",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            # Get torrent session from session manager
+            torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+            if not torrent_session:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Torrent not found",
+                        code="TORRENT_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+
+            # Get piece availability from piece manager
+            availability: list[int] = []
+            num_pieces = 0
+            max_peers = 0
+
+            if (
+                hasattr(torrent_session, "piece_manager")
+                and torrent_session.piece_manager
+            ):
+                piece_manager = torrent_session.piece_manager
+
+                # Get number of pieces
+                num_pieces = getattr(piece_manager, "num_pieces", 0)
+                if num_pieces == 0:
+                    num_pieces = len(getattr(piece_manager, "pieces", []))
+
+                # Get piece_frequency Counter
+                piece_frequency = getattr(piece_manager, "piece_frequency", None)
+                if piece_frequency:
+                    # Build availability array
+                    for piece_idx in range(num_pieces):
+                        count = piece_frequency.get(piece_idx, 0)
+                        availability.append(count)
+                        max_peers = max(max_peers, count)
+
+            response = PieceAvailabilityResponse(
+                info_hash=info_hash,
+                availability=availability,
+                num_pieces=num_pieces,
+                max_peers=max_peers,
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger.exception("Error getting torrent piece availability")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
     async def _handle_set_rate_limits(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/{info_hash}/rate-limits."""
         info_hash = request.match_info["info_hash"]
@@ -1013,7 +3496,7 @@ class IPCServer:
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error setting rate limits: %s", e)
+            logger.exception("Error setting rate limits")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to set rate limits: {e}",
@@ -1041,6 +3524,249 @@ class IPCServer:
 
         return web.json_response(result.data)  # type: ignore[attr-defined]
 
+    async def _handle_refresh_pex(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/pex/refresh."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            success = await self.session_manager.refresh_pex(info_hash)
+            if success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"status": "refreshed", "success": True}
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error="Torrent not found or PEX not available",
+                    code="PEX_REFRESH_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error refreshing PEX for torrent %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="PEX_REFRESH_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_torrent_option(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/options."""
+        try:
+            info_hash = request.match_info["info_hash"]
+            data = await request.json()
+            key = data.get("key")
+            value = data.get("value")
+
+            if not key:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="Missing 'key' parameter",
+                        code="MISSING_PARAMETER",
+                    ).model_dump(),
+                    status=400,
+                )
+
+            result = await self.executor.execute(
+                "torrent.set_option",
+                info_hash=info_hash,
+                key=key,
+                value=value,
+            )
+
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"success": True, "key": key, "value": value},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to set option",
+                    code="SET_OPTION_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error setting torrent option")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_torrent_option(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/options/{key}."""
+        try:
+            info_hash = request.match_info["info_hash"]
+            key = request.match_info["key"]
+
+            result = await self.executor.execute(
+                "torrent.get_option",
+                info_hash=info_hash,
+                key=key,
+            )
+
+            if result.success:
+                value = result.data.get("value")
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"key": key, "value": value},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to get option",
+                    code="GET_OPTION_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error getting torrent option")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_torrent_config(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/config."""
+        try:
+            info_hash = request.match_info["info_hash"]
+
+            result = await self.executor.execute(
+                "torrent.get_config",
+                info_hash=info_hash,
+            )
+
+            if result.success:
+                data = result.data
+                return web.json_response(  # type: ignore[attr-defined]
+                    {
+                        "options": data.get("options", {}),
+                        "rate_limits": data.get("rate_limits", {}),
+                    },
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to get config",
+                    code="GET_CONFIG_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error getting torrent config")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_reset_torrent_options(self, request: Request) -> Response:
+        """Handle DELETE /api/v1/torrents/{info_hash}/options[/{key}]."""
+        try:
+            info_hash = request.match_info["info_hash"]
+            key = request.match_info.get("key")  # Optional
+
+            result = await self.executor.execute(
+                "torrent.reset_options",
+                info_hash=info_hash,
+                key=key,
+            )
+
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"success": True, "key": key},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to reset options",
+                    code="RESET_OPTIONS_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error resetting torrent options")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_save_torrent_checkpoint(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/checkpoint."""
+        try:
+            info_hash = request.match_info["info_hash"]
+
+            result = await self.executor.execute(
+                "torrent.save_checkpoint",
+                info_hash=info_hash,
+            )
+
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"success": True, "saved": True},
+                    status=200,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to save checkpoint",
+                    code="SAVE_CHECKPOINT_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error saving torrent checkpoint")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="INTERNAL_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_dht_aggressive_mode(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/dht/aggressive."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            # Parse request body for enabled flag
+            data = await request.json() if request.content_length else {}
+            enabled = data.get("enabled", True)  # Default to True if not specified
+
+            success = await self.session_manager.set_dht_aggressive_mode(
+                info_hash, enabled
+            )
+            if success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {"status": "updated", "success": True, "enabled": enabled}
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error="Torrent not found or DHT not available",
+                    code="DHT_AGGRESSIVE_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception(
+                "Error setting DHT aggressive mode for torrent %s", info_hash
+            )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="DHT_AGGRESSIVE_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
     async def _handle_export_session_state(self, request: Request) -> Response:
         """Handle POST /api/v1/torrents/export-state."""
         try:
@@ -1063,7 +3789,7 @@ class IPCServer:
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error exporting session state: %s", e)
+            logger.exception("Error exporting session state")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to export session state: {e}",
@@ -1094,7 +3820,7 @@ class IPCServer:
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error importing session state: %s", e)
+            logger.exception("Error importing session state")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to import session state: {e}",
@@ -1139,7 +3865,7 @@ class IPCServer:
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error resuming from checkpoint: %s", e)
+            logger.exception("Error resuming from checkpoint")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to resume from checkpoint: {e}",
@@ -1181,7 +3907,7 @@ class IPCServer:
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error updating config: %s", e)
+            logger.exception("Error updating config")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to update config: {e}",
@@ -1193,16 +3919,197 @@ class IPCServer:
     async def _handle_shutdown(self, _request: Request) -> Response:
         """Handle POST /api/v1/shutdown."""
         logger.info("Shutdown requested via IPC")
-        # Schedule shutdown (don't block the response)
-        _ = asyncio.create_task(self._shutdown_async())
-        return web.json_response({"status": "shutting_down"})  # type: ignore[attr-defined]
+
+        if self._shutdown_event is not None and self._shutdown_event.is_set():
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": True,
+                    "status": "already_shutting_down",
+                    "message": "Shutdown already in progress",
+                }
+            )
+
+        if self._shutdown_callback is None and self._shutdown_event is None:
+            logger.error(
+                "Shutdown request rejected: daemon shutdown bridge unavailable"
+            )
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": False,
+                    "status": "rejected",
+                    "error": "Shutdown handler unavailable",
+                    "fallback_hint": "Use signal-based shutdown path",
+                },
+                status=503,
+            )
+
+        try:
+            # Schedule shutdown (don't block the response) - fire-and-forget
+            asyncio.create_task(self._shutdown_async())  # noqa: RUF006
+        except Exception:
+            logger.exception("Failed to enqueue shutdown task")
+            return web.json_response(  # type: ignore[attr-defined]
+                {
+                    "accepted": False,
+                    "status": "enqueue_failed",
+                    "error": "Failed to enqueue shutdown task",
+                    "fallback_hint": "Use signal-based shutdown path",
+                },
+                status=500,
+            )
+
+        return web.json_response(  # type: ignore[attr-defined]
+            {
+                "accepted": True,
+                "status": "shutting_down",
+                "message": "Shutdown enqueued",
+            }
+        )
 
     async def _shutdown_async(self) -> None:
         """Async shutdown handler."""
         await asyncio.sleep(0.1)  # Give response time to send
-        # Signal shutdown to daemon main (this will be handled by DaemonMain)
-        # For now, we'll just log it
-        logger.info("Shutdown signal sent")
+        if self._shutdown_event is not None and self._shutdown_event.is_set():
+            logger.debug("Shutdown event already set; skipping duplicate IPC signal")
+            return
+
+        if self._shutdown_callback is not None:
+            try:
+                await self._shutdown_callback()
+                logger.info("Shutdown signal sent")
+                return
+            except Exception:
+                logger.exception("Shutdown callback failed")
+
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+            logger.info("Shutdown event set from IPC")
+
+    async def _handle_restart_service(self, request: Request) -> Response:
+        """Handle POST /api/v1/services/{service_name}/restart."""
+        service_name = request.match_info["service_name"]
+        try:
+            # Map service names to session manager components
+            if service_name == "dht":
+                # Restart DHT client
+                if self.session_manager and self.session_manager.dht_client:
+                    await self.session_manager.dht_client.stop()
+                    await self.session_manager.dht_client.start()
+                    # Emit COMPONENT_RESTARTED event
+                    try:
+                        await self.emit_websocket_event(
+                            EventType.COMPONENT_STOPPED,
+                            {"component_name": "dht_client", "status": "stopped"},
+                        )
+                        await self.emit_websocket_event(
+                            EventType.COMPONENT_STARTED,
+                            {"component_name": "dht_client", "status": "running"},
+                        )
+                    except Exception as e:
+                        logger.debug("Failed to emit component events: %s", e)
+                    return web.json_response(
+                        {"status": "restarted", "service": service_name}
+                    )  # type: ignore[attr-defined]
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="DHT client not available",
+                        code="SERVICE_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            if service_name == "nat":
+                # Restart NAT manager
+                if self.session_manager and self.session_manager.nat_manager:
+                    await self.session_manager.nat_manager.stop()
+                    await self.session_manager.nat_manager.start()
+                    return web.json_response(
+                        {"status": "restarted", "service": service_name}
+                    )  # type: ignore[attr-defined]
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="NAT manager not available",
+                        code="SERVICE_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            if service_name == "tcp_server":
+                # Restart TCP server
+                if self.session_manager and self.session_manager.tcp_server:
+                    await self.session_manager.tcp_server.stop()
+                    await self.session_manager.tcp_server.start()
+                    return web.json_response(
+                        {"status": "restarted", "service": service_name}
+                    )  # type: ignore[attr-defined]
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="TCP server not available",
+                        code="SERVICE_NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=f"Unknown service: {service_name}",
+                    code="SERVICE_NOT_FOUND",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error restarting service %s", service_name)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="RESTART_SERVICE_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_services_status(self, _request: Request) -> Response:
+        """Handle GET /api/v1/services/status."""
+        try:
+            services = {}
+
+            if self.session_manager:
+                services["dht"] = {
+                    "enabled": self.session_manager.dht_client is not None,
+                    "status": "running"
+                    if self.session_manager.dht_client
+                    else "stopped",
+                }
+                services["nat"] = {
+                    "enabled": self.session_manager.nat_manager is not None,
+                    "status": "running"
+                    if self.session_manager.nat_manager
+                    else "stopped",
+                }
+                services["tcp_server"] = {
+                    "enabled": self.session_manager.tcp_server is not None,
+                    "status": "running"
+                    if self.session_manager.tcp_server
+                    else "stopped",
+                }
+                services["peer_service"] = {
+                    "enabled": self.session_manager.peer_service is not None,
+                    "status": "running"
+                    if self.session_manager.peer_service
+                    else "stopped",
+                }
+
+            services["ipc_server"] = {
+                "enabled": True,
+                "status": "running",
+            }
+
+            return web.json_response({"services": services})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting services status")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="GET_SERVICES_STATUS_FAILED",
+                ).model_dump(),
+                status=500,
+            )
 
     # File Selection Handlers
 
@@ -1210,7 +4117,7 @@ class IPCServer:
         """Handle GET /api/v1/torrents/{info_hash}/files."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1238,7 +4145,7 @@ class IPCServer:
         """Handle POST /api/v1/torrents/{info_hash}/files/select."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1272,7 +4179,7 @@ class IPCServer:
         """Handle POST /api/v1/torrents/{info_hash}/files/deselect."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1306,7 +4213,7 @@ class IPCServer:
         """Handle POST /api/v1/torrents/{info_hash}/files/priority."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1341,7 +4248,7 @@ class IPCServer:
         """Handle GET /api/v1/torrents/{info_hash}/files/verify."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1363,6 +4270,94 @@ class IPCServer:
             )
 
         return web.json_response(result.data)  # type: ignore[attr-defined]
+
+    async def _handle_rehash_torrent(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/rehash."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            _ = bytes.fromhex(info_hash)  # Validate hex format
+        except ValueError:
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error="Invalid info hash format",
+                    code="INVALID_INFO_HASH",
+                ).model_dump(),
+                status=400,
+            )
+
+        result = await self.executor.execute("torrent.rehash", info_hash=info_hash)
+
+        if not result.success:
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to rehash torrent",
+                    code="REHASH_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+
+        return web.json_response(result.data)  # type: ignore[attr-defined]
+
+    async def _handle_get_metadata_status(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/metadata/status."""
+        info_hash = request.match_info["info_hash"]
+        try:
+            info_hash_bytes = bytes.fromhex(info_hash)
+        except ValueError:
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error="Invalid info hash format",
+                    code="INVALID_INFO_HASH",
+                ).model_dump(),
+                status=400,
+            )
+
+        try:
+            async with self.session_manager.lock:
+                torrent_session = self.session_manager.torrents.get(info_hash_bytes)
+                if not torrent_session:
+                    return web.json_response(  # type: ignore[attr-defined]
+                        ErrorResponse(
+                            error="Torrent not found",
+                            code="TORRENT_NOT_FOUND",
+                        ).model_dump(),
+                        status=404,
+                    )
+
+                # Check if metadata is available (file_selection_manager exists)
+                metadata_available = (
+                    hasattr(torrent_session, "file_selection_manager")
+                    and torrent_session.file_selection_manager is not None
+                )
+
+                # Check if it's a magnet link (no files initially)
+                is_magnet = (
+                    hasattr(torrent_session, "torrent_data")
+                    and isinstance(torrent_session.torrent_data, dict)
+                    and torrent_session.torrent_data.get("info_hash") is not None
+                    and torrent_session.torrent_data.get("file_info", {}).get(
+                        "total_length", 0
+                    )
+                    == 0
+                )
+
+                return web.json_response(  # type: ignore[attr-defined]
+                    {
+                        "info_hash": info_hash,
+                        "available": metadata_available,
+                        "is_magnet": is_magnet,
+                        "ready": metadata_available,
+                    }
+                )
+        except Exception as e:
+            logger.exception("Error getting metadata status for %s", info_hash)
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="METADATA_STATUS_ERROR",
+                ).model_dump(),
+                status=500,
+            )
 
     # Queue Handlers
 
@@ -1408,7 +4403,7 @@ class IPCServer:
         """Handle DELETE /api/v1/queue/{info_hash}."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1435,7 +4430,7 @@ class IPCServer:
         """Handle POST /api/v1/queue/{info_hash}/move."""
         info_hash = request.match_info["info_hash"]
         try:
-            info_hash_bytes = bytes.fromhex(info_hash)
+            _ = bytes.fromhex(info_hash)  # Validate hex format
         except ValueError:
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
@@ -1746,7 +4741,7 @@ class IPCServer:
 
             return web.json_response(scrape_result.model_dump())  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error getting scrape result for %s: %s", info_hash, e)
+            logger.exception("Error getting scrape result for %s", info_hash)
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to get scrape result: {e}",
@@ -1789,33 +4784,731 @@ class IPCServer:
         protocol_info = result.data["protocol"]
         return web.json_response(protocol_info.model_dump())  # type: ignore[attr-defined]
 
-    # Session Handlers
+    # XET folder endpoints
 
-    async def _handle_get_global_stats(self, _request: Request) -> Response:
-        """Handle GET /api/v1/session/stats."""
-        result = await self.executor.execute("session.get_global_stats")
+    async def _handle_add_xet_folder(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/folders/add."""
+        try:
+            data = await request.json()
+            folder_path = data.get("folder_path")
+            if not folder_path:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="folder_path is required",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
 
-        if not result.success:
+            result = await self.executor.execute(
+                "xet.add_xet_folder",
+                folder_path=folder_path,
+                tonic_file=data.get("tonic_file"),
+                tonic_link=data.get("tonic_link"),
+                sync_mode=data.get("sync_mode"),
+                source_peers=data.get("source_peers"),
+                check_interval=data.get("check_interval"),
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to add XET folder",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+
+            response_data = {
+                "status": "added",
+                "folder_key": result.data.get("folder_key", folder_path),
+            }
+            if isinstance(result.data, dict):
+                for key in ("workspace_id", "sync_mode", "folder_path", "folder_name"):
+                    if key in result.data and result.data[key] is not None:
+                        response_data[key] = result.data[key]
+            await self.emit_websocket_event(
+                EventType.XET_FOLDER_ADDED,
+                XetFolderEventData(
+                    folder_key=response_data["folder_key"],
+                    folder_path=folder_path,
+                    status="added",
+                ).model_dump(mode="json"),
+            )
+            return web.json_response(response_data)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error adding XET folder")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
-                    error=result.error or "Failed to get global stats",
-                    code="SESSION_ERROR",
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
                 ).model_dump(),
                 status=500,
             )
 
-        stats = result.data.get("stats", {})
+    async def _handle_share_xet_folder(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/folders/share."""
+        try:
+            data = await request.json()
+            folder_path = data.get("folder_path")
+            if not folder_path:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error="folder_path is required",
+                        code="VALIDATION_ERROR",
+                    ).model_dump(),
+                    status=400,
+                )
+            result = await self.executor.execute(
+                "xet.share_folder",
+                folder_path=folder_path,
+                sync_mode=data.get("sync_mode"),
+                check_interval=data.get("check_interval"),
+                output_tonic=data.get("output_tonic"),
+            )
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to share XET folder",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            payload = result.data if isinstance(result.data, dict) else {}
+            return web.json_response(payload)  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error sharing XET folder")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_remove_xet_folder(self, request: Request) -> Response:
+        """Handle DELETE /api/v1/xet/folders/{folder_key}."""
+        try:
+            folder_key = request.match_info["folder_key"]
+
+            result = await self.executor.execute(
+                "xet.remove_xet_folder",
+                folder_key=folder_key,
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to remove XET folder",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+
+            await self.emit_websocket_event(
+                EventType.XET_FOLDER_REMOVED,
+                XetFolderEventData(
+                    folder_key=folder_key,
+                    status="removed",
+                ).model_dump(mode="json"),
+            )
+            return web.json_response(  # type: ignore[attr-defined]
+                {"status": "removed", "folder_key": folder_key}
+            )
+        except Exception as e:
+            logger.exception("Error removing XET folder")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_list_xet_folders(self, _request: Request) -> Response:
+        """Handle GET /api/v1/xet/folders."""
+        try:
+            result = await self.executor.execute("xet.list_xet_folders")
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to list XET folders",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+
+            folders = result.data.get("folders", [])
+            return web.json_response({"folders": folders})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error listing XET folders")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_xet_folder_status(self, request: Request) -> Response:
+        """Handle GET /api/v1/xet/folders/{folder_key}."""
+        try:
+            folder_key = request.match_info["folder_key"]
+
+            result = await self.executor.execute(
+                "xet.get_xet_folder_status",
+                folder_key=folder_key,
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to get XET folder status",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+
+            status = result.data.get("status")
+            if status is None:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=f"XET folder {folder_key} not found",
+                        code="NOT_FOUND",
+                    ).model_dump(),
+                    status=404,
+                )
+
+            typed = XetFolderStatusResponse.model_validate(
+                {
+                    "folder_key": folder_key,
+                    "downgrade_reason": status.get("downgrade_reason")
+                    if isinstance(status, dict)
+                    else None,
+                    "status": status,
+                }
+            )
+            return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting XET folder status")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_xet_discovery_status(self, _request: Request) -> Response:
+        """Handle GET /api/v1/xet/discovery-status."""
+        try:
+            result = await self.executor.execute("xet.get_xet_discovery_status")
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to get XET discovery status",
+                        code="XET_DISCOVERY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+
+            backends = (
+                result.data.get("backends", {}) if isinstance(result.data, dict) else {}
+            )
+            typed = XetDiscoveryStatusResponse.model_validate({"backends": backends})
+            return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error getting XET discovery status")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_DISCOVERY_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_xet_workspace_policy(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/workspace-policy/{workspace_id_hex}."""
+        try:
+            workspace_id_hex = request.match_info["workspace_id_hex"]
+            payload = XetWorkspacePolicyRequest.model_validate(await request.json())
+            result = await self.executor.execute(
+                "xet.set_xet_workspace_policy",
+                workspace_id_hex=workspace_id_hex,
+                sync_mode=payload.sync_mode,
+                source_peers=payload.source_peers,
+                auth_scope=payload.auth_scope,
+                allowlist_path=payload.allowlist_path,
+                require_signed_metadata=payload.require_signed_metadata,
+                hash_algorithm=payload.hash_algorithm,
+            )
+
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to set XET workspace policy",
+                        code="XET_WORKSPACE_POLICY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            data = result.data
+            if (
+                not isinstance(data, dict)
+                or "workspace_id" not in data
+                or "sync_mode" not in data
+            ):
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Workspace policy result is incomplete",
+                        code="XET_WORKSPACE_POLICY_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            typed = XetWorkspacePolicyResponse.model_validate(data)
+            return web.json_response(typed.model_dump(mode="json"))  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error setting XET workspace policy")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_WORKSPACE_POLICY_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_xet_folder_sync_mode(self, request: Request) -> Response:
+        """Handle POST /api/v1/xet/folders/{folder_key}/sync-mode."""
+        try:
+            folder_key = request.match_info["folder_key"]
+            payload = XetSyncModeRequest.model_validate(await request.json())
+            result = await self.executor.execute(
+                "xet.set_sync_mode_by_key",
+                folder_key=folder_key,
+                sync_mode=payload.sync_mode,
+                source_peers=payload.source_peers,
+            )
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to update XET sync mode",
+                        code="XET_FOLDER_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            return web.json_response(result.data or {})  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error updating XET sync mode")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="XET_FOLDER_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    # Session Handlers
+
+    async def _handle_get_global_stats(self, _request: Request) -> Response:
+        """Handle GET /api/v1/session/stats."""
+        try:
+            summaries = await self.session_manager.get_status_summaries()
+            stats = self.session_manager.derive_global_stats_from_summaries(summaries)
+        except Exception as exc:
+            logger.debug("Fast global stats failed, falling back to executor: %s", exc)
+            result = await self.executor.execute("session.get_global_stats")
+            if not result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    ErrorResponse(
+                        error=result.error or "Failed to get global stats",
+                        code="SESSION_ERROR",
+                    ).model_dump(),
+                    status=500,
+                )
+            stats = result.data.get("stats", {})
+
+        # Canonical manager returns download_rate/upload_rate; IPC exposes total_* for API
         response = GlobalStatsResponse(
             num_torrents=stats.get("num_torrents", 0),
             num_active=stats.get("num_active", 0),
             num_paused=stats.get("num_paused", 0),
-            total_download_rate=stats.get("total_download_rate", 0.0),
-            total_upload_rate=stats.get("total_upload_rate", 0.0),
+            total_download_rate=stats.get(
+                "download_rate", stats.get("total_download_rate", 0.0)
+            ),
+            total_upload_rate=stats.get(
+                "upload_rate", stats.get("total_upload_rate", 0.0)
+            ),
             total_downloaded=stats.get("total_downloaded", 0),
             total_uploaded=stats.get("total_uploaded", 0),
             stats=stats,
         )
         return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+
+    async def _handle_ui_snapshot(self, _request: Request) -> Response:
+        """Handle GET /api/v1/ui/snapshot - single lightweight dashboard first-paint."""
+        try:
+            status_dict = await asyncio.wait_for(
+                self.session_manager.get_status_summaries_light(),
+                timeout=8.0,
+            )
+            stats = self.session_manager.derive_global_stats_from_summaries(
+                status_dict,
+            )
+            global_stats = dict(stats)
+            global_stats.setdefault(
+                "total_download_rate",
+                stats.get("download_rate", 0.0),
+            )
+            global_stats.setdefault(
+                "total_upload_rate",
+                stats.get("upload_rate", 0.0),
+            )
+
+            torrents = list(status_dict.values())
+
+            rate_samples: list[dict[str, Any]] = []
+            try:
+                rate_samples = await asyncio.wait_for(
+                    self.session_manager.get_rate_samples(120),
+                    timeout=3.0,
+                )
+            except Exception:
+                logger.debug("UI snapshot: rate samples unavailable", exc_info=True)
+
+            if (
+                float(global_stats.get("download_rate", 0.0) or 0.0) == 0.0
+                and rate_samples
+            ):
+                latest = max(
+                    rate_samples,
+                    key=lambda sample: float(sample.get("timestamp", 0.0)),
+                )
+                global_stats["download_rate"] = float(
+                    latest.get("download_rate", 0.0) or 0.0
+                )
+                global_stats["upload_rate"] = float(
+                    latest.get("upload_rate", 0.0) or 0.0
+                )
+                global_stats["total_download_rate"] = global_stats["download_rate"]
+                global_stats["total_upload_rate"] = global_stats["upload_rate"]
+
+            # Services status (same shape as GET /services/status)
+            services_status = {"services": {}}
+            if self.session_manager:
+                s = services_status["services"]
+                s["dht"] = {
+                    "enabled": self.session_manager.dht_client is not None,
+                    "status": "running"
+                    if self.session_manager.dht_client
+                    else "stopped",
+                }
+                s["nat"] = {
+                    "enabled": self.session_manager.nat_manager is not None,
+                    "status": "running"
+                    if self.session_manager.nat_manager
+                    else "stopped",
+                }
+                s["tcp_server"] = {
+                    "enabled": self.session_manager.tcp_server is not None,
+                    "status": "running"
+                    if self.session_manager.tcp_server
+                    else "stopped",
+                }
+                s["peer_service"] = {
+                    "enabled": self.session_manager.peer_service is not None,
+                    "status": "running"
+                    if self.session_manager.peer_service
+                    else "stopped",
+                }
+            services_status["services"]["ipc_server"] = {
+                "enabled": True,
+                "status": "running",
+            }
+
+            system_metrics: dict[str, Any] = {}
+            disk_io_metrics: dict[str, Any] = {}
+            network_timing: dict[str, Any] = {}
+            with contextlib.suppress(Exception):
+                from ccbt.monitoring import get_metrics_collector
+
+                collector = get_metrics_collector()
+                if collector is not None:
+                    if not collector.running:
+                        await collector.collect_system_metrics()
+                    system_metrics = dict(collector.get_system_metrics())
+            try:
+                disk_io_metrics = dict(self.session_manager.get_disk_io_metrics())
+            except Exception:
+                logger.debug("UI snapshot: disk I/O metrics unavailable", exc_info=True)
+            try:
+                raw_network = await asyncio.wait_for(
+                    self.session_manager.get_network_timing_metrics(),
+                    timeout=2.0,
+                )
+                network_timing = {
+                    "utp_delay_ms": float(
+                        raw_network.get(
+                            "utp_delay_ms",
+                            raw_network.get("rtt_avg_ms", 0.0),
+                        )
+                    ),
+                    "network_overhead_rate": float(
+                        raw_network.get("network_overhead_rate", 0.0),
+                    ),
+                }
+            except Exception:
+                logger.debug(
+                    "UI snapshot: network timing metrics unavailable",
+                    exc_info=True,
+                )
+
+            peers: list[dict[str, Any]] = []
+
+            response = UISnapshotResponse(
+                global_stats=global_stats,
+                torrents=torrents,
+                services_status=services_status,
+                rate_samples=rate_samples,
+                system_metrics=system_metrics,
+                disk_io_metrics=disk_io_metrics,
+                network_timing=network_timing,
+                peers=peers,
+            )
+            return web.json_response(response.model_dump())  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.exception("Error building UI snapshot")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="UI_SNAPSHOT_ERROR",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_global_pause_all(self, _request: Request) -> Response:
+        """Handle POST /api/v1/global/pause-all."""
+        try:
+            result = await self.executor.execute("torrent.global_pause_all")
+            if result.success:
+                return web.json_response(result.data)  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to pause all torrents",
+                    code="GLOBAL_PAUSE_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error pausing all torrents")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="GLOBAL_PAUSE_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_global_resume_all(self, _request: Request) -> Response:
+        """Handle POST /api/v1/global/resume-all."""
+        try:
+            result = await self.executor.execute("torrent.global_resume_all")
+            if result.success:
+                return web.json_response(result.data)  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to resume all torrents",
+                    code="GLOBAL_RESUME_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error resuming all torrents")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="GLOBAL_RESUME_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_global_force_start_all(self, _request: Request) -> Response:
+        """Handle POST /api/v1/global/force-start-all."""
+        try:
+            result = await self.executor.execute("torrent.global_force_start_all")
+            if result.success:
+                return web.json_response(result.data)  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to force start all torrents",
+                    code="GLOBAL_FORCE_START_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error force starting all torrents")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="GLOBAL_FORCE_START_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_global_set_rate_limits(self, request: Request) -> Response:
+        """Handle POST /api/v1/global/rate-limits."""
+        try:
+            data = await request.json()
+            download_kib = data.get("download_kib", 0)
+            upload_kib = data.get("upload_kib", 0)
+
+            result = await self.executor.execute(
+                "torrent.global_set_rate_limits",
+                download_kib=download_kib,
+                upload_kib=upload_kib,
+            )
+            if result.success:
+                return web.json_response({"success": True})  # type: ignore[attr-defined]
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to set global rate limits",
+                    code="GLOBAL_RATE_LIMITS_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error setting global rate limits")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="GLOBAL_RATE_LIMITS_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_per_peer_rate_limit(self, request: Request) -> Response:
+        """Handle POST /api/v1/torrents/{info_hash}/peers/{peer_key}/rate-limit."""
+        info_hash = request.match_info["info_hash"]
+        peer_key_encoded = request.match_info["peer_key"]
+        from urllib.parse import unquote_plus
+
+        peer_key = unquote_plus(peer_key_encoded)
+
+        try:
+            data = await request.json()
+            upload_limit_kib = data.get("upload_limit_kib", 0)
+
+            result = await self.executor.execute(
+                "peer.set_rate_limit",
+                info_hash=info_hash,
+                peer_key=peer_key,
+                upload_limit_kib=upload_limit_kib,
+            )
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {
+                        "success": True,
+                        "peer_key": peer_key,
+                        "upload_limit_kib": upload_limit_kib,
+                    }
+                )
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to set per-peer rate limit",
+                    code="PER_PEER_RATE_LIMIT_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error setting per-peer rate limit")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="PER_PEER_RATE_LIMIT_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_get_per_peer_rate_limit(self, request: Request) -> Response:
+        """Handle GET /api/v1/torrents/{info_hash}/peers/{peer_key}/rate-limit."""
+        info_hash = request.match_info["info_hash"]
+        peer_key_encoded = request.match_info["peer_key"]
+        from urllib.parse import unquote_plus
+
+        peer_key = unquote_plus(peer_key_encoded)
+
+        try:
+            result = await self.executor.execute(
+                "peer.get_rate_limit",
+                info_hash=info_hash,
+                peer_key=peer_key,
+            )
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {
+                        "success": True,
+                        "peer_key": peer_key,
+                        "upload_limit_kib": result.data.get("upload_limit_kib", 0),
+                    }
+                )
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to get per-peer rate limit",
+                    code="PER_PEER_RATE_LIMIT_FAILED",
+                ).model_dump(),
+                status=404,
+            )
+        except Exception as e:
+            logger.exception("Error getting per-peer rate limit")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="PER_PEER_RATE_LIMIT_FAILED",
+                ).model_dump(),
+                status=500,
+            )
+
+    async def _handle_set_all_peers_rate_limit(self, request: Request) -> Response:
+        """Handle POST /api/v1/peers/rate-limit."""
+        try:
+            data = await request.json()
+            upload_limit_kib = data.get("upload_limit_kib", 0)
+
+            result = await self.executor.execute(
+                "peer.set_all_rate_limits",
+                upload_limit_kib=upload_limit_kib,
+            )
+            if result.success:
+                return web.json_response(  # type: ignore[attr-defined]
+                    {
+                        "success": True,
+                        "updated_count": result.data.get("updated_count", 0),
+                        "upload_limit_kib": upload_limit_kib,
+                    }
+                )
+
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=result.error or "Failed to set all peers rate limit",
+                    code="ALL_PEERS_RATE_LIMIT_FAILED",
+                ).model_dump(),
+                status=400,
+            )
+        except Exception as e:
+            logger.exception("Error setting all peers rate limit")
+            return web.json_response(  # type: ignore[attr-defined]
+                ErrorResponse(
+                    error=str(e),
+                    code="ALL_PEERS_RATE_LIMIT_FAILED",
+                ).model_dump(),
+                status=500,
+            )
 
     # Security Handlers
 
@@ -1875,14 +5568,14 @@ class IPCServer:
                 )
 
             # Emit WebSocket event
-            await self._emit_websocket_event(
+            await self.emit_websocket_event(
                 EventType.SECURITY_BLACKLIST_UPDATED,
                 {"ip": req.ip, "action": "added"},
             )
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error adding to blacklist: %s", e)
+            logger.exception("Error adding to blacklist")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to add to blacklist: {e}",
@@ -1907,7 +5600,7 @@ class IPCServer:
             )
 
         # Emit WebSocket event
-        await self._emit_websocket_event(
+        await self.emit_websocket_event(
             EventType.SECURITY_BLACKLIST_UPDATED,
             {"ip": ip, "action": "removed"},
         )
@@ -1936,14 +5629,14 @@ class IPCServer:
                 )
 
             # Emit WebSocket event
-            await self._emit_websocket_event(
+            await self.emit_websocket_event(
                 EventType.SECURITY_WHITELIST_UPDATED,
                 {"ip": req.ip, "action": "added"},
             )
 
             return web.json_response(result.data)  # type: ignore[attr-defined]
         except Exception as e:
-            logger.exception("Error adding to whitelist: %s", e)
+            logger.exception("Error adding to whitelist")
             return web.json_response(  # type: ignore[attr-defined]
                 ErrorResponse(
                     error=f"Failed to add to whitelist: {e}",
@@ -1968,7 +5661,7 @@ class IPCServer:
             )
 
         # Emit WebSocket event
-        await self._emit_websocket_event(
+        await self.emit_websocket_event(
             EventType.SECURITY_WHITELIST_UPDATED,
             {"ip": ip, "action": "removed"},
         )
@@ -2063,12 +5756,18 @@ class IPCServer:
 
         if not authenticated:
             logger.warning("Unauthorized WebSocket connection attempt")
-            await ws.close(code=4001, message="Unauthorized")
+            await ws.close(code=4001, message=b"Unauthorized")
             return ws
 
         # Add to connections
         self._websocket_connections.add(ws)
         self._websocket_subscriptions[ws] = set()
+        self._websocket_filters[ws] = {
+            "info_hash": None,
+            "priority_filter": None,
+            "rate_limit": None,
+            "last_sent_by_stream": {},
+        }
 
         # Start heartbeat task
         heartbeat_task = asyncio.create_task(
@@ -2089,12 +5788,22 @@ class IPCServer:
                             self._websocket_subscriptions[ws].update(
                                 sub_req.event_types
                             )
+                            self._websocket_filters[ws].update(
+                                {
+                                    "info_hash": sub_req.info_hash,
+                                    "priority_filter": sub_req.priority_filter,
+                                    "rate_limit": sub_req.rate_limit,
+                                }
+                            )
                             await ws.send_json(
                                 {
                                     "action": "subscribed",
                                     "event_types": [
                                         e.value for e in sub_req.event_types
                                     ],
+                                    "info_hash": sub_req.info_hash,
+                                    "priority_filter": sub_req.priority_filter,
+                                    "rate_limit": sub_req.rate_limit,
                                 }
                             )
 
@@ -2125,6 +5834,7 @@ class IPCServer:
             # Cleanup
             self._websocket_connections.discard(ws)
             self._websocket_subscriptions.pop(ws, None)
+            self._websocket_filters.pop(ws, None)
             if ws in self._websocket_heartbeat_tasks:
                 task = self._websocket_heartbeat_tasks.pop(ws)
                 task.cancel()
@@ -2145,18 +5855,246 @@ class IPCServer:
         except Exception as e:
             logger.debug("WebSocket heartbeat error: %s", e)
 
-    async def _emit_websocket_event(
+    async def setup_event_bridge(self) -> None:
+        """Set up event bridge to convert utils.events to IPC WebSocket events."""
+        try:
+            from ccbt.utils.events import Event, EventHandler, get_event_bus
+
+            # Event type mapping from utils.events to IPC EventType
+            # Comprehensive mapping of all relevant events for interface/UI consumption
+            event_type_mapping = {
+                # Metadata events
+                "metadata_ready": EventType.METADATA_READY,
+                "metadata_fetch_started": EventType.METADATA_FETCH_STARTED,
+                "metadata_fetch_progress": EventType.METADATA_FETCH_PROGRESS,
+                "metadata_fetch_completed": EventType.METADATA_FETCH_COMPLETED,
+                "metadata_fetch_failed": EventType.METADATA_FETCH_FAILED,
+                # File events
+                "file_selection_changed": EventType.FILE_SELECTION_CHANGED,
+                "file_priority_changed": EventType.FILE_PRIORITY_CHANGED,
+                "file_progress_updated": EventType.FILE_PROGRESS_UPDATED,
+                # Peer events
+                "peer_connected": EventType.PEER_CONNECTED,
+                "peer_disconnected": EventType.PEER_DISCONNECTED,
+                "peer_handshake_complete": EventType.PEER_HANDSHAKE_COMPLETE,
+                "peer_bitfield_received": EventType.PEER_BITFIELD_RECEIVED,
+                "peer_added": EventType.PEER_CONNECTED,  # Map to PEER_CONNECTED
+                "peer_removed": EventType.PEER_DISCONNECTED,  # Map to PEER_DISCONNECTED
+                "peer_connection_failed": EventType.PEER_DISCONNECTED,  # Map to PEER_DISCONNECTED
+                "peer_quality_ranked": EventType.PEER_QUALITY_RANKED,
+                "peer_choking_optimized": EventType.GLOBAL_STATS_UPDATED,
+                # Piece events
+                "piece_requested": EventType.PIECE_REQUESTED,
+                "piece_downloaded": EventType.PIECE_DOWNLOADED,
+                "piece_verified": EventType.PIECE_VERIFIED,
+                "piece_completed": EventType.PIECE_COMPLETED,
+                # Progress events (R7): bridge progress_updated so the UI refreshes
+                # progress bars on every verified piece instead of polling.
+                "progress_updated": EventType.PROGRESS_UPDATED,
+                # Torrent events
+                "torrent_added": EventType.TORRENT_ADDED,
+                "torrent_removed": EventType.TORRENT_REMOVED,
+                "torrent_started": EventType.TORRENT_STATUS_CHANGED,
+                "torrent_stopped": EventType.TORRENT_STATUS_CHANGED,
+                "torrent_completed": EventType.TORRENT_COMPLETED,
+                # Media events
+                "media_stream_started": EventType.MEDIA_STREAM_STARTED,
+                "media_stream_buffering": EventType.MEDIA_STREAM_BUFFERING,
+                "media_stream_ready": EventType.MEDIA_STREAM_READY,
+                "media_stream_stopped": EventType.MEDIA_STREAM_STOPPED,
+                "media_stream_error": EventType.MEDIA_STREAM_ERROR,
+                # Seeding events
+                "seeding_started": EventType.SEEDING_STARTED,
+                "seeding_stopped": EventType.SEEDING_STOPPED,
+                "seeding_stats_updated": EventType.SEEDING_STATS_UPDATED,
+                # Tracker events
+                "tracker_announce": EventType.TRACKER_ANNOUNCE_STARTED,
+                "tracker_announce_success": EventType.TRACKER_ANNOUNCE_SUCCESS,
+                "tracker_announce_error": EventType.TRACKER_ANNOUNCE_ERROR,
+                "tracker_error": EventType.TRACKER_ANNOUNCE_ERROR,
+                # DHT events
+                "dht_node_found": EventType.COMPONENT_STARTED,  # Map to component event
+                "dht_peer_found": EventType.PEER_CONNECTED,  # Map to peer event
+                "dht_query_complete": EventType.COMPONENT_STARTED,  # Map to component event
+                "dht_node_added": EventType.COMPONENT_STARTED,
+                "dht_node_removed": EventType.COMPONENT_STOPPED,
+                "dht_error": EventType.COMPONENT_STOPPED,
+                # Performance events
+                "performance_metric": EventType.GLOBAL_STATS_UPDATED,
+                "bandwidth_update": EventType.GLOBAL_STATS_UPDATED,
+                "disk_io_update": EventType.GLOBAL_STATS_UPDATED,
+                "global_metrics_update": EventType.GLOBAL_STATS_UPDATED,
+                # Service/Component events
+                "service_started": EventType.SERVICE_STARTED,
+                "service_stopped": EventType.SERVICE_STOPPED,
+                "service_restarted": EventType.SERVICE_RESTARTED,
+                "component_started": EventType.COMPONENT_STARTED,
+                "component_stopped": EventType.COMPONENT_STOPPED,
+                # XET folder events
+                "xet_folder_added": EventType.XET_FOLDER_ADDED,
+                "xet_folder_removed": EventType.XET_FOLDER_REMOVED,
+                "xet_metadata_received": EventType.XET_METADATA_READY,
+                "xet_metadata_ready": EventType.XET_METADATA_READY,
+                "folder_changed": EventType.XET_FOLDER_CHANGED,
+                "folder_sync_check": EventType.XET_SYNC_PROGRESS,
+                "folder_sync_started": EventType.XET_SYNC_PROGRESS,
+                "folder_sync_completed": EventType.XET_SYNC_PROGRESS,
+                "folder_sync_error": EventType.XET_SYNC_ERROR,
+                # System events
+                "system_start": EventType.SERVICE_STARTED,
+                "system_stop": EventType.SERVICE_STOPPED,
+                "system_error": EventType.COMPONENT_STOPPED,
+            }
+
+            async def event_bridge_handler(event: Event) -> None:
+                """Bridge event from utils.events to IPC WebSocket."""
+                try:
+                    # Map event type to IPC EventType
+                    ipc_event_type = event_type_mapping.get(event.event_type)
+                    if ipc_event_type:
+                        # Extract data from event - handle both dict and object attributes
+                        event_data = {}
+                        if hasattr(event, "data") and event.data:
+                            event_data = (
+                                event.data
+                                if isinstance(event.data, dict)
+                                else event.data.__dict__
+                            )
+                        elif hasattr(event, "__dict__"):
+                            # Extract non-internal attributes
+                            event_data = {
+                                k: v
+                                for k, v in event.__dict__.items()
+                                if not k.startswith("_") and k != "event_type"
+                            }
+                        event_data = self._normalize_xet_event_data(
+                            ipc_event_type, event_data
+                        )
+                        if hasattr(event, "priority"):
+                            event_priority = event.priority
+                        else:
+                            event_priority = None
+                        if isinstance(event_priority, int):
+                            event_priority_text = {
+                                1: "low",
+                                2: "normal",
+                                3: "high",
+                                4: "critical",
+                            }.get(event_priority)
+                        elif isinstance(event_priority, str):
+                            event_priority_text = event_priority.lower()
+                        elif event_priority is not None and hasattr(
+                            event_priority, "name"
+                        ):
+                            event_priority_text = str(event_priority.name).lower()
+                        else:
+                            event_priority_text = (
+                                str(event_priority).lower()
+                                if event_priority is not None
+                                else None
+                            )
+                        await self.emit_websocket_event(
+                            ipc_event_type,
+                            event_data,
+                            raw_type=event.event_type,
+                            event_id=getattr(event, "event_id", None),
+                            source=getattr(event, "source", None),
+                            priority=event_priority_text,
+                            correlation_id=getattr(event, "correlation_id", None),
+                        )
+                except Exception as e:
+                    logger.debug(
+                        "Error bridging event %s to IPC WebSocket: %s",
+                        event.event_type,
+                        e,
+                    )
+
+            # Register handler for all relevant event types
+            event_bus = get_event_bus()
+
+            # Ensure event bus is started
+            if not event_bus.running:
+                await event_bus.start()
+
+            # Create a proper EventHandler subclass
+            class IPCEventBridgeHandler(EventHandler):
+                def __init__(self, bridge_func: Any, ipc_server: Any):
+                    super().__init__("ipc_event_bridge")
+                    self.bridge_func = bridge_func
+                    self.ipc_server = ipc_server
+
+                async def handle(self, event: Event) -> None:
+                    await self.bridge_func(event)
+
+            handler = IPCEventBridgeHandler(event_bridge_handler, self)
+
+            for event_type_str in event_type_mapping:
+                event_bus.register_handler(event_type_str, handler)
+
+            logger.debug(
+                "Event bridge set up for IPC WebSocket events (%d event types)",
+                len(event_type_mapping),
+            )
+        except Exception as e:
+            logger.warning("Failed to set up event bridge: %s", e)
+
+    def _normalize_xet_event_data(
         self,
         event_type: EventType,
         data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return typed payload for XET websocket events."""
+        if event_type not in {
+            EventType.XET_FOLDER_ADDED,
+            EventType.XET_FOLDER_REMOVED,
+            EventType.XET_FOLDER_CHANGED,
+            EventType.XET_SYNC_PROGRESS,
+            EventType.XET_SYNC_ERROR,
+            EventType.XET_METADATA_READY,
+        }:
+            return data
+        typed = XetFolderEventData.model_validate(data or {})
+        return typed.model_dump(mode="json")
+
+    async def emit_websocket_event(
+        self,
+        event_type: EventType,
+        data: dict[str, Any],
+        *,
+        raw_type: Optional[str] = None,
+        event_id: Optional[str] = None,
+        source: Optional[str] = None,
+        priority: Optional[str] = None,
+        correlation_id: Optional[str] = None,
     ) -> None:
         """Emit event to all subscribed WebSocket connections."""
         if not self.websocket_enabled:
             return
 
+        normalized_priority = None
+        if priority is not None:
+            if isinstance(priority, int):
+                normalized_priority = {
+                    1: "low",
+                    2: "normal",
+                    3: "high",
+                    4: "critical",
+                }.get(priority)
+            elif isinstance(priority, str):
+                normalized_priority = priority.lower()
+            elif hasattr(priority, "name"):
+                normalized_priority = str(priority.name).lower()
+            elif priority is not None:
+                normalized_priority = str(priority)
+
         event = WebSocketEvent(
             type=event_type,
             timestamp=time.time(),
+            raw_type=raw_type or event_type.value,
+            event_id=event_id,
+            source=source,
+            priority=normalized_priority,
+            correlation_id=correlation_id,
             data=data,
         )
 
@@ -2169,17 +6107,43 @@ class IPCServer:
 
             # Check if connection is subscribed to this event type
             subscriptions = self._websocket_subscriptions.get(ws, set())
-            if not subscriptions or event_type in subscriptions:
-                try:
-                    await ws.send_json(event.model_dump())
-                except Exception as e:
-                    logger.debug("Error sending WebSocket event: %s", e)
-                    disconnected.append(ws)
+            if subscriptions and event_type not in subscriptions:
+                continue
+
+            # Apply optional subscription filters (info_hash/priority/rate limit)
+            ws_filter = self._websocket_filters.get(ws, {})
+            info_hash_filter = ws_filter.get("info_hash")
+            if info_hash_filter and data.get("info_hash") != info_hash_filter:
+                continue
+
+            priority_filter = ws_filter.get("priority_filter")
+            if priority_filter and event.priority != priority_filter:
+                continue
+
+            rate_limit = ws_filter.get("rate_limit")
+            if isinstance(rate_limit, (int, float)) and rate_limit > 0:
+                now = time.time()
+                stream_key = (
+                    f"{event.raw_type or event.type.value}:{data.get('info_hash', '*')}"
+                )
+                last_sent_by_stream = ws_filter.setdefault("last_sent_by_stream", {})
+                last_sent = float(last_sent_by_stream.get(stream_key, 0.0))
+                min_interval = 1.0 / float(rate_limit)
+                if (now - last_sent) < min_interval:
+                    continue
+                last_sent_by_stream[stream_key] = now
+
+            try:
+                await ws.send_json(event.model_dump())
+            except Exception as e:
+                logger.debug("Error sending WebSocket event: %s", e)
+                disconnected.append(ws)
 
         # Cleanup disconnected connections
         for ws in disconnected:
             self._websocket_connections.discard(ws)
             self._websocket_subscriptions.pop(ws, None)
+            self._websocket_filters.pop(ws, None)
             if ws in self._websocket_heartbeat_tasks:
                 task = self._websocket_heartbeat_tasks.pop(ws)
                 task.cancel()
@@ -2247,27 +6211,38 @@ class IPCServer:
                 # Wait a moment for the server to fully initialize
                 await asyncio.sleep(0.1)
                 if not self.site._server:  # noqa: SLF001
-                    raise RuntimeError(
-                        f"IPC server site.start() completed but _server is None on {self.host}:{self.port}"
-                    )
-                if (
-                    not hasattr(self.site._server, "sockets")
-                    or not self.site._server.sockets
-                ):  # noqa: SLF001
-                    raise RuntimeError(
-                        f"IPC server site.start() completed but no sockets are listening on {self.host}:{self.port}"
-                    )
+                    error_msg = f"IPC server site.start() completed but _server is None on {self.host}:{self.port}"
+                    raise RuntimeError(error_msg)
+                server = getattr(self.site, "_server", None)
+                if not server or not hasattr(server, "sockets") or not server.sockets:
+                    error_msg = f"IPC server site.start() completed but no sockets are listening on {self.host}:{self.port}"
+                    raise RuntimeError(error_msg)
+                sockets = self.site._server.sockets  # type: ignore[attr-defined] # noqa: SLF001
+                # Type guard for len() - sockets might be a sequence
+                # Use try/except to handle type checker's conservative analysis
+                try:
+                    socket_count = len(sockets) if hasattr(sockets, "__len__") else 0  # type: ignore[arg-type]
+                except (TypeError, AttributeError):
+                    socket_count = 0
                 logger.debug(
                     "IPC server verified: %d socket(s) listening on %s:%d",
-                    len(self.site._server.sockets),  # noqa: SLF001
+                    socket_count,
                     self.host,
                     self.port,
                 )
+            except RuntimeError:
+                # Verification failed (_server None or no sockets); clean up runner
+                if self.runner:
+                    await self.runner.cleanup()
+                raise
             except OSError as e:
                 # Handle binding errors (port in use, permission denied, etc.)
                 error_code = e.errno if hasattr(e, "errno") else None
-                if (error_code == 10048 and sys.platform == "win32") or (
-                    error_code == 98 and sys.platform != "win32"
+                # sys is imported at module level (line 15), but ensure it's accessible
+                import sys as _sys_module  # Re-import to ensure type checker sees it
+
+                if (error_code == 10048 and _sys_module.platform == "win32") or (
+                    error_code == 98 and _sys_module.platform != "win32"
                 ):
                     # Port already in use - provide detailed resolution steps
                     from ccbt.utils.port_checker import get_port_conflict_resolution
@@ -2277,42 +6252,46 @@ class IPCServer:
                         f"IPC server failed to bind to {self.host}:{self.port}: {e}\n\n"
                         f"{resolution}"
                     )
-                    logger.error(error_msg)
+                    logger.exception(
+                        "IPC server failed to bind to %s:%d", self.host, self.port
+                    )
                     # Clean up runner if site failed to start
                     if self.runner:
                         await self.runner.cleanup()
                     raise RuntimeError(error_msg) from e
                 # Other binding errors (permission denied, etc.)
                 logger.exception(
-                    "Failed to start IPC server on %s:%d: %s",
+                    "Failed to start IPC server on %s:%d",
                     self.host,
                     self.port,
-                    e,
                 )
                 # Clean up runner if site failed to start
                 if self.runner:
                     await self.runner.cleanup()
-                raise RuntimeError(
-                    f"IPC server failed to bind to {self.host}:{self.port}: {e}"
-                ) from e
+                error_msg = f"IPC server failed to bind to {self.host}:{self.port}: {e}"
+                raise RuntimeError(error_msg) from e
             except Exception as e:
                 # Catch any other unexpected errors during startup
                 logger.exception(
-                    "Unexpected error starting IPC server on %s:%d: %s",
+                    "Unexpected error starting IPC server on %s:%d",
                     self.host,
                     self.port,
-                    e,
                 )
                 # Clean up runner if site failed to start
                 if self.runner:
                     await self.runner.cleanup()
-                raise RuntimeError(
+                error_msg = (
                     f"IPC server failed to start on {self.host}:{self.port}: {e}"
-                ) from e
+                )
+                raise RuntimeError(error_msg) from e
 
             # Get actual port (in case port 0 was used for random port)
-            if self.site._server and self.site._server.sockets:  # noqa: SLF001
-                sock = self.site._server.sockets[0]  # noqa: SLF001
+            if (
+                self.site._server  # noqa: SLF001
+                and hasattr(self.site._server, "sockets")  # noqa: SLF001
+                and self.site._server.sockets  # noqa: SLF001
+            ):
+                sock = self.site._server.sockets[0]  # noqa: SLF001  # type: ignore[attr-defined]
                 self.port = sock.getsockname()[1]
                 # Log actual binding address for debugging
                 actual_addr = sock.getsockname()
@@ -2329,12 +6308,15 @@ class IPCServer:
                 "IPC server started on %s://%s:%d", protocol, self.host, self.port
             )
 
+            # Set up event bridge to forward utils.events to WebSocket
+            await self.setup_event_bridge()
+
             # CRITICAL: On Windows, verify the server is actually accepting HTTP connections
             # Socket test alone isn't sufficient - aiohttp might not be ready for HTTP yet
             # If binding to 0.0.0.0, verify via 127.0.0.1; otherwise use the bound host
             import socket
 
-            verify_host = "127.0.0.1" if self.host == "0.0.0.0" else self.host
+            verify_host = "127.0.0.1" if self.host == "0.0.0.0" else self.host  # nosec B104 - Verification host selection, converts 0.0.0.0 to 127.0.0.1 for testing
 
             # First do a socket test to verify the port is bound
             socket_ready = False
@@ -2419,37 +6401,56 @@ class IPCServer:
                     "IPC server socket is listening but HTTP verification failed. "
                     "Server may still be initializing - this is normal on Windows."
                 )
-        except Exception as e:
+        except Exception:
             # Final safety net - log and re-raise any unhandled exceptions
             logger.exception(
-                "Critical error during IPC server startup on %s:%d: %s",
+                "Critical error during IPC server startup on %s:%d",
                 self.host,
                 self.port,
-                e,
             )
             raise
 
     async def stop(self) -> None:
         """Stop the IPC server."""
-        # Close all WebSocket connections
-        for ws in list(self._websocket_connections):
+        self._shutting_down = True
+
+        async def _close_websocket(ws: web.WebSocketResponse) -> None:
             if not ws.closed:
                 await ws.close()
 
+        # Close all WebSocket connections (bounded wait per socket)
+        for ws in list(self._websocket_connections):
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(_close_websocket(ws), timeout=1.0)
+
         # Cancel heartbeat tasks
-        for task in self._websocket_heartbeat_tasks.values():
+        for task in list(self._websocket_heartbeat_tasks.values()):
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                await asyncio.wait_for(task, timeout=1.0)
 
         self._websocket_connections.clear()
         self._websocket_subscriptions.clear()
+        self._websocket_filters.clear()
         self._websocket_heartbeat_tasks.clear()
 
-        # Stop server
+        # Stop server (bounded — hung handlers must not block daemon exit)
         if self.site:
-            await self.site.stop()
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(self.site.stop(), timeout=3.0)
+            self.site = None
         if self.runner:
-            await self.runner.cleanup()
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(self.runner.cleanup(), timeout=3.0)
+            self.runner = None
 
         logger.info("IPC server stopped")
+
+    def mark_shutting_down(self) -> None:
+        """Signal that daemon shutdown has started; reject new IPC requests."""
+        self._shutting_down = True
+
+    @property
+    def shutting_down(self) -> bool:
+        """Return True once IPC shutdown has been requested."""
+        return self._shutting_down

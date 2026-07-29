@@ -11,7 +11,7 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ccbt.peer.async_peer_connection import (
     AsyncPeerConnection,
@@ -31,15 +31,15 @@ class WebRTCPeerConnection(AsyncPeerConnection):
     enabling seamless integration with the existing peer connection manager.
     """
 
-    webtorrent_protocol: Any | None = None  # WebTorrentProtocol
+    webtorrent_protocol: Optional[Any] = None  # WebTorrentProtocol
     _message_queue: asyncio.Queue[bytes] = field(default_factory=asyncio.Queue)
-    _receive_task: asyncio.Task | None = None
+    _receive_task: Optional[asyncio.Task] = None
 
     # Callbacks for compatibility with AsyncPeerConnection interface
-    on_peer_connected: Callable[[AsyncPeerConnection], None] | None = None
-    on_peer_disconnected: Callable[[AsyncPeerConnection], None] | None = None
-    on_bitfield_received: Callable[[AsyncPeerConnection, Any], None] | None = None
-    on_piece_received: Callable[[AsyncPeerConnection, Any], None] | None = None
+    on_peer_connected: Optional[Callable[[AsyncPeerConnection], None]] = None
+    on_peer_disconnected: Optional[Callable[[AsyncPeerConnection], None]] = None
+    on_bitfield_received: Optional[Callable[[AsyncPeerConnection, Any], None]] = None
+    on_piece_received: Optional[Callable[[AsyncPeerConnection, Any], None]] = None
 
     def __post_init__(self) -> None:
         """Initialize WebRTC peer connection."""
@@ -169,7 +169,7 @@ class WebRTCPeerConnection(AsyncPeerConnection):
         self.stats.bytes_uploaded += len(message)
         self.stats.last_activity = time.time()
 
-    async def receive_message(self) -> bytes | None:
+    async def receive_message(self) -> Optional[bytes]:
         """Receive message from WebRTC data channel.
 
         Returns:
@@ -276,8 +276,12 @@ class WebRTCPeerConnection(AsyncPeerConnection):
     # Note: WebRTC connections don't use traditional readers/writers
     # The data channel replaces the stream reader/writer pattern
     # Store as private attributes to satisfy dataclass field requirements
-    _reader: asyncio.StreamReader | None = field(default=None, init=False, repr=False)
-    _writer: asyncio.StreamWriter | None = field(default=None, init=False, repr=False)
+    _reader: Optional[asyncio.StreamReader] = field(
+        default=None, init=False, repr=False
+    )
+    _writer: Optional[asyncio.StreamWriter] = field(
+        default=None, init=False, repr=False
+    )
 
     @property
     def reader(self) -> None:  # type: ignore[override]

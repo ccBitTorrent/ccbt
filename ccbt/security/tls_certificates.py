@@ -9,9 +9,9 @@ for TLS/HTTPS support.
 from __future__ import annotations
 
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from ccbt.utils.logging_config import get_logger
 
@@ -54,7 +54,7 @@ class TLSCertificateError(Exception):
 class TLSCertificateManager:
     """Manages Ed25519-based TLS certificates."""
 
-    def __init__(self, cert_dir: Path | str | None = None):
+    def __init__(self, cert_dir: Optional[Path | str] = None):
         """Initialize certificate manager.
 
         Args:
@@ -121,7 +121,7 @@ class TLSCertificateManager:
             )
 
             # Certificate validity period
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             valid_from = now
             valid_to = now + timedelta(days=validity_days)
 
@@ -203,7 +203,7 @@ class TLSCertificateManager:
 
     def load_certificate(
         self,
-    ) -> tuple[x509.Certificate, Ed25519PrivateKey] | None:
+    ) -> Optional[tuple[x509.Certificate, Ed25519PrivateKey]]:
         """Load certificate and private key from files.
 
         Returns:

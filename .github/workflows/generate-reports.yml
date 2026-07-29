@@ -1,0 +1,131 @@
+name: Generate Reports
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+concurrency:
+  group: generate-reports-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate-coverage:
+    name: generate-coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Generate coverage report
+        run: uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html:site/reports/htmlcov
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: htmlcov-report
+          path: site/reports/htmlcov
+          retention-days: 7
+
+  generate-bandit:
+    name: generate-bandit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Ensure bandit directory exists
+        run: uv run python tests/scripts/ensure_bandit_dir.py
+      - name: Run Bandit security scan
+        run: uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks,ccbt/i18n/scripts,ccbt/i18n/locale_data
+      - name: Upload Bandit report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: docs/reports/bandit/bandit-report.json
+          retention-days: 7
+
+  generate-benchmarks:
+    name: generate-benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install UV
+        uses: astral-sh/setup-uv@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run hash verification benchmark
+        run: uv run python tests/performance/bench_hash_verify.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      - name: Run disk I/O benchmark
+        run: uv run python tests/performance/bench_disk_io.py --quick --sizes 256KiB 1MiB --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      - name: Run piece assembly benchmark
+        run: uv run python tests/performance/bench_piece_assembly.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      - name: Run loopback throughput benchmark
+        run: uv run python tests/performance/bench_loopback_throughput.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      - name: Run encryption benchmark
+        run: uv run python tests/performance/bench_encryption.py --quick --record-mode=commit --config-file docs/examples/example-config-performance.toml
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            docs/reports/benchmarks/runs/*.json
+            docs/reports/benchmarks/timeseries/*.json
+          retention-days: 7
+
+  commit-reports:
+    name: commit-reports
+    needs: [generate-coverage, generate-bandit, generate-benchmarks]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: htmlcov-report
+          path: site/reports/htmlcov
+      - name: Download Bandit artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bandit-report
+          path: docs/reports/bandit
+      - name: Download benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: docs/reports/benchmarks
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+      - name: Commit reports
+        run: |
+          # Force-add so reports are committed even though paths are in .gitignore
+          git add -f site/reports/htmlcov/ docs/reports/bandit/ docs/reports/benchmarks/
+          git diff --staged --quiet || (git commit -m "ci: update reports for documentation [skip ci]" && git push)
+      - name: Trigger documentation build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-documentation.yml',
+              ref: context.ref,
+            });
+

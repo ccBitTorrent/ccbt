@@ -12,6 +12,8 @@ Provides comprehensive monitoring including:
 
 from __future__ import annotations
 
+from typing import Optional
+
 from ccbt.monitoring.alert_manager import AlertManager
 from ccbt.monitoring.dashboard import DashboardManager
 from ccbt.monitoring.metrics_collector import MetricsCollector
@@ -30,10 +32,10 @@ __all__ = [
 ]
 
 # Global alert manager singleton for CLI/UI integration
-_GLOBAL_ALERT_MANAGER: AlertManager | None = None
+_GLOBAL_ALERT_MANAGER: Optional[AlertManager] = None
 
 # Global metrics collector singleton for CLI/UI integration
-_GLOBAL_METRICS_COLLECTOR: MetricsCollector | None = None
+_GLOBAL_METRICS_COLLECTOR: Optional[MetricsCollector] = None
 
 
 def get_alert_manager() -> AlertManager:
@@ -61,7 +63,7 @@ def get_metrics_collector() -> MetricsCollector:
     return _GLOBAL_METRICS_COLLECTOR
 
 
-async def init_metrics() -> MetricsCollector | None:
+async def init_metrics() -> Optional[MetricsCollector]:
     """Initialize and start metrics collection if enabled in configuration.
 
     This function:
@@ -72,7 +74,7 @@ async def init_metrics() -> MetricsCollector | None:
     - Handles errors gracefully (logs warnings, doesn't raise)
 
     Returns:
-        MetricsCollector | None: MetricsCollector instance if enabled and started,
+        Optional[MetricsCollector]: MetricsCollector instance if enabled and started,
             None if metrics are disabled or initialization failed.
 
     Example:
@@ -85,7 +87,6 @@ async def init_metrics() -> MetricsCollector | None:
 
     """
     import asyncio
-    import logging
 
     from ccbt.utils.logging_config import get_logger
 
@@ -191,8 +192,6 @@ async def shutdown_metrics() -> None:
         ```
 
     """
-    import logging
-
     from ccbt.utils.logging_config import get_logger
 
     logger = get_logger(__name__)

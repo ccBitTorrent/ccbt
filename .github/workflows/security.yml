@@ -1,17 +1,22 @@
+# Security: manual, scheduled, or on PR to main with manual approval.
+# Configure environment "approval-required" in repo Settings > Environments with required reviewers.
 name: Security
 
 on:
-  push:
-    branches: [main, dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
   schedule:
-    # Run weekly on Mondays at 00:00 UTC
     - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 jobs:
   bandit:
     name: bandit
+    environment: approval-required
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +41,7 @@ jobs:
       
       - name: Run Bandit security scan
         run: |
-          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks
+          uv run bandit -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium -x tests,benchmarks,dev,dist,docs,htmlcov,site,.venv,.pre-commit-cache,.pre-commit-home,.pytest_cache,.ruff_cache,.hypothesis,.github,.ccbt,.cursor,.benchmarks,ccbt/i18n/scripts,ccbt/i18n/locale_data
       
       - name: Upload Bandit report
         if: always()
@@ -49,6 +54,11 @@ jobs:
   safety:
     name: safety
     runs-on: ubuntu-latest
+    environment: approval-required
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       
@@ -70,4 +80,3 @@ jobs:
         run: |
           uv run safety check --json
         continue-on-error: true
-

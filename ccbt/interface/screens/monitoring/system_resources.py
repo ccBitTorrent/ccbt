@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -12,6 +12,7 @@ else:
     try:
         from textual.app import ComposeResult
         from textual.containers import Vertical
+        from textual.reactive import reactive
         from textual.widgets import (
             Footer,
             Header,
@@ -24,6 +25,24 @@ else:
         Header = None  # type: ignore[assignment, misc]
         Static = None  # type: ignore[assignment, misc]
 
+        class reactive:  # type: ignore[no-redef]
+            def __init__(self, default: Any = None, *args: Any, **kwargs: Any) -> None:
+                self.default = default
+
+            def __class_getitem__(cls, item: Any) -> type:
+                return cls
+
+            def __set_name__(self, owner: Any, name: str) -> None:
+                self._name = name
+
+            def __get__(self, instance: Any, owner: Any) -> Any:
+                if instance is None:
+                    return self
+                return instance.__dict__.get(self._name, self.default)
+
+            def __set__(self, instance: Any, value: Any) -> None:
+                instance.__dict__[self._name] = value
+
 from rich.panel import Panel
 from rich.table import Table
 
@@ -32,6 +51,9 @@ from ccbt.interface.screens.base import MonitoringScreen
 
 class SystemResourcesScreen(MonitoringScreen):  # type: ignore[misc]
     """Screen to display system resource usage (CPU, memory, disk, network)."""
+
+    _reactive_sources = ("system_metrics",)
+    system_metrics: reactive = reactive({}, layout=False)  # type: ignore[assignment]
 
     CSS = """
     #content {
@@ -55,9 +77,35 @@ class SystemResourcesScreen(MonitoringScreen):  # type: ignore[misc]
             yield Static(id="network_info")
         yield Footer()
 
-    async def _refresh_data(self) -> None:  # pragma: no cover
+    async def _refresh_data(self, **overrides: Any) -> None:  # pragma: no cover
         """Refresh system metrics display."""
         try:
+            metrics_override = overrides.get("system_metrics_override")
+            if isinstance(metrics_override, dict) and metrics_override:
+                content = self.query_one("#content", Static)
+                network_info = self.query_one("#network_info", Static)
+                table = Table(title="System Resources", expand=True)
+                table.add_column("Resource", style="cyan", ratio=2)
+                table.add_column("Usage", style="green", ratio=2)
+                table.add_column("Progress", style="yellow", ratio=4)
+
+                def format_progress_bar(value: float, max_value: float = 100.0) -> str:
+                    percentage = min(100.0, max(0.0, (value / max_value) * 100.0))
+                    bar_length = 30
+                    filled = int((percentage / 100.0) * bar_length)
+                    bar = "█" * filled + "░" * (bar_length - filled)
+                    return f"[{bar}] {percentage:.1f}%"
+
+                cpu = float(metrics_override.get("cpu_usage", 0.0))
+                memory = float(metrics_override.get("memory_usage", 0.0))
+                disk = float(metrics_override.get("disk_usage", 0.0))
+                table.add_row("CPU", f"{cpu:.1f}%", format_progress_bar(cpu, 100.0))
+                table.add_row("Memory", f"{memory:.1f}%", format_progress_bar(memory, 100.0))
+                table.add_row("Disk", f"{disk:.1f}%", format_progress_bar(disk, 100.0))
+                content.update(Panel(table, title="System Resources", border_style="green"))
+                network_info.update("")
+                return
+
             if not self.metrics_collector or not self.metrics_collector.running:
                 content = self.query_one("#content", Static)
                 content.update(

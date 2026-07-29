@@ -19,7 +19,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from typing import Optional
 
 try:
     import psutil
@@ -30,7 +30,7 @@ except ImportError:
     HAS_PSUTIL = False
 
 try:
-    from aiortc import RTCPeerConnection, RTCDataChannel, RTCSessionDescription
+    from aiortc import RTCDataChannel, RTCPeerConnection, RTCSessionDescription
 
     HAS_AIORTC = True
 except ImportError:
@@ -80,9 +80,9 @@ class WebRTCBenchmarkResults:
     platform: str
     python_version: str
     timestamp: str
-    connection_establishment: ConnectionEstablishmentResult | None = None
-    data_channel_throughput: DataChannelThroughputResult | None = None
-    memory_usage: MemoryUsageResult | None = None
+    connection_establishment: Optional[ConnectionEstablishmentResult] = None
+    data_channel_throughput: Optional[DataChannelThroughputResult] = None
+    memory_usage: Optional[MemoryUsageResult] = None
 
 
 def get_memory_usage_mb() -> float:
@@ -245,8 +245,7 @@ async def benchmark_memory_usage(
 
             # Check memory periodically
             current_memory = get_memory_usage_mb()
-            if current_memory > peak_memory:
-                peak_memory = current_memory
+            peak_memory = max(peak_memory, current_memory)
 
             await asyncio.sleep(0.01)
 
