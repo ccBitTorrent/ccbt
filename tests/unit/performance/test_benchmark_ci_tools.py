@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 
@@ -14,6 +16,17 @@ from tests.performance.bench_utils import (
     get_git_metadata,
     summarize_results_for_docs,
 )
+
+
+def place_in_cwdr(func : Callable ) -> Callable :
+    """Places the tests in the current working directory reguardless of where the tests run from."""
+    @wraps(func)
+    def wrapper(* args: Any, **kwargs: Any)-> Any:
+        base_dir = Path(__file__).resolve().parents[3]
+        with contextlib.chdir(base_dir):
+            return func(*args, **kwargs)
+    return wrapper
+
 
 
 def _load_script_module(module_name: str, path: Path):
@@ -26,6 +39,7 @@ def _load_script_module(module_name: str, path: Path):
 
 
 @pytest.fixture(scope="module")
+@place_in_cwdr
 def benchmark_compare_module() -> Any:
     """Loaded ``dev/scripts/compare_benchmark_json.py`` module."""
     path = Path("dev/scripts/compare_benchmark_json.py").resolve()
@@ -33,6 +47,7 @@ def benchmark_compare_module() -> Any:
 
 
 @pytest.fixture(scope="module")
+@place_in_cwdr
 def benchmark_render_module() -> Any:
     """Loaded ``dev/scripts/render_benchmark_docs.py`` module."""
     path = Path("dev/scripts/render_benchmark_docs.py").resolve()
@@ -43,7 +58,7 @@ def _load_fixture(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
-
+@place_in_cwdr
 def test_compare_payloads_marks_regressions(benchmark_compare_module) -> None:
     """Head elapsed mean worse than baseline is flagged as regression."""
     base_payload = _load_fixture(
@@ -72,7 +87,7 @@ def test_compare_payloads_marks_regressions(benchmark_compare_module) -> None:
     assert comparison["comparisons"][0]["benchmark"] == "hash_verify"
     assert comparison["comparisons"][0]["metric"] == "elapsed"
 
-
+@place_in_cwdr
 def test_compare_payloads_identifies_improvement(benchmark_compare_module) -> None:
     """Higher throughput beyond threshold is flagged as improved."""
     base_payload = _load_fixture(
@@ -99,7 +114,7 @@ def test_compare_payloads_identifies_improvement(benchmark_compare_module) -> No
     assert comparison["comparisons"][0]["status"] == "improved"
     assert comparison["comparisons"][0]["metric"] == "throughput"
 
-
+@place_in_cwdr
 def test_render_latest_and_history_flow(
     tmp_path: Path, benchmark_render_module
 ) -> None:
@@ -148,7 +163,7 @@ def test_flatten_numeric_samples_nested_lists() -> None:
         4.0,
     ]
 
-
+@place_in_cwdr
 def test_benchmark_scripts_validate() -> None:
     """Benchmark runner scripts must compile before CI executes them."""
     validate_module = _load_script_module(
@@ -157,7 +172,7 @@ def test_benchmark_scripts_validate() -> None:
     )
     assert validate_module.validate_benchmark_scripts() == []
 
-
+@place_in_cwdr
 def test_run_benchmark_suite_legacy_fallback(tmp_path: Path) -> None:
     """Older benchmark CLIs without --json-out still produce normalized artifacts."""
     import sys
