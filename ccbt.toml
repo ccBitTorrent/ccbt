@@ -1,4 +1,5 @@
 [network]
+swarm_acceleration_enabled = true
 max_global_peers = 200
 max_peers_per_torrent = 50
 pipeline_depth = 16
@@ -223,6 +224,8 @@ checkpoint_retention_days = 30
 
 [strategy]
 piece_selection = "rarest_first"
+straggler_duplication_enabled = true
+adaptive_request_timeout_enabled = true
 endgame_duplicates = 2
 endgame_threshold = 0.95
 pipeline_capacity = 4
@@ -237,7 +240,7 @@ adaptive_hybrid_phase_detection_window = 10
 
 [discovery]
 enable_dht = true
-min_peers_before_dht = 10
+min_peers_before_dht = 2
 enable_pex = true
 enable_udp_trackers = true
 enable_http_trackers = true

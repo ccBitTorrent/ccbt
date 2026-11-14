@@ -27,6 +27,7 @@ import aiohttp
 from ccbt.config.config import get_config
 from ccbt.core.bencode import BencodeDecoder
 from ccbt.models import PeerInfo
+from ccbt.performance.acceleration import accel_enabled
 from ccbt.security.ssl_context import CertificatePinner
 from ccbt.utils.tracker_utils import (
     tracker_url_implies_tls,
@@ -2241,9 +2242,20 @@ class AsyncTrackerClient:
             url_to_task[task] = url
 
         if udp_urls:
-            udp_task = asyncio.create_task(_announce_udp_sequential())
-            tasks.append(udp_task)
-            url_to_task[udp_task] = "udp://sequential-batch"
+            if accel_enabled(self.config):
+                # Acceleration: UDP announces are independent datagram
+                # exchanges; run them concurrently like HTTP. The UDP
+                # client already caps pending requests per host.
+                for url in udp_urls:
+                    torrent_copy = shared_torrent_data.copy()
+                    torrent_copy["announce"] = url
+                    udp_task = asyncio.create_task(_announce_single(torrent_copy))
+                    tasks.append(udp_task)
+                    url_to_task[udp_task] = url
+            else:
+                udp_task = asyncio.create_task(_announce_udp_sequential())
+                tasks.append(udp_task)
+                url_to_task[udp_task] = "udp://sequential-batch"
 
         # Wait for all announces to complete
         self.logger.debug(

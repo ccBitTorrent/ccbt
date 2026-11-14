@@ -8,6 +8,7 @@ import time
 from typing import Any, Optional, cast
 
 from ccbt.monitoring import get_metrics_collector
+from ccbt.performance.acceleration import accel_enabled
 from ccbt.session.swarm_stability_defaults import PEER_DISCOVERY_DEFAULTS
 from ccbt.utils.events import Event, EventType, emit_event
 from ccbt.utils.shutdown import is_shutting_down
@@ -3019,6 +3020,27 @@ class DHTDiscoverySetup:
                     60.0, initial_retry_interval
                 )  # Minimum 60 seconds
                 max_peers_per_query = 50  # Reduced from 100 to avoid overwhelming
+                _disc_cfg = getattr(
+                    getattr(self.session, "config", None), "discovery", None
+                )
+                if (
+                    accel_enabled(getattr(self.session, "config", None))
+                    and current_requestable_peers == 0
+                ):
+                    # Acceleration: DHT runs in parallel with trackers and
+                    # returns a larger cohort while nobody is requestable.
+                    max_peers_per_query = int(
+                        getattr(_disc_cfg, "dht_max_peers_per_query_accelerated", 100)
+                        or 100
+                    )
+                    dht_retry_interval = min(
+                        dht_retry_interval,
+                        float(
+                            getattr(_disc_cfg, "dht_query_interval_accelerated_s", 5.0)
+                            or 5.0
+                        )
+                        * 12.0,  # retry loop floor; query-interval gate compresses separately
+                    )
 
                 aggressive_mode = await self._handle_aggressive_mode_transition(
                     current_aggressive_mode=aggressive_mode,
@@ -3175,6 +3197,21 @@ class DHTDiscoverySetup:
                         and time.monotonic() < self._requestable_driven_compress_until
                     ):
                         effective_min_interval = min(effective_min_interval, 8.0)
+                    if (
+                        accel_enabled(self.session.config)
+                        and current_requestable_peers == 0
+                    ):
+                        effective_min_interval = min(
+                            effective_min_interval,
+                            float(
+                                getattr(
+                                    self.session.config.discovery,
+                                    "dht_query_interval_accelerated_s",
+                                    5.0,
+                                )
+                                or 5.0
+                            ),
+                        )
                     if time_since_last_query < effective_min_interval:
                         wait_time = effective_min_interval - time_since_last_query
                         self.logger.debug(

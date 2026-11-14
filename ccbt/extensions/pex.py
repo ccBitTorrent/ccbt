@@ -56,6 +56,14 @@ class PeerExchange:
         self.peer_flags: dict[tuple[str, int], int] = {}  # (ip, port) -> flags
         self.FLAG_PREFER_ENCRYPT = 0x01
         self.FLAG_SEED = 0x02
+        # Callbacks invoked with newly discovered peers so inbound PEX
+        # peers are dialed immediately, not only emitted as events.
+        self.peer_discovered_callbacks: list[Any] = []
+
+    def add_peer_discovered_callback(self, callback: Any) -> None:
+        """Register a sync or async callback for inbound PEX peers."""
+        if callback not in self.peer_discovered_callbacks:
+            self.peer_discovered_callbacks.append(callback)
 
     def encode_compact_peer(self, peer: PEXPeer) -> bytes:
         """Encode peer in compact format."""
@@ -389,6 +397,15 @@ class PeerExchange:
 
     async def handle_added_peers(self, peer_id: str, peers: list[PEXPeer]) -> None:
         """Handle added peers from PEX."""
+        new_peers = [p for p in peers if p not in self.added_peers]
+        for callback in list(self.peer_discovered_callbacks):
+            if new_peers:
+                try:
+                    result = callback(list(new_peers))
+                    if result is not None and hasattr(result, "__await__"):
+                        await result
+                except Exception:
+                    pass  # A dialing callback must never break PEX parsing
         for pex_peer in peers:
             self.added_peers.add(pex_peer)
 
