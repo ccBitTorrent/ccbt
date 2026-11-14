@@ -351,6 +351,12 @@ class PexBinder:
             _ = task
 
         session.pex_manager.pex_callbacks.append(pex_callback_wrapper)
+        # Also wire the inbound wire path (ExtensionManager/PeerExchange):
+        # ut_pex peers previously only emitted an event and were never dialed.
+        _ext_mgr = getattr(session, "extension_manager", None)
+        if _ext_mgr is not None and hasattr(_ext_mgr, "register_pex_peer_callback"):
+            with contextlib.suppress(Exception):
+                _ext_mgr.register_pex_peer_callback(pex_callback_wrapper)
         session.logger.info(
             "Registered PEX callback for %s (total callbacks: %d)",
             session.info.name,

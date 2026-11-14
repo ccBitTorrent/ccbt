@@ -10,6 +10,7 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any, Optional, Union
 
+from ccbt.performance.acceleration import accel_enabled
 from ccbt.session.models import SessionContext
 
 if TYPE_CHECKING:
@@ -1076,14 +1077,20 @@ class AnnounceLoop:
                     # - connected and requestable but none productive -> 120s
                     # The tracker `min interval` floor applied below (after this block)
                     # guarantees we never violate tracker pacing. See RC-4/5 fix (Step 6).
+                    _accel_announce = accel_enabled(self.s.config)
+                    _ceil_connected, _ceil_req, _ceil_prod = (
+                        (15.0, 30.0, 60.0) if _accel_announce else (60.0, 90.0, 120.0)
+                    )
                     if connected_peers == 0:
-                        next_announce_interval = min(next_announce_interval, 60.0)
+                        next_announce_interval = min(
+                            next_announce_interval, _ceil_connected
+                        )
                         weak_reason = "connected=0"
                     elif requestable_peers == 0:
-                        next_announce_interval = min(next_announce_interval, 90.0)
+                        next_announce_interval = min(next_announce_interval, _ceil_req)
                         weak_reason = "requestable=0"
                     elif productive_peers == 0:
-                        next_announce_interval = min(next_announce_interval, 120.0)
+                        next_announce_interval = min(next_announce_interval, _ceil_prod)
                         weak_reason = "productive=0"
                     else:
                         weak_reason = ""

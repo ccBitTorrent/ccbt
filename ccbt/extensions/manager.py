@@ -376,6 +376,12 @@ class ExtensionManager:
             self.extension_states["protocol"].error_count += 1
             self.extension_states["protocol"].last_error = str(e)
 
+    def register_pex_peer_callback(self, callback: Any) -> None:
+        """Register a callback dialed with inbound PEX peers (BEP 11)."""
+        pex_ext = self.extensions.get("pex")
+        if pex_ext is not None and hasattr(pex_ext, "add_peer_discovered_callback"):
+            pex_ext.add_peer_discovered_callback(callback)
+
     # PEX methods
     async def handle_pex_message(
         self,

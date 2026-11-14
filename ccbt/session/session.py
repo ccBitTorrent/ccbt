@@ -518,6 +518,14 @@ class AsyncTorrentSession:
             "pending_connect_queue_age_observations_s": [],
             "time_to_first_requestable_s": None,
             "time_to_first_productive_s": None,
+            "time_to_first_piece_s": None,
+            "time_to_10pct_s": None,
+            "time_to_50pct_s": None,
+            "time_to_90pct_s": None,
+            "duplicate_bytes": 0,
+            "duplicate_requests": 0,
+            "cancels_sent": 0,
+            "requestable_series": [],
             "dht_candidate_cache_new_entry_total": 0,
             "dht_candidate_cache_refresh_total": 0,
             "dht_candidate_promotion_selected_total": 0,
@@ -1122,6 +1130,41 @@ class AsyncTorrentSession:
                     "peer_discovery_time_to_first_productive_s",
                     float(elapsed),
                 )
+        if requestable_peers >= 0:
+            series = m.setdefault("requestable_series", [])
+            if isinstance(series, list) and (
+                not series or series[-1][1] != requestable_peers
+            ):
+                series.append([round(float(elapsed), 3), int(requestable_peers)])
+                del series[:-200]
+
+    def _touch_piece_progress_metrics(self) -> None:
+        """Record time-to-first-piece and percent-complete milestones."""
+        if not isinstance(self._peer_discovery_metrics, dict):
+            return
+        start = self._swarm_connect_phase_started_monotonic
+        if start is None or self.piece_manager is None:
+            return
+        verified = getattr(self.piece_manager, "verified_pieces", None)
+        total = int(getattr(self.piece_manager, "num_pieces", 0) or 0)
+        if verified is None or total <= 0:
+            return
+        elapsed = time.monotonic() - float(start)
+        m = self._peer_discovery_metrics
+        if len(verified) > 0 and m.get("time_to_first_piece_s") is None:
+            m["time_to_first_piece_s"] = elapsed
+            with contextlib.suppress(Exception):
+                get_metrics_collector().record_histogram(
+                    "peer_discovery_time_to_first_piece_s", float(elapsed)
+                )
+        fraction = len(verified) / total
+        for pct, key in (
+            (10, "time_to_10pct_s"),
+            (50, "time_to_50pct_s"),
+            (90, "time_to_90pct_s"),
+        ):
+            if fraction * 100.0 >= pct and m.get(key) is None:
+                m[key] = elapsed
 
     def _touch_requestable_deficit_clock(
         self, swarm_state: dict[str, Any], metadata_incomplete: bool
@@ -5651,6 +5694,8 @@ class AsyncTorrentSession:
 
     async def _on_piece_verified(self, piece_index: int) -> None:
         """Handle piece verification."""
+        with contextlib.suppress(Exception):
+            self._touch_piece_progress_metrics()
         self.logger.debug(
             "_on_piece_verified called for piece %d (torrent: %s)",
             piece_index,
