@@ -55,6 +55,7 @@ dependencies = [
     "lz4>=4.3.3",
     "watchdog>=4.0.2",
     "eval-type-backport>=0.3.1 ; python_full_version < '3.10'",
+    "typing-extensions>=4.0.0 ; python_full_version < '3.11'",
 ]
 
 [project.optional-dependencies]

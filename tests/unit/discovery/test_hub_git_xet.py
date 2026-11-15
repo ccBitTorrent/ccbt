@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
 
 import pytest
 from aiohttp import web
@@ -103,6 +104,13 @@ def _run(cmd: list[str], cwd: Path, env: dict, timeout: int = 180) -> subprocess
     return result
 
 
+def _agent_log(tmp_path: Path) -> str:
+    log_path = tmp_path / "agent.log"
+    if not log_path.is_file():
+        return "<missing>"
+    return log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+
+
 @pytest.mark.skipif(
     shutil.which("git") is None or shutil.which("git-lfs") is None,
     reason="git/git-lfs not installed",
@@ -141,8 +149,15 @@ def test_interop_git_xet_roundtrip(tmp_path: Path) -> None:
     env = dict(os.environ)
     env["GIT_XET_CAS_ENDPOINT"] = base
     env["GIT_XET_DEBUG_LOG"] = str(tmp_path / "agent.log")
-    env["GIT_LFS_SKIP_SMUDGE"] = "1"
-    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[3]) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[3]) + os.pathsep + env.get(
+        "PYTHONPATH", ""
+    )
+    # Skip smudge only for clone so the working tree keeps pointer files.
+    # Keeping SKIP_SMUDGE set during `git lfs pull` can no-op the download on
+    # some git-lfs builds (CI runners), leaving data.bin missing.
+    env_clone = dict(env)
+    env_clone["GIT_LFS_SKIP_SMUDGE"] = "1"
+    env.pop("GIT_LFS_SKIP_SMUDGE", None)
 
     work = tmp_path / "work"
     work.mkdir()
@@ -150,8 +165,10 @@ def test_interop_git_xet_roundtrip(tmp_path: Path) -> None:
     (work / "data.bin").write_bytes(content)
     (work / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
 
-    def git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-        return _run(["git", *args], cwd, env)
+    def git(
+        cwd: Path, *args: str, env_override: Optional[dict] = None
+    ) -> subprocess.CompletedProcess:
+        return _run(["git", *args], cwd, env_override or env)
 
     git(work, "init", "-b", "main")
     git(work, "config", "user.email", "xet@test.local")
@@ -175,7 +192,7 @@ def test_interop_git_xet_roundtrip(tmp_path: Path) -> None:
     git(work, "lfs", "push", "origin", "main")
 
     clone = tmp_path / "clone"
-    _run(["git", "clone", str(bare), str(clone)], tmp_path, env)
+    _run(["git", "clone", str(bare), str(clone)], tmp_path, env_clone)
     git(clone, "config", "user.email", "xet@test.local")
     git(clone, "config", "user.name", "Xet Test")
     git(clone, "lfs", "install", "--local")
@@ -183,10 +200,19 @@ def test_interop_git_xet_roundtrip(tmp_path: Path) -> None:
     git(clone, "config", "lfs.customtransfer.xet.path", sys.executable)
     git(clone, "config", "lfs.customtransfer.xet.args", "-m ccbt.cli.git_xet")
     git(clone, "config", "lfs.customtransfer.xet.concurrent", "false")
-    # Pointer only before pull
-    assert (clone / "data.bin").read_bytes().startswith(b"version https://git-lfs")
+    pointer_path = clone / "data.bin"
+    if not pointer_path.is_file():
+        # Some git-lfs builds omit the pointer until an explicit checkout.
+        git(clone, "lfs", "checkout", "data.bin", env_override=env_clone)
+    assert pointer_path.is_file(), (
+        "missing LFS pointer after clone; agent.log=" + _agent_log(tmp_path)
+    )
+    assert pointer_path.read_bytes().startswith(b"version https://git-lfs")
     git(clone, "lfs", "pull")
-    assert (clone / "data.bin").read_bytes() == content
+    assert pointer_path.is_file(), (
+        "data.bin missing after lfs pull; agent.log=" + _agent_log(tmp_path)
+    )
+    assert pointer_path.read_bytes() == content
 
     loop = loop_holder.get("loop")
     if loop is not None:

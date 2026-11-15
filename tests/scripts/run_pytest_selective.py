@@ -295,8 +295,8 @@ def run_pytest(
         # Full suite (pre-push/ci): allow long runs; wall clock catches hangs
         timeout_seconds = 7200
     else:
-        # Marker-filtered / pre-commit selective: 60 minutes
-        timeout_seconds = 3600
+        # Marker-filtered / pre-commit unit (not slow): ~70+ min on Windows CI hosts
+        timeout_seconds = 7200
     
     try:
         # Use subprocess.run instead of call to support timeout

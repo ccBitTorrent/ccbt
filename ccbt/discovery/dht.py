@@ -2586,7 +2586,11 @@ class AsyncDHTClient:
     async def get_chunk_peers(self, chunk_hash: bytes) -> list[PeerInfo]:
         """Return XET chunk peers stored under the chunk key."""
         key = self._xet_chunk_dht_key(chunk_hash)
-        encoded = await self.get_data(key)
+        # Prefer the local mutable store (read_only / local-announce path)
+        # before a network BEP 44 get, which needs a fully initialized client.
+        encoded = self._xet_mutable_store.get(key)
+        if encoded is None:
+            encoded = await self.get_data(key)
         if encoded is None:
             return []
         try:
