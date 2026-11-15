@@ -65,8 +65,11 @@ def migrate_legacy_workspace(
             chunk_hashes = [XetHasher.compute_chunk_hash(c) for c in chunks]
             all_chunk_hashes.extend(chunk_hashes)
             report.chunks_written += len(chunk_hashes)
+            if len(chunk_hashes) != len(chunks):
+                msg = "chunk/hash count mismatch during migration"
+                raise ValueError(msg)
             file_hash = XetHasher.compute_file_hash(
-                [(h, len(c)) for h, c in zip(chunk_hashes, chunks, strict=True)]
+                [(h, len(c)) for h, c in zip(chunk_hashes, chunks)]
             )
             file_entries.append(
                 XetFileMetadata(

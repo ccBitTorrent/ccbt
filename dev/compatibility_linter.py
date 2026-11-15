@@ -72,6 +72,9 @@ class CompatibilityLinter:
             # Check for typing imports
             has_tuple_import = self._has_tuple_import(content)
 
+            # zip(..., strict=...) requires Python 3.10+
+            file_issues.extend(self._check_zip_strict(file_path, content))
+
             # Check each line
             for line_num, line in enumerate(lines, start=1):
                 # Check for union syntax (|) in type annotations
@@ -219,6 +222,28 @@ class CompatibilityLinter:
             return True
 
         return False
+
+    def _check_zip_strict(
+        self, file_path: Path, content: str
+    ) -> list[CompatibilityIssue]:
+        """Flag ``zip(..., strict=...)``, which requires Python 3.10+."""
+        issues: list[CompatibilityIssue] = []
+        for match in re.finditer(r"\bzip\s*\([^)]*?\bstrict\s*=", content, re.DOTALL):
+            line_number = content.count("\n", 0, match.start()) + 1
+            line = content.splitlines()[line_number - 1]
+            issues.append(
+                CompatibilityIssue(
+                    file_path=file_path,
+                    line_number=line_number,
+                    issue_type="zip-strict-kwarg",
+                    message=(
+                        "zip() `strict=` keyword requires Python 3.10+. "
+                        "Validate lengths explicitly for Python 3.8/3.9 compatibility"
+                    ),
+                    code=line.strip(),
+                )
+            )
+        return issues
 
     def _check_union_syntax(
         self, file_path: Path, line_num: int, line: str, full_content: str
