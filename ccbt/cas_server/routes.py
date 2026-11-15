@@ -160,13 +160,21 @@ async def post_shard_v2(
     body = await request.read()
     resp = web.StreamResponse(headers={"Content-Type": "application/x-ndjson"})
     await resp.prepare(request)
+    # NDJSON frames follow the upstream ShardUploadEvent serde shape
+    # (xet_client::cas_types): {"type": ...} tagged frames that stock
+    # hf_xet parses. A {"status": ...} frame is rejected by hf_xet.
     try:
-        await resp.write(b'{"status": "validating"}\n')
-        result = _store(request).put_shard(body)
-        await resp.write(json.dumps({"result": result}).encode() + b"\n")
+        await resp.write(b'{"type": "validating", "verified": 0, "total": 1}\n')
+        _store(request).put_shard(body)
+        await resp.write(b'{"type": "validating", "verified": 1, "total": 1}\n')
+        await resp.write(b'{"type": "committing", "stage": "uploading"}\n')
+        await resp.write(b'{"type": "committing", "stage": "syncing"}\n')
+        await resp.write(b'{"type": "result"}\n')
     except ValueError as e:
         await resp.write(
-            json.dumps({"error": {"message": str(e), "retryable": False}}).encode()
+            json.dumps(
+                {"type": "error", "message": str(e), "retryable": False}
+            ).encode()
             + b"\n"
         )
     await resp.write_eof()

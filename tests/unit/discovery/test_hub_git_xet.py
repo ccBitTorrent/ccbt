@@ -76,13 +76,15 @@ async def test_interop_hub_huggingface_hub(hub: TestClient) -> None:
     hf_hub = pytest.importorskip("huggingface_hub")
     base = str(hub.make_url("/")).rstrip("/")
     api = hf_hub.HfApi(endpoint=base, token=None)
+    # huggingface_hub is synchronous: run it off the event loop, otherwise
+    # it blocks the in-process test server it is talking to (deadlock).
     try:
-        info = api.repo_info("alice/demo", repo_type="model")
+        info = await asyncio.to_thread(api.repo_info, "alice/demo", repo_type="model")
     except Exception as e:  # server has no repo yet -> 404 is a valid answer
         assert "404" in str(e) or "Not Found" in str(e) or True
     async with hub.post("/api/repos/create", json={"name": "alice/demo", "type": "model"}) as r:
         assert r.status in (200, 201)
-    info = api.repo_info("alice/demo", repo_type="model")
+    info = await asyncio.to_thread(api.repo_info, "alice/demo", repo_type="model")
     assert info.id == "alice/demo"
 
 

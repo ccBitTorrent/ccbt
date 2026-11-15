@@ -111,6 +111,14 @@ class RepoStore:
         if not self.repo_exists(repo_id):
             self.create_repo(repo_id)
 
+    def delete_repo(self, repo_id: str) -> bool:
+        """Delete a repo and its file manifest (objects are content-addressed and kept)."""
+        with self._lock:
+            self.db.execute("DELETE FROM repo_files WHERE repo_id = ?", (repo_id,))
+            cur = self.db.execute("DELETE FROM repos WHERE repo_id = ?", (repo_id,))
+            self.db.commit()
+            return cur.rowcount > 0
+
     # --------------------------------------------------------------- files
     def put_file(self, repo_id: str, entry: RepoFile) -> None:
         """Public method."""

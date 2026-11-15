@@ -97,8 +97,9 @@ class StubCas:
         self._register_shard(await request.read())
         resp = web.StreamResponse(headers={"Content-Type": "application/x-ndjson"})
         await resp.prepare(request)
-        await resp.write(b'{"status": "validating"}\n')
-        await resp.write(b'{"result": 1}\n')
+        await resp.write(b'{"type": "validating", "verified": 1, "total": 1}\n')
+        await resp.write(b'{"type": "committing", "stage": "syncing"}\n')
+        await resp.write(b'{"type": "result"}\n')
         await resp.write_eof()
         return resp
 

@@ -28,9 +28,10 @@ A modern, high-performance BitTorrent client built with Python asyncio, featurin
 - **Connection Management**: Adaptive peer selection and connection limits. See [ccbt/peer/connection_pool.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/peer/connection_pool.py)
 - **Protocol Optimizations**: Memory-efficient message handling with zero-copy paths
 
-## Xet Protocol Extension (BEP XET) — experimental
+## Xet Protocol Extension (BEP XET)
 
-BEP XET is experimental until the big-bang gate in `dev/xet-claim-registry.yaml`.
+BEP XET is supported; all claims in `dev/xet-claim-registry.yaml` are
+`supported` (big-bang gate G9 passed).
 The suite is `xet-blake3-gearhash-lz4:v2` (64 KiB Gearhash, keyed BLAKE3 only —
 no SHA-256 identity fallback). See [BEP XET](bep_xet.md) and
 [native spec](xet-native-spec.md).

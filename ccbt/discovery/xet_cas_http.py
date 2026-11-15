@@ -287,7 +287,14 @@ class CasHttpClient:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if "error" in event:
+                # Upstream ShardUploadEvent frames are {"type": ...} tagged;
+                # older servers used {"result": n} / {"error": {...}} shapes.
+                if event.get("type") == "error":
+                    msg = f"shard upload (v2) error frame: {event.get('message', '')}"
+                    raise CasHttpError(msg)
+                if event.get("type") == "result":
+                    result = 1
+                elif "error" in event:
                     err = event["error"]
                     msg = (
                         err.get("message", str(err))
@@ -296,7 +303,7 @@ class CasHttpClient:
                     )
                     msg = f"shard upload (v2) error frame: {msg}"
                     raise CasHttpError(msg)
-                if "result" in event:
+                elif "result" in event:
                     result = int(event["result"])
             return result if result is not None else 1
         finally:
