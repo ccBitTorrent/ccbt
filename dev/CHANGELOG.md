@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-15
+
 ### Exciting New Features 🎉
 
 - XET is now **supported**: all 20 claims (C1–C20) in `dev/xet-claim-registry.yaml` flipped from experimental to supported after the G9 big-bang gate passed on local live evidence (real `hf_xet`/`huggingface_hub`/git-lfs against ccbt CAS/Hub on loopback, plus a cross-test against a real external OpenXet CAS server and the HF production CAS; harness: `dev/scripts/run_xet_live_gate.py`, never run in CI). Suite: `xet-blake3-gearhash-lz4:v2`; Byzantine consensus requires `n >= 3f + 1`
