@@ -25,6 +25,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from ccbt.discovery.xet_cas_http import CasHttpClient
 from ccbt.storage.xet_chunking import GearhashChunker
@@ -44,15 +45,26 @@ def _env(name: str) -> Optional[str]:
     return value or None
 
 
+def _require_http_url(url: str) -> str:
+    """Reject non-HTTP(S) schemes before urllib.urlopen (bandit B310)."""
+    cleaned = url.strip()
+    parsed = urlparse(cleaned)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        msg = f"Refusing non-HTTP(S) URL for git-xet transfer: {parsed.scheme!r}"
+        raise ValueError(msg)
+    return cleaned
+
+
 def _http_json(method: str, url: str, payload: Optional[dict] = None) -> dict:
+    safe_url = _require_http_url(url)
     data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
+    req = urllib.request.Request(safe_url, data=data, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     token = _env("GIT_XET_TOKEN")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req) as resp:  # nosec B310 — scheme validated above
         body = resp.read()
     return json.loads(body) if body else {}
 
@@ -137,11 +149,12 @@ async def _do_upload(oid: str, path: str, action: Optional[dict]) -> dict:
                 "error": {"code": 1, "message": "no CAS endpoint and no action href"},
             }
         data = Path(path).read_bytes()
-        req = urllib.request.Request(href, data=data, method="PUT")
+        safe_href = _require_http_url(str(href))
+        req = urllib.request.Request(safe_href, data=data, method="PUT")
         token = _env("GIT_XET_TOKEN")
         if token:
             req.add_header("Authorization", f"Bearer {token}")
-        with urllib.request.urlopen(req):
+        with urllib.request.urlopen(req):  # nosec B310 — scheme validated above
             pass
         return {"event": "complete", "oid": oid, "path": path}
 
@@ -179,11 +192,12 @@ async def _do_download(oid: str, path: str, action: Optional[dict]) -> dict:
             href = f"{hub.rstrip('/')}/api/xet-transfer/{repo}/download/{oid}"
     if not cas_endpoint or not href:
         if href:  # plain HTTP fallback
-            req = urllib.request.Request(href, method="GET")
+            safe_href = _require_http_url(str(href))
+            req = urllib.request.Request(safe_href, method="GET")
             token = _env("GIT_XET_TOKEN")
             if token:
                 req.add_header("Authorization", f"Bearer {token}")
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req) as resp:  # nosec B310 — scheme validated
                 data = resp.read()
             Path(path).write_bytes(data)
             if hashlib.sha256(data).hexdigest() != oid:
