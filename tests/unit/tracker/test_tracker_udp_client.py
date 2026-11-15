@@ -11,6 +11,7 @@ import pytest
 
 pytestmark = [pytest.mark.unit, pytest.mark.tracker]
 
+import ccbt.discovery.tracker_udp_client as udp_mod
 from ccbt.discovery.tracker_udp_client import (
     AsyncUDPTrackerClient,
     TrackerAction,
@@ -1205,8 +1206,12 @@ class TestAsyncUDPTrackerClientModuleFunctions:
     async def test_shutdown_udp_tracker(self):
         """Process-wide UDP client shutdown is idempotent and clears the module singleton."""
         reset_udp_tracker_client_for_testing()
-        client = get_udp_tracker_client()
+        # Inject a real test-mode client so leftover MagicMock singletons from
+        # other unit tests cannot satisfy start()/transport assertions.
+        client = AsyncUDPTrackerClient(test_mode=True)
+        udp_mod._udp_tracker_client_singleton = client
         await client.start()
+        assert isinstance(client, AsyncUDPTrackerClient)
         assert client.transport is not None
         await shutdown_udp_tracker_client()
         if sys.platform == "win32":
@@ -1214,6 +1219,7 @@ class TestAsyncUDPTrackerClientModuleFunctions:
         assert client.transport is None
         await shutdown_udp_tracker_client()
         fresh = get_udp_tracker_client()
+        assert isinstance(fresh, AsyncUDPTrackerClient)
         assert fresh is not client
         assert fresh.transport is None
         reset_udp_tracker_client_for_testing()

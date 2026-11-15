@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-15
+
+### Exciting New Features 🎉
+
+- Ship the XET native suite `xet-blake3-gearhash-lz4:v2` with Gearhash CDC, BLAKE3 hashing, LZ4 xorbs/shards, Hub git-xet CAS, peer handshake negotiation, and legacy-store migration (`ccbt xet migrate-legacy`) (Joseph Pollack, ccBitTorrent contributors)
+- Add swarm and download acceleration for cold-start connection scheduling, pipeline depth, and sparse-swarm piece progress (Joseph Pollack, ccBitTorrent contributors)
+
+### Documentation 📚
+
+- Add the XET native specification and experimental claim registry / release checklist for the big-bang gate (Joseph Pollack, ccBitTorrent contributors)
+
+### Fixed 🐞
+
+- Fix Python 3.9/3.10 compatibility for XET CAS `Self` typing, migrate-legacy `zip` usage, and CI py3.9 runners on ubuntu-24.04 (Joseph Pollack, ccBitTorrent contributors)
+- Fix git-xet Hub clone empty-tree failures on CI by forcing `main` as the default branch (Joseph Pollack, ccBitTorrent contributors)
+- Normalize test working directories and harden DHT/local-store discovery mocks used by XET e2e coverage (Joseph Pollack, ccBitTorrent contributors)
+
+### Internal 🔧
+
+- Expand XET unit/integration/e2e coverage (handshake, CAS HTTP, Hub git-xet, golden codec, chunk exchange, sync) (Joseph Pollack, ccBitTorrent contributors)
+- Align pre-commit selective pytest discovery and compatibility-linter rules with the 3.9+ support floor (Joseph Pollack, ccBitTorrent contributors)
+
+### Migration and Rollout Notes 📌
+
+- XET remains experimental until the G9 big-bang gate in `dev/xet-claim-registry.yaml` passes; docs must not claim full support yet
+- Legacy `.tonic` / pre-suite stores are read-only import via `ccbt xet migrate-legacy` and must not mix with v2 chunks for the same file
+
 ## [0.1.0] - 2026-07-23
 
 ### Breaking Changes
@@ -77,5 +104,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session refactoring with controller-based architecture and dependency injection (Joseph Pollack, ccBitTorrent contributors)
 - Improved tracker, peer, and piece stability checks and async typing/type cleanup for pre-commit readiness (Joseph Pollack, ccBitTorrent contributors)
 
+[0.2.0]: https://github.com/ccBitTorrent/ccbt/releases/tag/v0.2.0
 [0.1.0]: https://github.com/ccBitTorrent/ccbt/releases/tag/v0.1.0
 [0.0.1]: https://github.com/ccBitTorrent/ccbt/releases/tag/v0.0.1
