@@ -2,8 +2,8 @@
 
 Welcome to ccBitTorrent! This guide will help you get up and running quickly with our high-performance BitTorrent client. For the TUI dashboard see [Bitonic](bitonic.md); for the full CLI see [btbt CLI](btbt-cli.md).
 
-!!! tip "Experimental: BEP XET Protocol Extension"
-    ccBitTorrent includes an **experimental** Xet Protocol Extension (BEP XET) for content-defined chunking and cross-torrent deduplication. Claims remain experimental until the big-bang gate in `dev/xet-claim-registry.yaml`. [Learn more about BEP XET →](bep_xet.md)
+!!! tip "BEP XET Protocol Extension"
+    ccBitTorrent includes the Xet Protocol Extension (BEP XET) for content-defined chunking and cross-torrent deduplication. All claims in `dev/xet-claim-registry.yaml` are supported. [Learn more about BEP XET →](bep_xet.md)
 
 ## Installation
 
@@ -101,7 +101,7 @@ See [btbt CLI Reference](btbt-cli.md) for all download options.
 
 ### Quick start: XET shared workspace {#xet-quick-start}
 
-XET (experimental) lets you sync folders over the BitTorrent network (content-defined chunking, P2P discovery). Use it to **share** a folder (get a link and start syncing) or **join** someone else's workspace.
+XET lets you sync folders over the BitTorrent network (content-defined chunking, P2P discovery). Use it to **share** a folder (get a link and start syncing) or **join** someone else's workspace.
 
 **Prerequisites:** Start the daemon and enable XET:
 
@@ -147,7 +147,7 @@ Always specify an explicit `--output` directory when joining.
 uv run btbt tonic status ./my-project
 ```
 
-**Other XET commands** (experimental):
+**Other XET commands**:
 
 ```bash
 ccbt xet migrate-legacy /path/to/legacy-workspace

@@ -200,7 +200,7 @@ The session management follows a delegation pattern where `AsyncSessionManager` 
 - `session_adapter.py`: `LocalSessionAdapter` and `DaemonSessionAdapter` for CLI/daemon communication
 
 **Consensus Module** (`ccbt/consensus/`):
-- `raft.py`: Raft consensus for XET folder sync (experimental until claim registry G9)
+- `raft.py`: Raft consensus for XET folder sync (supported; claim registry gate G9 passed)
 
 - `byzantine.py`: Byzantine fault tolerance for distributed consensus
 - `raft_state.py`: Raft state machine management

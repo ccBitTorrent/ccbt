@@ -270,7 +270,7 @@ For XET workspace sharing, treat `.tonic` files and `tonic?:` links as workspace
 
 ## XET Workspace Commands
 
-XET surfaces are **experimental** until the claim registry big-bang gate.
+XET surfaces are supported (claim registry gate G9 passed).
 Codec migration: `ccbt xet migrate-legacy <workspace>`. CAS/Hub:
 `ccbt cas serve`, `ccbt hub serve`.
 

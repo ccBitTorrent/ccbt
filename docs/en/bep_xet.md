@@ -1,8 +1,8 @@
 # BEP XET: Xet Protocol Extension for Content-Defined Chunking and Deduplication
 
-**Status: experimental.** Until the big-bang release gate (G9) in
-`dev/xet-claim-registry.yaml` flips claims to `supported`, no surface may
-advertise XET as fully supported. Normative behaviour lives in
+**Status: supported.** The big-bang release gate (G9) in
+`dev/xet-claim-registry.yaml` has passed and all claims are `supported`.
+Normative behaviour lives in
 [xet-native-spec.md](xet-native-spec.md). Codec migration is recorded in
 [xet/adr-001-one-codec.md](xet/adr-001-one-codec.md).
 
@@ -53,13 +53,13 @@ requires real Raft RPCs over the XET extension or Byzantine Ed25519 votes with
 ## Claim registry
 
 Authoritative claim status: `dev/xet-claim-registry.yaml`. CI runs
-`dev/scripts/check_xet_claims.py`. Big-bang release uses
-`--release` and refuses to ship while any claim remains experimental.
+`dev/scripts/check_xet_claims.py`. Releases use `--release` and refuse to
+ship while any claim is not `supported`.
 The generated matrix is [xet-support-matrix.md](xet-support-matrix.md)
 (`python dev/scripts/generate_xet_support_matrix.py`).
 
 
-## Quick start (experimental)
+## Quick start
 
 ```bash
 # Enable XET in config (target size must be 65536)
