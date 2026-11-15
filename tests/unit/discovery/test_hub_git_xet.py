@@ -179,7 +179,15 @@ def test_interop_git_xet_roundtrip(tmp_path: Path) -> None:
     git(work, "config", "lfs.customtransfer.xet.args", "-m ccbt.cli.git_xet")
     git(work, "config", "lfs.customtransfer.xet.concurrent", "false")
     bare = tmp_path / "remote.git"
-    _run(["git", "init", "--bare", str(bare)], tmp_path, env)
+    # Pin the bare repo HEAD to main. Without this, runners whose git has no
+    # init.defaultBranch=main (GitHub CI) create HEAD -> master; pushing only
+    # main then makes `git clone` check out nothing (no pointer file at all).
+    _run(["git", "init", "--bare", "-b", "main", str(bare)], tmp_path, env)
+    _run(
+        ["git", "-C", str(bare), "symbolic-ref", "HEAD", "refs/heads/main"],
+        tmp_path,
+        env,
+    )
     git(work, "remote", "add", "origin", str(bare))
     git(work, "add", ".")
     git(work, "commit", "-m", "add data")
@@ -201,13 +209,13 @@ def test_interop_git_xet_roundtrip(tmp_path: Path) -> None:
     git(clone, "config", "lfs.customtransfer.xet.args", "-m ccbt.cli.git_xet")
     git(clone, "config", "lfs.customtransfer.xet.concurrent", "false")
     pointer_path = clone / "data.bin"
-    if not pointer_path.is_file():
-        # Some git-lfs builds omit the pointer until an explicit checkout.
-        git(clone, "lfs", "checkout", "data.bin", env_override=env_clone)
     assert pointer_path.is_file(), (
-        "missing LFS pointer after clone; agent.log=" + _agent_log(tmp_path)
+        "missing LFS pointer after clone (clone checked out nothing?); "
+        "agent.log=" + _agent_log(tmp_path)
     )
     assert pointer_path.read_bytes().startswith(b"version https://git-lfs")
+    # lfs pull = fetch + checkout; a bare `lfs checkout` before any fetch
+    # cannot materialize the file and fails on a fresh clone.
     git(clone, "lfs", "pull")
     assert pointer_path.is_file(), (
         "data.bin missing after lfs pull; agent.log=" + _agent_log(tmp_path)
