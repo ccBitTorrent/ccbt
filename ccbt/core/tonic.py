@@ -27,7 +27,9 @@ class TonicError(TorrentError):
 class TonicFile:
     """Parser and generator for .tonic files (XET folder sync format)."""
 
-    TONIC_VERSION = 1  # Tonic file format version
+    TONIC_VERSION = 2  # Tonic file format version (v2 requires suite)
+    SUITE_V2 = "xet-blake3-gearhash-lz4:v2"
+    SUITE_LEGACY = "legacy-v1"
 
     def __init__(self) -> None:
         """Initialize the tonic file handler."""
@@ -131,10 +133,12 @@ class TonicFile:
             Bencoded .tonic file data as bytes
 
         """
-        # Build info dictionary
+        # Build info dictionary (v2: format_version + suite required)
         info: dict[bytes, Any] = {
             b"name": folder_name.encode("utf-8"),
             b"tonic version": self.TONIC_VERSION,
+            b"format_version": 2,
+            b"suite": self.SUITE_V2.encode("utf-8"),
         }
 
         # Add folder structure and total size from xet_metadata
@@ -483,12 +487,23 @@ class TonicFile:
 
         # Extract info
         info = data[b"info"]
+        suite_raw = info.get(b"suite", b"")
+        suite = (
+            suite_raw.decode("utf-8")
+            if isinstance(suite_raw, bytes)
+            else (str(suite_raw) if suite_raw else self.SUITE_LEGACY)
+        )
+        format_version = info.get(b"format_version", info.get(b"tonic version", 1))
         result["info"] = {
             "name": info[b"name"].decode("utf-8"),
             "tonic_version": info.get(b"tonic version", self.TONIC_VERSION),
+            "format_version": int(format_version) if format_version is not None else 1,
+            "suite": suite or self.SUITE_LEGACY,
             "total_length": info.get(b"total length", 0),
             "file_tree": self._decode_file_tree(info.get(b"file tree", {})),
         }
+        result["format_version"] = result["info"]["format_version"]
+        result["suite"] = result["info"]["suite"]
 
         # Extract xet metadata
         xet_meta = data[b"xet metadata"]

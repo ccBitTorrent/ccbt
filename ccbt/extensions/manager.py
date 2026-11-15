@@ -67,9 +67,14 @@ class ExtensionManager:
         self._xet_gossip_received: Optional[
             Callable[[str, dict[str, Any]], Awaitable[Optional[dict[str, Any]]]]
         ] = None  # (peer_id, messages) -> response messages to send back
+        self._xet_transport: Optional[Any] = None  # XetTransport when wired
 
         # Initialize extensions
         self._initialize_extensions()
+
+    def set_xet_transport(self, transport: Any) -> None:
+        """Attach the session XetTransport for chunk request/response handling."""
+        self._xet_transport = transport
 
     def _initialize_extensions(self) -> None:
         """Initialize all extensions."""
@@ -158,9 +163,14 @@ class ExtensionManager:
             last_activity=0.0,
         )
 
-        # Xet Extension
+        # Xet Extension (handler registered up front, not patched in later)
         xet_ext = XetExtension()
-        protocol_ext.register_extension("xet", "1.0", handler=None)
+        xet_message_id = protocol_ext.register_extension("xet", "2.0")
+
+        async def _xet_handler(peer_id: str, payload: bytes) -> Optional[bytes]:
+            return await self.handle_xet_message(peer_id, xet_message_id, payload)
+
+        protocol_ext.register_message_handler(xet_message_id, _xet_handler)
         self.extensions["xet"] = xet_ext
         self.extension_states["xet"] = ExtensionState(
             name="xet",
@@ -168,7 +178,7 @@ class ExtensionManager:
             capabilities={
                 "supports_chunk_requests": True,
                 "supports_p2p_cas": True,
-                "version": "1.0",
+                "version": "2.0",
             },
             last_activity=0.0,
         )
@@ -634,7 +644,12 @@ class ExtensionManager:
                     )
                     return None
 
-            if msg_type == 0x01:  # CHUNK_REQUEST
+            # Chunk messages prefer XetTransport when wired (request_id correlation).
+            if msg_type in (0x01, 0x02, 0x03, 0x04) and self._xet_transport is not None:
+                response = await self._xet_transport.handle_message(peer_id, data)
+                self.extension_states["xet"].last_activity = time.time()
+                return response
+            if msg_type == 0x01:  # CHUNK_REQUEST (fallback without transport)
                 request_id, chunk_hash = xet_ext.decode_chunk_request(data)
                 response = await xet_ext.handle_chunk_request(
                     peer_id, request_id, chunk_hash
@@ -642,8 +657,18 @@ class ExtensionManager:
                 self.extension_states["xet"].last_activity = time.time()
                 return response
             if msg_type == 0x02:  # CHUNK_RESPONSE
-                request_id, chunk_data = xet_ext.decode_chunk_response(data)
-                await xet_ext.handle_chunk_response(peer_id, request_id, chunk_data)
+                request_id, resp_hash, chunk_data = xet_ext.decode_chunk_response(data)
+                await xet_ext.handle_chunk_response(
+                    peer_id, request_id, resp_hash, chunk_data
+                )
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x03:  # CHUNK_NOT_FOUND
+                xet_ext.decode_chunk_not_found(data)
+                self.extension_states["xet"].last_activity = time.time()
+                return None
+            if msg_type == 0x04:  # CHUNK_ERROR
+                xet_ext.decode_chunk_error(data)
                 self.extension_states["xet"].last_activity = time.time()
                 return None
             if msg_type == 0x10:  # FOLDER_VERSION_REQUEST

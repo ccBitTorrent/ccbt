@@ -1,0 +1,55 @@
+{
+  "comment": "Deterministic synthetic inputs. Bytes are regenerated in tests from these seeds; expected outputs are produced by the upstream algorithm and pinned by golden tests.",
+  "chunking_inputs": [
+    {
+      "name": "empty",
+      "kind": "empty"
+    },
+    {
+      "name": "tiny",
+      "kind": "bytes_hex",
+      "data_hex": "68656c6c6f20786574"
+    },
+    {
+      "name": "below_min",
+      "kind": "random",
+      "seed": 1,
+      "size": 8191
+    },
+    {
+      "name": "exact_min",
+      "kind": "random",
+      "seed": 2,
+      "size": 8192
+    },
+    {
+      "name": "exact_max",
+      "kind": "random",
+      "seed": 3,
+      "size": 131072
+    },
+    {
+      "name": "zeros_300k",
+      "kind": "zeros",
+      "size": 300000
+    },
+    {
+      "name": "random_1m",
+      "kind": "random",
+      "seed": 42,
+      "size": 1048576
+    },
+    {
+      "name": "pattern_1m",
+      "kind": "pattern",
+      "pattern_hex": "6162636465666768",
+      "size": 1048576
+    },
+    {
+      "name": "edit_locality_base",
+      "kind": "random",
+      "seed": 7,
+      "size": 524288
+    }
+  ]
+}

@@ -52,6 +52,13 @@ try:
 except ImportError:
     tonic_group = None  # type: ignore[assignment, misc]
 
+try:
+    from ccbt.cli.cas_commands import cas as cas_group
+    from ccbt.cli.cas_commands import hub as hub_group
+except ImportError:
+    cas_group = None  # type: ignore[assignment, misc]
+    hub_group = None  # type: ignore[assignment, misc]
+
 from ccbt.cli.file_commands import files as files_group
 from ccbt.cli.nat_commands import nat as nat_group
 from ccbt.cli.proxy_commands import proxy as proxy_group
@@ -3406,6 +3413,10 @@ cli.add_command(test_cmd)
 cli.add_command(create_torrent)
 if tonic_group is not None:
     cli.add_command(tonic_group)
+if cas_group is not None:
+    cli.add_command(cas_group)
+if hub_group is not None:
+    cli.add_command(hub_group)
 
 
 def main():

@@ -2,8 +2,8 @@
 
 Welcome to ccBitTorrent! This guide will help you get up and running quickly with our high-performance BitTorrent client. For the TUI dashboard see [Bitonic](bitonic.md); for the full CLI see [btbt CLI](btbt-cli.md).
 
-!!! tip "Key Feature: BEP XET Protocol Extension"
-    ccBitTorrent includes the **Xet Protocol Extension (BEP XET)**, which enables content-defined chunking and cross-torrent deduplication. This transforms BitTorrent into a super-fast, updatable peer-to-peer file system optimized for collaboration. [Learn more about BEP XET →](bep_xet.md)
+!!! tip "Experimental: BEP XET Protocol Extension"
+    ccBitTorrent includes an **experimental** Xet Protocol Extension (BEP XET) for content-defined chunking and cross-torrent deduplication. Claims remain experimental until the big-bang gate in `dev/xet-claim-registry.yaml`. [Learn more about BEP XET →](bep_xet.md)
 
 ## Installation
 
@@ -101,7 +101,7 @@ See [btbt CLI Reference](btbt-cli.md) for all download options.
 
 ### Quick start: XET shared workspace {#xet-quick-start}
 
-XET lets you sync folders over the BitTorrent network (content-defined chunking, P2P discovery). Use it to **share** a folder (get a link and start syncing) or **join** someone else's workspace.
+XET (experimental) lets you sync folders over the BitTorrent network (content-defined chunking, P2P discovery). Use it to **share** a folder (get a link and start syncing) or **join** someone else's workspace.
 
 **Prerequisites:** Start the daemon and enable XET:
 
@@ -147,7 +147,15 @@ Always specify an explicit `--output` directory when joining.
 uv run btbt tonic status ./my-project
 ```
 
-**Other XET commands:**
+**Other XET commands** (experimental):
+
+```bash
+ccbt xet migrate-legacy /path/to/legacy-workspace
+ccbt cas serve
+ccbt hub serve
+```
+
+**Other XET status commands:**
 
 ```bash
 # Generate shareable link from folder or .tonic file
@@ -159,7 +167,7 @@ uv run ccbt xet status
 uv run ccbt xet stats
 ```
 
-See [BEP XET](bep_xet.md) for protocol details, configuration, and the full CLI reference in [btbt CLI](btbt-cli.md#xet-workspace-commands). A one-command **share** flow (watch folder + get link in a single step) is planned; see [XET share feature plan](implementation-plans/xet-share-feature.md) for details.
+See [BEP XET](bep_xet.md) for protocol details, configuration, and the full CLI reference in [btbt CLI](btbt-cli.md#xet-workspace-commands). A one-command **share** flow (watch folder + get link in a single step) is specified in the [XET native specification](xet-native-spec.md).
 
 ### Configure ccBitTorrent {#configure}
 

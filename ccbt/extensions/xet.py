@@ -8,6 +8,7 @@ Provides support for:
 
 from __future__ import annotations
 
+import json
 import logging
 import struct
 import time
@@ -43,6 +44,17 @@ class XetMessageType(IntEnum):
     BLOOM_FILTER_RESPONSE = 0x31  # Response with bloom filter data
     # Gossip sync (receive path: peer sends us gossip messages)
     GOSSIP_SYNC = 0x40  # Gossip message batch from peer (payload: JSON messages dict)
+    # Consensus (designated/consensus sync modes; see xet-native-spec.md)
+    RAFT_VOTE_REQUEST = 0x50
+    RAFT_VOTE_RESPONSE = 0x51
+    RAFT_APPEND_ENTRIES = 0x52
+    RAFT_APPEND_ENTRIES_RESPONSE = 0x53
+    CONSENSUS_PROPOSE = 0x60
+    CONSENSUS_VOTE = 0x61
+
+
+#: Maximum XET extension message payload (xet-native-spec.md section 6).
+MAX_XET_MESSAGE_SIZE = 256 * 1024
 
 
 @dataclass
@@ -70,6 +82,7 @@ class XetExtension:
         self.pending_requests: dict[
             tuple[str, int], XetChunkRequest
         ] = {}  # (peer_id, request_id) -> request
+        self.pending_outgoing: dict[tuple[str, int], XetChunkRequest] = {}
         self.request_counter = 0
         self.chunk_provider: Optional[Callable[[bytes], Optional[bytes]]] = None
         self.folder_sync_handshake = folder_sync_handshake
@@ -166,7 +179,8 @@ class XetExtension:
         """
         handshake = {
             "xet": {
-                "version": "1.0",
+                "version": "2.0",
+                "suite": XetHasher.SUITE,
                 "supports_chunk_requests": True,
                 "supports_p2p_cas": True,
                 "supports_folder_sync": True,
@@ -202,6 +216,15 @@ class XetExtension:
         """
         xet_data = data.get("xet", {})
         if not isinstance(xet_data, dict):
+            return False
+
+        # Suite is a hard identity: a peer advertising a different suite
+        # cannot exchange chunks with us (xet-native-spec.md section 2).
+        peer_suite = xet_data.get("suite")
+        if peer_suite is not None and peer_suite != XetHasher.SUITE:
+            logger.warning(
+                "Peer %s advertises incompatible XET suite %s", peer_id, peer_suite
+            )
             return False
 
         if not xet_data.get("supports_chunk_requests", False):
@@ -253,6 +276,21 @@ class XetExtension:
 
         return True
 
+    def encode_chunk_request_tracked(
+        self, peer_id: str, chunk_hash: bytes
+    ) -> tuple[int, bytes]:
+        """Encode a chunk request and track it as pending-outgoing."""
+        message = self.encode_chunk_request(chunk_hash)
+        request_id = self.request_counter
+        self.pending_outgoing[(peer_id, request_id)] = XetChunkRequest(
+            chunk_hash=chunk_hash, request_id=request_id, timestamp=time.time()
+        )
+        return request_id, message
+
+    def drop_outgoing_request(self, peer_id: str, request_id: int) -> None:
+        """Drop a tracked outgoing request without waiting for a response."""
+        self.pending_outgoing.pop((peer_id, request_id), None)
+
     def encode_chunk_request(self, chunk_hash: bytes) -> bytes:
         """Encode chunk request message.
 
@@ -302,83 +340,89 @@ class XetExtension:
 
         return request_id, chunk_hash
 
-    def encode_chunk_response(self, request_id: int, chunk_data: bytes) -> bytes:
-        """Encode chunk response message.
-
-        Args:
-            request_id: Request ID to respond to
-            chunk_data: Chunk data bytes
-
-        Returns:
-            Encoded response message
-
-        """
-        # Pack: <message_type><request_id><chunk_size><chunk_data>
+    def encode_chunk_response(
+        self, request_id: int, chunk_hash: bytes, chunk_data: bytes
+    ) -> bytes:
+        """Encode CHUNK_RESPONSE (v2): type, request_id, hash, length, data."""
+        if len(chunk_hash) != 32:
+            msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
+            raise ValueError(msg)
+        if len(chunk_data) > MAX_XET_MESSAGE_SIZE:
+            msg = "Chunk data exceeds XET message size limit"
+            raise ValueError(msg)
         return (
-            struct.pack(
-                "!BII",
-                XetMessageType.CHUNK_RESPONSE,
-                request_id,
-                len(chunk_data),
-            )
+            struct.pack("!BI", XetMessageType.CHUNK_RESPONSE, request_id)
+            + chunk_hash
+            + struct.pack("!I", len(chunk_data))
             + chunk_data
         )
 
-    def decode_chunk_response(self, data: bytes) -> tuple[int, bytes]:
-        """Decode chunk response message.
-
-        Args:
-            data: Encoded response message
-
-        Returns:
-            Tuple of (request_id, chunk_data)
-
-        Raises:
-            ValueError: If message is invalid
-
-        """
-        if len(data) < 9:  # 1 byte type + 4 bytes request_id + 4 bytes size
+    def decode_chunk_response(self, data: bytes) -> tuple[int, bytes, bytes]:
+        """Decode CHUNK_RESPONSE -> (request_id, chunk_hash, chunk_data)."""
+        header_size = 1 + 4 + 32 + 4
+        if len(data) < header_size:
             msg = "Invalid Xet chunk response message"
             raise ValueError(msg)
-
-        message_type, request_id, chunk_size = struct.unpack("!BII", data[:9])
+        message_type, request_id = struct.unpack("!BI", data[:5])
         if message_type != XetMessageType.CHUNK_RESPONSE:
             msg = "Invalid message type for chunk response"
             raise ValueError(msg)
-
-        if len(data) < 9 + chunk_size:
+        chunk_hash = data[5:37]
+        (chunk_size,) = struct.unpack("!I", data[37:41])
+        if chunk_size > MAX_XET_MESSAGE_SIZE:
+            msg = "Chunk response exceeds XET message size limit"
+            raise ValueError(msg)
+        if len(data) < header_size + chunk_size:
             msg = "Incomplete chunk data in response"
             raise ValueError(msg)
+        return request_id, chunk_hash, data[header_size : header_size + chunk_size]
 
-        chunk_data = data[9 : 9 + chunk_size]
-        return request_id, chunk_data
+    def encode_chunk_not_found(self, request_id: int, chunk_hash: bytes) -> bytes:
+        """Encode CHUNK_NOT_FOUND (v2): type, request_id, hash."""
+        if len(chunk_hash) != 32:
+            msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
+            raise ValueError(msg)
+        return (
+            struct.pack("!BI", XetMessageType.CHUNK_NOT_FOUND, request_id) + chunk_hash
+        )
 
-    def encode_chunk_not_found(self, request_id: int) -> bytes:
-        """Encode chunk not found message.
+    def decode_chunk_not_found(self, data: bytes) -> tuple[int, bytes]:
+        """Decode CHUNK_NOT_FOUND into (request_id, chunk_hash)."""
+        if len(data) < 37:
+            msg = "Invalid chunk not found message"
+            raise ValueError(msg)
+        message_type, request_id = struct.unpack("!BI", data[:5])
+        if message_type != XetMessageType.CHUNK_NOT_FOUND:
+            msg = "Invalid message type for chunk not found"
+            raise ValueError(msg)
+        return request_id, data[5:37]
 
-        Args:
-            request_id: Request ID
+    def encode_chunk_error(
+        self, request_id: int, chunk_hash: bytes, error_code: int = 0, message: str = ""
+    ) -> bytes:
+        """Encode CHUNK_ERROR (v2): type, request_id, hash, code, UTF-8 message."""
+        if len(chunk_hash) != 32:
+            msg = f"Chunk hash must be 32 bytes, got {len(chunk_hash)}"
+            raise ValueError(msg)
+        return (
+            struct.pack("!BI", XetMessageType.CHUNK_ERROR, request_id)
+            + chunk_hash
+            + struct.pack("!I", error_code)
+            + message.encode("utf-8")[:512]
+        )
 
-        Returns:
-            Encoded not found message
-
-        """
-        # Pack: <message_type><request_id>
-        return struct.pack("!BI", XetMessageType.CHUNK_NOT_FOUND, request_id)
-
-    def encode_chunk_error(self, request_id: int, error_code: int = 0) -> bytes:
-        """Encode chunk error message.
-
-        Args:
-            request_id: Request ID
-            error_code: Error code (0 = generic error)
-
-        Returns:
-            Encoded error message
-
-        """
-        # Pack: <message_type><request_id><error_code>
-        return struct.pack("!BII", XetMessageType.CHUNK_ERROR, request_id, error_code)
+    def decode_chunk_error(self, data: bytes) -> tuple[int, bytes, int, str]:
+        """Decode CHUNK_ERROR into (request_id, chunk_hash, code, message)."""
+        if len(data) < 41:
+            msg = "Invalid chunk error message"
+            raise ValueError(msg)
+        message_type, request_id = struct.unpack("!BI", data[:5])
+        if message_type != XetMessageType.CHUNK_ERROR:
+            msg = "Invalid message type for chunk error"
+            raise ValueError(msg)
+        (error_code,) = struct.unpack("!I", data[37:41])
+        message = data[41 : 41 + 512].decode("utf-8", errors="replace")
+        return request_id, data[5:37], error_code, message
 
     async def handle_chunk_request(
         self, peer_id: str, request_id: int, chunk_hash: bytes
@@ -419,7 +463,9 @@ class XetExtension:
                             },
                         ),
                     )
-                    return self.encode_chunk_response(request_id, chunk_data)
+                    return self.encode_chunk_response(
+                        request_id, chunk_hash, chunk_data
+                    )
             except Exception as e:
                 logger.warning(
                     "Error providing chunk %s: %s",
@@ -439,7 +485,7 @@ class XetExtension:
                         },
                     ),
                 )
-                return self.encode_chunk_error(request_id, 1)
+                return self.encode_chunk_error(request_id, chunk_hash, 1, str(e))
 
         # Chunk not found
         await emit_event(
@@ -453,36 +499,50 @@ class XetExtension:
                 },
             ),
         )
-        return self.encode_chunk_not_found(request_id)
+        return self.encode_chunk_not_found(request_id, chunk_hash)
 
     async def handle_chunk_response(
-        self, peer_id: str, request_id: int, chunk_data: bytes
-    ) -> None:
-        """Handle chunk response from peer.
+        self, peer_id: str, request_id: int, chunk_hash: bytes, chunk_data: bytes
+    ) -> bool:
+        """Handle chunk response; verify it against the pending request.
 
-        Args:
-            peer_id: Peer identifier
-            request_id: Request ID
-            chunk_data: Chunk data bytes
-
+        Returns True only if a pending request exists for
+        (peer, request_id), the response hash matches the request, and
+        the bytes hash to that chunk hash. Anything else (late,
+        duplicate, mismatched, corrupt) is ignored.
         """
-        # Remove from pending requests
         key = (peer_id, request_id)
-        if key in self.pending_requests:
-            request = self.pending_requests.pop(key)
-            # Emit event
-            await emit_event(
-                Event(
-                    event_type=EventType.XET_CHUNK_RECEIVED.value,
-                    data={
-                        "peer_id": peer_id,
-                        "request_id": request_id,
-                        "chunk_hash": request.chunk_hash.hex(),
-                        "chunk_size": len(chunk_data),
-                        "timestamp": time.time(),
-                    },
-                ),
+        request = self.pending_outgoing.get(key)
+        if request is None:
+            return False
+        if request.chunk_hash != chunk_hash:
+            logger.warning(
+                "Chunk response hash mismatch from %s (request %d)",
+                peer_id,
+                request_id,
             )
+            return False
+        if not XetHasher.verify_chunk_hash(chunk_data, chunk_hash):
+            logger.warning(
+                "Chunk response failed hash verification from %s (request %d)",
+                peer_id,
+                request_id,
+            )
+            return False
+        self.pending_outgoing.pop(key, None)
+        await emit_event(
+            Event(
+                event_type=EventType.XET_CHUNK_RECEIVED.value,
+                data={
+                    "peer_id": peer_id,
+                    "request_id": request_id,
+                    "chunk_hash": request.chunk_hash.hex(),
+                    "chunk_size": len(chunk_data),
+                    "timestamp": time.time(),
+                },
+            ),
+        )
+        return True
 
     def get_capabilities(self) -> dict[str, Any]:
         """Get Xet extension capabilities.
@@ -938,3 +998,41 @@ class XetExtension:
             raise ValueError(msg)
 
         return data[5 : 5 + bloom_size]
+
+    def encode_raft_message(self, msg_type: int, payload: dict[str, Any]) -> bytes:
+        """Encode a Raft RPC as XET extension payload (type byte + JSON UTF-8)."""
+        if msg_type not in (
+            XetMessageType.RAFT_VOTE_REQUEST,
+            XetMessageType.RAFT_VOTE_RESPONSE,
+            XetMessageType.RAFT_APPEND_ENTRIES,
+            XetMessageType.RAFT_APPEND_ENTRIES_RESPONSE,
+        ):
+            msg = f"Not a Raft message type: {msg_type}"
+            raise ValueError(msg)
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        if 1 + len(body) > MAX_XET_MESSAGE_SIZE:
+            msg = "Raft message exceeds MAX_XET_MESSAGE_SIZE"
+            raise ValueError(msg)
+        return struct.pack("!B", msg_type) + body
+
+    def decode_raft_message(self, data: bytes) -> tuple[int, dict[str, Any]]:
+        """Decode Raft RPC payload; returns (msg_type, dict)."""
+        if not data:
+            msg = "Empty Raft message"
+            raise ValueError(msg)
+        msg_type = data[0]
+        if msg_type not in (
+            XetMessageType.RAFT_VOTE_REQUEST,
+            XetMessageType.RAFT_VOTE_RESPONSE,
+            XetMessageType.RAFT_APPEND_ENTRIES,
+            XetMessageType.RAFT_APPEND_ENTRIES_RESPONSE,
+        ):
+            msg = f"Not a Raft message type: {msg_type}"
+            raise ValueError(msg)
+        payload = json.loads(data[1:].decode("utf-8"))
+        if not isinstance(payload, dict):
+            msg = "Raft payload must be a JSON object"
+            raise TypeError(msg)
+        return msg_type, payload

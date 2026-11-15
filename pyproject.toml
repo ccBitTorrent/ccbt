@@ -96,6 +96,7 @@ Documentation = "https://ccbittorrent.readthedocs.io/"
 [project.scripts]
 ccbt = "ccbt.__main__:main"
 btbt = "ccbt.cli.main:main"
+git-xet = "ccbt.cli.git_xet:main"
 bitonic = "ccbt.interface.terminal_dashboard:main"
 
 [tool.setuptools.packages.find]

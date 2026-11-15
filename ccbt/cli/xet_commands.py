@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
 import click
@@ -12,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ccbt.i18n import _
+from ccbt.storage.xet_migrate_legacy import migrate_legacy_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -367,3 +369,50 @@ def xet_cleanup(
             logger.exception(_("Failed to cleanup Xet cache"))
 
     asyncio.run(_cleanup())
+
+
+@xet.command("migrate-legacy")
+@click.argument("workspace", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--output-tonic",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Path for rewritten v2 .tonic (default: <workspace>/<name>.tonic)",
+)
+@click.option(
+    "--dry-run",
+    "-n",
+    is_flag=True,
+    help="Report what would be migrated without writing",
+)
+@click.pass_context
+def xet_migrate_legacy(
+    _ctx, workspace: str, output_tonic: Optional[str], dry_run: bool
+) -> None:
+    """Re-chunk a legacy-v1 workspace into the upstream v2 codec suite.
+
+    On failure the legacy store is left untouched.
+    """
+    console = Console()
+    report = migrate_legacy_workspace(
+        Path(workspace),
+        output_tonic=Path(output_tonic) if output_tonic else None,
+        dry_run=dry_run,
+    )
+    if report.ok:
+        console.print(
+            _(
+                "[green]✓[/green] Migrated {files} files ({chunks} chunks){tonic}"
+            ).format(
+                files=report.files_migrated,
+                chunks=report.chunks_written,
+                tonic=(
+                    f" → {report.tonic_path}" if report.tonic_path else " (dry-run)"
+                ),
+            )
+        )
+    else:
+        for err in report.errors:
+            console.print(_("[red]Error: {e}[/red]").format(e=err))
+        raise SystemExit(1)

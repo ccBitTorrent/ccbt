@@ -58,56 +58,44 @@ class TestXetIntegration:
     async def test_xet_deduplication_workflow(self, temp_dir):
         """Test Xet deduplication workflow."""
         from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
 
         db_path = temp_dir / "chunks.db"
         dedup = XetDeduplication(cache_db_path=db_path)
+        try:
+            chunk1_data = b"First chunk data"
+            chunk1_hash = XetHasher.compute_chunk_hash(chunk1_data)
 
-        # Store chunks
-        chunk1_hash = b"1" * 32
-        chunk1_data = b"First chunk data"
-        storage_path1 = temp_dir / "chunk1.bin"
+            await dedup.store_chunk(chunk1_hash, chunk1_data)
 
-        await dedup.store_chunk(chunk1_hash, chunk1_data)
+            result = await dedup.check_chunk_exists(chunk1_hash)
+            assert result is not None
 
-        # Check if exists
-        result = await dedup.check_chunk_exists(chunk1_hash)
-        assert result is not None
+            await dedup.store_chunk(chunk1_hash, chunk1_data)
 
-        # Store duplicate chunk (should increment ref_count)
-        chunk2_hash = chunk1_hash  # Same hash
-        chunk2_data = chunk1_data  # Same data
-        storage_path2 = temp_dir / "chunk2.bin"
-
-        await dedup.store_chunk(chunk2_hash, chunk2_data)
-
-        # Verify reference count increased
-        stats = dedup.get_cache_stats()
-        assert stats["total_chunks"] == 1  # Only one unique chunk
-        assert stats["total_refs"] == 2  # But two references
-
-        dedup.close()
+            stats = dedup.get_cache_stats()
+            assert stats["total_chunks"] == 1
+            assert stats["total_refs"] == 2
+        finally:
+            dedup.close()
 
     @pytest.mark.asyncio
     @pytest.mark.slow
     async def test_xet_xorb_serialization(self):
         """Test Xorb serialization workflow."""
+        from ccbt.storage.xet_hashing import XetHasher
         from ccbt.storage.xet_xorb import Xorb
 
-        # Create xorb and add chunks
         xorb = Xorb()
 
         for i in range(10):
             chunk_data = f"Chunk {i}".encode()
-            chunk_hash = bytes([i] * 32)
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
             xorb.add_chunk(chunk_hash, chunk_data)
 
-        # Serialize
         serialized = xorb.serialize()
-
-        # Deserialize
         deserialized = Xorb.deserialize(serialized)
 
-        # Verify chunks match
         assert len(deserialized.chunks) == len(xorb.chunks)
         for (h1, d1), (h2, d2) in zip(xorb.chunks, deserialized.chunks):
             assert h1 == h2
@@ -218,37 +206,28 @@ class TestXetIntegration:
     async def test_cross_torrent_deduplication(self, temp_dir):
         """Test cross-torrent deduplication."""
         from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
 
         db_path = temp_dir / "dedup.db"
         dedup = XetDeduplication(cache_db_path=db_path)
+        try:
+            chunk_data = b"Shared chunk data"
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
+            storage_path1 = temp_dir / "torrent1" / "chunk.bin"
+            storage_path1.parent.mkdir()
 
-        # Store chunk from first torrent
-        chunk_hash = b"DEDUP" * 6 + b"XX"  # 32 bytes
-        chunk_data = b"Shared chunk data"
-        storage_path1 = temp_dir / "torrent1" / "chunk.bin"
-        storage_path1.parent.mkdir()
+            await dedup.store_chunk(chunk_hash, chunk_data)
+            await dedup.store_chunk(chunk_hash, chunk_data)
 
-        await dedup.store_chunk(chunk_hash, chunk_data)
+            result1 = await dedup.check_chunk_exists(chunk_hash)
+            result2 = await dedup.check_chunk_exists(chunk_hash)
+            assert result1 == result2
 
-        # Store same chunk from second torrent (should deduplicate)
-        # Note: store_chunk auto-generates path, so we can't control it
-        await dedup.store_chunk(chunk_hash, chunk_data)
-
-        # Verify storage paths exist (deduplication means same path)
-        # The actual storage path is auto-generated, so we check the result
-        result1 = await dedup.check_chunk_exists(chunk_hash)
-        result2 = await dedup.check_chunk_exists(chunk_hash)
-
-        # Both should return the same path (deduplication)
-        assert result1 == result2
-
-        # Verify reference count is 2
-        stats = dedup.get_cache_stats()
-        assert stats["total_chunks"] == 1
-        assert stats["total_refs"] == 2
-
-        # Close database after all checks
-        dedup.close()
+            stats = dedup.get_cache_stats()
+            assert stats["total_chunks"] == 1
+            assert stats["total_refs"] == 2
+        finally:
+            dedup.close()
 
     @pytest.mark.asyncio
     @pytest.mark.slow
@@ -268,7 +247,7 @@ class TestXetIntegration:
 
         # Test chunk response encoding
         chunk_data = b"Response chunk data"
-        response = xet_ext.encode_chunk_response(1, chunk_data)
+        response = xet_ext.encode_chunk_response(1, chunk_hash, chunk_data)
 
         assert len(response) > 0
         assert response[0] == XetMessageType.CHUNK_RESPONSE
@@ -277,8 +256,9 @@ class TestXetIntegration:
         decoded_request_id, decoded_hash = xet_ext.decode_chunk_request(request)
         assert decoded_hash == chunk_hash
 
-        decoded_id, decoded_data = xet_ext.decode_chunk_response(response)
+        decoded_id, decoded_resp_hash, decoded_data = xet_ext.decode_chunk_response(response)
         assert decoded_id == 1
+        assert decoded_resp_hash == chunk_hash
         assert decoded_data == chunk_data
 
     @pytest.mark.asyncio
@@ -343,7 +323,7 @@ class TestXetIntegration:
 
         async def mock_receive_ext_msg(conn, timeout):
             # Return chunk response
-            response_payload = xet_ext.encode_chunk_response(1, chunk_data)
+            response_payload = xet_ext.encode_chunk_response(1, computed_hash, chunk_data)
             return (5, response_payload)  # extension_id, payload
 
         with patch(
@@ -699,7 +679,7 @@ class TestXetIntegration:
         # Mock _receive_extension_message to return wrong chunk data
         async def mock_receive_ext_msg(conn, timeout):
             # Return chunk response with wrong data
-            response_payload = xet_ext.encode_chunk_response(1, wrong_chunk_data)
+            response_payload = xet_ext.encode_chunk_response(1, chunk_hash, wrong_chunk_data)
             return (5, response_payload)
 
         with patch(
@@ -866,91 +846,67 @@ class TestXetIntegration:
         dedup = disk_io._get_xet_deduplication()
         assert dedup is not None
 
-        # Use a unique chunk hash so this is a "new" chunk (not existing)
-        import hashlib
+        from ccbt.storage.xet_hashing import XetHasher
+
         chunk_data = b"new chunk data for file reference test"
-        chunk_hash = hashlib.sha256(chunk_data).digest()
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
         file_path = temp_dir / "target_file.txt"
         offset = 0
 
-        ok = await disk_io.write_xet_chunk(
-            chunk_hash=chunk_hash,
-            chunk_data=chunk_data,
-            file_path=file_path,
-            offset=offset,
-        )
-        assert ok is True
+        try:
+            ok = await disk_io.write_xet_chunk(
+                chunk_hash=chunk_hash,
+                chunk_data=chunk_data,
+                file_path=file_path,
+                offset=offset,
+            )
+            assert ok is True
 
-        # File-to-chunk reference must be stored so get_file_chunks returns it
-        file_chunks = await dedup.get_file_chunks(str(file_path))
-        assert len(file_chunks) == 1
-        assert file_chunks[0][0] == chunk_hash
-        assert file_chunks[0][1] == offset
-        assert file_chunks[0][2] == len(chunk_data)
-
-        if dedup:
-            dedup.close()
-        if hasattr(disk_io, "stop"):
-            try:
-                await disk_io.stop()
-            except Exception:
-                pass
+            file_chunks = await dedup.get_file_chunks(str(file_path))
+            assert len(file_chunks) == 1
+            assert file_chunks[0][0] == chunk_hash
+            assert file_chunks[0][1] == offset
+            assert file_chunks[0][2] == len(chunk_data)
+        finally:
+            if dedup:
+                dedup.close()
+            if hasattr(disk_io, "stop"):
+                try:
+                    await disk_io.stop()
+                except Exception:
+                    pass
 
     @pytest.mark.asyncio
     @pytest.mark.slow
     async def test_file_reconstruction_with_missing_chunks(self, temp_dir):
-        """Test file reconstruction when some chunks are missing."""
+        """Missing chunks abort reconstruction (no silent zero-fill)."""
         from ccbt.storage.xet_deduplication import XetDeduplication
         from ccbt.storage.xet_hashing import XetHasher
 
         db_path = temp_dir / "missing_chunks.db"
         dedup = XetDeduplication(cache_db_path=db_path)
+        try:
+            file_path = "/test/missing_chunks.txt"
+            chunk_data_list = [b"Chunk1", b"Chunk2", b"Chunk3"]
 
-        file_path = "/test/missing_chunks.txt"
-        chunk_data_list = [b"Chunk1", b"Chunk2", b"Chunk3"]
-        chunk_hashes = []
+            offset = 0
+            for i, chunk_data in enumerate(chunk_data_list):
+                chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
+                if i != 1:
+                    await dedup.store_chunk(chunk_hash, chunk_data)
+                await dedup.add_file_chunk_reference(
+                    file_path, chunk_hash, offset=offset, chunk_size=len(chunk_data)
+                )
+                offset += len(chunk_data)
 
-        # Store only first and third chunks (missing second)
-        offset = 0
-        for i, chunk_data in enumerate(chunk_data_list):
-            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
-            chunk_hashes.append(chunk_hash)
-
-            # Only store chunks 0 and 2 (skip 1)
-            if i != 1:
-                await dedup.store_chunk(chunk_hash, chunk_data)
-
-            # Add reference for all chunks
-            await dedup.add_file_chunk_reference(
-                file_path, chunk_hash, offset=offset, chunk_size=len(chunk_data)
-            )
-            offset += len(chunk_data)
-
-        # Reconstruct file (should handle missing chunk gracefully)
-        output_path = temp_dir / "reconstructed_missing.txt"
-        result_path = await dedup.reconstruct_file_from_chunks(
-            file_path, output_path=output_path
-        )
-
-        assert result_path == output_path
-        assert output_path.exists()
-
-        # Verify file was created (with zeros for missing chunk)
-        with open(output_path, "rb") as f:
-            reconstructed = f.read()
-
-        # Should have correct size
-        expected_size = sum(len(c) for c in chunk_data_list)
-        assert len(reconstructed) == expected_size
-
-        # First chunk should match
-        assert reconstructed[:6] == b"Chunk1"
-        # Second chunk should be zeros (missing)
-        assert reconstructed[6:12] == b"\x00" * 6
-        # Third chunk should match
-        assert reconstructed[12:18] == b"Chunk3"
-
-        dedup.close()
+            output_path = temp_dir / "reconstructed_missing.txt"
+            with pytest.raises(FileNotFoundError, match="chunks missing"):
+                await dedup.reconstruct_file_from_chunks(
+                    file_path, output_path=output_path
+                )
+            assert not output_path.exists()
+        finally:
+            dedup.close()
 
     @pytest.mark.asyncio
     @pytest.mark.slow
@@ -998,13 +954,13 @@ class TestXetIntegration:
     async def test_file_to_chunk_reference_tracking(self, temp_dir):
         """Test tracking file-to-chunk references across multiple files."""
         from ccbt.storage.xet_deduplication import XetDeduplication
+        from ccbt.storage.xet_hashing import XetHasher
 
         db_path = temp_dir / "references.db"
         dedup = XetDeduplication(cache_db_path=db_path)
 
-        # Create shared chunk
-        shared_chunk_hash = b"SHARED" * 5 + b"XX"
         shared_chunk_data = b"Shared chunk data"
+        shared_chunk_hash = XetHasher.compute_chunk_hash(shared_chunk_data)
         await dedup.store_chunk(shared_chunk_hash, shared_chunk_data)
 
         # Add reference from file 1

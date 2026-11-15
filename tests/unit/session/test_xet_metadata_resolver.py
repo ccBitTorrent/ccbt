@@ -82,10 +82,11 @@ async def test_resolve_remote_url_fetch_raises_propagates() -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_tonic_bytes_from_url_invalid_scheme_raises() -> None:
-    """_fetch_tonic_bytes_from_url raises for non-http(s) scheme."""
+    """_fetch_tonic_bytes_from_url raises for non-http(s) / SSRF-unsafe URLs."""
     with pytest.raises(RuntimeError) as exc_info:
         await _fetch_tonic_bytes_from_url("ftp://example.com/x.tonic", timeout=1.0)
-    assert "Invalid URL scheme" in str(exc_info.value)
+    msg = str(exc_info.value)
+    assert "Invalid URL scheme" in msg or "SSRF" in msg
 
 
 @pytest.mark.asyncio

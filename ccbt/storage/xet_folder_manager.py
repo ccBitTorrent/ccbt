@@ -686,8 +686,9 @@ class XetFolder:
             file_chunks.append(chunk_bytes)
 
         rebuilt_data = b"".join(file_chunks)
-        rebuilt_hash = self.hasher.build_merkle_tree_from_hashes(
-            actual_chunk_hashes, algorithm=self.hash_algorithm
+        rebuilt_hash = self.hasher.compute_file_hash(
+            [(h, len(c)) for h, c in zip(actual_chunk_hashes, file_chunks)],
+            algorithm=self.hash_algorithm,
         )
         if rebuilt_hash != file_metadata.file_hash:
             msg = f"File hash mismatch for {entry.file_path}"
@@ -831,10 +832,15 @@ class XetFolder:
         if not exists or not await to_thread_compat(file_path_obj.is_file):
             return None
 
-        file_data = await to_thread_compat(file_path_obj.read_bytes)
+        # Stream the file through the chunker; never load it whole.
+        def _read_chunks() -> list[bytes]:
+            return list(self.chunker.chunk_file(str(file_path_obj)))
+
+        file_chunks = await to_thread_compat(_read_chunks)
         chunk_hashes: list[bytes] = []
+        chunk_sizes: list[int] = []
         offset = 0
-        for chunk_data in self.chunker.chunk_buffer(file_data):
+        for chunk_data in file_chunks:
             chunk_hash = self.hasher.compute_chunk_hash(
                 chunk_data, algorithm=self.hash_algorithm
             )
@@ -863,20 +869,17 @@ class XetFolder:
                 else None,
             )
             chunk_hashes.append(chunk_hash)
+            chunk_sizes.append(len(chunk_data))
             offset += len(chunk_data)
 
-        file_hash = (
-            self.hasher.build_merkle_tree_from_hashes(
-                chunk_hashes, algorithm=self.hash_algorithm
-            )
-            if chunk_hashes
-            else self.hasher.compute_chunk_hash(b"", algorithm=self.hash_algorithm)
+        file_hash = self.hasher.compute_file_hash(
+            list(zip(chunk_hashes, chunk_sizes)), algorithm=self.hash_algorithm
         )
         file_metadata = XetFileMetadata(
             file_path=file_path,
             file_hash=file_hash,
             chunk_hashes=chunk_hashes,
-            total_size=len(file_data),
+            total_size=sum(chunk_sizes),
         )
         await self.dedup.store_file_metadata(file_metadata)
         return file_metadata

@@ -41,7 +41,9 @@ async def _fetch_tonic_bytes_from_url(
     Raises:
         RuntimeError: On invalid scheme, timeout, non-2xx, or body too large.
     """
-    url_stripped = url.strip()
+    from ccbt.utils.ssrf import assert_safe_remote_url
+
+    url_stripped = assert_safe_remote_url(url)
     lower = url_stripped.lower()
     if not lower.startswith(("http://", "https://")):
         msg = "Invalid URL scheme for .tonic fetch: " + url_stripped[:50]
@@ -55,7 +57,7 @@ async def _fetch_tonic_bytes_from_url(
             import urllib.request
 
             req = urllib.request.Request(url_stripped, method="GET")
-            with urllib.request.urlopen(  # nosec B310 — http(s) only after scheme check; aiohttp preferred path
+            with urllib.request.urlopen(  # nosec B310 — SSRF-checked above
                 req, timeout=timeout
             ) as resp:
                 if resp.status != 200:
@@ -89,7 +91,7 @@ async def _fetch_tonic_bytes_from_url(
                 if resp.status in (301, 302, 303, 307, 308):
                     location = resp.headers.get("Location")
                     if location and redirect_count < _MAX_REDIRECTS:
-                        current_url = location
+                        current_url = assert_safe_remote_url(location)
                         redirect_count += 1
                         continue
                 if resp.status != 200:

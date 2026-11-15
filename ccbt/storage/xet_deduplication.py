@@ -9,12 +9,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from ccbt.models import PeerInfo, XetFileMetadata
+from ccbt.storage.xet_chunking import GearhashChunker
+from ccbt.storage.xet_hashing import XetHasher
 from ccbt.utils.compat import sha1_compat, to_thread_compat
 
 logger = logging.getLogger(__name__)
@@ -285,11 +288,18 @@ class XetDeduplication:
         self.db.commit()
 
     def _store_new_chunk_sync(self, chunk_hash: bytes, chunk_data: bytes) -> Path:
-        """Synchronous write and DB insert for new chunk (run in thread)."""
+        """Synchronous write and DB insert for new chunk (run in thread).
+
+        The chunk bytes are written to a temporary file and atomically
+        renamed into place before the catalog row is committed, so a
+        crash never leaves a catalog entry pointing at partial data.
+        """
         if self.db is None:
             raise RuntimeError(_DB_CLOSED_MSG)
         storage_file = self.chunk_store_path / chunk_hash.hex()
-        storage_file.write_bytes(chunk_data)
+        tmp_file = self.chunk_store_path / f".{chunk_hash.hex()}.tmp-{os.getpid()}"
+        tmp_file.write_bytes(chunk_data)
+        os.replace(tmp_file, storage_file)
         current_time = time.time()
         try:
             self.db.execute(
@@ -343,7 +353,14 @@ class XetDeduplication:
         Returns:
             Path to stored chunk (may be existing or new)
 
+        Raises:
+            ValueError: If chunk_data does not hash to chunk_hash
+                (verify-on-write; corrupt data is never catalogued).
+
         """
+        if not XetHasher.verify_chunk_hash(chunk_data, chunk_hash):
+            msg = f"Chunk data does not match claimed hash {chunk_hash.hex()[:16]}"
+            raise ValueError(msg)
         async with self._get_db_lock():
             existing = await to_thread_compat(
                 self._check_chunk_exists_sync,
@@ -375,6 +392,139 @@ class XetDeduplication:
                 file_path, chunk_hash, file_offset, len(chunk_data)
             )
         return storage_file
+
+    def _quarantine_chunk_sync(self, chunk_hash: bytes, storage_file: Path) -> None:
+        """Move a corrupt chunk out of the store and drop its catalog row."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        quarantine_dir = self.chunk_store_path / "quarantine"
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if storage_file.exists():
+                os.replace(storage_file, quarantine_dir / chunk_hash.hex())
+        except OSError:
+            self.logger.warning(
+                "Failed to quarantine chunk %s", chunk_hash.hex()[:16], exc_info=True
+            )
+        self.db.execute("DELETE FROM chunks WHERE hash = ?", (chunk_hash,))
+        self.db.execute("DELETE FROM file_chunks WHERE chunk_hash = ?", (chunk_hash,))
+        self.db.commit()
+        self.logger.warning("Quarantined corrupt chunk %s", chunk_hash.hex()[:16])
+
+    def _get_chunk_data_sync(self, chunk_hash: bytes) -> Optional[bytes]:
+        """Read a chunk and verify its hash; quarantine on mismatch."""
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        cursor = self.db.execute(
+            "SELECT storage_path FROM chunks WHERE hash = ?", (chunk_hash,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        storage_file = Path(row[0])
+        if not storage_file.exists():
+            self.db.execute("DELETE FROM chunks WHERE hash = ?", (chunk_hash,))
+            self.db.commit()
+            return None
+        data = storage_file.read_bytes()
+        if not XetHasher.verify_chunk_hash(data, chunk_hash):
+            self._quarantine_chunk_sync(chunk_hash, storage_file)
+            return None
+        self.db.execute(
+            "UPDATE chunks SET last_accessed = ? WHERE hash = ?",
+            (time.time(), chunk_hash),
+        )
+        self.db.commit()
+        return data
+
+    async def get_chunk_data(self, chunk_hash: bytes) -> Optional[bytes]:
+        """Return verified chunk bytes, or None if absent/corrupt.
+
+        Corrupt chunks are quarantined and removed from the catalog so
+        they are never served to peers or used in reconstruction.
+        """
+        async with self._get_db_lock():
+            return await to_thread_compat(self._get_chunk_data_sync, chunk_hash)
+
+    def _index_file_sync(self, disk_path: Path, file_key: str) -> XetFileMetadata:
+        """Chunk one whole file from disk and catalogue it (thread worker).
+
+        Chunk boundaries are computed over the file as a single stream,
+        independent of BitTorrent piece length — this is what makes
+        cross-torrent deduplication work. Chunk inserts, file-chunk
+        references, and file metadata commit in one transaction.
+        """
+        if self.db is None:
+            raise RuntimeError(_DB_CLOSED_MSG)
+        chunker = GearhashChunker()
+        pairs: list[tuple[bytes, int]] = []
+        offset = 0
+        refs: list[tuple[bytes, int, int]] = []
+        for chunk_data in chunker.chunk_file(str(disk_path)):
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
+            pairs.append((chunk_hash, len(chunk_data)))
+            refs.append((chunk_hash, offset, len(chunk_data)))
+            offset += len(chunk_data)
+            existing = self.db.execute(
+                "SELECT 1 FROM chunks WHERE hash = ?", (chunk_hash,)
+            ).fetchone()
+            if existing:
+                self.db.execute(
+                    "UPDATE chunks SET ref_count = ref_count + 1, last_accessed = ? WHERE hash = ?",
+                    (time.time(), chunk_hash),
+                )
+            else:
+                # _store_new_chunk_sync commits; keep its atomic write.
+                self._store_new_chunk_sync(chunk_hash, chunk_data)
+        file_hash = XetHasher.compute_file_hash(pairs)
+        metadata = XetFileMetadata(
+            file_path=file_key,
+            file_hash=file_hash,
+            chunk_hashes=[h for h, _s in pairs],
+            total_size=offset,
+        )
+        current_time = time.time()
+        with self.db:  # single transaction for refs + metadata
+            self.db.execute("DELETE FROM file_chunks WHERE file_path = ?", (file_key,))
+            self.db.executemany(
+                """INSERT INTO file_chunks
+                   (file_path, chunk_hash, offset, chunk_size, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [(file_key, h, off, size, current_time) for h, off, size in refs],
+            )
+            metadata_dict = metadata.model_dump()
+            metadata_dict["file_hash"] = metadata.file_hash.hex()
+            metadata_dict["chunk_hashes"] = [h.hex() for h in metadata.chunk_hashes]
+            metadata_dict["xorb_refs"] = [h.hex() for h in metadata.xorb_refs]
+            self.db.execute(
+                """INSERT OR REPLACE INTO file_metadata
+                   (file_path, file_hash, total_size, chunk_count,
+                    created_at, last_modified, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    file_key,
+                    file_hash,
+                    offset,
+                    len(pairs),
+                    current_time,
+                    current_time,
+                    json.dumps(metadata_dict),
+                ),
+            )
+        return metadata
+
+    async def index_file_streaming(
+        self, disk_path: Union[Path, str], file_key: Optional[str] = None
+    ) -> XetFileMetadata:
+        """Index a completed file into the chunk store (per-file CDC).
+
+        The same content under any torrent or folder maps to the same
+        chunks: storing a second copy only increments reference counts.
+        """
+        path = Path(disk_path)
+        key = file_key or str(path)
+        async with self._get_db_lock():
+            return await to_thread_compat(self._index_file_sync, path, key)
 
     def _add_file_chunk_reference_sync(
         self,
@@ -570,60 +720,40 @@ class XetDeduplication:
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Reconstruct file by reading chunks in order
+        # Reconstruct file by reading verified chunks in order. Missing
+        # or corrupt chunks abort reconstruction: silently zero-filling
+        # would produce a corrupt file that looks successful.
         missing_chunks = []
+        pairs: list[tuple[bytes, int]] = []
         with output_path.open("wb") as output_file:
             for chunk_hash, offset, chunk_size in chunks:
-                try:
-                    # Read chunk from storage
-                    chunk_path = await self.check_chunk_exists(chunk_hash)
-                    if not chunk_path or not chunk_path.exists():
-                        missing_chunks.append((chunk_hash, offset))
-                        self.logger.warning(
-                            "Missing chunk %s at offset %d for file %s",
-                            chunk_hash.hex()[:16],
-                            offset,
-                            file_path,
-                        )
-                        # Write zeros for missing chunk
-                        output_file.write(b"\x00" * chunk_size)
-                        continue
-
-                    # Read chunk data
-                    chunk_data = chunk_path.read_bytes()
-
-                    # Verify chunk size matches expected
-                    if len(chunk_data) != chunk_size:
-                        self.logger.warning(
-                            "Chunk size mismatch: expected %d, got %d for chunk %s",
-                            chunk_size,
-                            len(chunk_data),
-                            chunk_hash.hex()[:16],
-                        )
-
-                    # Seek to correct offset in output file
-                    output_file.seek(offset)
-                    # Write chunk data
-                    output_file.write(chunk_data)
-
-                except Exception as e:
-                    self.logger.warning(
-                        "Failed to read chunk %s at offset %d: %s",
-                        chunk_hash.hex()[:16],
-                        offset,
-                        e,
-                    )
+                chunk_data = await self.get_chunk_data(chunk_hash)
+                if chunk_data is None:
                     missing_chunks.append((chunk_hash, offset))
-                    # Write zeros for missing chunk
-                    output_file.seek(offset)
-                    output_file.write(b"\x00" * chunk_size)
+                    continue
+                if len(chunk_data) != chunk_size:
+                    missing_chunks.append((chunk_hash, offset))
+                    continue
+                pairs.append((chunk_hash, len(chunk_data)))
+                output_file.seek(offset)
+                output_file.write(chunk_data)
 
         if missing_chunks:
-            self.logger.warning(
-                "Reconstructed file %s with %d missing chunks",
-                output_path,
-                len(missing_chunks),
+            output_path.unlink(missing_ok=True)
+            msg = (
+                f"Cannot reconstruct {file_path}: "
+                f"{len(missing_chunks)} chunks missing or corrupt"
             )
+            raise FileNotFoundError(msg)
+
+        metadata = await self.get_file_metadata(file_path)
+        if (
+            metadata is not None
+            and XetHasher.compute_file_hash(pairs) != metadata.file_hash
+        ):
+            output_path.unlink(missing_ok=True)
+            msg = f"Reconstructed file hash mismatch for {file_path}"
+            raise ValueError(msg)
 
         self.logger.debug(
             "Reconstructed file %s from %d chunks",

@@ -95,13 +95,15 @@ async def generate_tonic_from_folder(
 
                     # Chunk file
                     chunk_hashes: list[bytes] = []
+                    chunk_pairs: list[tuple[bytes, int]] = []
                     for chunk_data in chunker.chunk_buffer(file_data):
                         chunk_hash = hasher.compute_chunk_hash(chunk_data)
                         chunk_hashes.append(chunk_hash)
+                        chunk_pairs.append((chunk_hash, len(chunk_data)))
                         all_chunk_hashes.add(chunk_hash)
 
-                    # Calculate file hash (Merkle root)
-                    file_hash = hasher.build_merkle_tree_from_hashes(chunk_hashes)
+                    # File hash: aggregated root rehashed with the zero key
+                    file_hash = hasher.compute_file_hash(chunk_pairs)
 
                     file_metadata = XetFileMetadata(
                         file_path=relative_path,
