@@ -32,7 +32,7 @@ repos:
         pass_filenames: false
       - id: bandit
         name: bandit
-        entry: uv run python tests/scripts/ensure_bandit_dir.py
+        entry: uv run python tests/scripts/run_bandit_precommit.py
         language: system
         pass_filenames: false
       - id: pytest-fast
