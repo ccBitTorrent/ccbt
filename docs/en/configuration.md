@@ -129,7 +129,9 @@ Disk config model: `DiskConfig` in [ccbt/models.py](https://github.com/ccBittorr
 
 ### XET Sync Configuration
 
-Section `[xet_sync]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml): XET enable, check interval, default sync mode, git versioning, LPD, gossip, consensus, conflict resolution. Model: `XetSyncConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
+Section `[xet_sync]` in [ccbt.toml](https://github.com/ccBittorrent/ccbt/blob/main/ccbt.toml): XET enable, check interval, default sync mode, git versioning, discovery toggles, consensus, conflict resolution. Model: `XetSyncConfig` in [ccbt/models.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/models.py).
+
+**Defaults (experimental):** `disk.xet_chunk_target_size` is fixed at **65536**. LPD, gossip, multicast, and flooding default to **off** until a two-node proof exists for that mechanism. `hash_algorithm_policy` defaults to `require_configured` (BLAKE3 suite only).
 
 ### Strategy Configuration
 

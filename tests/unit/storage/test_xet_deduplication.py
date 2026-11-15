@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from ccbt.storage.xet_deduplication import XetDeduplication
+from ccbt.storage.xet_hashing import XetHasher
 
 pytestmark = [pytest.mark.unit, pytest.mark.storage]
 
@@ -60,8 +61,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_store_chunk(self, dedup, temp_db_path):
         """Test storing a new chunk."""
-        chunk_hash = b"X" * 32
         chunk_data = b"Test chunk data"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk (path is auto-generated)
         storage_path = await dedup.store_chunk(
@@ -83,8 +84,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_store_chunk_reference_counting(self, dedup):
         """Test that reference counting works correctly."""
-        chunk_hash = b"Y" * 32
         chunk_data = b"Reference counting test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk with first reference
         await dedup.store_chunk(chunk_hash, chunk_data)
@@ -114,8 +115,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_store_chunk_deduplication(self, dedup):
         """Test that identical chunks are deduplicated."""
-        chunk_hash = b"Z" * 32
         chunk_data = b"Deduplication test data"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk first time
         storage_path1 = await dedup.store_chunk(chunk_hash, chunk_data)
@@ -141,8 +142,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_check_chunk_updates_timestamp(self, dedup):
         """Test that checking chunk updates last_accessed timestamp."""
-        chunk_hash = b"A" * 32
         chunk_data = b"Timestamp test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk
         await dedup.store_chunk(chunk_hash, chunk_data)
@@ -208,12 +209,13 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_remove_unused_chunks(self, dedup):
         """Test removing chunks with zero references."""
-        chunk_hash1 = b"C" * 32
-        chunk_hash2 = b"D" * 32
-        chunk_data = b"Cleanup test"
+        chunk_data1 = b"Cleanup test one"
+        chunk_data = b"Cleanup test two"
+        chunk_hash1 = XetHasher.compute_chunk_hash(chunk_data1)
+        chunk_hash2 = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store two chunks
-        await dedup.store_chunk(chunk_hash1, chunk_data)
+        await dedup.store_chunk(chunk_hash1, chunk_data1)
         await dedup.store_chunk(chunk_hash2, chunk_data)
 
         # Manually set ref_count to 0 and old last_accessed for one chunk
@@ -250,8 +252,8 @@ class TestXetDeduplication:
         """Test cache size management."""
         # Store multiple chunks
         for i in range(10):
-            chunk_hash = bytes([i] * 32)
             chunk_data = f"Chunk {i}".encode()
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
             await dedup.store_chunk(chunk_hash, chunk_data)
 
         # Get cache stats
@@ -282,8 +284,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_concurrent_access(self, dedup):
         """Test handling of concurrent database access."""
-        chunk_hash = b"E" * 32
         chunk_data = b"Concurrent test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk from multiple "threads" (simulated)
         # Same chunk hash should increment ref_count
@@ -319,8 +321,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_remove_chunk_reference(self, dedup):
         """Test removing chunk reference."""
-        chunk_hash = b"G" * 32
         chunk_data = b"Reference removal test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk
         await dedup.store_chunk(chunk_hash, chunk_data)
@@ -352,8 +354,8 @@ class TestXetDeduplication:
 
     def test_get_chunk_info(self, dedup):
         """Test getting chunk information."""
-        chunk_hash = b"I" * 32
         chunk_data = b"Chunk info test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk
         import asyncio
@@ -377,8 +379,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_cleanup_unused_chunks_with_os_error(self, dedup, tmp_path):
         """Test cleanup_unused_chunks with OSError."""
-        chunk_hash = b"K" * 32
         chunk_data = b"Cleanup test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk
         await dedup.store_chunk(chunk_hash, chunk_data)
@@ -483,8 +485,8 @@ class TestXetDeduplication:
         db_path = tmp_path / "test_async_operations.db"
 
         async with XetDeduplication(cache_db_path=str(db_path)) as dedup:
-            chunk_hash = b"A" * 32
             chunk_data = b"Test chunk data for async context"
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
             # Store chunk using async operation
             storage_path = await dedup.store_chunk(chunk_hash, chunk_data)
@@ -619,8 +621,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_remove_chunk_reference_with_ref_count(self, dedup):
         """Test removing chunk reference when ref_count > 1."""
-        chunk_hash = b"P" * 32
         chunk_data = b"Reference count test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk
         await dedup.store_chunk(chunk_hash, chunk_data)
@@ -654,8 +656,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_remove_chunk_reference_file_deletion_error(self, dedup, tmp_path):
         """Test removing chunk reference with file deletion error."""
-        chunk_hash = b"Q" * 32
         chunk_data = b"File deletion error test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
 
         # Store chunk
         await dedup.store_chunk(chunk_hash, chunk_data)
@@ -830,8 +832,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_add_file_chunk_reference(self, dedup):
         """Test adding file-to-chunk reference."""
-        chunk_hash = b"R" * 32
         chunk_data = b"File reference test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
         file_path = "/test/file.txt"
         offset = 0
         chunk_size = len(chunk_data)
@@ -857,8 +859,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_add_file_chunk_reference_duplicate(self, dedup):
         """Test adding duplicate file-to-chunk reference."""
-        chunk_hash = b"S" * 32
         chunk_data = b"Duplicate reference test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
         file_path = "/test/file2.txt"
         offset = 0
         chunk_size = len(chunk_data)
@@ -885,8 +887,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_remove_file_chunk_reference(self, dedup):
         """Test removing file-to-chunk reference."""
-        chunk_hash = b"T" * 32
         chunk_data = b"Remove reference test"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
         file_path = "/test/file3.txt"
         offset = 0
         chunk_size = len(chunk_data)
@@ -919,11 +921,12 @@ class TestXetDeduplication:
     async def test_get_file_chunks(self, dedup):
         """Test getting ordered list of chunks for a file."""
         file_path = "/test/file4.txt"
-        chunk_hashes = [bytes([i] * 32) for i in range(5)]
-        chunk_data = b"Chunk data"
+        chunk_datas = [f"Chunk data {i}".encode() for i in range(5)]
+        chunk_hashes = [XetHasher.compute_chunk_hash(d) for d in chunk_datas]
 
         # Store chunks and add references
         for i, chunk_hash in enumerate(chunk_hashes):
+            chunk_data = chunk_datas[i]
             await dedup.store_chunk(chunk_hash, chunk_data)
             await dedup.add_file_chunk_reference(
                 file_path, chunk_hash, offset=i * 100, chunk_size=len(chunk_data)
@@ -956,9 +959,7 @@ class TestXetDeduplication:
         # Store chunks and add references
         offset = 0
         for chunk_data in chunk_data_list:
-            # Use simple hash for testing
-            import hashlib
-            chunk_hash = hashlib.sha256(chunk_data).digest()
+            chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
             chunk_hashes.append(chunk_hash)
 
             await dedup.store_chunk(chunk_hash, chunk_data)
@@ -994,15 +995,14 @@ class TestXetDeduplication:
             file_path, chunk_hash, offset=0, chunk_size=len(chunk_data)
         )
 
-        # Reconstruct should handle missing chunk gracefully
+        # Reconstruction must fail loudly: zero-filling would silently
+        # produce a corrupt file.
         output_path = tmp_path / "reconstructed_missing.txt"
-        result_path = await dedup.reconstruct_file_from_chunks(
-            file_path, output_path=output_path
-        )
-
-        assert result_path == output_path
-        # File should be created with zeros for missing chunk
-        assert output_path.exists()
+        with pytest.raises(FileNotFoundError):
+            await dedup.reconstruct_file_from_chunks(
+                file_path, output_path=output_path
+            )
+        assert not output_path.exists()
 
     @pytest.mark.asyncio
     async def test_reconstruct_file_from_chunks_no_chunks(self, dedup, tmp_path):
@@ -1113,8 +1113,8 @@ class TestXetDeduplication:
     @pytest.mark.asyncio
     async def test_store_chunk_with_file_context(self, dedup):
         """Test storing chunk with file context."""
-        chunk_hash = b"CONTEXT" * 4 + b"X" * 4  # 32 bytes
         chunk_data = b"Chunk with file context"
+        chunk_hash = XetHasher.compute_chunk_hash(chunk_data)
         file_path = "/test/context.txt"
         file_offset = 100
 

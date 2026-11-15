@@ -4,21 +4,34 @@ Target: 95%+ coverage for ccbt/__init__.py.
 """
 
 import asyncio
+import re
+from pathlib import Path
 
 import pytest
 
 pytestmark = [pytest.mark.unit]
 
 
+def _pyproject_version() -> str:
+    """Read the canonical package version from pyproject.toml."""
+    text = Path(__file__).resolve().parents[2].joinpath("pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    assert match is not None, "version missing from pyproject.toml"
+    return match.group(1)
+
+
 class TestPackageInit:
     """Tests for ccbt/__init__.py."""
 
     def test_version(self):
-        """Test version is defined."""
+        """Test version is defined and matches pyproject.toml."""
         import ccbt
 
         # Version is defined in ccbt/__init__.py and pyproject.toml
-        assert ccbt.__version__ == "0.0.1"
+        assert ccbt.__version__ == _pyproject_version()
+        assert re.fullmatch(r"\d+\.\d+\.\d+", ccbt.__version__)
 
     def test_imports_work(self):
         """Test that main imports work."""
@@ -99,7 +112,7 @@ class TestPackageInit:
 
         # The exception handling in __init__ should allow import to continue
         # Version should be accessible even if policy setup fails
-        assert ccbt.__version__ == "0.0.1"
+        assert ccbt.__version__ == _pyproject_version()
 
     def test_all_exports(self):
         """Test that __all__ exports are available."""

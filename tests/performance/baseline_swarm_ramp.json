@@ -1,0 +1,56 @@
+{
+  "100": {
+    "baseline": {
+      "completion_s": 61.524,
+      "duplicate_requests": 0.0,
+      "time_to_50pct_s": 0.987,
+      "time_to_first_piece_s": 0.668,
+      "time_to_first_requestable_s": 4.746,
+      "wasted_fraction": 0.0
+    },
+    "treatment": {
+      "completion_s": 2.184,
+      "duplicate_requests": 25.0,
+      "time_to_50pct_s": 0.987,
+      "time_to_first_piece_s": 0.668,
+      "time_to_first_requestable_s": 2.83,
+      "wasted_fraction": 0.022
+    }
+  },
+  "20": {
+    "baseline": {
+      "completion_s": 61.524,
+      "duplicate_requests": 0.0,
+      "time_to_50pct_s": 0.987,
+      "time_to_first_piece_s": 0.668,
+      "time_to_first_requestable_s": 5.218,
+      "wasted_fraction": 0.0
+    },
+    "treatment": {
+      "completion_s": 2.529,
+      "duplicate_requests": 24.0,
+      "time_to_50pct_s": 0.987,
+      "time_to_first_piece_s": 0.668,
+      "time_to_first_requestable_s": 4.926,
+      "wasted_fraction": 0.022
+    }
+  },
+  "50": {
+    "baseline": {
+      "completion_s": 61.524,
+      "duplicate_requests": 0.0,
+      "time_to_50pct_s": 0.987,
+      "time_to_first_piece_s": 0.668,
+      "time_to_first_requestable_s": 4.746,
+      "wasted_fraction": 0.0
+    },
+    "treatment": {
+      "completion_s": 2.184,
+      "duplicate_requests": 25.0,
+      "time_to_50pct_s": 0.987,
+      "time_to_first_piece_s": 0.668,
+      "time_to_first_requestable_s": 2.83,
+      "wasted_fraction": 0.022
+    }
+  }
+}

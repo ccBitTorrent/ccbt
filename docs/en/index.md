@@ -28,18 +28,12 @@ A modern, high-performance BitTorrent client built with Python asyncio, featurin
 - **Connection Management**: Adaptive peer selection and connection limits. See [ccbt/peer/connection_pool.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/peer/connection_pool.py)
 - **Protocol Optimizations**: Memory-efficient message handling with zero-copy paths
 
-## Xet Protocol Extension (BEP XET)
+## Xet Protocol Extension (BEP XET) — experimental
 
-The Xet Protocol Extension is a key differentiator that transforms BitTorrent into a super-fast, updatable peer-to-peer file system optimized for collaboration. BEP XET enables:
-
-- **Content-Defined Chunking**: Gearhash-based intelligent file segmentation (8KB-128KB chunks) for efficient updates. See [ccbt/storage/xet_chunking.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/xet_chunking.py)
-- **Cross-Torrent Deduplication**: Chunk-level deduplication across multiple torrents. See [ccbt/storage/xet_deduplication.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/xet_deduplication.py)
-- **Peer-to-Peer CAS**: Decentralized Content Addressable Storage using DHT and trackers. See [ccbt/discovery/xet_cas.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/discovery/xet_cas.py)
-- **Super-Fast Updates**: Only changed chunks need redistribution, enabling rapid collaborative file sharing
-- **P2P File System**: Transform BitTorrent into an updatable peer-to-peer file system optimized for collaboration
-- **Merkle Tree Verification**: BLAKE3-256 hashing with SHA-256 fallback for integrity. See [ccbt/storage/xet_hashing.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/storage/xet_hashing.py)
-
-[Learn more about BEP XET →](bep_xet.md)
+BEP XET is experimental until the big-bang gate in `dev/xet-claim-registry.yaml`.
+The suite is `xet-blake3-gearhash-lz4:v2` (64 KiB Gearhash, keyed BLAKE3 only —
+no SHA-256 identity fallback). See [BEP XET](bep_xet.md) and
+[native spec](xet-native-spec.md).
 
 ### Observability
 - **Metrics Export**: Prometheus-compatible metrics for monitoring. See [ccbt/monitoring/metrics_collector.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/monitoring/metrics_collector.py)

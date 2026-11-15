@@ -29,6 +29,23 @@ jobs:
             python-version: '3.9'
           - os: macos-latest
             python-version: '3.9'
+          # Ubuntu 26.04 (current ubuntu-latest) ships no Python 3.9 build for
+          # setup-python; the 3.9 jobs below run on ubuntu-24.04 instead.
+          - os: ubuntu-latest
+            python-version: '3.9'
+        include:
+          - os: ubuntu-24.04
+            python-version: '3.9'
+            shard: daemon-integration
+          - os: ubuntu-24.04
+            python-version: '3.9'
+            shard: unit-peer-transport
+          - os: ubuntu-24.04
+            python-version: '3.9'
+            shard: unit-session-storage
+          - os: ubuntu-24.04
+            python-version: '3.9'
+            shard: unit-rest
 
     steps:
       - uses: actions/checkout@v4

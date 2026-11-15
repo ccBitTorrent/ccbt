@@ -17,11 +17,13 @@ from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
-# Gearhash CDC constants (from reference implementations)
-MIN_CHUNK_SIZE = 8192  # 8 KB - minimum chunk size
-MAX_CHUNK_SIZE = 131072  # 128 KB - maximum chunk size
-TARGET_CHUNK_SIZE = 16384  # 16 KB - default average/target chunk size
-WINDOW_SIZE = 48  # Rolling hash window size in bytes
+# Gearhash CDC constants (upstream Xet suite XET-BLAKE3-GEARHASH-LZ4).
+# See docs/en/xet-native-spec.md and draft-denis-xet-05 Appendix B.
+MIN_CHUNK_SIZE = 8192  # 8 KB - minimum chunk size (target / 8)
+MAX_CHUNK_SIZE = 131072  # 128 KB - maximum chunk size (target * 2)
+TARGET_CHUNK_SIZE = 65536  # 64 KB - target chunk size
+MASK = 0xFFFF000000000000  # Boundary mask for the 64 KiB target
+_UINT64_MASK = 0xFFFFFFFFFFFFFFFF
 
 
 class GearhashChunker:
@@ -42,16 +44,24 @@ class GearhashChunker:
         """Initialize chunker with target chunk size.
 
         Args:
-            target_size: Target average chunk size in bytes (default: 16 KB)
-                        Must be between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE
+            target_size: Target chunk size; must be a power of two.
+                The upstream suite uses 65536 (64 KiB). Other values
+                produce a different, non-interoperable namespace and
+                are rejected at the configuration layer.
 
         """
-        if target_size < MIN_CHUNK_SIZE or target_size > MAX_CHUNK_SIZE:
-            msg = f"Target size must be between {MIN_CHUNK_SIZE} and {MAX_CHUNK_SIZE} bytes"
+        if target_size <= 64 or target_size & (target_size - 1):
+            msg = "Target size must be a power of two greater than 64"
             raise ValueError(msg)
-
         self.target_size = target_size
+        self.minimum_chunk = target_size // 8
+        self.maximum_chunk = target_size * 2
+        mask = target_size - 1
+        # Shift the mask all the way left (upstream chunking.rs).
+        self.mask = (mask << (64 - mask.bit_length())) & _UINT64_MASK if mask else 0
         self.gear_table = self._init_gear_table()
+        self._hash = 0
+        self._buffer = bytearray()
 
     def _init_gear_table(self) -> list[int]:
         """Initialize precomputed gear table for rolling hash.
@@ -335,206 +345,87 @@ class GearhashChunker:
 
         return gear_table[:256]
 
+    def reset(self) -> None:
+        """Reset streaming state."""
+        self._hash = 0
+        self._buffer = bytearray()
+
+    def feed(self, data: bytes) -> list[bytes]:
+        """Feed data and return any completed chunks (streaming API)."""
+        chunks: list[bytes] = []
+        table = self.gear_table
+        mask = self.mask
+        minimum = self.minimum_chunk
+        maximum = self.maximum_chunk
+        h = self._hash
+        buf = self._buffer
+        for b in data:
+            buf.append(b)
+            h = ((h << 1) + table[b]) & _UINT64_MASK
+            size = len(buf)
+            if size >= minimum and (size >= maximum or (h & mask) == 0):
+                chunks.append(bytes(buf))
+                buf = bytearray()
+                h = 0
+        self._hash = h
+        self._buffer = buf
+        return chunks
+
+    def finalize(self) -> list[bytes]:
+        """Flush the final partial chunk, if any."""
+        if not self._buffer:
+            return []
+        chunk = bytes(self._buffer)
+        self.reset()
+        return [chunk]
+
     def chunk_buffer(self, data: bytes) -> list[bytes]:
-        """Chunk data using Gearhash CDC.
-
-        This method processes the input data and finds content-defined chunk
-        boundaries using the Gearhash rolling hash algorithm. Chunks will
-        be between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE bytes, with an average
-        size close to target_size.
-
-        Args:
-            data: Input data to chunk
-
-        Returns:
-            List of chunks, each between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE bytes
-
-        """
-        if len(data) == 0:
-            return []  # pragma: no cover - Empty data edge case, tested in test_chunk_buffer_empty
-
-        chunks = []
-        data_len = len(data)
-        pos = 0
-
-        # Minimum mask: ensures chunks are at least MIN_CHUNK_SIZE
-        # Maximum mask: ensures chunks are at most MAX_CHUNK_SIZE
-        # Target mask: controls average chunk size
-        min_mask = (1 << (32 - MIN_CHUNK_SIZE.bit_length())) - 1
-        max_mask = (1 << (32 - MAX_CHUNK_SIZE.bit_length())) - 1
-        target_mask = (1 << (32 - self.target_size.bit_length())) - 1
-
-        while pos < data_len:
-            # Calculate chunk end position
-            chunk_end = self._find_chunk_boundary(
-                data, pos, min_mask, max_mask, target_mask
-            )
-
-            # Extract chunk
-            chunk = data[pos:chunk_end]
-            chunks.append(chunk)
-
-            pos = chunk_end
-
+        """Chunk data using Gearhash CDC (upstream scalar algorithm)."""
+        self.reset()
+        chunks = self.feed(data)
+        chunks.extend(self.finalize())
         return chunks
 
     def _find_chunk_boundary(
         self,
         data: bytes,
         start_pos: int,
-        _min_mask: int,
-        _max_mask: int,
-        target_mask: int,
+        _min_mask: int = 0,
+        _max_mask: int = 0,
+        _target_mask: int = 0,
     ) -> int:
-        """Find the next chunk boundary using Gearhash rolling hash.
+        """Return the end offset of the first chunk in data[start_pos:].
 
-        Args:
-            data: Input data
-            start_pos: Starting position in data
-            min_mask: Mask to ensure minimum chunk size
-            max_mask: Mask to ensure maximum chunk size
-            target_mask: Mask to control average chunk size
-
-        Returns:
-            Position of next chunk boundary (end of current chunk)
-
+        Kept for internal callers; implemented on the canonical
+        per-byte Gearhash state machine so results always match
+        chunk_buffer.
         """
-        data_len = len(data)
-        min_chunk_end = min(start_pos + MIN_CHUNK_SIZE, data_len)
-        max_chunk_end = min(start_pos + MAX_CHUNK_SIZE, data_len)
-
-        # If we're near the end, just return the end
-        if min_chunk_end >= data_len:
-            return data_len
-
-        # Initialize rolling hash
-        hash_value = 0
-
-        # Process window to initialize hash
-        window_start = start_pos
-        window_end = min(window_start + WINDOW_SIZE, data_len)
-
-        if window_end - window_start < WINDOW_SIZE:
-            # Not enough data for full window, return max chunk end
-            return max_chunk_end  # pragma: no cover - Early return when data insufficient for window, edge case
-
-        # Initialize hash with first window
-        for i in range(window_start, window_end):
-            hash_value = ((hash_value << 1) + self.gear_table[data[i]]) & 0xFFFFFFFF
-
-        # Search for boundary after minimum chunk size
-        for pos in range(min_chunk_end, max_chunk_end):
-            # Update rolling hash: remove old byte, add new byte
-            if pos >= WINDOW_SIZE:
-                old_byte = data[pos - WINDOW_SIZE]
-                hash_value = (
-                    (hash_value << 1)
-                    - (self.gear_table[old_byte] << WINDOW_SIZE)
-                    + self.gear_table[data[pos]]
-                ) & 0xFFFFFFFF
-            else:  # pragma: no cover - Initial window building path, tested in test_chunk_buffer_with_rolling_hash_window
-                # Still building initial window
-                hash_value = (
-                    (hash_value << 1) + self.gear_table[data[pos]]
-                ) & 0xFFFFFFFF  # pragma: no cover - Same context
-
-            # Check if this position is a boundary
-            # Boundary condition: hash matches target mask
-            if (hash_value & target_mask) == 0 and pos >= min_chunk_end:
-                return (
-                    pos + 1
-                )  # pragma: no cover - Boundary found return, tested via test_chunk_buffer_with_rolling_hash_window
-
-        # No boundary found, return max chunk end
-        return max_chunk_end
+        table = self.gear_table
+        h = 0
+        for size, pos in enumerate(range(start_pos, len(data)), start=1):
+            h = ((h << 1) + table[data[pos]]) & _UINT64_MASK
+            if size >= self.minimum_chunk and (
+                size >= self.maximum_chunk or (h & self.mask) == 0
+            ):
+                return pos + 1
+        return len(data)
 
     def chunk_file(
         self, file_path: str, chunk_size_hint: int = 1024 * 1024
-    ) -> Iterator[
-        bytes
-    ]:  # pragma: no cover - File chunking wrapper, tested in test_chunk_file_with_custom_hint
-        """Chunk a file using Gearhash CDC.
-
-        This method reads a file in chunks and applies CDC chunking,
-        yielding content-defined chunks as they are found.
-
-        Args:
-            file_path: Path to file to chunk
-            chunk_size_hint: Hint for read buffer size (default: 1 MB)
-
-        Yields:
-            Content-defined chunks (bytes)
-
-        """
+    ) -> Iterator[bytes]:
+        """Chunk a file incrementally; identical boundaries to chunk_buffer."""
+        self.reset()
         with open(file_path, "rb") as f:
-            buffer = b""
-
             while True:
-                # Read next chunk of file
-                chunk = f.read(chunk_size_hint)
-                if not chunk:
+                block = f.read(chunk_size_hint)
+                if not block:
                     break
-
-                # Add to buffer
-                buffer += chunk
-
-                # Process buffer in chunks
-                while len(buffer) >= MIN_CHUNK_SIZE:
-                    # Find boundary
-                    boundary = self._find_chunk_boundary(
-                        buffer,
-                        0,
-                        (1 << (32 - MIN_CHUNK_SIZE.bit_length())) - 1,
-                        (1 << (32 - MAX_CHUNK_SIZE.bit_length())) - 1,
-                        (1 << (32 - self.target_size.bit_length())) - 1,
-                    )
-
-                    # Yield chunk
-                    chunk_data = buffer[:boundary]
-                    yield chunk_data
-
-                    # Remove processed data from buffer
-                    buffer = buffer[boundary:]
-
-            # Process remaining buffer
-            if buffer:
-                yield buffer
+                yield from self.feed(block)
+        yield from self.finalize()
 
     def chunk_stream(self, stream: Iterator[bytes]) -> Iterator[bytes]:
-        """Chunk a stream of data using Gearhash CDC.
-
-        Args:
-            stream: Iterator yielding bytes chunks
-
-        Yields:
-            Content-defined chunks (bytes)
-
-        """
-        buffer = b""
-
-        for chunk in stream:
-            buffer += chunk
-
-            # Process buffer in chunks
-            while (
-                len(buffer) >= MIN_CHUNK_SIZE
-            ):  # pragma: no cover - Stream chunking loop, tested via test_chunk_stream_with_remaining_buffer
-                # Find boundary
-                boundary = self._find_chunk_boundary(
-                    buffer,
-                    0,
-                    (1 << (32 - MIN_CHUNK_SIZE.bit_length())) - 1,
-                    (1 << (32 - MAX_CHUNK_SIZE.bit_length())) - 1,
-                    (1 << (32 - self.target_size.bit_length())) - 1,
-                )  # pragma: no cover - Same context
-
-                # Yield chunk
-                chunk_data = buffer[:boundary]  # pragma: no cover - Same context
-                yield chunk_data  # pragma: no cover - Same context
-
-                # Remove processed data from buffer
-                buffer = buffer[boundary:]  # pragma: no cover - Same context
-
-        # Process remaining buffer
-        if buffer:
-            yield buffer  # pragma: no cover - Remaining buffer handling tested in test_chunk_stream_with_remaining_buffer
+        """Chunk a stream; identical boundaries to chunk_buffer."""
+        self.reset()
+        for block in stream:
+            yield from self.feed(block)
+        yield from self.finalize()

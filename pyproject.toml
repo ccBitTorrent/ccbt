@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ccbt"
-version = "0.1.0"
+version = "0.2.0"
 description = "The Easiest , Smallest & Fastest High-performance BitTorrent Client With All The Features"
 readme = "dev/README_PyPI.md"
 requires-python = ">=3.9"
@@ -55,6 +55,7 @@ dependencies = [
     "lz4>=4.3.3",
     "watchdog>=4.0.2",
     "eval-type-backport>=0.3.1 ; python_full_version < '3.10'",
+    "typing-extensions>=4.0.0 ; python_full_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -96,6 +97,7 @@ Documentation = "https://ccbittorrent.readthedocs.io/"
 [project.scripts]
 ccbt = "ccbt.__main__:main"
 btbt = "ccbt.cli.main:main"
+git-xet = "ccbt.cli.git_xet:main"
 bitonic = "ccbt.interface.terminal_dashboard:main"
 
 [tool.setuptools.packages.find]
@@ -284,7 +286,7 @@ skips = ["B101", "B601"]
 # Commitizen configuration
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "0.2.0"
 tag_format = "v$version"
 version_scheme = "pep440"
 

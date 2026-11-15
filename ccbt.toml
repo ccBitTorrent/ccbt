@@ -1,4 +1,5 @@
 [network]
+swarm_acceleration_enabled = true
 max_global_peers = 200
 max_peers_per_torrent = 50
 pipeline_depth = 16
@@ -193,11 +194,11 @@ download_dir = "downloads"
 xet_enabled = false
 xet_chunk_min_size = 8192
 xet_chunk_max_size = 131072
-xet_chunk_target_size = 16384
+xet_chunk_target_size = 65536
 xet_deduplication_enabled = true
-enable_file_deduplication = true
-enable_data_aggregation = true
-enable_defrag_prevention = true
+enable_file_deduplication = false
+enable_data_aggregation = false
+enable_defrag_prevention = false
 xet_batch_size = 100
 defrag_check_interval = 3600.0
 xet_use_p2p_cas = true
@@ -223,6 +224,8 @@ checkpoint_retention_days = 30
 
 [strategy]
 piece_selection = "rarest_first"
+straggler_duplication_enabled = true
+adaptive_request_timeout_enabled = true
 endgame_duplicates = 2
 endgame_threshold = 0.95
 pipeline_capacity = 4
@@ -237,7 +240,7 @@ adaptive_hybrid_phase_detection_window = 10
 
 [discovery]
 enable_dht = true
-min_peers_before_dht = 10
+min_peers_before_dht = 2
 enable_pex = true
 enable_udp_trackers = true
 enable_http_trackers = true
@@ -431,17 +434,17 @@ check_interval = 5.0
 default_sync_mode = "best_effort"
 enable_git_versioning = true
 auth_scope = "strict_workspace_auth"
-hash_algorithm_policy = "negotiate"
+hash_algorithm_policy = "require_configured"
 require_signed_metadata = true
-enable_lpd = true
-enable_gossip = true
+enable_lpd = false
+enable_gossip = false
 enable_dht = true
 enable_tracker = true
 enable_pex = true
 enable_catalog = true
 enable_bloom = true
-enable_multicast = true
-enable_flooding = true
+enable_multicast = false
+enable_flooding = false
 gossip_fanout = 3
 gossip_interval = 5.0
 flooding_ttl = 10

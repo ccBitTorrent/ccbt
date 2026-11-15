@@ -101,10 +101,13 @@ def _optimization_profile_overlays() -> dict[
                 "piece_selection": "rarest_first",
                 "pipeline_capacity": 4,
                 "endgame_duplicates": 2,
+                "straggler_duplication_enabled": True,
+                "adaptive_request_timeout_enabled": True,
             },
             "network": {
                 "max_peers_per_torrent": 50,
                 "max_global_peers": 200,
+                "swarm_acceleration_enabled": True,
             },
             "discovery": {
                 "tracker_announce_interval": 60.0,
@@ -120,10 +123,17 @@ def _optimization_profile_overlays() -> dict[
                 "piece_selection": "bandwidth_weighted_rarest",
                 "pipeline_capacity": 8,
                 "endgame_duplicates": 3,
+                "straggler_duplication_enabled": True,
+                "straggler_max_copies": 3,
+                "duplicate_budget_fraction": 0.10,
+                "adaptive_request_timeout_enabled": True,
             },
             "network": {
                 "max_peers_per_torrent": 100,
                 "max_global_peers": 500,
+                "swarm_acceleration_enabled": True,
+                "warm_pipeline_depth": 32,
+                "ramp_productive_dial_cap": 24,
             },
             "discovery": {
                 "tracker_announce_interval": 30.0,
@@ -160,10 +170,12 @@ def _optimization_profile_overlays() -> dict[
                 "piece_selection": "rarest_first",
                 "pipeline_capacity": 2,
                 "endgame_duplicates": 1,
+                "straggler_duplication_enabled": False,
             },
             "network": {
                 "max_peers_per_torrent": 10,
                 "max_global_peers": 50,
+                "swarm_acceleration_enabled": False,
             },
             "discovery": {
                 "tracker_announce_interval": 120.0,

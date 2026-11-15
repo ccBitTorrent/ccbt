@@ -267,9 +267,6 @@ class DiskIOManager:
 
         # Xet deduplication (lazy initialization)
         self._xet_deduplication: Optional[Any] = None
-        self._xet_file_deduplication: Optional[Any] = None
-        self._xet_data_aggregator: Optional[Any] = None
-        self._xet_defrag_prevention: Optional[Any] = None
 
         # Statistics
         self.stats = {
@@ -2264,55 +2261,6 @@ class DiskIOManager:
 
                 self._xet_deduplication = XetDeduplication(cache_db_path)
                 self.logger.debug("Initialized Xet deduplication manager")
-
-                # Initialize file deduplication if enabled
-                if getattr(self.config.disk, "enable_file_deduplication", True):
-                    try:
-                        from ccbt.storage.xet_file_deduplication import (
-                            XetFileDeduplication,
-                        )
-
-                        self._xet_file_deduplication = XetFileDeduplication(
-                            self._xet_deduplication
-                        )
-                        self.logger.debug("Initialized Xet file deduplication manager")
-                    except Exception as e:
-                        self.logger.warning(
-                            "Failed to initialize Xet file deduplication: %s", e
-                        )
-
-                # Initialize data aggregator if enabled
-                if getattr(self.config.disk, "enable_data_aggregation", True):
-                    try:
-                        from ccbt.storage.xet_data_aggregator import (
-                            XetDataAggregator,
-                        )
-
-                        batch_size = getattr(self.config.disk, "xet_batch_size", 100)
-                        self._xet_data_aggregator = XetDataAggregator(
-                            self._xet_deduplication, batch_size=batch_size
-                        )
-                        self.logger.debug("Initialized Xet data aggregator")
-                    except Exception as e:
-                        self.logger.warning(
-                            "Failed to initialize Xet data aggregator: %s", e
-                        )
-
-                # Initialize defrag prevention if enabled
-                if getattr(self.config.disk, "enable_defrag_prevention", True):
-                    try:
-                        from ccbt.storage.xet_defrag_prevention import (
-                            XetDefragPrevention,
-                        )
-
-                        self._xet_defrag_prevention = XetDefragPrevention(
-                            self._xet_deduplication
-                        )
-                        self.logger.debug("Initialized Xet defrag prevention manager")
-                    except Exception as e:
-                        self.logger.warning(
-                            "Failed to initialize Xet defrag prevention: %s", e
-                        )
 
             except Exception as e:
                 self.logger.warning("Failed to initialize Xet deduplication: %s", e)

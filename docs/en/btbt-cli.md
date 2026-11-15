@@ -270,6 +270,10 @@ For XET workspace sharing, treat `.tonic` files and `tonic?:` links as workspace
 
 ## XET Workspace Commands
 
+XET surfaces are **experimental** until the claim registry big-bang gate.
+Codec migration: `ccbt xet migrate-legacy <workspace>`. CAS/Hub:
+`ccbt cas serve`, `ccbt hub serve`.
+
 All `tonic` subcommands are under the main CLI: `uv run btbt tonic <subcommand>`. Implementation: [ccbt/cli/tonic_commands.py](https://github.com/ccBittorrent/ccbt/blob/main/ccbt/cli/tonic_commands.py).
 
 ### tonic create
@@ -328,7 +332,7 @@ Behavior notes:
 
 ### tonic share (planned)
 
-A single-command flow to register a folder with the daemon and print the shareable link is planned. See [XET share feature plan](implementation-plans/xet-share-feature.md).
+A single-command flow to register a folder with the daemon and print the shareable link is specified in the [XET native specification](xet-native-spec.md).
 
 ### alerts
 

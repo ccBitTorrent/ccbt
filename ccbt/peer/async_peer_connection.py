@@ -52,6 +52,17 @@ from ccbt.peer.peer import (
     UnchokeMessage,
     parse_plaintext_bittorrent_handshake,
 )
+from ccbt.performance.acceleration import (
+    accel_enabled,
+    adaptive_request_timeout,
+    adaptive_upload_slots,
+    is_snubbed,
+    peer_usefulness_score,
+    race_first_success,
+    ramp_choking_intervals,
+    strategy_flag,
+    warm_pipeline_depth,
+)
 from ccbt.protocols.bittorrent_v2 import (
     MESSAGE_ID_FILE_TREE_REQUEST,
     MESSAGE_ID_FILE_TREE_RESPONSE,
@@ -470,6 +481,7 @@ class AsyncPeerConnection:
         *,
         require_recent_piece_availability: bool = False,
         effective_pipeline_cap: Optional[int] = None,
+        piece_index: Optional[int] = None,
     ) -> bool:
         """Check if we can make new requests.
 
@@ -485,6 +497,7 @@ class AsyncPeerConnection:
         block_reason = self.get_request_block_reason(
             require_recent_piece_availability=require_recent_piece_availability,
             effective_pipeline_cap=effective_pipeline_cap,
+            piece_index=piece_index,
         )
         can_req = block_reason is None
         is_active = self.is_active()
@@ -545,6 +558,7 @@ class AsyncPeerConnection:
         *,
         require_recent_piece_availability: bool = False,
         effective_pipeline_cap: Optional[int] = None,
+        piece_index: Optional[int] = None,
     ) -> Optional[str]:
         """Return the request-block reason for this peer, if any.
 
@@ -554,7 +568,15 @@ class AsyncPeerConnection:
         if not is_active:
             return "inactive"
         if self.peer_choking:
-            return "remote_choked"
+            # BEP 6: allowed-fast pieces may be requested while choked.
+            if piece_index is not None:
+                allowed = getattr(self.peer_state, "bep6_allowed_fast_pieces", set())
+                if piece_index in allowed:
+                    pass  # fall through to pipeline checks
+                else:
+                    return "remote_choked"
+            else:
+                return "remote_choked"
         cap = (
             self.max_pipeline_depth
             if effective_pipeline_cap is None
@@ -3024,7 +3046,7 @@ class AsyncPeerConnectionManager:
 
     def _productive_connect_throttle(self) -> int:
         """Max parallel outbound connects while a productive download is in flight."""
-        return int(
+        legacy = int(
             getattr(
                 self.config.network,
                 "connect_throttle_productive_max_concurrent",
@@ -3032,6 +3054,23 @@ class AsyncPeerConnectionManager:
             )
             or 8
         )
+        if accel_enabled(self.config):
+            # Acceleration: keep dialing until we have a useful cohort of
+            # requestable peers, not just any productive peer.
+            try:
+                _, _, requestable = self._snapshot_connection_counts()
+            except Exception:
+                requestable = 0
+            target = max(1, int(getattr(self, "max_peers_per_torrent", 50) or 50) // 2)
+            if requestable < target:
+                return max(
+                    legacy,
+                    int(
+                        getattr(self.config.network, "ramp_productive_dial_cap", 24)
+                        or 24
+                    ),
+                )
+        return legacy
 
     async def _get_quality_active_counts(self) -> tuple[int, int]:
         """Return (quality_active, total_active) peer counts."""
@@ -4181,6 +4220,19 @@ class AsyncPeerConnectionManager:
             capped = min(capped, 42.0)
         elif pending_depth > 100:
             capped = min(capped, 55.0)
+        if accel_enabled(self.config) and active_peer_count > 0:
+            # Speculative first pass: with a deep candidate queue, fail fast
+            # and move on; retries from the pending queue get full budgets.
+            # Never at cold start (active == 0): handshakes there legitimately
+            # need the full budget, and capping caused connect churn in
+            # real-swarm A/B runs.
+            spec = float(
+                getattr(self.config.network, "speculative_connect_timeout", 5.0) or 5.0
+            )
+            if pending_depth > 100:
+                capped = min(capped, max(15.0, spec * 4.0))
+            elif pending_depth > 50:
+                capped = min(capped, max(15.0, spec * 6.0))
         return max(15.0, capped)
 
     def _calculate_timeout(
@@ -4258,6 +4310,23 @@ class AsyncPeerConnectionManager:
         # allows a peer to grow beyond a low delivery rate caused by the old cap.
         bdp_blocks = math.ceil((delivery_rate * rtt * 2.0) / block_size)
         target = max(min_depth, base_depth, latency_floor, bdp_blocks)
+        if (
+            accel_enabled(self.config)
+            and measured_block_latency <= 0
+            and measured_request_latency <= 0
+        ):
+            # Warm start (fresh connections only): don't wait for BDP
+            # measurements to grow past the cold depth of 16. Once latency
+            # is measured, the adaptive calculation above governs.
+            target = warm_pipeline_depth(
+                current_depth=int(target),
+                initial_depth=int(
+                    getattr(self.config.network, "warm_pipeline_depth", 32) or 32
+                ),
+                min_depth=int(min_depth),
+                max_depth=int(max_depth),
+                bdp_blocks=int(bdp_blocks),
+            )
         return min(max_depth, target)
 
     def _apply_adaptive_pipeline_depth(self, connection: AsyncPeerConnection) -> None:
@@ -6051,12 +6120,26 @@ class AsyncPeerConnectionManager:
                 max_parallel = 1
             max_parallel = max(1, min(8, max_parallel))
             max_parallel_batches = max_parallel
+            _accel = bool(accel_enabled(self.config))
             if _parallel_active_count == 0 or (
                 _parallel_active_count <= 2 and _parallel_requestable == 0
             ):
                 max_parallel_batches = 1
             if _parallel_pending_depth > 100:
                 max_parallel_batches = 1
+            if _accel and _parallel_pending_depth > 100 and _parallel_active_count > 0:
+                # Acceleration: with a deep candidate backlog, parallel
+                # owners clear it faster; the global connection semaphore
+                # still bounds socket load. Cold-start single-flight (the
+                # queued_reentrant contract) is preserved otherwise.
+                try:
+                    _ramp = int(
+                        getattr(self.config.network, "ramp_connect_parallel_batches", 4)
+                        or 4
+                    )
+                except (TypeError, ValueError):
+                    _ramp = 4
+                max_parallel_batches = max(1, min(8, _ramp))
 
             if max_parallel > 1 and max_parallel_batches > 1:
                 _mc = int(
@@ -6859,7 +6942,18 @@ class AsyncPeerConnectionManager:
                     and remote_choked_at_start >= active_peer_count
                 ):
                     hold_slots = max(0, max_connections - active_peer_count)
-                    batch_size = 0 if hold_slots <= 0 else min(batch_size, hold_slots)
+                    if accel_enabled(self.config):
+                        # Probe-dial anyway: waiting for UNCHOKE from peers
+                        # that may never unchoke is slower than dialing more.
+                        batch_size = (
+                            min(batch_size, max(8, hold_slots))
+                            if hold_slots > 0
+                            else batch_size
+                        )
+                    else:
+                        batch_size = (
+                            0 if hold_slots <= 0 else min(batch_size, hold_slots)
+                        )
                     self.logger.info(
                         "Holding outbound connect churn while %d active peer(s) "
                         "await remote UNCHOKE (batch_size=%d, hold_slots=%d)",
@@ -6978,7 +7072,18 @@ class AsyncPeerConnectionManager:
                         reason="active_choked_hold",
                     )
                     self._schedule_pending_resume_retry(
-                        delay_s=15.0,
+                        delay_s=(
+                            float(
+                                getattr(
+                                    self.config.network,
+                                    "ramp_choked_probe_interval_s",
+                                    2.0,
+                                )
+                                or 2.0
+                            )
+                            if accel_enabled(self.config)
+                            else 15.0
+                        ),
                         reason="active_choked_pause",
                     )
                     self.logger.info(
@@ -7536,6 +7641,10 @@ class AsyncPeerConnectionManager:
 
                                         # Connection batch: early exit if enough connections succeed
                                         # This speeds up batch processing when we get good peers quickly
+                                        # Note: early exit detaches (does not
+                                        # cancel) in-flight attempts and requeues
+                                        # them to the pending drain, so exiting on
+                                        # batch successes is safe for ramp-up.
                                         if (
                                             successful >= min_successful_for_early_exit
                                             and completed
@@ -8989,6 +9098,39 @@ class AsyncPeerConnectionManager:
                 timeout=timeout,
             )
 
+    async def _race_utp_tcp(
+        self, utp_connection: Any, peer_info: PeerInfo
+    ) -> tuple[str, Any]:
+        """Race a uTP connect against a speculative TCP dial (acceleration).
+
+        First successful transport wins; losers are cancelled by
+        ``race_first_success``. Returns ``("utp", None)`` or
+        ``("tcp", (reader, writer))``. Raises the first failure if both fail.
+        """
+        spec_timeout = float(
+            getattr(self.config.network, "speculative_connect_timeout", 5.0) or 5.0
+        )
+
+        async def _tcp_dial() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+            return await self._open_tcp_with_semaphore(
+                peer_info.ip, peer_info.port, spec_timeout
+            )
+
+        kind, payload = await race_first_success(
+            {"utp": utp_connection.connect(), "tcp": _tcp_dial()}
+        )
+        if kind == "tcp":
+            # uTP lost: make sure it does not hold sockets/state.
+            for closer_name in ("disconnect", "close"):
+                closer = getattr(utp_connection, closer_name, None)
+                if callable(closer):
+                    with contextlib.suppress(Exception):
+                        result = closer()
+                        if asyncio.iscoroutine(result):
+                            await result
+                    break
+        return kind, payload
+
     async def _reconnect_plaintext_after_mse_failure(
         self,
         peer_info: PeerInfo,
@@ -9655,7 +9797,42 @@ class AsyncPeerConnectionManager:
 
                 # Connect via uTP (with fallback to TCP on failure)
                 try:
-                    await connection.connect()
+                    if accel_enabled(self.config):
+                        # Race uTP against a speculative TCP dial; first
+                        # successful transport carries the handshake.
+                        _race_kind, _race_payload = await self._race_utp_tcp(
+                            connection, peer_info
+                        )
+                        if _race_kind == "tcp":
+                            _tcp_reader, _tcp_writer = _race_payload
+                            _tcp_connection = AsyncPeerConnection(
+                                peer_info, self.torrent_data
+                            )
+                            self._seeded_connection_from_info(_tcp_connection)
+                            _tcp_connection.max_pipeline_depth = (
+                                self._calculate_pipeline_depth(_tcp_connection)
+                            )
+                            if self._on_peer_connected:
+                                _tcp_connection.on_peer_connected = (
+                                    self._on_peer_connected
+                                )
+                            if self._on_peer_disconnected:
+                                _tcp_connection.on_peer_disconnected = (
+                                    self._on_peer_disconnected
+                                )
+                            if self._on_bitfield_received:
+                                _tcp_connection.on_bitfield_received = (
+                                    self._on_bitfield_received
+                                )
+                            if self._on_piece_received:
+                                _tcp_connection.on_piece_received = (
+                                    self._on_piece_received
+                                )
+                            _tcp_connection.reader = _tcp_reader
+                            _tcp_connection.writer = _tcp_writer
+                            connection = _tcp_connection
+                    else:
+                        await connection.connect()
                     # Connection successful - uTP handles transport layer
                     # Still need BitTorrent protocol handshake, but skip TCP connection
                     # The reader/writer are already set up by UTPPeerConnection.connect()
@@ -17087,6 +17264,19 @@ class AsyncPeerConnectionManager:
                 return False
             sleep_s = float(getattr(self.config.network, "unchoke_interval", 10) or 10)
             _, active_n, requestable_n = self._snapshot_connection_counts()
+            if accel_enabled(self.config):
+                _target = max(
+                    1, int(getattr(self, "max_peers_per_torrent", 50) or 50) // 2
+                )
+                sleep_s, _ = ramp_choking_intervals(
+                    requestable_peers=requestable_n,
+                    requestable_target=_target,
+                    unchoke_interval_s=sleep_s,
+                    optimistic_interval_s=float(
+                        getattr(self.config.network, "optimistic_unchoke_interval", 30)
+                        or 30
+                    ),
+                )
             if active_n > 0 and requestable_n == 0:
                 bootstrap_interval = float(
                     getattr(
@@ -17211,6 +17401,17 @@ class AsyncPeerConnectionManager:
                 )
 
             max_slots = int(getattr(self.config.network, "max_upload_slots", 4) or 4)
+            if accel_enabled(self.config):
+                _rq_slots = sum(1 for p in active_peers if p.can_request())
+                max_slots = adaptive_upload_slots(
+                    base_slots=max_slots,
+                    max_slots=16,
+                    upload_rate_bps=total_swarm_upload_rate,
+                    requestable_peers=_rq_slots,
+                    requestable_target=max(
+                        1, int(getattr(self, "max_peers_per_torrent", 50) or 50) // 2
+                    ),
+                )
             if leech_heavy_swarm:
                 low_swarm_cap = int(
                     getattr(self.config.network, "low_swarm_min_upload_slots", 8) or 8
@@ -17437,6 +17638,19 @@ class AsyncPeerConnectionManager:
         interval = (
             self.config.network.optimistic_unchoke_interval
         )  # pragma: no cover - Same context
+        if accel_enabled(self.config):
+            _, _, _rq_opt = self._snapshot_connection_counts()
+            _target_opt = max(
+                1, int(getattr(self, "max_peers_per_torrent", 50) or 50) // 2
+            )
+            _, interval = ramp_choking_intervals(
+                requestable_peers=_rq_opt,
+                requestable_target=_target_opt,
+                unchoke_interval_s=float(
+                    getattr(self.config.network, "unchoke_interval", 10) or 10
+                ),
+                optimistic_interval_s=float(interval or 30),
+            )
 
         # Check if we need a new optimistic unchoke
 
@@ -17531,6 +17745,53 @@ class AsyncPeerConnectionManager:
 
             self.logger.debug("Unchoked peer %s", connection.peer_info)
 
+    def _update_snub_detection(self, now: Optional[float] = None) -> list[str]:
+        """Flag peers that are unchoked but deliver nothing while others deliver.
+
+        Returns peer keys newly snubbed in this pass. Uses the previously
+        unused PeerStats.snub_count.
+        """
+        if not accel_enabled(self.config):
+            return []
+        now = float(now if now is not None else time.time())
+        threshold = float(
+            getattr(self.config.network, "snub_threshold_s", 10.0) or 10.0
+        )
+        unchoked_since: dict[str, float] = getattr(self, "_snub_unchoked_since", {})
+        self._snub_unchoked_since = unchoked_since
+        last_snub_at: dict[str, float] = getattr(self, "_snub_last_at", {})
+        self._snub_last_at = last_snub_at
+        conns = list(self.connections.values())
+        others_delivering = any(
+            float(getattr(c.stats, "last_piece_payload_time", 0.0) or 0.0) > 0
+            and now - float(c.stats.last_piece_payload_time) <= threshold
+            for c in conns
+        )
+        newly: list[str] = []
+        for conn in conns:
+            key = self._get_peer_key(conn.peer_info)
+            if conn.peer_choking or not conn.is_active():
+                unchoked_since.pop(key, None)
+                conn._snubbed = False  # type: ignore[attr-defined]  # noqa: SLF001
+                continue
+            since = unchoked_since.setdefault(key, now)
+            last_payload = float(
+                getattr(conn.stats, "last_piece_payload_time", 0.0) or 0.0
+            )
+            since_payload = now - (last_payload if last_payload > 0 else since)
+            snubbed_now = is_snubbed(
+                seconds_since_payload=since_payload,
+                seconds_unchoked=now - since,
+                others_delivering=others_delivering,
+                threshold_s=threshold,
+            )
+            conn._snubbed = snubbed_now  # type: ignore[attr-defined]  # noqa: SLF001
+            if snubbed_now and now - last_snub_at.get(key, 0.0) >= threshold:
+                last_snub_at[key] = now
+                conn.stats.snub_count += 1
+                newly.append(key)
+        return newly
+
     async def _stats_loop(self) -> None:
         """Background task for updating peer statistics."""
         while await self._stats_loop_step():  # pragma: no cover - Background loop requires time-based iterations, complex to test
@@ -17551,6 +17812,8 @@ class AsyncPeerConnectionManager:
             )
 
             await self._update_peer_stats()  # pragma: no cover - Same context
+            with contextlib.suppress(Exception):
+                self._update_snub_detection()
             record_swarm_role_snapshot(self)
 
             # Note: Log comprehensive connection diagnostics every 30 seconds
@@ -17886,7 +18149,11 @@ class AsyncPeerConnectionManager:
     async def _maybe_choke_only_slot_replacement(self) -> None:
         """Optionally disconnect oldest persistently choked peers to free slots (config-gated)."""
         net = self.config.network
-        if not bool(getattr(net, "choke_only_slot_replacement_enabled", False)):
+        # Acceleration enables replacement only in the deficit case
+        # guarded below (requestable == 0 and at connection limit).
+        if not bool(
+            getattr(net, "choke_only_slot_replacement_enabled", False)
+        ) and not accel_enabled(self.config):
             return
         if bool(self.torrent_data.get("private")):
             return
@@ -19488,6 +19755,24 @@ class AsyncPeerConnectionManager:
                         ),
                     )
 
+            if accel_enabled(self.config):
+                # Predicted-usefulness blend (see peer_usefulness_score):
+                # seeder/known-good peers first, recent failures last.
+                _fail_age = 1e9
+                if peer_key in self._failed_peers:
+                    _ts = float(
+                        self._failed_peers[peer_key].get("timestamp", 0.0) or 0.0
+                    )
+                    if _ts > 0:
+                        _fail_age = max(0.0, time.time() - _ts)
+                _useful = peer_usefulness_score(
+                    has_needed_piece=bool(getattr(peer_info, "is_seeder", False)),
+                    historic_unchoke_rate=success_rate_by_key.get(peer_key, 0.0),
+                    seconds_since_failure=_fail_age,
+                )
+                # _useful is roughly -80..170; normalize to a 0..0.3 blend.
+                score = max(0.0, min(1.0, score + max(-0.2, min(0.3, _useful / 500.0))))
+
             peer_scores.append((peer_info, score))
 
         # Sort by score (highest first), with stable cold-start tie-break noise
@@ -19753,6 +20038,18 @@ class AsyncPeerConnectionManager:
         )
         if measured_latency > 0:
             request_timeout = max(request_timeout, measured_latency * 4.0)
+
+        if accel_enabled(self.config) and strategy_flag(
+            self.config, "adaptive_request_timeout_enabled"
+        ):
+            # Acceleration: clamp(4 x latency, 5s, 30s) replaces the fixed
+            # 60s wait before a straggler block can move peers.
+            request_timeout = adaptive_request_timeout(
+                measured_latency,
+                fallback_s=min(float(base_timeout or 30.0), 30.0),
+            )
+            if pipeline_utilization > 0.8:
+                request_timeout = min(request_timeout, 15.0)
 
         # Note: Apply dynamic timeout adjustment based on unexpected pieces
 

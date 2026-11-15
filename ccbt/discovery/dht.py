@@ -599,6 +599,7 @@ class AsyncDHTClient:
         # Authenticated swarms discovery policy callback: return True when DHT should be suppressed
         self.is_swarm_discovery_disabled: Optional[Callable[[bytes], bool]] = None
         self._xet_mutable_store: dict[bytes, bytes] = {}
+        self._xet_mutable_seq: dict[bytes, int] = {}
         # BEP 44: storage write tokens from get responses: key -> ([(token, addr), ...], expires_at)
         self._storage_tokens: dict[
             bytes, tuple[list[tuple[bytes, tuple[str, int]]], float]
@@ -2506,31 +2507,90 @@ class AsyncDHTClient:
         return local_count
 
     async def store_chunk_hash(
-        self, chunk_hash: bytes, metadata: dict[str, Any]
+        self,
+        chunk_hash: bytes,
+        metadata: dict[str, Any],
+        *,
+        public_key: Optional[bytes] = None,
+        private_key: Optional[bytes] = None,
+        seq: Optional[int] = None,
     ) -> int:
-        """Store XET chunk availability metadata under a stable chunk key."""
-        key = self._xet_chunk_dht_key(chunk_hash)
-        existing_records: list[dict[str, Any]] = []
-        existing = await self.get_data(key)
-        if existing is not None:
-            with contextlib.suppress(Exception):
-                parsed_existing = json.loads(existing.decode("utf-8"))
-                if isinstance(parsed_existing, list):
-                    existing_records = [
-                        record for record in parsed_existing if isinstance(record, dict)
-                    ]
-        existing_records.append(dict(metadata))
+        """Store XET chunk availability as a BEP 44 *mutable* item.
+
+        Target key = ``sha1(pubkey + salt)`` with ``salt = chunk_hash`` (32 bytes).
+        Value is JSON under 1000 bytes with peer locator + expiry. Falls back to
+        local-only store when keys are unavailable (still seq-tracked locally).
+        """
+        from ccbt.discovery.dht_storage import (
+            calculate_mutable_key,
+            sign_mutable_data,
+        )
+
+        salt = chunk_hash if len(chunk_hash) == 32 else chunk_hash.ljust(32, b"\x00")
+        expiry = float(metadata.get("expiry", time.time() + 3600.0))
+        record = dict(metadata)
+        record["expiry"] = expiry
+        record["chunk_hash"] = chunk_hash.hex()
         encoded = json.dumps(
-            existing_records,
+            record,
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        return await self.put_data(key, encoded)
+        if len(encoded) > 1000:
+            # Keep locator essentials only
+            slim = {
+                "ip": metadata.get("ip"),
+                "port": metadata.get("port"),
+                "expiry": expiry,
+            }
+            encoded = json.dumps(slim, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+
+        if public_key is None or private_key is None:
+            # Local mutable store under chunk-derived key (no DHT mutable put).
+            key = self._xet_chunk_dht_key(chunk_hash)
+            self._xet_mutable_store[key] = encoded
+            self._xet_mutable_seq[key] = max(
+                self._xet_mutable_seq.get(key, 0) + 1, seq or 1
+            )
+            return 1
+
+        key = calculate_mutable_key(public_key, salt)
+        next_seq = seq if seq is not None else self._xet_mutable_seq.get(key, 0) + 1
+        prev = self._xet_mutable_seq.get(key, 0)
+        if next_seq <= prev:
+            next_seq = prev + 1
+        signature = sign_mutable_data(
+            encoded, public_key, private_key, next_seq, salt=salt
+        )
+        self._xet_mutable_store[key] = encoded
+        self._xet_mutable_seq[key] = next_seq
+        local_count = 1
+        try:
+            if get_config().discovery.dht_enable_storage and not self.read_only:
+                dht_count = await self._put_data_iterative(
+                    key,
+                    encoded,
+                    is_mutable=True,
+                    public_key=public_key,
+                    seq=next_seq,
+                    signature=signature,
+                    salt=salt,
+                )
+                return local_count + dht_count
+        except Exception as e:
+            self.logger.debug("DHT mutable store_chunk_hash failed: %s", e)
+        return local_count
 
     async def get_chunk_peers(self, chunk_hash: bytes) -> list[PeerInfo]:
         """Return XET chunk peers stored under the chunk key."""
         key = self._xet_chunk_dht_key(chunk_hash)
-        encoded = await self.get_data(key)
+        # Prefer the local mutable store (read_only / local-announce path)
+        # before a network BEP 44 get, which needs a fully initialized client.
+        encoded = self._xet_mutable_store.get(key)
+        if encoded is None:
+            encoded = await self.get_data(key)
         if encoded is None:
             return []
         try:
@@ -2538,11 +2598,19 @@ class AsyncDHTClient:
         except Exception:
             self.logger.debug("Failed to decode XET chunk peers", exc_info=True)
             return []
-        if not isinstance(parsed, list):
+        if isinstance(parsed, dict):
+            records = [parsed]
+        elif isinstance(parsed, list):
+            records = parsed
+        else:
             return []
         peers: list[PeerInfo] = []
-        for entry in parsed:
+        now = time.time()
+        for entry in records:
             if not isinstance(entry, dict):
+                continue
+            expiry = entry.get("expiry")
+            if isinstance(expiry, (int, float)) and expiry < now:
                 continue
             ip = entry.get("ip")
             port = entry.get("port")

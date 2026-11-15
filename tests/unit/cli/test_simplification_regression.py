@@ -235,6 +235,8 @@ class TestSimplificationComprehensive:
         import subprocess
         import sys
 
+        first_ccbt_dir = Path(__file__).resolve().parent.parent.parent.parent
+
         result = subprocess.run(
             [
                 sys.executable, "-m", "ruff", "check",
@@ -245,7 +247,7 @@ class TestSimplificationComprehensive:
             ],
             check=False, capture_output=True,
             text=True,
-            cwd=Path.cwd(),
+            cwd=first_ccbt_dir,
         )
 
         # Should have no errors (all fixes applied)
@@ -257,6 +259,9 @@ class TestSimplificationComprehensive:
         import subprocess
         import sys
 
+        first_ccbt_dir = Path(__file__).resolve().parent.parent.parent.parent
+
+
         result = subprocess.run(
             [
                 sys.executable, "-m", "ruff", "check",
@@ -267,7 +272,7 @@ class TestSimplificationComprehensive:
             ],
             check=False, capture_output=True,
             text=True,
-            cwd=Path.cwd(),
+            cwd=first_ccbt_dir,
         )
 
         # Should have no errors (all fixes applied)

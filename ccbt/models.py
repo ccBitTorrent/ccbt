@@ -808,6 +808,51 @@ class NetworkConfig(BaseModel):
         le=600.0,
         description="Base BitTorrent block request timeout in seconds",
     )
+    # Download acceleration (see ccbt/performance/acceleration.py)
+    swarm_acceleration_enabled: bool = Field(
+        default=True,
+        description="Enable acceleration: parallel raced dialing, straggler duplication, adaptive timeouts, snub detection, BEP6 allow-fast requests",
+    )
+    speculative_connect_timeout: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=30.0,
+        description="First-pass connect timeout for speculative dials (retries use connection_timeout)",
+    )
+    ramp_connect_parallel_batches: int = Field(
+        default=4,
+        ge=1,
+        le=8,
+        description="Concurrent connect_to_peers batches while accelerating peer ramp-up",
+    )
+    ramp_productive_dial_cap: int = Field(
+        default=24,
+        ge=3,
+        le=50,
+        description="Parallel outbound dials while downloading but still below requestable target",
+    )
+    ramp_choked_probe_interval_s: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=30.0,
+        description="Probe-dial interval when all active peers are remote-choked (replaces 15s hold)",
+    )
+    warm_pipeline_depth: int = Field(
+        default=32,
+        ge=1,
+        le=128,
+        description="Initial per-peer pipeline depth before BDP adaptation (acceleration)",
+    )
+    snub_threshold_s: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=120.0,
+        description="Seconds an unchoked peer may deliver nothing (while others deliver) before being snubbed",
+    )
+    allow_fast_enabled: bool = Field(
+        default=True,
+        description="Request BEP6 allowed-fast pieces even while remote-choked",
+    )
     sparse_pipeline_stale_payload_cancel_s: float = Field(
         default=120.0,
         ge=0.0,
@@ -2371,10 +2416,10 @@ class DiskConfig(BaseModel):
         description="Maximum Xet chunk size in bytes",
     )
     xet_chunk_target_size: int = Field(
-        default=16384,
-        ge=8192,
+        default=65536,
+        ge=65536,
         le=65536,
-        description="Target Xet chunk size in bytes",
+        description="Target Xet chunk size in bytes (upstream suite fixes this at 64 KiB)",
     )
     xet_deduplication_enabled: bool = Field(
         default=True,
@@ -2388,17 +2433,34 @@ class DiskConfig(BaseModel):
         default=None,
         description="Path to Xet chunk storage directory (defaults to download_dir/.xet_chunks)",
     )
+    xet_cas_endpoint: Optional[str] = Field(
+        default=None,
+        description="Base URL of a Xet CAS service (HF/OpenXet compatible), e.g. http://127.0.0.1:8470",
+    )
+    xet_cas_token_env: str = Field(
+        default="CCBT_CAS_TOKEN",
+        description="Environment variable holding the CAS bearer token",
+    )
     enable_file_deduplication: bool = Field(
-        default=True,
-        description="Enable file-level deduplication for XET",
+        default=False,
+        description=(
+            "Deprecated placeholder flag (module removed). Kept for config "
+            "compat; ignored at runtime."
+        ),
     )
     enable_data_aggregation: bool = Field(
-        default=True,
-        description="Enable data aggregation for batch chunk operations",
+        default=False,
+        description=(
+            "Deprecated placeholder flag (module removed). Kept for config "
+            "compat; ignored at runtime."
+        ),
     )
     enable_defrag_prevention: bool = Field(
-        default=True,
-        description="Enable defragmentation prevention for chunk storage",
+        default=False,
+        description=(
+            "Deprecated placeholder flag (module removed). Kept for config "
+            "compat; ignored at runtime."
+        ),
     )
     xet_batch_size: int = Field(
         default=100,
@@ -2547,6 +2609,33 @@ class StrategyConfig(BaseModel):
         le=32,
         description="Request pipeline capacity",
     )
+    # Download acceleration: speculative / straggler duplication
+    straggler_duplication_enabled: bool = Field(
+        default=True,
+        description="Duplicate straggler / last-blocks of a piece to other peers before endgame",
+    )
+    straggler_max_copies: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum simultaneous copies of one block (original + duplicates)",
+    )
+    duplicate_budget_fraction: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=0.5,
+        description="Max redundant bytes as fraction of total downloaded bytes; duplication auto-disables beyond this",
+    )
+    adaptive_request_timeout_enabled: bool = Field(
+        default=True,
+        description="Use clamp(4 x peer p95 block latency, 5s, 30s) instead of fixed 60s request timeout",
+    )
+    dynamic_endgame_last_pieces: int = Field(
+        default=20,
+        ge=1,
+        le=1000,
+        description="Enter endgame when this many pieces remain, regardless of percentage threshold",
+    )
     streaming_mode: bool = Field(default=False, description="Enable streaming mode")
 
     # Advanced strategy settings
@@ -2653,10 +2742,22 @@ class DiscoveryConfig(BaseModel):
 
     enable_dht: bool = Field(default=True, description="Enable DHT")
     min_peers_before_dht: int = Field(
-        default=10,
+        default=2,
         ge=0,
         le=100,
         description="Minimum active peers before starting DHT discovery (0 = allow DHT immediately as fallback)",
+    )
+    dht_max_peers_per_query_accelerated: int = Field(
+        default=100,
+        ge=10,
+        le=500,
+        description="DHT get_peers cap while requestable peers are scarce (acceleration)",
+    )
+    dht_query_interval_accelerated_s: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=60.0,
+        description="DHT query interval while no requestable peers (acceleration)",
     )
     enable_pex: bool = Field(default=True, description="Enable Peer Exchange")
     enable_udp_trackers: bool = Field(default=True, description="Enable UDP trackers")
@@ -4809,20 +4910,29 @@ class XetSyncConfig(BaseModel):
         description="Workspace auth scope (strict_workspace_auth/content_addressable_open)",
     )
     hash_algorithm_policy: str = Field(
-        default="negotiate",
-        description="Hash identity policy (negotiate/require_configured)",
+        default="require_configured",
+        description=(
+            "Hash identity policy. Suite v2 requires BLAKE3 only; "
+            "'negotiate' is legacy and rejected for new workspaces."
+        ),
     )
     require_signed_metadata: bool = Field(
         default=True,
         description="Require signed XET metadata and handshake identity when auth is enabled",
     )
     enable_lpd: bool = Field(
-        default=True,
-        description="Enable Local Peer Discovery (BEP 14)",
+        default=False,
+        description=(
+            "Enable Local Peer Discovery (BEP 14). Default off until a two-node "
+            "proof test exists for the mechanism."
+        ),
     )
     enable_gossip: bool = Field(
-        default=True,
-        description="Enable gossip protocol for update propagation",
+        default=False,
+        description=(
+            "Enable gossip protocol for update propagation. Default off until "
+            "a two-node proof test exists."
+        ),
     )
     enable_dht: bool = Field(
         default=True,
@@ -4845,12 +4955,18 @@ class XetSyncConfig(BaseModel):
         description="Enable bloom filter exchange for XET chunk availability",
     )
     enable_multicast: bool = Field(
-        default=True,
-        description="Enable multicast for XET chunk/folder announcements",
+        default=False,
+        description=(
+            "Enable multicast for XET chunk/folder announcements. Default off "
+            "until a two-node proof test exists."
+        ),
     )
     enable_flooding: bool = Field(
-        default=True,
-        description="Enable controlled flooding for XET propagation",
+        default=False,
+        description=(
+            "Enable controlled flooding for XET propagation. Default off until "
+            "a two-node proof test exists."
+        ),
     )
     gossip_fanout: int = Field(
         default=3,

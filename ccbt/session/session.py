@@ -31,7 +31,14 @@ from ccbt.utils.shutdown import is_shutting_down
 
 if TYPE_CHECKING:
     from ccbt.discovery.dht import AsyncDHTClient
+    from ccbt.discovery.flooding import ControlledFlooding
+    from ccbt.discovery.lpd import LocalPeerDiscovery
     from ccbt.discovery.pex import AsyncPexManager
+    from ccbt.discovery.xet_bloom import XetChunkBloomFilter
+    from ccbt.discovery.xet_cas import P2PCASClient
+    from ccbt.discovery.xet_catalog import XetChunkCatalog
+    from ccbt.discovery.xet_gossip import XetGossipManager
+    from ccbt.discovery.xet_multicast import XetMulticastBroadcaster
     from ccbt.session.types import PieceManagerProtocol, TrackerClientProtocol
     from ccbt.utils.di import DIContainer
 
@@ -45,16 +52,9 @@ from ccbt.core.magnet import (
     resolve_trackers_from_sources,
 )
 from ccbt.core.torrent import TorrentParser as _TorrentParser
-from ccbt.discovery.flooding import ControlledFlooding
-from ccbt.discovery.lpd import LocalPeerDiscovery
 from ccbt.discovery.pex import AsyncPexManager, PexPeer
 from ccbt.discovery.tracker import AsyncTrackerClient
 from ccbt.discovery.tracker_dedupe import dedupe_tracker_urls_by_host_port
-from ccbt.discovery.xet_bloom import XetChunkBloomFilter
-from ccbt.discovery.xet_cas import P2PCASClient
-from ccbt.discovery.xet_catalog import XetChunkCatalog
-from ccbt.discovery.xet_gossip import XetGossipManager
-from ccbt.discovery.xet_multicast import XetMulticastBroadcaster
 from ccbt.extensions.xet_metadata import XetMetadataExchange
 from ccbt.models import AddXetFolderResult, TorrentCheckpoint
 from ccbt.models import TorrentInfo as TorrentInfoModel
@@ -518,6 +518,14 @@ class AsyncTorrentSession:
             "pending_connect_queue_age_observations_s": [],
             "time_to_first_requestable_s": None,
             "time_to_first_productive_s": None,
+            "time_to_first_piece_s": None,
+            "time_to_10pct_s": None,
+            "time_to_50pct_s": None,
+            "time_to_90pct_s": None,
+            "duplicate_bytes": 0,
+            "duplicate_requests": 0,
+            "cancels_sent": 0,
+            "requestable_series": [],
             "dht_candidate_cache_new_entry_total": 0,
             "dht_candidate_cache_refresh_total": 0,
             "dht_candidate_promotion_selected_total": 0,
@@ -1122,6 +1130,41 @@ class AsyncTorrentSession:
                     "peer_discovery_time_to_first_productive_s",
                     float(elapsed),
                 )
+        if requestable_peers >= 0:
+            series = m.setdefault("requestable_series", [])
+            if isinstance(series, list) and (
+                not series or series[-1][1] != requestable_peers
+            ):
+                series.append([round(float(elapsed), 3), int(requestable_peers)])
+                del series[:-200]
+
+    def _touch_piece_progress_metrics(self) -> None:
+        """Record time-to-first-piece and percent-complete milestones."""
+        if not isinstance(self._peer_discovery_metrics, dict):
+            return
+        start = self._swarm_connect_phase_started_monotonic
+        if start is None or self.piece_manager is None:
+            return
+        verified = getattr(self.piece_manager, "verified_pieces", None)
+        total = int(getattr(self.piece_manager, "num_pieces", 0) or 0)
+        if verified is None or total <= 0:
+            return
+        elapsed = time.monotonic() - float(start)
+        m = self._peer_discovery_metrics
+        if len(verified) > 0 and m.get("time_to_first_piece_s") is None:
+            m["time_to_first_piece_s"] = elapsed
+            with contextlib.suppress(Exception):
+                get_metrics_collector().record_histogram(
+                    "peer_discovery_time_to_first_piece_s", float(elapsed)
+                )
+        fraction = len(verified) / total
+        for pct, key in (
+            (10, "time_to_10pct_s"),
+            (50, "time_to_50pct_s"),
+            (90, "time_to_90pct_s"),
+        ):
+            if fraction * 100.0 >= pct and m.get(key) is None:
+                m[key] = elapsed
 
     def _touch_requestable_deficit_clock(
         self, swarm_state: dict[str, Any], metadata_incomplete: bool
@@ -5651,6 +5694,8 @@ class AsyncTorrentSession:
 
     async def _on_piece_verified(self, piece_index: int) -> None:
         """Handle piece verification."""
+        with contextlib.suppress(Exception):
+            self._touch_piece_progress_metrics()
         self.logger.debug(
             "_on_piece_verified called for piece %d (torrent: %s)",
             piece_index,
@@ -7411,6 +7456,7 @@ class AsyncSessionManager:
 
         # XET folder synchronization components
         self._xet_transport_registry: dict[str, dict[str, Any]] = {}
+        self.xet_transport: Optional[Any] = None  # XetTransport session service
         self._xet_realtime_sync: Optional[Any] = None
         self.xet_cas_client: Optional[P2PCASClient] = None
         self.xet_catalog: Optional[XetChunkCatalog] = None
@@ -7786,57 +7832,21 @@ class AsyncSessionManager:
 
     def _ensure_xet_discovery_graph(self) -> None:
         """Initialize the shared XET discovery graph once per session manager."""
-        if self.xet_catalog is None:
-            self.xet_catalog = XetChunkCatalog()
-        if self.xet_bloom_filter is None:
-            self.xet_bloom_filter = XetChunkBloomFilter()
-        if self.pex_manager is None:
-            self.pex_manager = AsyncPexManager()
-        if self.xet_lpd_client is None:
-            xet_port = self.config.network.xet_port or self.config.network.listen_port
-            self.xet_lpd_client = LocalPeerDiscovery(listen_port=xet_port)
-        if self.xet_multicast_broadcaster is None:
-            self.xet_multicast_broadcaster = XetMulticastBroadcaster(
-                multicast_address=self.config.network.xet_multicast_address,
-                multicast_port=self.config.network.xet_multicast_port,
-            )
-        if self.xet_gossip_manager is None:
-            self.xet_gossip_manager = XetGossipManager(
-                node_id=self._build_xet_node_id()
-            )
-        if self.xet_flooding_client is None:
-            self.xet_flooding_client = ControlledFlooding(
-                node_id=self._build_xet_node_id()
-            )
-        if self.xet_cas_client is None:
-            self.xet_cas_client = P2PCASClient(
-                dht_client=getattr(self, "dht_client", None),
-                tracker_client=getattr(self, "udp_tracker_client", None),
-                key_manager=self.key_manager,
-                bloom_filter=self.xet_bloom_filter,
-                catalog=self.xet_catalog,
-                extension_manager=self.extension_manager,
-            )
-        if hasattr(self, "pex_manager") and self.pex_manager is not None:
-            self.xet_cas_client.register_pex_manager(self.pex_manager)
-        if self.xet_cas_client is not None:
-            self.xet_cas_client.set_peer_authorizer(self._is_xet_peer_authorized)
-            self.xet_cas_client.set_discovery_backend_success_notifier(
-                self._mark_xet_discovery_success
-            )
-        if self.xet_lpd_client is not None:
-            self.xet_lpd_client.peer_callback = self._on_lpd_peer_discovered
-        if self.xet_multicast_broadcaster is not None:
-            self.xet_multicast_broadcaster.chunk_callback = self._on_xet_multicast_chunk
-            self.xet_multicast_broadcaster.update_callback = (
-                self._on_xet_multicast_update
-            )
-        if self.xet_gossip_manager is not None:
-            self.xet_gossip_manager.chunk_callbacks.append(self._on_xet_multicast_chunk)
-            self.xet_gossip_manager.folder_callbacks.append(
-                self._on_xet_multicast_update
-            )
-        self._update_xet_discovery_status()
+        from ccbt.session.xet_transport import (
+            XetTransport,
+            ensure_xet_discovery_graph,
+        )
+
+        ensure_xet_discovery_graph(self)
+        if self.xet_transport is None:
+            self.xet_transport = XetTransport()
+            if self.extension_manager is not None and hasattr(
+                self.extension_manager, "set_xet_transport"
+            ):
+                self.extension_manager.set_xet_transport(self.xet_transport)
+                xet_ext = getattr(self.extension_manager, "extensions", {}).get("xet")
+                if xet_ext is not None:
+                    self.xet_transport.extension = xet_ext
 
     def get_xet_discovery_status(self) -> dict[str, Any]:
         """Return the current shared XET discovery status snapshot."""

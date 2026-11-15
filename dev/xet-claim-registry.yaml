@@ -1,0 +1,126 @@
+# XET claim registry. Status flips to supported only at the big-bang
+# release gate (gate G9). test_ids must resolve to collected tests when
+# status is supported (checked by dev/scripts/check_xet_claims.py).
+version: 1
+release_policy: big-bang
+claims:
+  - id: C1
+    claim: "XET is fully implemented"
+    status: experimental
+    owner_module: ccbt
+    gate: G9
+    test_ids: [test_xet_golden_chunking, test_interop_cas_client_openxet, test_e2e_chunk_exchange]
+  - id: C2
+    claim: "Gearhash CDC 8KiB-128KiB, 64KiB target, upstream-compatible boundaries"
+    status: experimental
+    owner_module: ccbt/storage/xet_chunking.py
+    gate: G1
+    test_ids: [test_xet_golden_chunking, test_xet_golden_streaming_equivalence]
+  - id: C3
+    claim: "Cross-torrent chunk-level deduplication"
+    status: experimental
+    owner_module: ccbt/storage/xet_deduplication.py
+    gate: G2
+    test_ids: [test_xet_store_cross_torrent_dedup, test_xet_store_verify_on_read]
+  - id: C4
+    claim: "Peer-to-peer CAS over DHT and trackers"
+    status: experimental
+    owner_module: ccbt/discovery/xet_cas.py
+    gate: G7
+    test_ids: [test_e2e_discovery_dht_only, test_e2e_discovery_tracker_only]
+  - id: C5
+    claim: "Only changed chunks redistribute on update"
+    status: experimental
+    owner_module: ccbt/storage/xet_folder_manager.py
+    gate: G8
+    test_ids: [test_e2e_folder_sync_changed_chunks_only]
+  - id: C6
+    claim: "BLAKE3 keyed hashing and Merkle verification (single suite)"
+    status: experimental
+    owner_module: ccbt/storage/xet_hashing.py
+    gate: G1
+    test_ids: [test_xet_golden_hashing, test_xet_golden_merkle]
+  - id: C7
+    claim: "Upstream xorb and MDB shard formats"
+    status: experimental
+    owner_module: ccbt/storage/xet_xorb.py
+    gate: G1
+    test_ids: [test_xet_golden_xorb_roundtrip, test_xet_golden_shard_roundtrip]
+  - id: C8
+    claim: "BEP 10 XET extension with request-correlated chunk messages"
+    status: experimental
+    owner_module: ccbt/extensions/xet.py
+    gate: G6
+    test_ids: [test_e2e_chunk_exchange, test_xet_extension_v2_wire]
+  - id: C9
+    claim: "10 discovery mechanisms, each individually proven"
+    status: experimental
+    owner_module: ccbt/protocols/xet.py
+    gate: G7
+    test_ids: [test_e2e_discovery_dht_only, test_e2e_discovery_gossip_only]
+  - id: C10
+    claim: "Four folder sync modes (designated, best_effort, broadcast, consensus)"
+    status: experimental
+    owner_module: ccbt/session/xet_sync_manager.py
+    gate: G8
+    test_ids: [test_e2e_sync_designated_failover, test_e2e_sync_broadcast_converges]
+  - id: C11
+    claim: "Raft and Byzantine consensus over the wire"
+    status: experimental
+    owner_module: ccbt/consensus/raft.py
+    gate: G8
+    test_ids: [test_consensus_raft_partition, test_consensus_byzantine_liars]
+  - id: C12
+    claim: "Conflict resolution (last-write-wins, version-vector, 3-way-merge, timestamp) with preserved conflicts"
+    status: experimental
+    owner_module: ccbt/session/xet_conflict.py
+    gate: G8
+    test_ids: [test_e2e_sync_conflict_preserved]
+  - id: C13
+    claim: "Git version references tracked; auto-commit opt-in"
+    status: experimental
+    owner_module: ccbt/storage/git_versioning.py
+    gate: G8
+    test_ids: [test_xet_git_versioning_real_repo]
+  - id: C14
+    claim: "Encrypted allowlist (AES-256-GCM) with Ed25519 handshake proof"
+    status: experimental
+    owner_module: ccbt/security/xet_allowlist.py
+    gate: G6
+    test_ids: [test_xet_allowlist_encrypted_roundtrip, test_e2e_chunk_exchange]
+  - id: C15
+    claim: ".tonic v2, tonic links, cold-link join, remote URL, daemon persistence, IPC/UI status"
+    status: experimental
+    owner_module: ccbt/core/tonic.py
+    gate: G8
+    test_ids: [test_xet_tonic_v2_roundtrip, test_e2e_cold_link_join]
+  - id: C16
+    claim: "Configuration for XET, xet_sync, CAS/Hub, and NAT ports"
+    status: experimental
+    owner_module: ccbt/models.py
+    gate: G9
+    test_ids: [test_xet_config_target_enforced]
+  - id: C17
+    claim: "CLI: ccbt xet, btbt tonic, ccbt cas serve, ccbt hub serve, git-xet"
+    status: experimental
+    owner_module: ccbt/cli/xet_commands.py
+    gate: G9
+    test_ids: [test_interop_git_xet_roundtrip, test_xet_cli_migrate_legacy]
+  - id: C18
+    claim: "CAS client compatible with HF CAS contract and OpenXet"
+    status: experimental
+    owner_module: ccbt/discovery/xet_cas_http.py
+    gate: G3
+    test_ids: [test_interop_cas_client_openxet, test_interop_cas_contract_fixtures]
+  - id: C19
+    claim: "CAS server compatible with stock hf_xet; Hub API with huggingface_hub; Git LFS"
+    status: experimental
+    owner_module: ccbt/cas_server/app.py
+    gate: G5
+    test_ids: [test_interop_hf_xet_against_ccbt_cas, test_interop_hub_huggingface_hub]
+  - id: C20
+    claim: "No placeholder XET modules remain reachable from docs"
+    status: experimental
+    owner_module: ccbt/storage
+    gate: G2
+    test_ids: [test_xet_no_placeholder_modules]

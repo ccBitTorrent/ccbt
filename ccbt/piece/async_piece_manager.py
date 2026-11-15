@@ -27,6 +27,14 @@ from ccbt.models import (
 )
 from ccbt.models import PieceState as PieceStateModel
 from ccbt.monitoring import get_metrics_collector
+from ccbt.performance.acceleration import (
+    BlockLatencyTracker,
+    DuplicateBudget,
+    accel_enabled,
+    is_dynamic_endgame,
+    should_duplicate_block,
+    strategy_flag,
+)
 from ccbt.piece.hash_v2 import HashAlgorithm, verify_piece
 from ccbt.utils.events import Event, emit_event
 from ccbt.utils.shutdown import is_shutting_down
@@ -545,6 +553,17 @@ class AsyncPieceManager:
         self.endgame_mode = False
         self.endgame_threshold = self.config.strategy.endgame_threshold
         self.endgame_duplicates = self.config.strategy.endgame_duplicates
+
+        # Download acceleration: straggler duplication + latency tracking
+        self._block_latency = BlockLatencyTracker()
+        self._duplicate_budget = DuplicateBudget(
+            max_fraction=float(
+                getattr(self.config.strategy, "duplicate_budget_fraction", 0.10) or 0.10
+            )
+        )
+        self._piece_selection_metrics.setdefault("duplicate_requests", 0)
+        self._piece_selection_metrics.setdefault("duplicate_bytes", 0)
+        self._piece_selection_metrics.setdefault("cancels_sent", 0)
 
         # Hash verification pool (adaptive if enabled)
         if self.config.disk.hash_workers_adaptive:
@@ -3429,6 +3448,10 @@ class AsyncPieceManager:
                 available_peers,
                 peer_manager,
             )
+            with contextlib.suppress(Exception):
+                requests_sent += await self._request_straggler_duplicates(
+                    piece_index, available_peers, peer_manager
+                )
 
         async with self.lock:  # pragma: no cover - Lock acquisition after request, state change tested via mark_requested
             old_state = piece.state
@@ -5202,7 +5225,18 @@ class AsyncPieceManager:
             else len(self.get_missing_pieces())
         )
         total = self.num_pieces
-        in_endgame = rem <= total * (1.0 - self.endgame_threshold)
+        if strategy_flag(self.config, "straggler_duplication_enabled"):
+            in_endgame = is_dynamic_endgame(
+                remaining_pieces=rem,
+                total_pieces=total,
+                threshold=self.endgame_threshold,
+                last_pieces=int(
+                    getattr(self.config.strategy, "dynamic_endgame_last_pieces", 20)
+                    or 20
+                ),
+            )
+        else:
+            in_endgame = rem <= total * (1.0 - self.endgame_threshold)
         self.endgame_mode = in_endgame
         return in_endgame
 
@@ -5353,6 +5387,92 @@ class AsyncPieceManager:
                         )
         return requests_sent
 
+    async def _request_straggler_duplicates(
+        self,
+        piece_index: int,
+        available_peers: list[AsyncPeerConnection],
+        peer_manager: Any,
+    ) -> int:
+        """Duplicate straggler / last blocks of a piece to other holders.
+
+        Pre-endgame counterpart of _request_blocks_endgame: bounded by
+        straggler_max_copies and the rolling duplicate-byte budget. The
+        first arrival wins; peer-side timeout cleanup sends CANCELs for
+        the losing copies.
+        """
+        if not strategy_flag(self.config, "straggler_duplication_enabled"):
+            return 0
+        if piece_index < 0 or piece_index >= len(self.pieces):
+            return 0
+        piece = self.pieces[piece_index]
+        now = time.time()
+        missing = [b for b in piece.blocks if not b.received]
+        blocks_remaining = len(missing)
+        if blocks_remaining == 0:
+            return 0
+        max_copies = int(getattr(self.config.strategy, "straggler_max_copies", 3) or 3)
+        p90 = self._block_latency.p90
+        sent = 0
+        for block in missing:
+            if not block.requested_from:
+                continue
+            # Oldest in-flight request age for this block.
+            age = 0.0
+            for peer_reqs in self._active_block_requests.get(piece_index, {}).values():
+                for req_begin, _req_len, req_time in peer_reqs:
+                    if req_begin == block.begin:
+                        age = max(age, now - req_time)
+            if not should_duplicate_block(
+                block_age_s=age,
+                swarm_p90_latency_s=p90,
+                blocks_remaining_in_piece=blocks_remaining,
+                existing_copies=len(block.requested_from),
+                max_copies=max_copies,
+                budget_allows=self._duplicate_budget.allows(block.length),
+                enabled=True,
+            ):
+                continue
+            for peer_connection in available_peers:
+                peer_key = self._normalize_peer_key(peer_connection)
+                if not peer_key or peer_key in block.requested_from:
+                    continue
+                avail = self.peer_availability.get(peer_key)
+                if avail is not None and piece_index not in avail.pieces:
+                    continue
+                # BEP6-aware check; fall back for test doubles with a
+                # zero-arg can_request signature.
+                try:
+                    _can = peer_connection.can_request(piece_index=piece_index)
+                except TypeError:
+                    _can = peer_connection.can_request()
+                if not _can:
+                    continue
+                try:
+                    ok = await peer_manager.request_piece(
+                        peer_connection, piece_index, block.begin, block.length
+                    )
+                except Exception:
+                    self._piece_selection_metrics["failed_piece_requests"] += 1
+                    continue
+                if not ok:
+                    continue
+                self._active_block_requests.setdefault(piece_index, {}).setdefault(
+                    peer_key, []
+                ).append((block.begin, block.length, time.time()))
+                block.requested_from.add(peer_key)
+                self._duplicate_budget.record_duplicate(block.length)
+                self._piece_selection_metrics["duplicate_requests"] = (
+                    int(self._piece_selection_metrics.get("duplicate_requests", 0)) + 1
+                )
+                self._piece_selection_metrics["duplicate_bytes"] = (
+                    int(self._piece_selection_metrics.get("duplicate_bytes", 0))
+                    + block.length
+                )
+                self._piece_selection_metrics["total_piece_requests"] += 1
+                sent += 1
+                break  # one extra copy per pass; selector re-runs frequently
+        return sent
+
     async def handle_piece_block(
         self,
         piece_index: int,
@@ -5408,6 +5528,11 @@ class AsyncPieceManager:
             # Note: Check for duplicate blocks (already received)
             for block in piece.blocks:
                 if block.begin == begin and block.received:
+                    # Redundant copy arriving after the winner: wasted bytes.
+                    self._duplicate_budget.record_duplicate(len(data))
+                    self._piece_selection_metrics["duplicate_bytes"] = int(
+                        self._piece_selection_metrics.get("duplicate_bytes", 0)
+                    ) + len(data)
                     # Block already received - verify it matches
                     if block.data != data:
                         self.logger.warning(
@@ -5435,6 +5560,14 @@ class AsyncPieceManager:
                 return
 
             self._piece_selection_metrics["successful_piece_requests"] += 1
+            self._duplicate_budget.record_useful(len(data))
+            # Latency of the winning request feeds adaptive timeouts / p90.
+            _now_blk = time.time()
+            for _peer_reqs in self._active_block_requests.get(piece_index, {}).values():
+                for _rb, _rl, _rt in _peer_reqs:
+                    if _rb == begin and _rl == len(data):
+                        self._block_latency.record(_now_blk - _rt)
+                        break
 
             block_length = len(data)
             if piece_index in self._active_block_requests:
@@ -6000,125 +6133,21 @@ class AsyncPieceManager:
             ),
         }
 
-    async def _store_xet_hash(self, piece_index: int, piece: PieceData) -> None:
-        """Store Xet Merkle hash for verified piece.
+    async def _store_xet_hash(self, piece_index: int, _piece: PieceData) -> None:
+        """Record that a verified piece is available for XET indexing.
 
-        This method computes the Xet Merkle hash from the piece data using
-        content-defined chunking (Gearhash CDC) and stores it for deduplication
-        lookup. The implementation follows the Rust reference implementation pattern.
-
-        The Merkle hash is computed by:
-        1. Chunking piece data using Gearhash CDC algorithm
-        2. Computing BLAKE3-256 hash for each chunk
-        3. Building a binary Merkle tree from chunk hashes
-        4. Returning the root hash as the Merkle hash
-
-        The hash can be used to find other torrents or pieces with similar
-        content for cross-torrent deduplication.
-
-        Args:
-            piece_index: Index of the verified piece
-            piece: PieceData object containing the verified piece data
-
+        XET chunk identity is per-file, not per-piece: Gearhash chunk
+        boundaries must be computed over each file as one stream (see
+        XetDeduplication.index_file_streaming, invoked by the file
+        assembler when a file completes). Chunking individual pieces
+        here previously produced piece-length-dependent chunk hashes
+        that could never dedup across torrents, so this hook no longer
+        derives chunk hashes; it only tracks verified pieces.
         """
-        try:
-            from ccbt.storage.xet_chunking import GearhashChunker
-            from ccbt.storage.xet_hashing import XetHasher
-
-            # Get piece data
-            piece_data = piece.get_data()
-
-            if not piece_data:
-                self.logger.debug("No data to hash for piece %d", piece_index)
-                return
-
-            # Initialize chunker with config values
-            # Gearhash CDC uses content-defined boundaries for intelligent chunking
-            # The chunker uses target_size; min/max are enforced by the algorithm
-            chunker = GearhashChunker(
-                target_size=self.config.disk.xet_chunk_target_size,
-            )
-
-            # Chunk the piece data using Gearhash CDC
-            # This produces variable-sized chunks based on content boundaries
-            chunks = chunker.chunk_buffer(piece_data)
-
-            if not chunks:
-                self.logger.debug("No chunks generated for piece %d", piece_index)
-                return
-
-            # Compute individual chunk hashes (BLAKE3-256 or SHA-256 fallback)
-            chunk_hashes = [XetHasher.compute_chunk_hash(chunk) for chunk in chunks]
-
-            # Build Merkle tree from chunk hashes
-            # This follows the Rust implementation: binary tree construction
-            # where each level pairs hashes until a single root remains
-            merkle_hash = XetHasher.build_merkle_tree_from_hashes(chunk_hashes)
-
-            # Store Merkle hash and chunk hashes in cache
-            async with self.lock:
-                self.xet_merkle_hashes[piece_index] = merkle_hash
-                self.xet_chunk_hashes[piece_index] = chunk_hashes
-
-            # Update torrent_data dict if xet_metadata exists
-            # This allows the metadata to be preserved across sessions
-            if isinstance(self.torrent_data, dict):
-                # Initialize xet_metadata if it doesn't exist
-                if "xet_metadata" not in self.torrent_data:
-                    self.torrent_data["xet_metadata"] = {
-                        "chunk_hashes": [],
-                        "file_metadata": [],
-                        "piece_metadata": {},
-                        "xorb_hashes": [],
-                    }
-
-                # Update piece metadata
-                xet_metadata = self.torrent_data["xet_metadata"]
-                if "piece_metadata" not in xet_metadata:
-                    xet_metadata["piece_metadata"] = {}
-
-                # Store piece metadata: chunk hashes and Merkle root
-                xet_metadata["piece_metadata"][piece_index] = {
-                    "piece_index": piece_index,
-                    "chunk_hashes": [
-                        h.hex() for h in chunk_hashes
-                    ],  # Store as hex strings
-                    "merkle_hash": merkle_hash.hex(),
-                }
-
-                # Update global chunk hash list (deduplicated)
-                if "chunk_hashes" not in xet_metadata:
-                    xet_metadata["chunk_hashes"] = []
-
-                # Add new chunk hashes to global list (avoid duplicates)
-                existing_chunks = set(xet_metadata["chunk_hashes"])
-                for chunk_hash in chunk_hashes:
-                    chunk_hash_hex = chunk_hash.hex()
-                    if chunk_hash_hex not in existing_chunks:
-                        xet_metadata["chunk_hashes"].append(chunk_hash_hex)
-                        existing_chunks.add(chunk_hash_hex)
-
-            self.logger.debug(
-                "Computed Xet Merkle hash for piece %d: %s (%d chunks, %d bytes)",
-                piece_index,
-                merkle_hash.hex()[:16],
-                len(chunks),
-                len(piece_data),
-            )
-
-        except ImportError as e:
-            self.logger.debug(
-                "Xet modules not available for piece %d: %s",
-                piece_index,
-                e,
-            )
-        except Exception as e:
-            self.logger.warning(
-                "Error computing Xet Merkle hash for piece %d: %s",
-                piece_index,
-                e,
-            )
-            # Don't raise - this is optional functionality
+        self.logger.debug(
+            "Piece %d verified; XET indexing deferred to file completion",
+            piece_index,
+        )
 
     def _hash_piece_optimized(self, piece: PieceData, expected_hash: bytes) -> bool:
         """Optimized piece hash verification using memoryview and zero-copy operations.
@@ -7485,6 +7514,10 @@ class AsyncPieceManager:
         """
         consecutive_no_pieces = 0
         base_interval = 1.0
+        if accel_enabled(self.config):
+            # Acceleration: poll fast while pipelines may have free slots;
+            # UNCHOKE/HAVE triggers also wake selection between ticks.
+            base_interval = 0.25
         max_interval = 5.0
         self._piece_selection_metrics["selection_no_progress_streak"] = 0
 
@@ -7612,7 +7645,7 @@ class AsyncPieceManager:
                 if new_active_downloads > active_downloads:
                     # Made progress - reset interval
                     consecutive_no_pieces = 0
-                    base_interval = 1.0
+                    base_interval = 0.25 if accel_enabled(self.config) else 1.0
                     self._no_progress_streak = 0
                     self._no_progress_stall_until = 0.0
                     self._no_progress_gate_streak = 0

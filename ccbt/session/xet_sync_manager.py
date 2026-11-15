@@ -62,6 +62,27 @@ class PeerSyncState:
     is_source: bool = False  # For designated mode
     sync_progress: float = 0.0
     last_contact: float = field(default_factory=time.time)
+    source_term: int = 0  # Designated election term announced by peer
+
+
+@dataclass
+class SourceAnnouncement:
+    """Designated-source election announcement (WS8)."""
+
+    peer_id: str
+    term: int
+    announced_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class Tombstone:
+    """Delete tombstone with version vector (WS8)."""
+
+    file_path: str
+    version_vector: dict[str, int]
+    deleted_at: float
+    peer_id: str
+    file_hash: Optional[bytes] = None
 
 
 class XetSyncManager:
@@ -102,9 +123,13 @@ class XetSyncManager:
         self.byzantine_consensus: Optional[Any] = None  # ByzantineConsensus
         self.conflict_resolver: Optional[Any] = None  # ConflictResolver
 
-        # Source peer election
+        # Source peer election (announcement / term / failover)
         self.source_election_interval = 300.0  # 5 minutes
+        self.source_failover_timeout = 60.0  # source silent → elect new
         self._source_election_task: Optional[asyncio.Task] = None
+        self.source_term: int = 0
+        self.local_peer_id: Optional[str] = None
+        self._source_announcements: dict[str, SourceAnnouncement] = {}
 
         # Update queue
         self.update_queue: deque[UpdateEntry] = deque(maxlen=max_queue_size)
@@ -113,6 +138,8 @@ class XetSyncManager:
         # Peer states
         self.peer_states: dict[str, PeerSyncState] = {}
         self.file_metadata_by_path: dict[str, XetFileMetadata] = {}
+        self.tombstones: dict[str, Tombstone] = {}
+        self.version_vectors: dict[str, dict[str, int]] = {}
 
         # Consensus tracking
         self.consensus_votes: dict[
@@ -549,9 +576,15 @@ class XetSyncManager:
         to_remove: list[UpdateEntry] = []
 
         for entry in self.update_queue:
-            # Only process if from designated source
+            # Only process if from designated source; reject non-source updates
             if entry.source_peer and entry.source_peer in self.source_peers:
                 try:
+                    if entry.deleted:
+                        self.record_tombstone(
+                            entry.file_path,
+                            entry.source_peer,
+                            file_hash=entry.chunk_hash or None,
+                        )
                     await update_handler(entry)
                     to_remove.append(entry)
                     processed += 1
@@ -562,7 +595,13 @@ class XetSyncManager:
                         to_remove.append(entry)
                         self.stats["updates_failed"] += 1
             else:
-                # Not from designated source, skip
+                # Non-source update: drop (never apply)
+                to_remove.append(entry)
+                self.logger.debug(
+                    "Rejected non-source update from %s for %s",
+                    entry.source_peer,
+                    entry.file_path,
+                )
                 continue
 
         # Remove processed entries
@@ -787,53 +826,118 @@ class XetSyncManager:
 
         return processed
 
+    def announce_as_source(self, peer_id: str, term: Optional[int] = None) -> int:
+        """Announce ``peer_id`` as designated source for ``term`` (monotonic)."""
+        next_term = term if term is not None else self.source_term + 1
+        if next_term < self.source_term:
+            msg = f"source term {next_term} is stale (current {self.source_term})"
+            raise ValueError(msg)
+        self.source_term = next_term
+        self._source_announcements[peer_id] = SourceAnnouncement(
+            peer_id=peer_id, term=next_term
+        )
+        self.source_peers = {peer_id}
+        for pid, state in self.peer_states.items():
+            state.is_source = pid == peer_id
+            if pid == peer_id:
+                state.source_term = next_term
+        self.logger.info("Source announcement: peer=%s term=%d", peer_id, next_term)
+        return next_term
+
+    def apply_source_announcement(self, peer_id: str, term: int) -> bool:
+        """Accept a remote source announcement if ``term`` is newer."""
+        if term < self.source_term:
+            return False
+        if term == self.source_term and peer_id not in self.source_peers:
+            # Same term, different announcer → reject (split-brain)
+            return False
+        self.announce_as_source(peer_id, term=term)
+        if peer_id in self.peer_states:
+            self.peer_states[peer_id].last_contact = time.time()
+        return True
+
+    def record_tombstone(
+        self,
+        file_path: str,
+        peer_id: str,
+        version_vector: Optional[dict[str, int]] = None,
+        file_hash: Optional[bytes] = None,
+    ) -> Tombstone:
+        """Record a delete as a tombstone (never silent drop)."""
+        vv = dict(version_vector or self.version_vectors.get(file_path, {}))
+        vv[peer_id] = vv.get(peer_id, 0) + 1
+        self.version_vectors[file_path] = vv
+        ts = Tombstone(
+            file_path=file_path,
+            version_vector=vv,
+            deleted_at=time.time(),
+            peer_id=peer_id,
+            file_hash=file_hash,
+        )
+        self.tombstones[file_path] = ts
+        self.file_metadata_by_path.pop(file_path, None)
+        return ts
+
+    def apply_rename(self, old_path: str, new_path: str, peer_id: str) -> None:
+        """Rename = tombstone old path + add at new path metadata slot."""
+        meta = self.file_metadata_by_path.get(old_path)
+        self.record_tombstone(
+            old_path,
+            peer_id,
+            file_hash=getattr(meta, "file_hash", None) if meta else None,
+        )
+        if meta is not None:
+            # Preserve content identity under the new path until bytes arrive
+            updated = meta.model_copy(update={"file_path": new_path})
+            self.file_metadata_by_path[new_path] = updated
+
+    def _source_needs_failover(self) -> bool:
+        """True when no live designated source has contacted us recently."""
+        if not self.source_peers:
+            return True
+        now = time.time()
+        for pid in self.source_peers:
+            state = self.peer_states.get(pid)
+            if state is None:
+                continue
+            if now - state.last_contact <= self.source_failover_timeout:
+                return False
+        return True
+
     async def _elect_source_peer(self) -> Optional[str]:
-        """Elect source peer based on criteria.
+        """Elect a source via failover when the current source times out.
 
-        Criteria: uptime, bandwidth, chunk availability
-
-        Returns:
-            Elected peer ID or None if no suitable peer
-
+        Uses announcement term protocol: winner is the peer with highest
+        (term, peer_id) among healthy peers; local node may self-announce.
         """
-        if not self.peer_states:
+        if not self._source_needs_failover() and self.source_peers:
+            return next(iter(self.source_peers))
+
+        candidates = [
+            pid
+            for pid, st in self.peer_states.items()
+            if time.time() - st.last_contact <= self.source_failover_timeout
+        ]
+        if self.local_peer_id and self.local_peer_id not in candidates:
+            candidates.append(self.local_peer_id)
+        if not candidates:
             return None
 
-        best_peer_id = None
-        best_score = -1.0
+        def _key(pid: str) -> tuple[int, str]:
+            term = 0
+            ann = self._source_announcements.get(pid)
+            if ann is not None:
+                term = ann.term
+            state = self.peer_states.get(pid)
+            if state is not None:
+                term = max(term, state.source_term)
+            return (term, pid)
 
-        for peer_id, peer_state in self.peer_states.items():
-            # Calculate score based on multiple factors
-            score = 0.0
-
-            # Uptime factor (0.0 to 1.0)
-            if peer_state.last_contact:
-                uptime_factor = min(
-                    1.0, (time.time() - peer_state.last_contact) / 3600.0
-                )  # Normalize to 1 hour
-                score += uptime_factor * 0.3
-
-            # Chunk availability factor (0.0 to 1.0)
-            chunk_count = len(peer_state.chunk_hashes)
-            chunk_factor = min(1.0, chunk_count / 100.0)  # Normalize to 100 chunks
-            score += chunk_factor * 0.4
-
-            # Sync progress factor (0.0 to 1.0)
-            score += peer_state.sync_progress * 0.3
-
-            if score > best_score:
-                best_score = score
-                best_peer_id = peer_id
-
-        if best_peer_id and best_score > 0.5:  # Minimum threshold
-            self.logger.info(
-                "Elected source peer: %s (score: %.2f)",
-                best_peer_id,
-                best_score,
-            )
-            return best_peer_id
-
-        return None
+        winner = max(candidates, key=_key)
+        new_term = self.source_term + 1
+        self.announce_as_source(winner, term=new_term)
+        self.logger.info("Failover elected source peer: %s (term=%d)", winner, new_term)
+        return winner
 
     async def _initialize_consensus(self) -> None:
         """Initialize consensus components (Raft or Byzantine).
@@ -898,24 +1002,26 @@ class XetSyncManager:
             except Exception as e:
                 self.logger.warning("Failed to initialize Raft consensus: %s", e)
 
-            # Fallback to Byzantine consensus
+            # Fallback to Byzantine consensus (requires n >= 3f+1)
             try:
                 from ccbt.consensus.byzantine import ByzantineConsensus
 
-                # Calculate fault threshold from consensus threshold
-                # Byzantine requires 2f+1 nodes, so f < n/3
-                fault_threshold = 0.33  # Default
-
-                # Create Byzantine consensus
+                fault_threshold = 0.33
+                cluster_size = max(1, len(self.peer_states) + 1)
+                max_faulty = int(cluster_size * fault_threshold)
                 self.byzantine_consensus = ByzantineConsensus(
                     node_id=node_id,
                     fault_threshold=fault_threshold,
-                    weighted_voting=False,  # Can be enabled via config
+                    weighted_voting=False,
+                    cluster_size=cluster_size,
+                    max_faulty=max_faulty,
                 )
 
                 self.logger.info(
-                    "Initialized Byzantine consensus (node_id=%s)",
+                    "Initialized Byzantine consensus (node_id=%s, n=%d, f=%d)",
                     node_id,
+                    cluster_size,
+                    max_faulty,
                 )
                 return
 
@@ -998,41 +1104,81 @@ class XetSyncManager:
                         self.update_queue.remove(entry)
                 self.stats["updates_failed"] += 1
 
-    async def _send_raft_vote_request(
-        self, peer_id: str, _request: dict[str, Any]
+    async def _send_raft_rpc(
+        self,
+        peer_id: str,
+        msg_type: int,
+        request: dict[str, Any],
+        response_type: int,
+        timeout: float = 5.0,
     ) -> Optional[dict[str, Any]]:
-        """Send Raft vote request to peer (simplified - would use network in production).
+        """Send a Raft RPC over XetTransport and wait for the matching response."""
+        import asyncio
 
-        Args:
-            peer_id: Peer to send request to
-            request: Vote request data
+        from ccbt.extensions.xet import XetExtension
 
-        Returns:
-            Vote response or None
+        transport = None
+        if self.session_manager is not None:
+            transport = getattr(self.session_manager, "xet_transport", None)
+        if transport is None or getattr(transport, "_send", None) is None:
+            self.logger.debug(
+                "Raft RPC skipped: no XetTransport sender for %s", peer_id
+            )
+            return None
+        ext = getattr(transport, "extension", None) or XetExtension()
+        message = ext.encode_raft_message(msg_type, request)
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
 
-        """
-        # In production, this would send a network RPC
-        # For now, return None (would be handled by network layer)
-        self.logger.debug("Would send Raft vote request to %s", peer_id)
-        return None
+        async def _on_response(pid: str, payload: bytes) -> Optional[bytes]:
+            if pid != peer_id:
+                return None
+            try:
+                rtype, body = ext.decode_raft_message(payload)
+            except ValueError:
+                return None
+            if rtype != response_type:
+                return None
+            if not future.done():
+                future.set_result(body)
+            return None
+
+        transport.set_raft_handler(response_type, _on_response)
+        try:
+            if not await transport.send(peer_id, message):
+                return None
+            return await asyncio.wait_for(future, timeout=timeout)
+        except (asyncio.TimeoutError, Exception) as e:
+            self.logger.debug("Raft RPC to %s failed: %s", peer_id, e)
+            return None
+        finally:
+            transport.clear_raft_handler(response_type, _on_response)
+
+    async def _send_raft_vote_request(
+        self, peer_id: str, request: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        """Send Raft RequestVote over the XET extension wire."""
+        from ccbt.extensions.xet import XetMessageType
+
+        return await self._send_raft_rpc(
+            peer_id,
+            XetMessageType.RAFT_VOTE_REQUEST,
+            request,
+            XetMessageType.RAFT_VOTE_RESPONSE,
+        )
 
     async def _send_raft_append_entries(
-        self, peer_id: str, _request: dict[str, Any]
+        self, peer_id: str, request: dict[str, Any]
     ) -> Optional[dict[str, Any]]:
-        """Send Raft append entries to peer (simplified - would use network in production).
+        """Send Raft AppendEntries over the XET extension wire."""
+        from ccbt.extensions.xet import XetMessageType
 
-        Args:
-            peer_id: Peer to send request to
-            request: Append entries data
-
-        Returns:
-            Append entries response or None
-
-        """
-        # In production, this would send a network RPC
-        # For now, return None (would be handled by network layer)
-        self.logger.debug("Would send Raft append entries to %s", peer_id)
-        return None
+        return await self._send_raft_rpc(
+            peer_id,
+            XetMessageType.RAFT_APPEND_ENTRIES,
+            request,
+            XetMessageType.RAFT_APPEND_ENTRIES_RESPONSE,
+        )
 
     async def _process_raft_consensus(self, update_handler: Any) -> int:
         """Process updates using Raft consensus.
@@ -1208,8 +1354,13 @@ class XetSyncManager:
         # Check if consensus reached
         votes = self.consensus_votes[chunk_hash]
         total_peers = len(self.peer_states)
+        # Never apply immediately with zero peers (Byzantine/WS8).
         if total_peers == 0:
-            return True
+            return False
+
+        if self.byzantine_consensus is not None:
+            ok, _ = self.byzantine_consensus.check_byzantine_threshold(votes)
+            return ok
 
         yes_votes = sum(1 for v in votes.values() if v)
         vote_ratio = yes_votes / total_peers
@@ -1217,20 +1368,22 @@ class XetSyncManager:
         return vote_ratio >= self.consensus_threshold
 
     async def _source_election_loop(self) -> None:
-        """Periodic source peer election loop."""
+        """Periodic source failover / re-announcement loop."""
         while self._running:
             try:
                 await asyncio.sleep(self.source_election_interval)
 
-                if self.sync_mode == SyncMode.DESIGNATED:
-                    # Elect new source peer if needed
+                if (
+                    self.sync_mode == SyncMode.DESIGNATED
+                    and self._source_needs_failover()
+                ):
                     elected_peer = await self._elect_source_peer()
-                    if elected_peer and elected_peer not in self.source_peers:
-                        # Update source peers
-                        self.source_peers.add(elected_peer)
-                        if elected_peer in self.peer_states:
-                            self.peer_states[elected_peer].is_source = True
-                        self.logger.info("Elected new source peer: %s", elected_peer)
+                    if elected_peer:
+                        self.logger.info(
+                            "Designated failover → %s term=%d",
+                            elected_peer,
+                            self.source_term,
+                        )
 
             except asyncio.CancelledError:
                 break

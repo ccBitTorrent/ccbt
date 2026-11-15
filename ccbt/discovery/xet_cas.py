@@ -727,15 +727,21 @@ class P2PCASClient:
             message_type = response_payload[0]
 
             if message_type == 0x02:  # CHUNK_RESPONSE
-                _request_id, chunk_data = xet_ext.decode_chunk_response(
+                _request_id, resp_hash, chunk_data = xet_ext.decode_chunk_response(
                     response_payload
                 )
 
-                # Verify chunk hash
+                # Verify chunk hash (both the wire hash and the bytes)
                 from ccbt.storage.xet_hashing import XetHasher
 
                 hasher = XetHasher()
                 computed_hash = hasher.compute_chunk_hash(chunk_data)
+                if resp_hash != chunk_hash:
+                    msg = (
+                        f"Chunk response for wrong hash: expected {chunk_hash.hex()[:16]}, "
+                        f"got {resp_hash.hex()[:16]}"
+                    )
+                    raise ValueError(msg)
 
                 if computed_hash != chunk_hash:
                     msg = (
