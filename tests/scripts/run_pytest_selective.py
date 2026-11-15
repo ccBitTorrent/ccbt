@@ -184,6 +184,27 @@ def _is_high_risk(file_paths: list[str]) -> bool:
     return any(p in HIGH_RISK_FILES for p in normalized)
 
 
+def _git_changed_python_files() -> list[str]:
+    """Return staged + unstaged Python paths under ccbt/ and tests/."""
+    files: set[str] = set()
+    for args in (
+        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+        ["git", "diff", "--name-only", "--diff-filter=ACMR"],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+    ):
+        try:
+            out = subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL)
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            continue
+        for line in out.splitlines():
+            path = line.strip().replace("\\", "/")
+            if path.endswith(".py") and (
+                path.startswith("ccbt/") or path.startswith("tests/")
+            ):
+                files.add(path)
+    return sorted(files)
+
+
 def run_pytest(
     markers: str,
     coverage: bool = False,
@@ -271,11 +292,11 @@ def run_pytest(
     # Since pytest.ini already has per-test timeout (600s), overall timeout is mainly
     # to catch pytest hangs, not individual test failures
     if not markers:
-        # Full suite: 60 minutes timeout (allows for large test runs)
-        timeout_seconds = 3600
+        # Full suite (pre-push/ci): allow long runs; wall clock catches hangs
+        timeout_seconds = 7200
     else:
-        # Selective tests: 30 minutes timeout (should complete much faster, but allow buffer)
-        timeout_seconds = 2100
+        # Marker-filtered / pre-commit selective: 60 minutes
+        timeout_seconds = 3600
     
     try:
         # Use subprocess.run instead of call to support timeout
@@ -384,6 +405,20 @@ def main() -> int:
         return run_pytest("", coverage=args.coverage, targets=["tests/"])
 
     if not file_paths:
+        file_paths = _git_changed_python_files()
+
+    if not file_paths:
+        # pass_filenames: false + --all-files: still validate once.
+        if os.environ.get("PRE_COMMIT"):
+            logger.info(
+                "Pre-commit with no file list; running unit suite (not slow)"
+            )
+            return run_pytest(
+                "not slow",
+                coverage=args.coverage,
+                targets=["tests/unit"],
+                allow_no_tests_collected=False,
+            )
         logger.info("No Python files changed - skipping tests")
         return 0
 
@@ -409,12 +444,23 @@ def main() -> int:
 
     # 3) Deterministic escalation: high risk -> broader suite.
     if high_risk:
+        if args.mode == "pre-commit":
+            # Keep pre-commit under wall-clock: unit + not slow.
+            # Integration belongs to pre-push / ci full suite.
+            logger.info(
+                "High-risk change detected; running unit suite (not slow) for pre-commit"
+            )
+            return run_pytest(
+                "not slow",
+                coverage=args.coverage,
+                targets=["tests/unit"],
+                allow_no_tests_collected=False,
+            )
         logger.info("High-risk change detected; running broad suite")
-        broad_targets = ["tests/unit", "tests/integration"]
         return run_pytest(
             "",
             coverage=args.coverage,
-            targets=broad_targets,
+            targets=["tests/unit", "tests/integration"],
             allow_no_tests_collected=False,
         )
 

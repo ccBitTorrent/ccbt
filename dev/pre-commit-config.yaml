@@ -42,7 +42,10 @@ repos:
         types: [python]
         files: ^ccbt/.*\.py$
         exclude: ^(tests/|benchmarks/|ccbt/i18n/scripts/|ccbt/i18n/locale_data/|.*/__pycache__/|.*\.pyc$|.*\.pyo$|dev/|dist/|docs/|htmlcov/|site/|\.benchmarks/|\.ccbt/|\.cursor/|\.github/|\.hypothesis/|\.pre-commit-cache/|\.pre-commit-home/|\.pytest_cache/|\.ruff_cache/|\.venv/)
-        pass_filenames: true
+        # Filenames are resolved inside the script (git staged/unstaged). Passing
+        # thousands of paths via --all-files previously spawned parallel suites.
+        pass_filenames: false
+        require_serial: true
         stages: [pre-commit]
       - id: pytest-coverage
         name: pytest-coverage

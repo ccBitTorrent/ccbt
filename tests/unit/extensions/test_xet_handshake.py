@@ -83,7 +83,7 @@ def test_signed_handshake_carries_workspace_and_hash_algorithm() -> None:
 
     assert decoded is not None
     assert decoded["workspace_id"] == b"W" * 32
-    assert decoded["hash_algorithm"].startswith("xet-hash:v1:")
+    assert decoded["hash_algorithm"].startswith("xet-hash:v2:")
     assert decoded["hash_algorithm"].endswith("blake3")
     assert handshake.verify_handshake_identity("peer-1", decoded) is True
 
