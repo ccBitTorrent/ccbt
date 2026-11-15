@@ -137,15 +137,22 @@ class HybridProtocol(Protocol):
             self.protocol_weights[ProtocolType.IPFS] = self.strategy.ipfs_weight
 
         if self.strategy.use_xet:
-            try:
-                from ccbt.protocols.xet import XetProtocol
+            # Advertise XET only when a real XetTransport exists on the session.
+            transport = None
+            if self.session_manager is not None:
+                transport = getattr(self.session_manager, "xet_transport", None)
+            if transport is None:
+                self.capabilities.supports_xet = False
+            else:
+                try:
+                    from ccbt.protocols.xet import XetProtocol
 
-                # Note: Pass session_manager to XetProtocol if it supports it
-                self.sub_protocols[ProtocolType.XET] = XetProtocol()
-                self.protocol_weights[ProtocolType.XET] = self.strategy.xet_weight
-            except ImportError:
-                # Xet protocol not yet implemented, skip it
-                pass
+                    self.sub_protocols[ProtocolType.XET] = XetProtocol(
+                        transport=transport
+                    )
+                    self.protocol_weights[ProtocolType.XET] = self.strategy.xet_weight
+                except ImportError:
+                    self.capabilities.supports_xet = False
 
         # Initialize performance scores
         for protocol_type in self.sub_protocols:

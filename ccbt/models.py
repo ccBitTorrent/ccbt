@@ -2416,10 +2416,10 @@ class DiskConfig(BaseModel):
         description="Maximum Xet chunk size in bytes",
     )
     xet_chunk_target_size: int = Field(
-        default=16384,
-        ge=8192,
+        default=65536,
+        ge=65536,
         le=65536,
-        description="Target Xet chunk size in bytes",
+        description="Target Xet chunk size in bytes (upstream suite fixes this at 64 KiB)",
     )
     xet_deduplication_enabled: bool = Field(
         default=True,
@@ -2433,17 +2433,34 @@ class DiskConfig(BaseModel):
         default=None,
         description="Path to Xet chunk storage directory (defaults to download_dir/.xet_chunks)",
     )
+    xet_cas_endpoint: Optional[str] = Field(
+        default=None,
+        description="Base URL of a Xet CAS service (HF/OpenXet compatible), e.g. http://127.0.0.1:8470",
+    )
+    xet_cas_token_env: str = Field(
+        default="CCBT_CAS_TOKEN",
+        description="Environment variable holding the CAS bearer token",
+    )
     enable_file_deduplication: bool = Field(
-        default=True,
-        description="Enable file-level deduplication for XET",
+        default=False,
+        description=(
+            "Deprecated placeholder flag (module removed). Kept for config "
+            "compat; ignored at runtime."
+        ),
     )
     enable_data_aggregation: bool = Field(
-        default=True,
-        description="Enable data aggregation for batch chunk operations",
+        default=False,
+        description=(
+            "Deprecated placeholder flag (module removed). Kept for config "
+            "compat; ignored at runtime."
+        ),
     )
     enable_defrag_prevention: bool = Field(
-        default=True,
-        description="Enable defragmentation prevention for chunk storage",
+        default=False,
+        description=(
+            "Deprecated placeholder flag (module removed). Kept for config "
+            "compat; ignored at runtime."
+        ),
     )
     xet_batch_size: int = Field(
         default=100,
@@ -4893,20 +4910,29 @@ class XetSyncConfig(BaseModel):
         description="Workspace auth scope (strict_workspace_auth/content_addressable_open)",
     )
     hash_algorithm_policy: str = Field(
-        default="negotiate",
-        description="Hash identity policy (negotiate/require_configured)",
+        default="require_configured",
+        description=(
+            "Hash identity policy. Suite v2 requires BLAKE3 only; "
+            "'negotiate' is legacy and rejected for new workspaces."
+        ),
     )
     require_signed_metadata: bool = Field(
         default=True,
         description="Require signed XET metadata and handshake identity when auth is enabled",
     )
     enable_lpd: bool = Field(
-        default=True,
-        description="Enable Local Peer Discovery (BEP 14)",
+        default=False,
+        description=(
+            "Enable Local Peer Discovery (BEP 14). Default off until a two-node "
+            "proof test exists for the mechanism."
+        ),
     )
     enable_gossip: bool = Field(
-        default=True,
-        description="Enable gossip protocol for update propagation",
+        default=False,
+        description=(
+            "Enable gossip protocol for update propagation. Default off until "
+            "a two-node proof test exists."
+        ),
     )
     enable_dht: bool = Field(
         default=True,
@@ -4929,12 +4955,18 @@ class XetSyncConfig(BaseModel):
         description="Enable bloom filter exchange for XET chunk availability",
     )
     enable_multicast: bool = Field(
-        default=True,
-        description="Enable multicast for XET chunk/folder announcements",
+        default=False,
+        description=(
+            "Enable multicast for XET chunk/folder announcements. Default off "
+            "until a two-node proof test exists."
+        ),
     )
     enable_flooding: bool = Field(
-        default=True,
-        description="Enable controlled flooding for XET propagation",
+        default=False,
+        description=(
+            "Enable controlled flooding for XET propagation. Default off until "
+            "a two-node proof test exists."
+        ),
     )
     gossip_fanout: int = Field(
         default=3,

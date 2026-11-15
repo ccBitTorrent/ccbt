@@ -1,0 +1,24 @@
+{
+  "comment": "Pinned external references for XET conformance. Bump only with a fixture refresh; CI verifies fixture hashes against tests/data/xet/manifest.json.",
+  "xet_core": {
+    "repo": "https://github.com/huggingface/xet-core",
+    "commit": "0054283b9ce00f4683a9b9fa21a40301acec81f6",
+    "spec": "https://huggingface.co/docs/xet/en/index",
+    "spec_version": "1.1.0"
+  },
+  "ietf_draft": "draft-denis-xet-05",
+  "hf_xet_pypi": ">=1.7.0",
+  "huggingface_hub": ">=0.26",
+  "openxet": {
+    "repo": "https://github.com/stubbi/openxet",
+    "commit": "pinned-at-refresh-time",
+    "docs": "https://openxet.com/docs/research/S10-cas-wire-contract.html"
+  },
+  "git": "2.56.0",
+  "git_lfs": ">=3.5",
+  "reference_corpus": {
+    "repo": "xet-team/xet-spec-reference-files",
+    "local_manifest": "tests/data/xet/manifest.json",
+    "note": "Large upstream sample file is not vendored; synthetic vectors in tests/data/xet/synthetic_vectors.json are generated deterministically (seeded) and hashed in the manifest. Refresh procedure: regenerate fixtures, update manifest hashes, run golden tests."
+  }
+}

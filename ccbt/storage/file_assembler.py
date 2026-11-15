@@ -639,6 +639,12 @@ class AsyncFileAssembler:
             if use_xet_chunking is None:
                 use_xet_chunking = self.config.disk.xet_enabled
 
+            for segment in piece_segments:
+                await self._write_segment_to_file_async(segment, piece_data)
+
+            self.written_pieces.add(piece_index)
+
+            # XET indexing happens after the piece is on disk, per file.
             if use_xet_chunking and self.config.disk.xet_deduplication_enabled:
                 try:
                     await self._store_xet_chunks(
@@ -648,15 +654,10 @@ class AsyncFileAssembler:
                     )
                 except Exception as error:
                     self.logger.warning(
-                        "Failed to store Xet chunks for piece %d: %s. Continuing with standard write.",
+                        "Failed to index Xet chunks for piece %d: %s. Continuing.",
                         piece_index,
                         error,
                     )
-
-            for segment in piece_segments:
-                await self._write_segment_to_file_async(segment, piece_data)
-
-            self.written_pieces.add(piece_index)
 
     async def _write_segment_to_file_async(
         self,
@@ -715,270 +716,48 @@ class AsyncFileAssembler:
 
     async def _store_xet_chunks(
         self,
-        piece_index: int,
-        piece_data: Union[bytes, memoryview],
+        _piece_index: int,
+        _piece_data: Union[bytes, memoryview],
         piece_segments: list[FileSegment],
     ) -> None:
-        """Store Xet chunks for a piece with deduplication.
+        """Index files completed by this piece into the XET chunk store.
 
-        This method chunks the piece data using Gearhash CDC, computes hashes
-        for each chunk, and stores them via the disk I/O manager which handles
-        deduplication. It also updates piece metadata.
-
-        Args:
-            piece_index: Index of the piece
-            piece_data: Complete piece data
-            piece_segments: File segments that belong to this piece
-
+        XET chunking is per-file, not per-piece: Gearhash boundaries are
+        computed over each file as a single stream once all of its pieces
+        are on disk, so identical content dedups across torrents
+        regardless of piece length. Piece-local chunking (the previous
+        behaviour) produced different chunks for the same file under
+        different piece lengths and has been removed.
         """
-        try:
-            from pathlib import Path
-
-            from ccbt.storage.xet_chunking import GearhashChunker
-            from ccbt.storage.xet_hashing import XetHasher
-
-            # Convert to bytes if needed
-            if isinstance(piece_data, memoryview):
-                data_bytes = bytes(piece_data)
-            else:
-                data_bytes = piece_data
-
-            # Initialize chunker with config values
-            chunker = GearhashChunker(
-                target_size=self.config.disk.xet_chunk_target_size
-            )
-
-            # Chunk the piece data
-            chunks = chunker.chunk_buffer(data_bytes)
-
-            if not chunks:
-                self.logger.debug("No chunks generated for piece %d", piece_index)
-                return
-
-            # Hash and store each chunk
-            chunk_hashes = []
-            segment_offset = 0
-
-            # Track chunks per file for metadata storage
-            file_chunks: dict[
-                str, list[tuple[bytes, int]]
-            ] = {}  # file_path -> [(chunk_hash, offset)]
-
-            # Try to use data aggregator for batch operations if available
-            aggregator = getattr(self.disk_io, "_xet_data_aggregator", None)
-            use_batch = aggregator is not None and len(chunks) > 10
-
-            if use_batch:
-                # Batch mode: collect all chunks first, then store in batch
-                batch_chunks: list[tuple[bytes, bytes]] = []  # (chunk_hash, chunk_data)
-                batch_file_offsets: list[int] = []
-                batch_file_paths: list[str] = []
-
-                for chunk in chunks:
-                    # Compute chunk hash
-                    chunk_hash = XetHasher.compute_chunk_hash(chunk)
-                    chunk_hashes.append(chunk_hash)
-
-                    # Find which segment(s) this chunk overlaps with
-                    chunk_start = segment_offset
-                    chunk_end = segment_offset + len(chunk)
-
-                    for segment in piece_segments:
-                        segment_start = segment.start_offset
-                        segment_end = segment.end_offset
-
-                        # Check if chunk overlaps with this segment
-                        if chunk_start < segment_end and chunk_end > segment_start:
-                            # Calculate file offset for this chunk
-                            file_offset = segment.start_offset + max(
-                                0, chunk_start - segment.start_offset
-                            )
-
-                            # Add to batch
-                            batch_chunks.append((chunk_hash, chunk))
-                            batch_file_offsets.append(file_offset)
-                            batch_file_paths.append(str(segment.file_path))
-
-                            # Track chunk for this file
-                            file_path_str = str(segment.file_path)
-                            if file_path_str not in file_chunks:
-                                file_chunks[file_path_str] = []
-                            file_chunks[file_path_str].append((chunk_hash, file_offset))
-
-                            break  # Store once per chunk
-
-                    segment_offset += len(chunk)
-
-                # Store chunks in batches per file
-                file_batches: dict[
-                    str, list[tuple[bytes, bytes, int]]
-                ] = {}  # file_path -> [(chunk_hash, chunk_data, offset)]
-                for i, (chunk_hash, chunk_data) in enumerate(batch_chunks):
-                    file_path_str = batch_file_paths[i]
-                    offset = batch_file_offsets[i]
-                    if file_path_str not in file_batches:
-                        file_batches[file_path_str] = []
-                    file_batches[file_path_str].append((chunk_hash, chunk_data, offset))
-
-                # Store batches per file
-                for file_path_str, file_batch in file_batches.items():
-                    file_chunk_hashes = [h for h, _, _ in file_batch]
-                    file_chunk_data = [d for _, d, _ in file_batch]
-                    file_offsets = [o for _, _, o in file_batch]
-
-                    # Use aggregator for batch storage
-                    if aggregator is not None:
-                        await aggregator.batch_store_chunks(  # type: ignore[attr-defined]
-                            list(zip(file_chunk_hashes, file_chunk_data)),
-                            file_path=file_path_str,
-                            file_offsets=file_offsets,
-                        )
-            else:
-                # Individual mode: store chunks one by one
-                for chunk in chunks:
-                    # Compute chunk hash
-                    chunk_hash = XetHasher.compute_chunk_hash(chunk)
-                    chunk_hashes.append(chunk_hash)
-
-                    # Find which segment(s) this chunk overlaps with
-                    chunk_start = segment_offset
-                    chunk_end = segment_offset + len(chunk)
-
-                    # Store chunk via disk I/O (handles deduplication)
-                    # We need to store it with reference to the first file segment it overlaps
-                    for segment in piece_segments:
-                        segment_start = segment.start_offset
-                        segment_end = segment.end_offset
-
-                        # Check if chunk overlaps with this segment
-                        if chunk_start < segment_end and chunk_end > segment_start:
-                            # Calculate file offset for this chunk
-                            file_offset = segment.start_offset + max(
-                                0, chunk_start - segment.start_offset
-                            )
-
-                            # Store chunk with deduplication
-                            await self.disk_io.write_xet_chunk(
-                                chunk_hash=chunk_hash,
-                                chunk_data=chunk,
-                                file_path=Path(segment.file_path),
-                                offset=file_offset,
-                            )
-
-                            # Track chunk for this file
-                            file_path_str = str(segment.file_path)
-                            if file_path_str not in file_chunks:
-                                file_chunks[file_path_str] = []
-                            file_chunks[file_path_str].append((chunk_hash, file_offset))
-
-                            break  # Store once per chunk
-
-                    segment_offset += len(chunk)
-
-            # Build Merkle tree for piece
-            merkle_hash = XetHasher.build_merkle_tree(chunks)
-
-            # Update piece metadata
-            await self._update_piece_xet_metadata(
-                piece_index, chunk_hashes, merkle_hash
-            )
-
-            # Store file metadata for each file that has chunks
-            dedup = getattr(self.disk_io, "_get_xet_deduplication", lambda: None)()
-            file_dedup = getattr(self.disk_io, "_xet_file_deduplication", None)
-
-            if dedup:
-                from ccbt.models import XetFileMetadata
-
-                for file_path_str, file_chunk_list in file_chunks.items():
-                    try:
-                        # Sort chunks by offset to ensure correct order
-                        file_chunk_list.sort(key=lambda x: x[1])
-                        chunk_hashes_ordered = [
-                            chunk_hash for chunk_hash, _ in file_chunk_list
-                        ]
-
-                        # Compute file hash (Merkle root of chunk hashes)
-                        if chunk_hashes_ordered:
-                            # Build Merkle tree from chunk hashes
-                            file_hash = XetHasher.build_merkle_tree_from_hashes(
-                                chunk_hashes_ordered
-                            )
-                        else:
-                            # Empty file - use zero hash
-                            file_hash = bytes(32)
-
-                        # Calculate total size from chunks
-                        # Get chunk sizes from deduplication manager
-                        total_size = 0
-                        for chunk_hash, _offset in file_chunk_list:
-                            chunk_info = dedup.get_chunk_info(chunk_hash)
-                            if chunk_info:
-                                total_size += chunk_info["size"]
-                            else:
-                                # Fallback: estimate from chunk hash (not ideal)
-                                # This should rarely happen if chunks were stored correctly
-                                self.logger.warning(
-                                    "Chunk info not found for hash %s, cannot determine size",
-                                    chunk_hash.hex()[:16],
-                                )
-
-                        # Create file metadata
-                        file_metadata = XetFileMetadata(
-                            file_path=file_path_str,
-                            file_hash=file_hash,
-                            chunk_hashes=chunk_hashes_ordered,
-                            xorb_refs=[],  # TODO: Add xorb support
-                            total_size=total_size,
-                        )
-
-                        # Store metadata persistently
-                        await dedup.store_file_metadata(file_metadata)
-
-                        # Perform file-level deduplication if enabled
-                        if file_dedup:
-                            try:
-                                dedup_stats = await file_dedup.deduplicate_file(
-                                    Path(file_path_str)
-                                )
-                                if dedup_stats.get("duplicate_found"):
-                                    self.logger.info(
-                                        "File-level deduplication: %s matches %s (saved %d bytes)",
-                                        file_path_str,
-                                        dedup_stats.get("duplicate_path"),
-                                        dedup_stats.get("storage_saved", 0),
-                                    )
-                            except Exception as e:
-                                self.logger.debug(
-                                    "File-level deduplication check failed: %s", e
-                                )
-
-                    except Exception as e:
-                        self.logger.warning(
-                            "Failed to store file metadata for %s: %s",
-                            file_path_str,
-                            e,
-                            exc_info=True,
-                        )
-
-            self.logger.debug(
-                "Stored %d Xet chunks for piece %d (Merkle: %s)",
-                len(chunks),
-                piece_index,
-                merkle_hash.hex()[:16],
-            )
-
-        except ImportError as e:
-            self.logger.warning(
-                "Xet modules not available: %s. Skipping chunking.",
-                e,
-            )
-        except Exception:
-            self.logger.exception(
-                "Error in Xet chunking for piece %d",
-                piece_index,
-            )
-            raise
+        dedup = getattr(self.disk_io, "_get_xet_deduplication", lambda: None)()
+        if dedup is None:
+            return
+        indexed: set[str] = getattr(self, "_xet_indexed_files", set())
+        self._xet_indexed_files = indexed
+        touched = {segment.file_path for segment in piece_segments}
+        for file_path in touched:
+            if file_path in indexed:
+                continue
+            file_segments = [s for s in self.file_segments if s.file_path == file_path]
+            if not file_segments or not all(
+                s.piece_index in self.written_pieces for s in file_segments
+            ):
+                continue
+            disk_path = Path(file_path)
+            try:
+                if not disk_path.exists():
+                    continue
+                await dedup.index_file_streaming(disk_path, file_key=file_path)
+                indexed.add(file_path)
+                self.logger.debug(
+                    "Indexed completed file %s into XET chunk store", file_path
+                )
+            except Exception:
+                self.logger.warning(
+                    "Failed to index %s into XET chunk store",
+                    file_path,
+                    exc_info=True,
+                )
 
     async def _update_piece_xet_metadata(
         self,

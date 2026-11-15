@@ -6,8 +6,10 @@ version vectors, and 3-way merge.
 
 from __future__ import annotations
 
+import json
 import logging
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -91,15 +93,62 @@ class ConflictResolver:
 
         """
         if self.strategy == ConflictStrategy.LAST_WRITE_WINS:
-            return self._last_write_wins(our_version, their_version)
-        if self.strategy == ConflictStrategy.VERSION_VECTOR:
-            return self._version_vector_merge(file_path, our_version, their_version)
-        if self.strategy == ConflictStrategy.THREE_WAY_MERGE:
-            return self._three_way_merge(our_version, their_version, base_version)
-        if self.strategy == ConflictStrategy.TIMESTAMP:
-            return self._timestamp_merge(our_version, their_version)
-        # Default to last write wins
-        return self._last_write_wins(our_version, their_version)
+            winner = self._last_write_wins(our_version, their_version)
+        elif self.strategy == ConflictStrategy.VERSION_VECTOR:
+            winner = self._version_vector_merge(file_path, our_version, their_version)
+        elif self.strategy == ConflictStrategy.THREE_WAY_MERGE:
+            winner = self._three_way_merge(our_version, their_version, base_version)
+        elif self.strategy == ConflictStrategy.TIMESTAMP:
+            winner = self._timestamp_merge(our_version, their_version)
+        else:
+            winner = self._last_write_wins(our_version, their_version)
+        loser = their_version if winner is our_version else our_version
+        self.preserve_conflict_copy(file_path, winner, loser)
+        return winner
+
+    def preserve_conflict_copy(
+        self,
+        file_path: str,
+        winner: dict[str, Any],
+        loser: dict[str, Any],
+        workspace_root: Optional[str] = None,
+    ) -> Optional[str]:
+        """Write the losing version under ``.xet/conflicts/``; never silent overwrite.
+
+        Returns the conflict copy path when content was written, else None.
+        """
+        root = Path(workspace_root or winner.get("workspace_root") or ".")
+        conflicts_dir = root / ".xet" / "conflicts"
+        conflicts_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = file_path.replace("\\", "/").replace("/", "__")
+        peer = loser.get("peer_id", "unknown")
+        ts = loser.get("timestamp", 0.0)
+        dest = conflicts_dir / f"{safe_name}.{peer}.{int(ts)}.conflict"
+        content = loser.get("content")
+        if content is None:
+            content = loser.get("data")
+        if isinstance(content, bytes):
+            dest.write_bytes(content)
+            return str(dest)
+        if isinstance(content, str):
+            dest.write_text(content, encoding="utf-8")
+            return str(dest)
+        # Metadata-only conflict: record JSON sidecar
+        dest.write_text(
+            json.dumps(
+                {
+                    "file_path": file_path,
+                    "winner_peer": winner.get("peer_id"),
+                    "loser_peer": loser.get("peer_id"),
+                    "winner_ts": winner.get("timestamp"),
+                    "loser_ts": loser.get("timestamp"),
+                    "strategy": self.strategy.value,
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return str(dest)
 
     def _last_write_wins(
         self, our_version: dict[str, Any], their_version: dict[str, Any]
@@ -215,7 +264,8 @@ class ConflictResolver:
 
         """
         if base_version is None:
-            # Fallback to last write wins if no base
+            # Without a stored common base, three-way degrades to conflict-copy
+            # (caller preserves loser); prefer later timestamp as provisional winner.
             return self._last_write_wins(our_version, their_version)
 
         # Simple 3-way merge: if both changed from base, prefer our version

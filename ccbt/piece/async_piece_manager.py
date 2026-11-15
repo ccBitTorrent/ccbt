@@ -6133,125 +6133,21 @@ class AsyncPieceManager:
             ),
         }
 
-    async def _store_xet_hash(self, piece_index: int, piece: PieceData) -> None:
-        """Store Xet Merkle hash for verified piece.
+    async def _store_xet_hash(self, piece_index: int, _piece: PieceData) -> None:
+        """Record that a verified piece is available for XET indexing.
 
-        This method computes the Xet Merkle hash from the piece data using
-        content-defined chunking (Gearhash CDC) and stores it for deduplication
-        lookup. The implementation follows the Rust reference implementation pattern.
-
-        The Merkle hash is computed by:
-        1. Chunking piece data using Gearhash CDC algorithm
-        2. Computing BLAKE3-256 hash for each chunk
-        3. Building a binary Merkle tree from chunk hashes
-        4. Returning the root hash as the Merkle hash
-
-        The hash can be used to find other torrents or pieces with similar
-        content for cross-torrent deduplication.
-
-        Args:
-            piece_index: Index of the verified piece
-            piece: PieceData object containing the verified piece data
-
+        XET chunk identity is per-file, not per-piece: Gearhash chunk
+        boundaries must be computed over each file as one stream (see
+        XetDeduplication.index_file_streaming, invoked by the file
+        assembler when a file completes). Chunking individual pieces
+        here previously produced piece-length-dependent chunk hashes
+        that could never dedup across torrents, so this hook no longer
+        derives chunk hashes; it only tracks verified pieces.
         """
-        try:
-            from ccbt.storage.xet_chunking import GearhashChunker
-            from ccbt.storage.xet_hashing import XetHasher
-
-            # Get piece data
-            piece_data = piece.get_data()
-
-            if not piece_data:
-                self.logger.debug("No data to hash for piece %d", piece_index)
-                return
-
-            # Initialize chunker with config values
-            # Gearhash CDC uses content-defined boundaries for intelligent chunking
-            # The chunker uses target_size; min/max are enforced by the algorithm
-            chunker = GearhashChunker(
-                target_size=self.config.disk.xet_chunk_target_size,
-            )
-
-            # Chunk the piece data using Gearhash CDC
-            # This produces variable-sized chunks based on content boundaries
-            chunks = chunker.chunk_buffer(piece_data)
-
-            if not chunks:
-                self.logger.debug("No chunks generated for piece %d", piece_index)
-                return
-
-            # Compute individual chunk hashes (BLAKE3-256 or SHA-256 fallback)
-            chunk_hashes = [XetHasher.compute_chunk_hash(chunk) for chunk in chunks]
-
-            # Build Merkle tree from chunk hashes
-            # This follows the Rust implementation: binary tree construction
-            # where each level pairs hashes until a single root remains
-            merkle_hash = XetHasher.build_merkle_tree_from_hashes(chunk_hashes)
-
-            # Store Merkle hash and chunk hashes in cache
-            async with self.lock:
-                self.xet_merkle_hashes[piece_index] = merkle_hash
-                self.xet_chunk_hashes[piece_index] = chunk_hashes
-
-            # Update torrent_data dict if xet_metadata exists
-            # This allows the metadata to be preserved across sessions
-            if isinstance(self.torrent_data, dict):
-                # Initialize xet_metadata if it doesn't exist
-                if "xet_metadata" not in self.torrent_data:
-                    self.torrent_data["xet_metadata"] = {
-                        "chunk_hashes": [],
-                        "file_metadata": [],
-                        "piece_metadata": {},
-                        "xorb_hashes": [],
-                    }
-
-                # Update piece metadata
-                xet_metadata = self.torrent_data["xet_metadata"]
-                if "piece_metadata" not in xet_metadata:
-                    xet_metadata["piece_metadata"] = {}
-
-                # Store piece metadata: chunk hashes and Merkle root
-                xet_metadata["piece_metadata"][piece_index] = {
-                    "piece_index": piece_index,
-                    "chunk_hashes": [
-                        h.hex() for h in chunk_hashes
-                    ],  # Store as hex strings
-                    "merkle_hash": merkle_hash.hex(),
-                }
-
-                # Update global chunk hash list (deduplicated)
-                if "chunk_hashes" not in xet_metadata:
-                    xet_metadata["chunk_hashes"] = []
-
-                # Add new chunk hashes to global list (avoid duplicates)
-                existing_chunks = set(xet_metadata["chunk_hashes"])
-                for chunk_hash in chunk_hashes:
-                    chunk_hash_hex = chunk_hash.hex()
-                    if chunk_hash_hex not in existing_chunks:
-                        xet_metadata["chunk_hashes"].append(chunk_hash_hex)
-                        existing_chunks.add(chunk_hash_hex)
-
-            self.logger.debug(
-                "Computed Xet Merkle hash for piece %d: %s (%d chunks, %d bytes)",
-                piece_index,
-                merkle_hash.hex()[:16],
-                len(chunks),
-                len(piece_data),
-            )
-
-        except ImportError as e:
-            self.logger.debug(
-                "Xet modules not available for piece %d: %s",
-                piece_index,
-                e,
-            )
-        except Exception as e:
-            self.logger.warning(
-                "Error computing Xet Merkle hash for piece %d: %s",
-                piece_index,
-                e,
-            )
-            # Don't raise - this is optional functionality
+        self.logger.debug(
+            "Piece %d verified; XET indexing deferred to file completion",
+            piece_index,
+        )
 
     def _hash_piece_optimized(self, piece: PieceData, expected_hash: bytes) -> bool:
         """Optimized piece hash verification using memoryview and zero-copy operations.

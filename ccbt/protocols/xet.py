@@ -40,8 +40,15 @@ class XetProtocol(Protocol):
         flooding_client=None,
         catalog=None,
         bloom_filter=None,
+        transport=None,
+        chunk_query_batch_size: int = 50,
+        chunk_query_max_concurrent: int = 50,
     ):
-        """Initialize Xet protocol.
+        """Initialize Xet protocol (discovery coordinator).
+
+        Byte exchange is owned by ``XetTransport``. This class discovers peers
+        and coordinates announce/scrape; ``send_message``/`connect_peer` only
+        succeed when a transport is attached and performs real I/O.
 
         Args:
             cas_client: Optional P2P CAS client override
@@ -54,6 +61,9 @@ class XetProtocol(Protocol):
             flooding_client: Optional controlled flooding client
             catalog: Optional chunk catalog for bulk queries
             bloom_filter: Optional bloom filter for chunk availability
+            transport: Optional XetTransport for real peer messaging
+            chunk_query_batch_size: Max chunk hashes per discovery batch
+            chunk_query_max_concurrent: Max concurrent chunk peer queries
 
         """
         super().__init__(ProtocolType.XET)
@@ -82,9 +92,16 @@ class XetProtocol(Protocol):
         self.flooding_client = flooding_client
         self.catalog = catalog
         self.bloom_filter = bloom_filter
+        self.transport = transport
+        self.chunk_query_batch_size = max(1, chunk_query_batch_size)
+        self.chunk_query_max_concurrent = max(1, chunk_query_max_concurrent)
 
         # Logger
         self.logger = logging.getLogger(__name__)
+
+    def set_transport(self, transport: Any) -> None:
+        """Attach XetTransport; required for honest send/receive/connect."""
+        self.transport = transport
 
     async def start(self) -> None:
         """Start Xet protocol.
@@ -195,46 +212,46 @@ class XetProtocol(Protocol):
             raise
 
     async def connect_peer(self, peer_info: PeerInfo) -> bool:
-        """Connect to a peer for Xet chunk exchange.
+        """Register a peer with the attached transport (no fake success).
 
-        Args:
-            peer_info: Peer information
-
-        Returns:
-            True if connection successful, False otherwise
-
+        Returns True only when a transport is attached and the peer is
+        registered for XET messaging. Connection establishment itself is
+        owned by AsyncPeerConnectionManager.
         """
         try:
-            # For Xet, peer connections are primarily for chunk exchange
-            # The actual connection is managed through the connection manager
-            # and BitTorrent protocol extension
-
-            # Add peer to protocol
+            if self.transport is None:
+                self.stats.connections_failed += 1
+                self.update_stats(errors=1)
+                return False
+            peer_id = (
+                peer_info.peer_id.hex()
+                if peer_info.peer_id
+                else f"{peer_info.ip}:{peer_info.port}"
+            )
+            # Minimal handshake admission for discovery-coordinator path.
+            admitted = self.transport.register_peer(
+                peer_id, {"xet": {"supports_chunk_requests": True}}
+            )
+            if not admitted:
+                self.stats.connections_failed += 1
+                return False
             self.add_peer(peer_info)
             self.stats.connections_established += 1
             self.update_stats()
-
-            # Emit peer connected event
             await emit_event(
                 Event(
                     event_type=EventType.PEER_CONNECTED.value,
                     data={
                         "protocol_type": "xet",
-                        "peer_id": peer_info.peer_id.hex()
-                        if peer_info.peer_id
-                        else None,
+                        "peer_id": peer_id,
                         "timestamp": time.time(),
                     },
                 ),
             )
-
             return True
-
         except Exception as e:
             self.stats.connections_failed += 1
             self.update_stats(errors=1)
-
-            # Emit connection error event
             await emit_event(
                 Event(
                     event_type=EventType.PEER_CONNECTION_FAILED.value,
@@ -248,21 +265,14 @@ class XetProtocol(Protocol):
                     },
                 ),
             )
-
             return False
 
     async def disconnect_peer(self, peer_id: str) -> None:
-        """Disconnect from a peer.
-
-        Args:
-            peer_id: Peer identifier
-
-        """
+        """Unregister peer from transport and local peer set."""
         try:
-            # Remove peer from protocol
+            if self.transport is not None:
+                self.transport.unregister_peer(peer_id)
             self.remove_peer(peer_id)
-
-            # Emit peer disconnected event
             await emit_event(
                 Event(
                     event_type=EventType.PEER_DISCONNECTED.value,
@@ -273,57 +283,44 @@ class XetProtocol(Protocol):
                     },
                 ),
             )
-
         except Exception:
             self.logger.exception("Error disconnecting peer %s", peer_id)
             self.update_stats(errors=1)
 
-    async def send_message(self, _peer_id: str, message: bytes) -> bool:
-        """Send message to peer.
-
-        Note: Xet uses BitTorrent protocol extension for chunk messages,
-        so this is primarily for future protocol-level messages.
-
-        Args:
-            peer_id: Peer identifier
-            message: Message bytes
-
-        Returns:
-            True if sent successfully, False otherwise
-
-        """
+    async def send_message(self, peer_id: str, message: bytes) -> bool:
+        """Send via attached XetTransport sender; never reports success without I/O."""
         try:
-            # For Xet, messages are sent via BitTorrent extension protocol
-            # This method is kept for protocol compatibility
-            # Actual chunk requests/responses use extension protocol
-
-            self.update_stats(bytes_sent=len(message), messages_sent=1)
-            return True
-
+            if self.transport is None or not self.transport.has_sender():
+                self.update_stats(errors=1)
+                return False
+            ok = await self.transport.send(peer_id, message)
+            if ok:
+                self.update_stats(bytes_sent=len(message), messages_sent=1)
+            else:
+                self.update_stats(errors=1)
+            return bool(ok)
         except Exception:
             self.update_stats(errors=1)
             return False
 
-    async def receive_message(self, _peer_id: str) -> Optional[bytes]:
-        """Receive message from peer.
+    async def receive_message(self, peer_id: str) -> Optional[bytes]:
+        """XET inbound messages are push-dispatched via ExtensionManager.
 
-        Note: Xet uses BitTorrent protocol extension for chunk messages,
-        so this is primarily for future protocol-level messages.
-
-        Args:
-            peer_id: Peer identifier
-
-        Returns:
-            Message bytes if available, None otherwise
-
+        This method does not invent payloads; it returns None unless the
+        transport exposes a queued inbound message for the peer.
         """
         try:
-            # For Xet, messages are received via BitTorrent extension protocol
-            # This method is kept for protocol compatibility
-            # Actual chunk requests/responses use extension protocol
-
-            return None
-
+            if self.transport is None:
+                return None
+            queue = getattr(self.transport, "inbound_queue", None)
+            if queue is None:
+                return None
+            items = queue.get(peer_id) or []
+            if not items:
+                return None
+            item = items.pop(0)
+            self.update_stats(bytes_received=len(item), messages_received=1)
+            return item
         except Exception:
             self.update_stats(errors=1)
             return None
@@ -439,27 +436,18 @@ class XetProtocol(Protocol):
                         len(xet_meta.piece_metadata),
                     )
 
-            # Strategy 4: Use BitTorrent v2 piece layers for chunk discovery
-            # For v2 torrents, piece layers contain SHA-256 hashes that can be used
-            # as identifiers for content discovery (though not perfect, since Xet chunks
-            # are content-defined, not piece-aligned)
-            if not chunk_hashes_to_query and torrent_info.piece_layers:
-                # For v2 torrents, use piece layer roots as potential chunk identifiers
-                # This is more accurate than v1 piece hashes since they're SHA-256
-                piece_layer_roots = list(torrent_info.piece_layers.keys())
-                # Limit to first 20 piece layers to avoid excessive queries
-                chunk_hashes_to_query.extend(piece_layer_roots[:20])
-                self.logger.debug(
-                    "Using %d piece layer roots from v2 torrent for chunk discovery",
-                    len(chunk_hashes_to_query),
-                )
+            # Piece-layer roots are NOT XET chunk hashes; never use them as
+            # discovery identifiers (WS7: delete piece-layers-as-chunk-hashes).
+
+            batch_size = self.chunk_query_batch_size
+            max_concurrent = self.chunk_query_max_concurrent
 
             # Strategy 2c: Peer Exchange (PEX) for chunk availability
             if self.pex_manager and chunk_hashes_to_query:
                 try:
                     if hasattr(self.pex_manager, "get_peers_with_chunks"):
                         pex_peers = await self.pex_manager.get_peers_with_chunks(
-                            chunk_hashes_to_query[:20]  # Limit queries
+                            chunk_hashes_to_query[:batch_size]
                         )
                         if pex_peers:
                             peers.extend(pex_peers)
@@ -471,22 +459,7 @@ class XetProtocol(Protocol):
                 except Exception as e:
                     self.logger.warning("Error querying PEX for peers: %s", e)
 
-            # Strategy 3b: Pre-filter using Bloom Filters
-            # For v2 torrents, piece layers contain SHA-256 hashes that can be used
-            # as identifiers for content discovery (though not perfect, since Xet chunks
-            # are content-defined, not piece-aligned)
-            if not chunk_hashes_to_query and torrent_info.piece_layers:
-                # For v2 torrents, use piece layer roots as potential chunk identifiers
-                # This is more accurate than v1 piece hashes since they're SHA-256
-                piece_layer_roots = list(torrent_info.piece_layers.keys())
-                # Limit to first 20 piece layers to avoid excessive queries
-                chunk_hashes_to_query.extend(piece_layer_roots[:20])
-                self.logger.debug(
-                    "Using %d piece layer roots from v2 torrent for chunk discovery",
-                    len(chunk_hashes_to_query),
-                )
-
-            # Strategy 3b: Pre-filter using Bloom Filters
+            # Strategy 3b: Pre-filter using Bloom Filters (never proves absence)
             if self.bloom_filter and chunk_hashes_to_query:
                 try:
                     # Filter chunks that might be available based on bloom filter
@@ -517,7 +490,7 @@ class XetProtocol(Protocol):
                         if catalog_to_use is not None:
                             try:
                                 catalog_results = await catalog_to_use.get_peers_by_chunks(  # type: ignore[attr-defined]
-                                    chunk_hashes_to_query[:50]
+                                    chunk_hashes_to_query[:batch_size]
                                 )
                                 # Add catalog results
                                 for (
@@ -541,7 +514,7 @@ class XetProtocol(Protocol):
                     if hasattr(self.cas_client, "find_chunks_peers_batch"):
                         # Batch query for better performance
                         chunk_peer_map = await self.cas_client.find_chunks_peers_batch(
-                            chunk_hashes_to_query[:50]  # Configurable limit
+                            chunk_hashes_to_query[:batch_size]
                         )
                         # Flatten results
                         for chunk_hash, chunk_peers in chunk_peer_map.items():
@@ -551,7 +524,7 @@ class XetProtocol(Protocol):
                         # Fallback to parallel queries with semaphore for rate limiting
                         from asyncio import Semaphore
 
-                        semaphore = Semaphore(50)  # Max 50 concurrent queries
+                        semaphore = Semaphore(max_concurrent)
 
                         async def query_with_limit(chunk_hash: bytes) -> list[PeerInfo]:
                             async with semaphore:
@@ -563,9 +536,7 @@ class XetProtocol(Protocol):
 
                         chunk_peer_tasks = [
                             query_with_limit(chunk_hash)
-                            for chunk_hash in chunk_hashes_to_query[
-                                :50
-                            ]  # Configurable limit
+                            for chunk_hash in chunk_hashes_to_query[:batch_size]
                         ]
                         chunk_peer_results = await asyncio.gather(
                             *chunk_peer_tasks, return_exceptions=True
@@ -592,13 +563,13 @@ class XetProtocol(Protocol):
             # Strategy 4: Broadcast chunk announcements via multicast if enabled
             if self.multicast_broadcaster and chunk_hashes_to_query:
                 try:
-                    for chunk_hash in chunk_hashes_to_query[:10]:  # Limit broadcasts
+                    for chunk_hash in chunk_hashes_to_query[:batch_size]:
                         await self.multicast_broadcaster.broadcast_chunk_announcement(
                             chunk_hash
                         )
                     self.logger.debug(
                         "Broadcast %d chunk announcements via multicast",
-                        min(10, len(chunk_hashes_to_query)),
+                        min(batch_size, len(chunk_hashes_to_query)),
                     )
                 except Exception as e:
                     self.logger.warning("Error broadcasting chunk announcements: %s", e)
@@ -606,11 +577,11 @@ class XetProtocol(Protocol):
             # Strategy 5: Gossip protocol for chunk availability propagation
             if self.gossip_manager and chunk_hashes_to_query:
                 try:
-                    for chunk_hash in chunk_hashes_to_query[:5]:  # Limit gossip
+                    for chunk_hash in chunk_hashes_to_query[:batch_size]:
                         await self.gossip_manager.propagate_chunk_update(chunk_hash)
                     self.logger.debug(
                         "Propagated %d chunk updates via gossip",
-                        min(5, len(chunk_hashes_to_query)),
+                        min(batch_size, len(chunk_hashes_to_query)),
                     )
                 except Exception as e:
                     self.logger.warning(
@@ -620,8 +591,7 @@ class XetProtocol(Protocol):
             # Strategy 6: Controlled flooding for urgent chunk announcements
             if self.flooding_client and chunk_hashes_to_query:
                 try:
-                    # Only flood high-priority chunks (first few)
-                    urgent_chunks = chunk_hashes_to_query[:3]
+                    urgent_chunks = chunk_hashes_to_query[:batch_size]
                     for chunk_hash in urgent_chunks:
                         await self.flooding_client.flood_message(
                             {
@@ -629,7 +599,7 @@ class XetProtocol(Protocol):
                                 "chunk_hash": chunk_hash.hex(),
                                 "torrent_info_hash": torrent_info.info_hash.hex(),
                             },
-                            ttl=3,  # Limit propagation distance
+                            ttl=3,
                         )
                     self.logger.debug(
                         "Flooded %d urgent chunk announcements",
