@@ -65,10 +65,23 @@ jobs:
           fi
           
           echo "🚀 Publishing to PyPI..."
-          # Use --trusted-publishing never to skip OIDC and use token directly
-          uv publish --trusted-publishing never
-          
-          echo "✅ Successfully published to PyPI!"
+          # Use --trusted-publishing never to skip OIDC and use token directly.
+          # Treat "File already exists" as success so re-tag / re-run after an
+          # earlier successful upload (e.g. nightly publish of the same version)
+          # does not fail the release.
+          set +e
+          OUTPUT=$(uv publish --trusted-publishing never 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "✅ Successfully published to PyPI!"
+          elif echo "$OUTPUT" | grep -qiE 'File already exists|filename has been previously used'; then
+            echo "ℹ️  Package files already on PyPI for this version; treating as success."
+          else
+            echo "❌ Publish failed"
+            exit "$STATUS"
+          fi
           echo "📦 Package: https://pypi.org/project/ccbt/"
       
       - name: Extract version
