@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from unittest.mock import patch
 
@@ -503,9 +504,13 @@ class TestConvenienceFunctions:
 
     def test_timeout_for_connections_timeout(self):
         """Test timeout_for_connections with timeout."""
+        # Block forever instead of a tight sleep: under macOS CI load,
+        # sleep(0.2–0.35) vs join(0.1) races and flakes as DID NOT RAISE.
+        block = threading.Event()
+
         @timeout_for_connections(seconds=0.1)
         def slow_connection_operation():
-            time.sleep(0.35)
+            block.wait()
             return "should_not_reach"
 
         with pytest.raises(TimeoutError):
@@ -522,9 +527,13 @@ class TestConvenienceFunctions:
 
     def test_timeout_for_tracker_requests_timeout(self):
         """Test timeout_for_tracker_requests with timeout."""
+        # Block forever instead of a tight sleep: under macOS CI load,
+        # sleep(0.2) vs join(0.1) races and flakes as DID NOT RAISE.
+        block = threading.Event()
+
         @timeout_for_tracker_requests(seconds=0.1)
         def slow_tracker_operation():
-            time.sleep(0.2)
+            block.wait()
             return "should_not_reach"
 
         with pytest.raises(TimeoutError):
