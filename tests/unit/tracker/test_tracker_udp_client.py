@@ -1206,6 +1206,8 @@ class TestAsyncUDPTrackerClientModuleFunctions:
     async def test_shutdown_udp_tracker(self):
         """Process-wide UDP client shutdown is idempotent and clears the module singleton."""
         reset_udp_tracker_client_for_testing()
+        # Undo suite pollution that replaces the class/factory with MagicMock.
+        udp_mod.AsyncUDPTrackerClient = AsyncUDPTrackerClient
         # Inject a real test-mode client so leftover MagicMock singletons from
         # other unit tests cannot satisfy start()/transport assertions.
         client = AsyncUDPTrackerClient(test_mode=True)
@@ -1218,6 +1220,9 @@ class TestAsyncUDPTrackerClientModuleFunctions:
             await asyncio.sleep(0.5)
         assert client.transport is None
         await shutdown_udp_tracker_client()
+        assert udp_mod._udp_tracker_client_singleton is None
+        # Restore real class again before lazy recreate (full-suite mock leakage).
+        udp_mod.AsyncUDPTrackerClient = AsyncUDPTrackerClient
         fresh = get_udp_tracker_client()
         assert isinstance(fresh, AsyncUDPTrackerClient)
         assert fresh is not client

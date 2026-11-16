@@ -67,14 +67,18 @@ class TestDHTNode:
 
     def test_dht_node_eq_with_dhtnode(self):
         """Test DHTNode.__eq__ with DHTNode objects."""
-        node1 = DHTNode(b"\x00" * 20, "127.0.0.1", 6881)
-        node2 = DHTNode(b"\x00" * 20, "127.0.0.1", 6881)
-        node3 = DHTNode(b"\x01" * 20, "127.0.0.1", 6881)
-        node4 = DHTNode(b"\x00" * 20, "192.168.1.1", 6881)
-        node5 = DHTNode(b"\x00" * 20, "127.0.0.1", 6882)
+        # Pin last_seen so default_factory timing cannot confuse failure output;
+        # equality itself is identity-only (node_id, ip, port).
+        seen = 1_700_000_000.0
+        node1 = DHTNode(b"\x00" * 20, "127.0.0.1", 6881, last_seen=seen)
+        node2 = DHTNode(b"\x00" * 20, "127.0.0.1", 6881, last_seen=seen + 1.0)
+        node3 = DHTNode(b"\x01" * 20, "127.0.0.1", 6881, last_seen=seen)
+        node4 = DHTNode(b"\x00" * 20, "192.168.1.1", 6881, last_seen=seen)
+        node5 = DHTNode(b"\x00" * 20, "127.0.0.1", 6882, last_seen=seen)
 
-        # Same attributes should be equal
+        # Same identity fields should be equal even when last_seen differs
         assert node1 == node2
+        assert node1.last_seen != node2.last_seen
         # Different node_id should not be equal
         assert node1 != node3
         # Different IP should not be equal

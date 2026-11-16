@@ -36,9 +36,13 @@ DEFAULT_BOOTSTRAP = [
 ]
 
 
-@dataclass
+@dataclass(eq=False)
 class DHTNode:
-    """Represents a DHT node."""
+    """Represents a DHT node.
+
+    Equality/hash are identity-based (node_id, ip, port) only — not last_seen
+    or quality metrics — so routing-table membership stays stable.
+    """
 
     node_id: bytes
     ip: str

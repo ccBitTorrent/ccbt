@@ -180,11 +180,16 @@ jobs:
           uv run python tests/scripts/ensure_bandit_dir.py
           uv run bandit -c pyproject.toml -r ccbt/ -f json -o docs/reports/bandit/bandit-report.json --severity-level medium
       
+      # Tag releases are already gated by the PR Test matrix. Re-running the full
+      # suite here is redundant (~50m) and has blocked GitHub Release creation on
+      # unrelated flakes; keep lint/bandit/build validation on the tag path.
       - name: Run tests with coverage
+        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
         run: |
           uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=term-missing --cov-report=xml
       
       - name: Check coverage threshold
+        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
         run: |
           # Coverage check - ensure we meet 99% threshold
           # Extract coverage percentage from pytest output
@@ -201,6 +206,11 @@ jobs:
             echo "⚠️  Could not extract coverage percentage"
           fi
         continue-on-error: true
+      
+      - name: Confirm tag release skips redundant full suite
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          echo "Skipping full pytest on tag ${GITHUB_REF_NAME}; PR Test workflow already gated this release."
       
       - name: Build documentation
         run: |
