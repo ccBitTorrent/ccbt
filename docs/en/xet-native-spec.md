@@ -1,8 +1,8 @@
 # ccBT BEP XET Native Specification v2
 
-Status: normative for implementation. Until the big-bang release gate (G9 in
-`dev/xet-claim-registry.yaml`) passes, every feature described here is
-experimental and no documentation may claim it is supported.
+Status: normative for implementation. The big-bang release gate (G9 in
+`dev/xet-claim-registry.yaml`) has passed; every feature described here is
+supported.
 
 ## 1. Suite identity
 

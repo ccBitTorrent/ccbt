@@ -1,6 +1,6 @@
 # ccBitTorrent - High-Performance BitTorrent Client
 
-[![codecov](https://codecov.io/gh/ccBittorrent/ccbt/branch/main/graph/badge.svg)](https://codecov.io/gh/ccBittorrent/ccbt)
+[![codecov](https://codecov.io/gh/ccBitTorrent/ccbt/branch/main/graph/badge.svg)](https://app.codecov.io/gh/ccBitTorrent/ccbt)
 [![🥷 Bandit](https://img.shields.io/badge/🥷-security-yellow.svg)](https://ccbittorrent.readthedocs.io/en/reports/bandit/)
 [![🐍python 🟰](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml/badge.svg)](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml)
 [![🐧Linux](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml/badge.svg)](https://github.com/ccBitTorrent/ccbt/actions/workflows/test.yml)

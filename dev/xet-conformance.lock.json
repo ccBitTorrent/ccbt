@@ -14,6 +14,11 @@
     "commit": "pinned-at-refresh-time",
     "docs": "https://openxet.com/docs/research/S10-cas-wire-contract.html"
   },
+  "external_cas_live_test": {
+    "repo": "https://github.com/ggoggam/openxet",
+    "commit": "6bf5021460695f45e8c73cd93e54cd343b4b41ec",
+    "note": "External CAS used for the G9 live gate cross-test (fallback: stubbi/openxet needs a Rust source build). ccbt CasHttpClient and hf_xet both round-tripped byte-identically against it, and the file hash matched ccbt's own CAS. Verified locally 2026-11-15 via dev/scripts/run_xet_live_gate.py; not exercised in CI."
+  },
   "git": "2.56.0",
   "git_lfs": ">=3.5",
   "reference_corpus": {

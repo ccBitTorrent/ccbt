@@ -50,13 +50,38 @@ def _repo_id(request: web.Request) -> str:
 
 
 # -------------------------------------------------------------- hub repos
+def _payload_repo_id(payload: dict) -> Optional[str]:
+    """Resolve repo id from hub client payloads (name + organization split)."""
+    name = payload.get("name") or payload.get("repo_id")
+    organization = payload.get("organization") or payload.get("namespace")
+    if name and organization and "/" not in str(name):
+        return f"{organization}/{name}"
+    return str(name) if name else None
+
+
+async def delete_repo(request: web.Request) -> web.Response:
+    """Public function."""
+    try:
+        payload = await request.json()
+    except Exception:
+        return _err("expected JSON body", 400)
+    repo_id = _payload_repo_id(payload)
+    if not repo_id:
+        return _err("name is required", 400)
+    if not _repos(request).delete_repo(repo_id):
+        return _err("repo not found", 404)
+    return web.json_response({"id": repo_id, "deleted": True})
+
+
 async def create_repo(request: web.Request) -> web.Response:
     """Public function."""
     try:
         payload = await request.json()
     except Exception:
         return _err("expected JSON body", 400)
-    name = payload.get("name") or payload.get("repo_id")
+    # Modern huggingface_hub sends {"name": ..., "organization": ...}
+    # separately; older clients send a single "namespace/name" string.
+    name = _payload_repo_id(payload)
     if not name:
         return _err("name is required", 400)
     repo_type = payload.get("type", "model")
@@ -67,8 +92,11 @@ async def create_repo(request: web.Request) -> web.Response:
     store = _repos(request)
     created = store.create_repo(name, repo_type, bool(payload.get("private", False)))
     base = str(request.url.origin())
+    # huggingface_hub parses the returned url as a repo page URL
+    # ({base}/{namespace}/{name}); an /api/... URL is rejected as an
+    # invalid HF URI by newer hub versions.
     return web.json_response(
-        {"id": name, "url": f"{base}/api/{repo_type_path(repo_type)}/{name}"},
+        {"id": name, "url": f"{base}/{name}"},
         status=201 if created else 200,
     )
 
@@ -88,6 +116,37 @@ async def repo_info(request: web.Request) -> web.Response:
             "private": False,
         }
     )
+
+
+async def preupload(request: web.Request) -> web.Response:
+    """huggingface_hub upload-mode probe (POST .../preupload/{revision}).
+
+    Every file is answered "regular": content then arrives inline in the
+    commit NDJSON, which `commit` already handles. The Xet/LFS transfer
+    paths are exercised separately (hf_xet against the CAS, git-lfs with
+    the git-xet agent), so they are not negotiated here.
+    """
+    store = _repos(request)
+    repo_id = _repo_id(request)
+    if not store.repo_exists(repo_id):
+        return _err("repo not found", 404)
+    try:
+        payload = await request.json()
+    except Exception:
+        return _err("expected JSON body", 400)
+    files = payload.get("files") if isinstance(payload, dict) else None
+    if not isinstance(files, list):
+        return _err("files must be a list", 400)
+    out = [
+        {
+            "path": str(f.get("path", "")),
+            "uploadMode": "regular",
+            "shouldIgnore": False,
+        }
+        for f in files
+        if isinstance(f, dict)
+    ]
+    return web.json_response({"files": out})
 
 
 async def repo_tree(request: web.Request) -> web.Response:
@@ -168,7 +227,16 @@ async def commit(request: web.Request) -> web.Response:
             continue  # deletions tracked in WS8-style tombstones; accept + ignore here
         else:
             return _err(f"unsupported commit operation: {key}", 400)
-    return web.json_response({"commitOid": "main", "changed": changed})
+    # huggingface_hub requires commitUrl + commitOid in the response.
+    commit_oid = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    base = str(request.url.origin())
+    return web.json_response(
+        {
+            "commitOid": commit_oid,
+            "commitUrl": f"{base}/{repo_id}/commit/{commit_oid}",
+            "changed": changed,
+        }
+    )
 
 
 async def resolve_file(request: web.Request) -> web.Response:
@@ -202,6 +270,7 @@ async def resolve_file(request: web.Request) -> web.Response:
         body=data,
         headers={
             "X-Linked-Etag": entry.oid,
+            "X-Repo-Commit": entry.oid,
             "ETag": entry.oid,
             "Content-Length": str(len(data)),
         },
@@ -314,6 +383,8 @@ async def xet_transfer_upload_register(request: web.Request) -> web.Response:
 def register_hub_routes(app: web.Application) -> None:
     """Public function."""
     app.router.add_post("/api/repos/create", create_repo)
+    app.router.add_delete("/api/repos/delete", delete_repo)
+    app.router.add_post("/api/repos/delete", delete_repo)
     for prefix in ("models", "datasets", "spaces"):
         app.router.add_get(f"/api/{prefix}/{{namespace}}/{{name}}", repo_info)
         app.router.add_get(f"/api/{prefix}/{{name}}", repo_info)
@@ -332,6 +403,10 @@ def register_hub_routes(app: web.Application) -> None:
             f"/api/{prefix}/{{namespace}}/{{name}}/commit/{{revision}}", commit
         )
         app.router.add_post(f"/api/{prefix}/{{name}}/commit/{{revision}}", commit)
+        app.router.add_post(
+            f"/api/{prefix}/{{namespace}}/{{name}}/preupload/{{revision}}", preupload
+        )
+        app.router.add_post(f"/api/{prefix}/{{name}}/preupload/{{revision}}", preupload)
     app.router.add_get("/{namespace}/{name}/resolve/{revision}/{path:.*}", resolve_file)
     app.router.add_get("/{name}/resolve/{revision}/{path:.*}", resolve_file)
     # Git LFS (git-lfs derives several URL shapes depending on config)

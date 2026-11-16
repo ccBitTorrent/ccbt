@@ -18,11 +18,18 @@ def main() -> int:
         return 2
     data = yaml.safe_load(REGISTRY.read_text(encoding="utf-8"))
     claims = list(data.get("claims") or [])
+    statuses = {str(c.get("status")) for c in claims}
+    if statuses == {"supported"}:
+        status_line = "Every row is **supported** (big-bang gate G9 passed)."
+    elif statuses == {"experimental"}:
+        status_line = "Until big-bang release, every row is **experimental**."
+    else:
+        status_line = "Mixed claim statuses; see the Status column per row."
     lines = [
         "# XET support matrix",
         "",
         "Generated from `dev/xet-claim-registry.yaml`. Do not edit by hand.",
-        "Until big-bang release, every row is **experimental**.",
+        status_line,
         "",
         "| Claim | Gate | Status | Owner | Tests |",
         "|-------|------|--------|-------|-------|",

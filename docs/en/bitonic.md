@@ -21,7 +21,7 @@
 3. **Essential keys:** `o` — Advanced Add (magnet/file); `Enter` — open selected torrent; `q` / `Esc` — back or close; `?` — help; `r` — refresh.
 4. **Add a torrent (short):** Press `o` → enter magnet or path → choose output directory → (optional) select files, set limits, options → Submit. For the full 11-step flow with all options, see [Complete User Journey Example](#complete-user-journey-example) and [Add a Torrent](#add-a-torrent) below.
 
-> XET is **experimental** until the claim-registry big-bang gate. Workspace joins from `.tonic` files or `tonic?:` links require an explicit output directory. The XET monitoring screen reads measured daemon state (discovery health, dedup savings, sync mode, consensus role/term) via the shared data-provider path.
+> XET is supported (claim-registry big-bang gate G9 passed). Workspace joins from `.tonic` files or `tonic?:` links require an explicit output directory. The XET monitoring screen reads measured daemon state (discovery health, dedup savings, sync mode, consensus role/term) via the shared data-provider path.
 
 
 ## Launching Bitonic
