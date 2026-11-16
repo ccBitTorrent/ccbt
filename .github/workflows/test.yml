@@ -137,12 +137,23 @@ jobs:
             --timeout-method=thread \
             ${COV_ARGS}
 
+      # Give each shard a unique data-file name so the coverage job's
+      # merge-multiple download does not overwrite shards sharing ".coverage".
+      - name: Stage shard coverage data with unique name
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          if [ -f .coverage ]; then
+            cp .coverage ".coverage.${{ matrix.shard }}"
+          fi
+
       - name: Upload shard coverage data
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-data-py311-${{ matrix.shard }}
-          path: .coverage
+          path: .coverage.${{ matrix.shard }}
+          include-hidden-files: true
           retention-days: 1
           if-no-files-found: ignore
 
@@ -189,22 +200,41 @@ jobs:
           pattern: coverage-data-py311-*
           merge-multiple: true
 
-      - name: Combine coverage and upload to Codecov
+      - name: Combine coverage
+        id: combine
         run: |
           if ! ls .coverage* 1>/dev/null 2>&1; then
             echo "No coverage data from test shards; skipping combine."
+            echo "has_coverage=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           uv run coverage combine || true
           uv run coverage xml -o coverage.xml
           uv run coverage report --fail-under=0
+          if [ -f coverage.xml ]; then
+            echo "has_coverage=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_coverage=false" >> "$GITHUB_OUTPUT"
+          fi
+          # HTML is a docs convenience; never let it block the Codecov upload.
+          uv run coverage html -d site/reports/htmlcov || echo "::warning::coverage html failed; docs will use the placeholder page"
 
       - name: Upload coverage to Codecov
-        if: hashFiles('.coverage', 'coverage.xml') != ''
+        if: steps.combine.outputs.has_coverage == 'true'
         uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
+          codecov_yml_path: dev/.codecov.yml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
+
+      - name: Upload combined coverage HTML for docs
+        if: steps.combine.outputs.has_coverage == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-htmlcov
+          path: site/reports/htmlcov/
+          retention-days: 7
+          if-no-files-found: ignore

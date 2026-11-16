@@ -84,14 +84,6 @@ jobs:
           restore-keys: |
             mkdocs-
       
-      - name: Cache pytest cache (for coverage report)
-        uses: actions/cache@v3
-        with:
-          path: .pytest_cache
-          key: pytest-docs-${{ github.sha }}
-          restore-keys: |
-            pytest-docs-
-      
       - name: Install dependencies
         run: |
           uv sync --dev
@@ -131,10 +123,41 @@ jobs:
           mkdir -p docs/reports/bandit
           mkdir -p docs/en/reports/bandit
       
-      - name: Generate coverage report
-        run: |
-          uv run pytest -c dev/pytest.ini tests/ --cov=ccbt --cov-report=html:site/reports/htmlcov
+      - name: Resolve Test workflow run for this commit
+        id: test-run
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const headSha = context.eventName === 'pull_request'
+              ? context.payload.pull_request.head.sha
+              : context.sha;
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'test.yml',
+              head_sha: headSha,
+              per_page: 10,
+            });
+            const run = data.workflow_runs.find(
+              (r) => r.head_sha === headSha && r.status === 'completed' && r.conclusion === 'success'
+            );
+            if (run) {
+              core.info(`Using coverage from Test run ${run.id} for ${headSha}`);
+              core.setOutput('run_id', String(run.id));
+            } else {
+              core.warning(`No successful Test run found for ${headSha}; docs will use the coverage placeholder.`);
+              core.setOutput('run_id', '');
+            }
+
+      - name: Download combined coverage HTML from Test run
+        if: steps.test-run.outputs.run_id != ''
         continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-htmlcov
+          path: site/reports/htmlcov
+          run-id: ${{ steps.test-run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Generate Bandit report
         run: |
@@ -144,12 +167,15 @@ jobs:
       
       - name: Ensure report files exist in documentation location
         run: |
-          # Ensure coverage directory has at least an index file (even if empty)
+          # Fallback when no coverage-htmlcov artifact was downloaded (e.g. manual
+          # dispatch on a ref with no successful Test run): use a placeholder so the
+          # docs build still succeeds without re-running the full test suite.
           mkdir -p site/reports/htmlcov
           if [ ! -f site/reports/htmlcov/index.html ]; then
+            echo "No coverage HTML downloaded; writing placeholder coverage page."
             echo '<html><body><h1>Coverage Report</h1><p>Coverage report not available. Run tests to generate coverage data.</p></body></html>' > site/reports/htmlcov/index.html
           fi
-          
+
           # Ensure bandit reports exist in documentation location (docs/en/reports/bandit/)
           mkdir -p docs/en/reports/bandit
           
