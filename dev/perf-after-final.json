@@ -1,0 +1,896 @@
+﻿{
+  "daemon_heartbeat": {
+    "pid": 20148,
+    "last_beat_epoch": 1794854675.0,
+    "age_seconds": 12.2,
+    "alive_recently": true
+  },
+  "daemon": {
+    "status": "running",
+    "pid": 20148,
+    "uptime": 191.32095980644226,
+    "version": "0.3.0",
+    "num_torrents": 1,
+    "ipc_url": "http://127.0.0.1:64124",
+    "inbound_unknown_info_hash_metrics_top": {}
+  },
+  "nat": {
+    "enabled": false,
+    "method": null,
+    "external_ip": null,
+    "mapped_port": null,
+    "mappings": []
+  },
+  "rates": {
+    "resolution": 1.0,
+    "seconds": 120,
+    "sample_count": 104,
+    "samples": [
+      {
+        "timestamp": 1794854569.5116506,
+        "download_rate": 1571838.5190326022,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854580.497512,
+        "download_rate": 568517.476909667,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854581.5024147,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854582.5120082,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854583.5011082,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854584.5188794,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854585.514134,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854586.5404882,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854587.537154,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854588.5471668,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854589.5302167,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854590.554491,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854591.532845,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854592.5588353,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854593.5387936,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854594.558205,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854595.578479,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854596.5811167,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854597.590038,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854598.5990417,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854599.6495564,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854600.6511428,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854601.649034,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854602.6532094,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854603.6520846,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854604.6470003,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854605.640327,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854606.6630938,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854607.656306,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854608.662606,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854609.6577675,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854610.6827028,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854611.6858053,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854612.7012851,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854613.7048025,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854614.7129533,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854615.72018,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854616.7165039,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854618.2982948,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854619.296718,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854620.3301208,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854621.4171586,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854622.4262962,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854623.4374173,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854624.4642606,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854625.4429028,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854626.441561,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854627.4519265,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854628.4656036,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854629.458973,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854630.780548,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854631.798369,
+        "download_rate": 627705.4541295317,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854632.8230119,
+        "download_rate": 627705.4541295317,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854633.8122466,
+        "download_rate": 627705.4541295317,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854634.8692424,
+        "download_rate": 627705.4541295317,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854635.8725028,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854636.8620987,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854637.8658967,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854638.864528,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854639.872229,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854640.8607616,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854641.8685024,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854642.864045,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854643.871685,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854644.8657374,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854645.9667983,
+        "download_rate": 1883377.9073731594,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854646.974891,
+        "download_rate": 1841831.9902107595,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854647.968063,
+        "download_rate": 1841831.9902107595,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854648.9836643,
+        "download_rate": 1841831.9902107595,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854650.0132992,
+        "download_rate": 1841831.9902107595,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854650.9853792,
+        "download_rate": 736372.7297681305,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854651.9977396,
+        "download_rate": 736372.7297681305,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854653.008438,
+        "download_rate": 736372.7297681305,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854654.0023599,
+        "download_rate": 736372.7297681305,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854655.0139022,
+        "download_rate": 736372.7297681305,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854656.0592008,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854657.053253,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854658.1981719,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854659.186975,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854660.2081747,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854661.2278738,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854662.4267964,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854663.444224,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854664.449153,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854665.4622304,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854666.4881659,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854667.5666513,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854668.6450305,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854669.7877824,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854670.8308492,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854671.9763253,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854672.98119,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854673.988151,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854674.989868,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854676.0865254,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854677.65494,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854678.6919897,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854679.9601848,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854681.7548828,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854683.6513116,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854684.9254577,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854685.9199934,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854686.9542706,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794854688.040471,
+        "download_rate": 0.0,
+        "upload_rate": 0.0
+      }
+    ]
+  },
+  "daemon_log_tail": [
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2584: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.peer.async_peer_connection.can_request: [#ff69b4]can_request[/#ff69b4] can_request sustained block for 54.38.81.114:48227: reason=remote_choked hits=4650 state=choked",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_clear_stale_requested_pieces[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Resetting stuck piece 2583 (state=[orange1]REQUESTED[/orange1], request_count=0, no blocks received, last_activity=0.0s ago) - full reset",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2583: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_clear_stale_requested_pieces[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Resetting stuck piece 2582 (state=[orange1]REQUESTED[/orange1], request_count=0, no blocks received, last_activity=0.0s ago) - full reset",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2582: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2577: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.peer.async_peer_connection.can_request: [#ff69b4]can_request[/#ff69b4] can_request sustained block for 54.38.81.114:48227: reason=remote_choked hits=4700 state=choked",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2576: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2575: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_peer_evaluation_loop[/#ff69b4] Peer evaluation loop: Active peer count (1) is below minimum (50). This may cause downloads to stall. Consider triggering peer discovery.",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_clear_stale_requested_pieces[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Resetting stuck piece 2581 (state=[orange1]REQUESTED[/orange1], request_count=0, no blocks received, last_activity=0.0s ago) - full reset",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_clear_stale_requested_pieces[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Resetting unreceived blocks for stuck piece 2594 (state=[orange1]REQUESTED[/orange1], request_count=1, received: 24/32 blocks, last_activity=41.8s ago) - preserving received blocks",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2594: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.ccbt.utils.events: [#ff69b4]_handle_event[/#ff69b4] Handled event: peer_count_low (id=d58b8369, handlers=1, duration=0.319s)",
+    "Logging error (suppressed to prevent circular errors): INFO aiohttp.access: [#ff69b4]log[/#ff69b4] 127.0.0.1 [16/Nov/2026:19:44:47 +0100] \"GET /api/v1/status [orange1]HTTP[/orange1]/1.1\" 200 365 \"-\" \"Python/3.12 aiohttp/3.13.2\"",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_clear_stale_requested_pieces[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Resetting stuck piece 2580 (state=[orange1]REQUESTED[/orange1], request_count=0, no blocks received, last_activity=0.0s ago) - full reset",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.peer.async_peer_connection.can_request: [#ff69b4]can_request[/#ff69b4] can_request sustained block for 54.38.81.114:48227: reason=remote_choked hits=4750 state=choked",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]No available peers[/bright_cyan] for piece 2581: active_peers=1, peers_with_bitfield=1, remote_unchoked=0, request_ready=0, pipeline_blocked=0, remote_choked=1, choked_with_piece=1, confidence_band=medium (peer_manager=True)",
+    "Logging error (suppressed to prevent circular errors): INFO aiohttp.access: [#ff69b4]log[/#ff69b4] 127.0.0.1 [16/Nov/2026:19:44:47 +0100] \"GET /api/v1/nat/status [orange1]HTTP[/orange1]/1.1\" 200 270 \"-\" \"Python/3.12 aiohttp/3.13.2\""
+  ],
+  "torrents": [
+    {
+      "torrent": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "name": "Adobe InDesign 2027 v22.0 (x64) FINAL + Patch [AppDoze]",
+        "status": "downloading",
+        "progress": 0.17062219371391918,
+        "download_rate": 0.0,
+        "upload_rate": 0.0,
+        "num_peers": 1,
+        "num_seeds": 0,
+        "total_size": 0,
+        "downloaded": 278921216,
+        "uploaded": 0,
+        "is_private": false,
+        "output_dir": null,
+        "pieces_completed": 0,
+        "pieces_total": 0,
+        "tracker_status": null,
+        "last_tracker_error": null,
+        "last_error": null,
+        "productive_peers": 0,
+        "requestable_peers": 0,
+        "handshake_complete_peers": 0,
+        "extension_capable_peers": 0,
+        "metadata_capable_peers": 0,
+        "hash_verification_failures": 0
+      },
+      "peers": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "peers": [
+          {
+            "ip": "54.38.81.114",
+            "port": 48227,
+            "download_rate": 0.0,
+            "upload_rate": 0.0,
+            "choked": true,
+            "client": "Unknown"
+          }
+        ],
+        "count": 1
+      },
+      "trackers": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "trackers": [
+          {
+            "url": "udp://open.stealth.si:80/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker-udp.gbitt.info:80/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://ipv4announce.sktorrent.eu:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.torrent.eu.org:451/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://open.demonii.com:1337/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.qu.ax:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://evan.im:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://bittorrent-tracker.e-n-c-r-y-p-t.net:1337/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.opentrackr.org:1337/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://tracker.openbittorrent.com:80/announce",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 1 times"
+          },
+          {
+            "url": "udp://open.stealth.si:80",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker-udp.gbitt.info:80",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.torrent.eu.org:451",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://open.demonii.com:1337",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.qu.ax:6969",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://evan.im:6969",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://bittorrent-tracker.e-n-c-r-y-p-t.net:1337",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.opentrackr.org:1337",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://tracker.dler.org:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://tracker.renfei.net:8080/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "https://tracker.nekomi.cn/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://bt2.archive.org:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "https://tr.nyacat.pw/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          }
+        ],
+        "count": 23
+      },
+      "dht": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "peers_found_per_query": 0.0,
+        "query_depth_achieved": 0.0,
+        "nodes_queried_per_query": 0.0,
+        "total_queries": 0,
+        "total_peers_found": 0,
+        "aggressive_mode_enabled": true,
+        "last_query_duration": 0.0,
+        "last_query_peers_found": 0,
+        "last_query_depth": 0,
+        "last_query_nodes_queried": 0,
+        "routing_table_size": 0,
+        "bootstrap_success_count": 2,
+        "bootstrap_failure_count": 0,
+        "bootstrap_recovery_attempts": 2,
+        "bootstrap_health_state": "stalled",
+        "bootstrap_zero_state_count": 0,
+        "bootstrap_zero_nodes_last_reason": "",
+        "rebootstrap_attempt_count": 2,
+        "rebootstrap_success_count": 1,
+        "rebootstrap_failure_count": 1,
+        "rebootstrap_last_outcome": "success",
+        "rebootstrap_last_reason": "initial_query:Adobe InDesign 2027 v22.0 (x64) FINAL + Patch [AppDoze]:seed_replay",
+        "rebootstrap_last_source": "seed_replay",
+        "rebootstrap_health_state": "healthy",
+        "rebootstrap_consecutive_failures": 0,
+        "last_bootstrap_reason": "initial_query:Adobe InDesign 2027 v22.0 (x64) FINAL + Patch [AppDoze]:seed_replay",
+        "last_bootstrap_failure_reason": "bootstrap_no_nodes:router.utorrent.com:6881",
+        "last_zero_node_lookup_at": 0.0,
+        "bound_port": 64120
+      },
+      "peer_quality": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "total_peers_ranked": 1,
+        "average_quality_score": 0.08790076355217967,
+        "high_quality_peers": 0,
+        "medium_quality_peers": 0,
+        "low_quality_peers": 1,
+        "top_quality_peers": [
+          {
+            "peer_key": "54.38.81.114:48227",
+            "ip": "54.38.81.114",
+            "port": 48227,
+            "quality_score": 0.08790076355217967,
+            "download_rate": 0.0,
+            "upload_rate": 0.0
+          }
+        ],
+        "quality_distribution": {
+          "high": 0,
+          "medium": 0,
+          "low": 1
+        }
+      },
+      "aggressive_discovery": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "enabled": true,
+        "reason": "normal",
+        "current_peer_count": 1,
+        "current_download_rate_kib": 0.0,
+        "popular_threshold": 20,
+        "active_threshold_kib": 1.0,
+        "query_interval": 15.0,
+        "max_peers_per_query": 100
+      }
+    }
+  ]
+}

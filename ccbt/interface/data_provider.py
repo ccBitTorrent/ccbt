@@ -261,8 +261,15 @@ def _normalize_torrent_read_model(
     connected_peers = _to_int(
         raw.get("connected_peers", raw.get("num_peers", raw.get("peers", 0))),
     )
-    active_peers = _to_int(
-        raw.get("active_peers", raw.get("num_seeds", raw.get("seeds", 0))),
+    # Honest fields: active_peers is NOT seeds. Previously active_peers
+    # fell back to num_seeds, so one number silently meant two things and
+    # the Torrents "Seeds" column could actually be showing active peers.
+    active_peers = _to_int(raw.get("active_peers", 0))
+    seeds_connected = _to_int(
+        raw.get(
+            "seeds_connected",
+            raw.get("num_seeds", raw.get("seeds", raw.get("seeders_connected", 0))),
+        ),
     )
     info_hash_raw = raw.get("info_hash") or raw.get("info_hash_hex") or ""
     if isinstance(info_hash_raw, bytes):
@@ -302,7 +309,25 @@ def _normalize_torrent_read_model(
         "download_complete": bool(
             raw.get("download_complete", raw.get("completed", False)),
         ),
+        # Canonical split (WS2): connected vs swarm counts are distinct,
+        # and seeds are never derived from active_peers.
+        "peers_connected": connected_peers,
+        "seeds_connected": seeds_connected,
+        "peers_swarm": _to_int(raw.get("peers_swarm", raw.get("leechers", connected_peers))),
+        "seeds_swarm": _to_int(raw.get("seeds_swarm", raw.get("seeders", seeds_connected))),
+        "eta_seconds": _to_float(raw.get("eta_seconds", raw.get("eta", 0.0))),
+        "ratio": _to_float(raw.get("ratio", 0.0)),
+        "availability": _to_float(raw.get("availability", raw.get("swarm_availability", 0.0))),
+        "queue_position": _to_int(raw.get("queue_position", -1), -1),
+        "magnet_uri": raw.get("magnet_uri"),
+        "comment": raw.get("comment"),
+        "save_path": raw.get("save_path", raw.get("output_dir")),
     }
+    # Derive ETA/ratio when daemon did not supply them.
+    if not normalized["eta_seconds"] and normalized["left"] > 0 and normalized["download_rate"] > 0:
+        normalized["eta_seconds"] = normalized["left"] / normalized["download_rate"]
+    if not normalized["ratio"] and normalized["downloaded"] > 0:
+        normalized["ratio"] = normalized["uploaded"] / normalized["downloaded"]
     return normalized
 
 

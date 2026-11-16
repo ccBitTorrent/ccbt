@@ -1219,6 +1219,9 @@ class DHTQueryMetricsResponse(BaseModel):
         0.0,
         description="Timestamp of the last lookup that queried zero nodes",
     )
+    bound_port: int = Field(
+        0, description="Actual UDP port the DHT client is bound to (0 = unknown)"
+    )
 
 
 class PeerQualityMetricsResponse(BaseModel):

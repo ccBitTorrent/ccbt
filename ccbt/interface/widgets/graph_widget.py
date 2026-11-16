@@ -379,58 +379,63 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
         self._event_timeline: list[dict[str, Any]] = []  # List of {timestamp, type, label, info_hash}
         self._max_events = 50  # Keep last 50 events
         self._event_annotations_widget: Optional[Static] = None
+        self._summary_label: Optional[Static] = None
 
+    # Compact strip: title (1) + down label/spark (1+3) + up label/spark
+    # (1+3) + summary (1); no internal scrolling ever.
     DEFAULT_CSS = """
     UploadDownloadGraphWidget {
-        height: 1fr;
-        min-height: 20;
+        height: auto;
+        max-height: 9;
         layout: vertical;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow: hidden;
         display: block;
     }
-    
+
     #graph-title {
         height: 1;
-        min-height: 1;
         text-style: bold;
         display: block;
     }
-    
+
     #graph-content {
-        height: 1fr;
-        min-height: 18;
+        height: auto;
         layout: vertical;
         display: block;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow: hidden;
     }
-    
+
     #download-label, #upload-label {
         height: 1;
-        min-height: 1;
         margin: 0 1;
         display: block;
     }
-    
+
     Sparkline {
-        height: 10;
-        min-height: 10;
+        height: 3;
+        min-height: 3;
+        max-height: 3;
         width: 1fr;
-        min-width: 20;
-        margin: 1;
+        margin: 0 1;
         display: block;
-        border: solid $primary;
         background: $surface;
         color: $primary;
     }
-    
-    #download-sparkline,     #upload-sparkline {
-        height: 10;
-        min-height: 10;
+
+    #download-sparkline, #upload-sparkline {
+        height: 3;
+        min-height: 3;
+        max-height: 3;
         width: 1fr;
         display: block;
         color: $primary;
+    }
+
+    #rate-summary {
+        height: 1;
+        margin: 0 1;
+        color: $text-muted;
+        display: block;
     }
     """
 
@@ -446,6 +451,7 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             yield Sparkline(id="download-sparkline")
             yield Static("Upload (KiB/s):", id="upload-label")
             yield Sparkline(id="upload-sparkline")
+            yield Static("", id="rate-summary")
             yield Static("", id="event-annotations")  # Event timeline annotations
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
@@ -456,26 +462,25 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             self._download_label = self.query_one("#download-label", Static)  # type: ignore[attr-defined]
             self._upload_label = self.query_one("#upload-label", Static)  # type: ignore[attr-defined]
             self._event_annotations_widget = self.query_one("#event-annotations", Static)  # type: ignore[attr-defined]
+            with contextlib.suppress(Exception):
+                self._summary_label = self.query_one("#rate-summary", Static)  # type: ignore[attr-defined]
 
             initial_data = [0.0] * 20
             if self._download_sparkline:
                 self._download_sparkline.data = initial_data  # type: ignore[attr-defined]
                 self._download_sparkline.display = True  # type: ignore[attr-defined]
-                if hasattr(self._download_sparkline, "styles"):
-                    self._download_sparkline.styles.min_height = 10  # type: ignore[attr-defined]
                 self._download_sparkline.refresh()  # type: ignore[attr-defined]
             if self._upload_sparkline:
                 self._upload_sparkline.data = initial_data  # type: ignore[attr-defined]
                 self._upload_sparkline.display = True  # type: ignore[attr-defined]
-                if hasattr(self._upload_sparkline, "styles"):
-                    self._upload_sparkline.styles.min_height = 10  # type: ignore[attr-defined]
                 self._upload_sparkline.refresh()  # type: ignore[attr-defined]
 
             from ccbt.interface.reactive_bridge import request_lazy_bind
 
             request_lazy_bind(self)
             self.call_after_refresh(self._hydrate_from_app_reactives)  # type: ignore[attr-defined]
-            self._start_updates()
+            # No self-poll: updates arrive via data_bind reactives
+            # (watch_global_stats / watch_rate_samples).
         except Exception as e:
             logger.error("Error mounting upload/download graph: %s", e, exc_info=True)
 
@@ -559,44 +564,6 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
             elif hasattr(self._update_task, "cancel"):
                 self._update_task.cancel()  # type: ignore[attr-defined]
             self._update_task = None
-
-    def _start_updates(self) -> None:  # pragma: no cover
-        """Start periodic updates from data provider."""
-        import asyncio
-
-        def schedule_update() -> None:
-            """Schedule async update (wrapper for set_interval)."""
-            try:
-                # Note: Get the event loop and create task properly
-                # Textual widgets run in the app's event loop, so we can get it directly
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    # No running loop, try to get event loop
-                    loop = asyncio.get_event_loop()
-
-                # Create task in the correct event loop
-                task = loop.create_task(self._update_from_provider())
-
-                def _consume_task_result(done_task: asyncio.Task[Any]) -> None:
-                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                        done_task.result()
-
-                task.add_done_callback(_consume_task_result)
-                logger.debug("UploadDownloadGraphWidget: Created async update task: %s", task)
-            except Exception as e:
-                logger.error("Error scheduling graph update: %s", e, exc_info=True)
-
-        try:
-            # Note: set_interval doesn't work with async functions directly
-            # Use wrapper function that creates async task
-            # Note: Reduced interval from 2.0s to 1.0s for tighter performance updates
-            self._update_task = self.set_interval(1.0, schedule_update)  # type: ignore[attr-defined]
-            # Trigger initial update immediately using call_after_refresh to ensure widget is ready
-            self.call_after_refresh(schedule_update)  # type: ignore[attr-defined]
-            logger.debug("UploadDownloadGraphWidget: Update loop started")
-        except Exception as e:
-            logger.error("Error starting graph update loop: %s", e, exc_info=True)
 
     async def _update_from_provider(self) -> None:  # pragma: no cover
         """Update graph data from data provider."""
@@ -710,6 +677,16 @@ class UploadDownloadGraphWidget(BaseGraphWidget):  # type: ignore[misc]
                     self._upload_sparkline.update()  # type: ignore[attr-defined]
         except Exception as e:
             logger.error("Error updating upload sparkline: %s", e, exc_info=True)
+
+        # Peak/avg summary line (compact strip footer)
+        if self._summary_label is not None:
+            with contextlib.suppress(Exception):
+                dl = self._download_history or [0.0]
+                ul = self._upload_history or [0.0]
+                self._summary_label.update(  # type: ignore[attr-defined]
+                    f"peak down {_format_kib_rate_label(max(dl))} up {_format_kib_rate_label(max(ul))}"
+                    f"  avg down {_format_kib_rate_label(sum(dl) / len(dl))} up {_format_kib_rate_label(sum(ul) / len(ul))}"
+                )
 
         # Note: Trigger parent widget refresh to ensure repaint
         try:

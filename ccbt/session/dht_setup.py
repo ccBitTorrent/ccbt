@@ -1091,6 +1091,7 @@ class DHTDiscoverySetup:
                     "ensure_bootstrap:session_fallback_incomplete"
                 )
         query_metrics = self._dht_query_metrics
+        query_metrics["bound_port"] = int(getattr(dht_client, "bound_port", 0) or 0)
         query_metrics["bootstrap_success_count"] = int(
             getattr(dht_client, "bootstrap_success_count", 0) or 0
         )

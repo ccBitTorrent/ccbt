@@ -387,8 +387,8 @@ class GlobalTorrentsScreen(Container):  # type: ignore[misc]
                     torrent.get("status", "unknown"),
                     down_str,
                     up_str,
-                    str(torrent.get("connected_peers", 0)),
-                    str(torrent.get("active_peers", 0)),
+                    str(torrent.get("peers_connected", torrent.get("connected_peers", 0))),
+                    str(torrent.get("seeds_connected", torrent.get("active_peers", 0))),
                     key=str(info_hash),
                 )
             with contextlib.suppress(Exception):
@@ -983,8 +983,8 @@ class FilteredTorrentsScreen(Container):  # type: ignore[misc]
                     torrent.get("status", "unknown"),
                     down_str,
                     up_str,
-                    str(torrent.get("connected_peers", 0)),
-                    str(torrent.get("active_peers", 0)),
+                    str(torrent.get("peers_connected", torrent.get("connected_peers", 0))),
+                    str(torrent.get("seeds_connected", torrent.get("active_peers", 0))),
                     key=info_hash,
                 )
 

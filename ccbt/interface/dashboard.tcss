@@ -1,0 +1,15 @@
+/* ccBT dashboard design system — theme variables only, no hard-coded hex. */
+Screen { layout: vertical; }
+#main-content { layout: vertical; height: 17fr; min-height: 20; }
+#graphs-section { height: 5fr; min-height: 8; overflow: hidden; }
+#main-tabs-section { height: 12fr; min-height: 10; }
+#statusbar { height: 1; min-height: 1; padding: 0 1; border-top: solid $primary; text-wrap: nowrap; }
+#overview-footer { height: 2; min-height: 2; border-top: solid $primary; padding: 0 1; }
+CustomFooter { height: auto; min-height: 2; max-height: 3; border-top: solid $primary; background: $surface; padding: 0 1; }
+.status-downloading { color: $success; }
+.status-seeding { color: $primary; }
+.status-paused { color: $warning; }
+.status-error { color: $error; }
+.status-muted { color: $text-muted; }
+.kpi-label { color: $text-muted; }
+.kpi-value { color: $text; text-style: bold; }

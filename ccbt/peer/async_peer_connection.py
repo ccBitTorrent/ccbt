@@ -140,11 +140,16 @@ def _apply_peer_choked_solo_grace(
     solo_grace: float,
     zero_bytes_cap: float,
     bytes_downloaded: int,
-    outstanding_count: int,
 ) -> float:
-    """Extend deadline when solo or nobody is requestable; optional zero-progress cap."""
+    """Extend deadline when solo or nobody is requestable; optional zero-progress cap.
+
+    A peer that has delivered zero bytes gets the (much shorter)
+    zero-byte cap even if stale outstanding entries linger: it has never
+    been a supplier, so holding it for the full solo grace (180s) only
+    blocks replacement dials.
+    """
     grace = solo_grace
-    if zero_bytes_cap > 0.0 and bytes_downloaded == 0 and outstanding_count == 0:
+    if zero_bytes_cap > 0.0 and bytes_downloaded == 0:
         grace = min(grace, zero_bytes_cap)
     return max(effective_timeout, grace)
 
@@ -4310,6 +4315,15 @@ class AsyncPeerConnectionManager:
         # allows a peer to grow beyond a low delivery rate caused by the old cap.
         bdp_blocks = math.ceil((delivery_rate * rtt * 2.0) / block_size)
         target = max(min_depth, base_depth, latency_floor, bdp_blocks)
+        if delivery_rate > 0 and rtt > 0.5:
+            # Deliverability cap: a slow peer behind a long adaptive
+            # timeout must not accumulate a 48-deep queue it cannot drain
+            # within the timeout budget (measured stall: 48/48 at 22.5s).
+            # Depth beyond delivery_rate * timeout_budget / block_size is
+            # pure queueing delay and guarantees mass cancels.
+            timeout_budget = min(30.0, max(5.0, 4.0 * rtt))
+            throughput_cap = math.ceil((delivery_rate * timeout_budget) / block_size)
+            target = min(target, max(min_depth, bdp_blocks, throughput_cap))
         if (
             accel_enabled(self.config)
             and measured_block_latency <= 0
@@ -14483,7 +14497,6 @@ class AsyncPeerConnectionManager:
                     active_for_solo >= choked_reserve_floor and pending_replacements > 0
                 ) or active_for_solo >= self.max_peers_per_torrent
                 _bdl = int(getattr(connection.stats, "bytes_downloaded", 0) or 0)
-                _out = len(getattr(connection, "outstanding_requests", {}) or {})
                 if active_for_solo < choked_reserve_floor:
                     # Avoid disconnecting the only active peer after the short unchoke
                     # window. Choked peers are useful optimistic-unchoke and PEX reserve
@@ -14493,7 +14506,6 @@ class AsyncPeerConnectionManager:
                         solo_grace=solo_grace,
                         zero_bytes_cap=zero_bytes_cap,
                         bytes_downloaded=_bdl,
-                        outstanding_count=_out,
                     )
                 elif not swarm_has_requestable or not replacement_pressure:
                     # Multiple peers can all be post-handshake but still choked (tit-for-tat).
@@ -14505,7 +14517,6 @@ class AsyncPeerConnectionManager:
                         solo_grace=solo_grace,
                         zero_bytes_cap=zero_bytes_cap,
                         bytes_downloaded=_bdl,
-                        outstanding_count=_out,
                     )
 
                 # If peer is still choking after timeout, classify as hard recovery
@@ -16708,7 +16719,7 @@ class AsyncPeerConnectionManager:
                 await asyncio.sleep(max(2.0, interval_s))
                 if not self._running or is_shutting_down():
                     break
-                _, active_count, _ = self._snapshot_connection_counts()
+                _, active_count, requestable_count = self._snapshot_connection_counts()
                 growth_target = self._swarm_growth_target()
                 if active_count >= self.max_peers_per_torrent:
                     continue
@@ -16716,7 +16727,15 @@ class AsyncPeerConnectionManager:
                     pending_depth = len(self._pending_peer_queue)
                 if pending_depth == 0:
                     continue
-                if self._has_recent_productive_download() and active_count >= 1:
+                # Productive-download pause only applies when we already
+                # have a usable requestable cohort. At requestable == 0
+                # (the measured stall: bytes flowing from one peer, no
+                # peer we can place new requests on) growth must continue.
+                if (
+                    requestable_count > 0
+                    and self._has_recent_productive_download()
+                    and active_count >= 1
+                ):
                     continue
                 if active_count < growth_target or (
                     active_count < self.max_peers_per_torrent
@@ -16786,7 +16805,12 @@ class AsyncPeerConnectionManager:
                     # This ensures peer processing continues even after piece requests start
 
                     active_peer_count = len(self.get_active_peers())
-                    if self._has_recent_productive_download() and active_peer_count > 0:
+                    _, _, _requestable_now = self._snapshot_connection_counts()
+                    if (
+                        _requestable_now > 0
+                        and self._has_recent_productive_download()
+                        and active_peer_count > 0
+                    ):
                         self.logger.debug(
                             "Reconnection loop [%s]: throttling overlap during productive "
                             "download (active=%d)",
@@ -18187,10 +18211,21 @@ class AsyncPeerConnectionManager:
             current_connections = len(self.connections)
             max_connections = self.max_peers_per_torrent
 
-        if requestable_n > 0 or active_peer_count < min_active:
+        # Small-swarm path: even below min_active, when nobody is
+        # requestable and replacement candidates are queued, a
+        # persistently choked peer is blocking recovery (measured stall:
+        # 2 actives, 1 permanently choked, never replaced).
+        small_swarm_deficit = (
+            requestable_n == 0
+            and active_peer_count >= 1
+            and len(self._pending_peer_queue) > 0
+        )
+        if requestable_n > 0 or (
+            active_peer_count < min_active and not small_swarm_deficit
+        ):
             return
         limit_floor = max(1, int(max_connections * at_lim))
-        if current_connections < limit_floor:
+        if current_connections < limit_floor and not small_swarm_deficit:
             return
 
         min_peers_for_dht_pex = (
@@ -20059,6 +20094,11 @@ class AsyncPeerConnectionManager:
 
         if hasattr(connection.stats, "timeout_adjustment_factor"):
             request_timeout *= connection.stats.timeout_adjustment_factor
+            # The >80% saturation cap is a hard ceiling: the useful-piece
+            # adjustment must not silently re-inflate a saturated pipeline
+            # back to 22.5s (measured stall behaviour).
+            if pipeline_utilization > 0.8:
+                request_timeout = min(request_timeout, 15.0)
 
             if connection.stats.timeout_adjustment_factor > 1.0:
                 self.logger.debug(

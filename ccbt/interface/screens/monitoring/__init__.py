@@ -20,7 +20,17 @@ from ccbt.interface.screens.monitoring.scrape import ScrapeResultsScreen
 from ccbt.interface.screens.monitoring.security_scan import SecurityScanScreen
 from ccbt.interface.screens.monitoring.system_resources import SystemResourcesScreen
 from ccbt.interface.screens.monitoring.tracker import TrackerMetricsScreen
+from ccbt.interface.screens.monitoring.domains import (
+    CasHubManagementScreen,
+    CheckpointsManagementScreen,
+    PeerDiagnosticsScreen,
+    QueueManagementScreen,
+    SecurityManagementScreen,
+    SessionManagementScreen,
+    TorrentAdvancedScreen,
+)
 from ccbt.interface.screens.monitoring.xet import XetManagementScreen
+from ccbt.interface.screens.monitoring.xet_share import XetShareScreen
 
 __all__ = [
     "AlertsDashboardScreen",
@@ -40,4 +50,13 @@ __all__ = [
     "SystemResourcesScreen",
     "TrackerMetricsScreen",
     "XetManagementScreen",
+    "XetShareScreen",
+    "QueueManagementScreen",
+    "SecurityManagementScreen",
+    "CheckpointsManagementScreen",
+    "SessionManagementScreen",
+    "CasHubManagementScreen",
+    "PeerDiagnosticsScreen",
+    "TorrentAdvancedScreen",
+    "DiskAnalysisScreen",
 ]

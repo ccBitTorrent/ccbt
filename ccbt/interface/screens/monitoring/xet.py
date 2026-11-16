@@ -403,9 +403,9 @@ class XetManagementScreen(MonitoringScreen):  # type: ignore[misc]
         result = await self.app.push_screen(confirmation)  # type: ignore[attr-defined]
 
         if result:
-            success, message, _ = await self._command_executor.execute_click_command(
-                "xet cleanup"
-            )
+            _r = await self._command_executor.execute_command("xet.cache_cleanup")
+            success = bool(getattr(_r, "success", False))
+            message = getattr(_r, "error", "") or ""
             if self.statusbar:
                 if success:
                     self.statusbar.update(

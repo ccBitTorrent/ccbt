@@ -82,6 +82,10 @@ def binding_specs(app_cls: type[Any]) -> list[tuple[type[Any], dict[str, Any]]]:
     from ccbt.interface.widgets.torrent_controls import TorrentControlsWidget
     from ccbt.interface.widgets.torrent_file_explorer import TorrentFileExplorerWidget
     from ccbt.interface.widgets.torrent_selector import TorrentSelector
+    try:
+        from ccbt.interface.screens.per_peer_tab import PerPeerTabContent
+    except Exception:
+        PerPeerTabContent = None  # type: ignore
 
     return [
         (Overview, {"global_stats": app_cls.global_stats}),
@@ -135,6 +139,7 @@ def binding_specs(app_cls: type[Any]) -> list[tuple[type[Any], dict[str, Any]]]:
                 "media_stream_status": app_cls.media_stream_status,
             },
         ),
+        *([(PerPeerTabContent, {"peer_metrics": app_cls.peer_metrics})] if PerPeerTabContent is not None and hasattr(app_cls, "peer_metrics") else []),
         (
             PerTorrentGraphWidget,
             {

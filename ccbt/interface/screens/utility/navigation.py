@@ -43,6 +43,8 @@ except ImportError:
 
 from rich.panel import Panel
 
+from ccbt.interface.bindings import BINDING_SPECS
+
 
 class NavigationMenuScreen(Screen):  # type: ignore[misc]
     """Navigation menu/sidebar for accessing all screens."""
@@ -124,6 +126,11 @@ class NavigationMenuScreen(Screen):  # type: ignore[misc]
         )
         menu_table.add_row("Protocols", "uTP Config", "Ctrl+U", key="utp_config")
 
+        _existing = {"system_resources","performance_metrics","network_quality","historical_trends","alerts_dashboard","metrics_explorer","dht_metrics","queue_metrics","disk_io_metrics","tracker_metrics","performance_analysis","global_config","torrent_config","xet_management","ipfs_management","ssl_config","proxy_config","scrape_results","nat_management","utp_config"}
+        for _spec in BINDING_SPECS:
+            if _spec.action not in _existing and hasattr(self.app, f"action_{_spec.action}"):
+                try: menu_table.add_row(_spec.category, _spec.label, _spec.key, key=_spec.action)
+                except Exception: pass
         menu_table.cursor_type = "row"
         menu_table.focus()
 
@@ -178,7 +185,7 @@ class NavigationMenuScreen(Screen):  # type: ignore[misc]
                 "utp_config": "utp_config",
             }
 
-            action_name = screen_map.get(screen_key)
+            action_name = screen_map.get(screen_key) or (screen_key if hasattr(self.app, f"action_{screen_key}") else None)
             if action_name:
                 # Get the dashboard app (the root app, not this screen)
                 app = self.app  # type: ignore[attr-defined]

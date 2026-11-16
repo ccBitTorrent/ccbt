@@ -4376,9 +4376,20 @@ class AsyncPieceManager:
                 1.0 - pipeline_utilization
             )
 
+            # Timeout-ratio penalty: peers whose requests keep timing out
+            # are demoted so requeued blocks migrate to other peers first
+            # (previously a timed-out block's first requeue went back to
+            # the same slow peer because rate alone looked acceptable).
+            stats = getattr(peer, "stats", None)
+            delivered = float(getattr(stats, "blocks_delivered", 0) or 0)
+            failed = float(getattr(stats, "blocks_failed", 0) or 0)
+            total_reqs = delivered + failed
+            timeout_ratio = (failed / total_reqs) if total_reqs >= 4 else 0.0
+            timeout_penalty = min(0.5, timeout_ratio)  # up to -0.5 score
+
             # Combined score: 70% download rate, 30% pipeline availability
             # This ensures we prefer fast peers but also consider capacity
-            return (rate_score * 0.7) + (pipeline_score * 0.3)
+            return (rate_score * 0.7) + (pipeline_score * 0.3) - timeout_penalty
 
         # Sort by combined score (descending - best peers first)
         if not applied_sparse_priority:
@@ -8256,12 +8267,15 @@ class AsyncPieceManager:
             )
             active_peer_count = len(active_peers) if active_peers else 0
 
-        # Note: Much more aggressive timeout when few peers (faster recovery)
-        # When only 2-3 peers, pieces get stuck easily - use very short timeout
+        # Small-swarm floor: with <=2 peers the old 15s base collapsed to
+        # ~3.75s effective after adaptive scaling, resetting pieces at
+        # 2/32 blocks and churning request cooldowns (measured stall).
+        # 30s base (~7.5s effective) still recovers stuck pieces without
+        # discarding nearly-complete ones.
         if active_peer_count <= 2:
-            base_timeout = 15.0  # 15s when very few peers (was 20s)
+            base_timeout = 30.0
         elif active_peer_count <= 5:
-            base_timeout = 25.0  # 25s when few peers (was 30s)
+            base_timeout = 40.0
         else:
             base_timeout = 60.0  # 60s when many peers
 

@@ -33,6 +33,7 @@ from ccbt.cli.cli_option_sets import (
 from ccbt.cli.config_commands import config as config_group
 from ccbt.cli.create_torrent import create_torrent
 from ccbt.cli.daemon_commands import daemon as daemon_group
+from ccbt.cli.diagnose_commands import diagnose as diagnose_cmd
 from ccbt.cli.downloads import (
     run_magnet_file_selection_step,
     start_basic_magnet_download,
@@ -2066,7 +2067,17 @@ def status(ctx):
                             await ipc_client.close()  # type: ignore[attr-defined]
                 return
 
-            # No daemon running - create local session and show status
+            # No daemon running - create local session and show status.
+            # Explicit warning: these numbers describe a fresh local
+            # session, NOT any running daemon (previously this silently
+            # printed all-zero daemon-looking output).
+            console.print(
+                _(
+                    "[yellow]Warning: no daemon detected — showing an empty local "
+                    "session, not daemon state. Use 'btbt daemon status' or "
+                    "'btbt diagnose' for daemon-true data.[/yellow]"
+                )
+            )
             # Load configuration
             ConfigManager(ctx.obj["config"])
 
@@ -3411,6 +3422,7 @@ cli.add_command(security_cmd)
 cli.add_command(recover_cmd)
 cli.add_command(test_cmd)
 cli.add_command(create_torrent)
+cli.add_command(diagnose_cmd)
 if tonic_group is not None:
     cli.add_command(tonic_group)
 if cas_group is not None:

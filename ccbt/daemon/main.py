@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import sys
+import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 if TYPE_CHECKING:
@@ -337,6 +339,7 @@ class DaemonMain:
         self.ipc_server: Optional[IPCServer] = None
 
         self._shutdown_event = asyncio.Event()
+        self._heartbeat_task: Optional[asyncio.Task] = None
         self._auto_save_task: Optional[asyncio.Task] = None
         self._session_startup_task: Optional[asyncio.Task[None]] = None
         self._session_startup_complete = asyncio.Event()
@@ -1087,6 +1090,24 @@ class DaemonMain:
 
             keep_alive = asyncio.create_task(keep_alive_task())
             debug_log("Keep-alive task created: %s", keep_alive)
+
+            # Heartbeat file: lets `btbt diagnose` distinguish "daemon died
+            # at T" from "daemon unreachable" after the silent exits seen
+            # in the field (log ending mid-line, no traceback).
+            async def heartbeat_task():
+                hb_path = self.daemon_manager.state_dir / "daemon.heartbeat"
+                try:
+                    while not self._shutdown_event.is_set():
+                        with contextlib.suppress(Exception):
+                            hb_path.write_text(
+                                f"{os.getpid()} {time.time():.0f}\n",
+                                encoding="utf-8",
+                            )
+                        await asyncio.sleep(15.0)
+                except asyncio.CancelledError:
+                    pass
+
+            self._heartbeat_task = asyncio.create_task(heartbeat_task())
 
             try:
                 debug_log("Entering main loop - waiting for shutdown signal")

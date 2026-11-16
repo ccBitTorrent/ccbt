@@ -357,11 +357,17 @@ class FileBrowserWidget(Container):  # type: ignore[misc]
             status.update("[yellow]Please select files first[/yellow]")
             return
 
-        # TODO: Open torrent creation dialog/modal
-        # For now, show placeholder message
         status = self.query_one("#status-message", Static)  # type: ignore[attr-defined]
         status.update(f"[green]Creating torrent from {len(self._selected_files)} file(s)...[/green]")
-        # In future: await self.app.push_screen(CreateTorrentScreen(self._selected_files))
+        try:
+            target = str(self._selected_files[0])
+            if self._command_executor and hasattr(self._command_executor, "execute_click_command"):
+                success, message, _ = await self._command_executor.execute_click_command(f"create-torrent {target}")
+                status.update(f"[green]{message}[/green]" if success else f"[red]Create failed: {message}[/red]")
+                return
+            status.update("[yellow]Create-torrent: no executor available[/yellow]")
+        except Exception as e:
+            status.update(f"[red]Create failed: {e}[/red]")
 
     async def _add_torrent_to_session(self) -> None:  # pragma: no cover
         """Add selected torrent file to session."""

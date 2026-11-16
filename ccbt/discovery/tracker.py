@@ -2262,7 +2262,28 @@ class AsyncTrackerClient:
             "🔍 ANNOUNCE_TO_MULTIPLE: Waiting for %d tracker announce task(s) to complete...",
             len(tasks),
         )
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Bounded round: one hung tracker must not stretch the whole
+        # 36-tracker round past the announce interval. After the deadline
+        # pending tasks are cancelled and their trackers stay in
+        # "announcing" state for the next round instead of blocking it.
+        round_deadline_s = float(
+            getattr(self.config.discovery, "announce_round_deadline_s", 20.0) or 20.0
+        )
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=round_deadline_s,
+            )
+        except TimeoutError:
+            self.logger.warning(
+                "Announce round exceeded %.0fs deadline; cancelling %d pending tracker task(s)",
+                round_deadline_s,
+                sum(1 for t in tasks if not t.done()),
+            )
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            results = await asyncio.gather(*tasks, return_exceptions=True)
         # Note: Ensure all task exceptions are retrieved to prevent "Task exception was never retrieved" warnings
         # Even with return_exceptions=True, Python requires explicit exception retrieval to avoid warnings
         for task, result in zip(tasks, results):

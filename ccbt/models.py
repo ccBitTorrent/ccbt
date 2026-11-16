@@ -1565,17 +1565,21 @@ class NetworkConfig(BaseModel):
     )
 
     choke_only_slot_replacement_enabled: bool = Field(
-        default=False,
+        default=True,
         description=(
             "When True, disconnect oldest remote-choked interested peers to free slots "
-            "if no peer is requestable and the swarm is near max_peers_per_torrent."
+            "if no peer is requestable. Also engages in small swarms "
+            "(requestable==0 with a non-empty pending queue) regardless of "
+            "choke_only_slot_replacement_min_active_peers / at-limit fraction; "
+            "previously default-off and gated to ~95% of max_peers_per_torrent, "
+            "so it never fired in the measured 2-peer stall."
         ),
     )
     choke_only_slot_replacement_min_active_peers: int = Field(
         default=4,
         ge=2,
         le=256,
-        description="Minimum active peers before choke-only slot replacement may run.",
+        description="Minimum active peers before choke-only slot replacement may run (large-swarm path).",
     )
     choke_only_slot_replacement_min_choke_ratio: float = Field(
         default=0.85,
@@ -1647,13 +1651,15 @@ class NetworkConfig(BaseModel):
         ),
     )
     peer_choked_solo_grace_zero_bytes_cap_seconds: float = Field(
-        default=0.0,
+        default=45.0,
         ge=0.0,
         le=3600.0,
         description=(
-            "When >0 and the peer has delivered zero bytes with no outstanding requests, "
-            "cap solo grace at this many seconds (min with peer_choked_solo_grace_seconds). "
-            "0 disables the cap."
+            "When >0 and the peer has delivered zero bytes, cap solo grace at "
+            "this many seconds (min with peer_choked_solo_grace_seconds), then "
+            "evict and dial a replacement. Default 45 (was 0=disabled): in the "
+            "measured stall a never-unchoking peer was held for the full 180s "
+            "solo grace while it was one of only two peers. 0 disables the cap."
         ),
     )
 
@@ -2032,10 +2038,15 @@ class NetworkConfig(BaseModel):
         description="Minimum pipeline depth",
     )
     pipeline_max_depth: int = Field(
-        default=128,
+        default=48,
         ge=4,
         le=256,
-        description="Maximum pipeline depth (increased for better throughput)",
+        description=(
+            "Maximum adaptive pipeline depth. Default 48 (was 128): the "
+            "throughput/BDP deliverability cap in _calculate_pipeline_depth "
+            "keeps slow peers far below this, while fast peers can still "
+            "keep ~768 KiB in flight per connection."
+        ),
     )
     pipeline_enable_prioritization: bool = Field(
         default=True,
@@ -2503,8 +2514,15 @@ class DiskConfig(BaseModel):
         description="Checkpoint save interval in seconds",
     )
     checkpoint_on_piece: bool = Field(
-        default=True,
-        description="Save checkpoint after each verified piece",
+        default=False,
+        description=(
+            "Save checkpoint after each verified piece. Default False (was "
+            "True): piece-triggered checkpoints are now coalesced to at "
+            "most one per checkpoint_interval in _on_piece_verified, and "
+            "the periodic checkpoint loop (checkpoint_interval, 30s) is "
+            "the primary mechanism — per-piece full checkpoints were pure "
+            "disk churn during fast downloads."
+        ),
     )
     auto_resume: bool = Field(
         default=True,
@@ -2971,13 +2989,25 @@ class DiscoveryConfig(BaseModel):
         ),
     )
     announce_max_trackers_per_round: int = Field(
-        default=0,
+        default=10,
         ge=0,
         le=2048,
         description=(
             "Per announce loop iteration, contact at most this many tracker URLs from the "
             "deduped list, rotating the window each round (0 = contact all in one round). "
-            "Private torrents always use the full list. Reduces simultaneous UDP/HTTP tracker load."
+            "Private torrents always use the full list. Reduces simultaneous UDP/HTTP tracker load. "
+            "Default 10 (was 0=all) so a 36-tracker torrent announces in tiered rounds "
+            "instead of one unbounded 36-way gather."
+        ),
+    )
+    announce_round_deadline_s: float = Field(
+        default=20.0,
+        ge=5.0,
+        le=120.0,
+        description=(
+            "Hard deadline for one announce_to_multiple round; pending tracker "
+            "tasks are cancelled when it expires so one hung tracker cannot "
+            "stretch the round past the announce interval."
         ),
     )
 

@@ -24,7 +24,6 @@ def test_solo_grace_extends_base_timeout() -> None:
             solo_grace=_SOLO,
             zero_bytes_cap=0.0,
             bytes_downloaded=0,
-            outstanding_count=0,
         )
         == _SOLO
     )
@@ -38,7 +37,6 @@ def test_zero_bytes_cap_shortens_grace_when_no_progress() -> None:
             solo_grace=_SOLO,
             zero_bytes_cap=_CAP,
             bytes_downloaded=0,
-            outstanding_count=0,
         )
         == _CAP
     )
@@ -52,23 +50,26 @@ def test_zero_bytes_cap_ignored_when_downloading() -> None:
             solo_grace=_SOLO,
             zero_bytes_cap=_CAP,
             bytes_downloaded=1,
-            outstanding_count=0,
         )
         == _SOLO
     )
 
 
-def test_zero_bytes_cap_ignored_when_outstanding_requests() -> None:
-    """Outstanding requests disable the zero-progress cap."""
+def test_zero_bytes_cap_applies_even_with_outstanding_requests() -> None:
+    """Zero delivered bytes caps grace even with stale outstanding entries.
+
+    A choked peer's outstanding requests will time out on their own; they
+    are not evidence the peer is a supplier. (Plan WS2: previously the
+    cap was ignored here, holding dead peers for the full 180s grace.)
+    """
     assert (
         _apply_peer_choked_solo_grace(
             _BASE,
             solo_grace=_SOLO,
             zero_bytes_cap=_CAP,
             bytes_downloaded=0,
-            outstanding_count=3,
         )
-        == _SOLO
+        == _CAP
     )
 
 

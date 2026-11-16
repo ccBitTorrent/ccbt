@@ -416,24 +416,22 @@ class DaemonManager:
                     self.pid_file.unlink()
                 return None
 
-            # Verify process is actually running
-            # On Windows, os.kill() can raise ProcessLookupError or other exceptions
-            try:
-                os.kill(pid, 0)
+            # Verify process is actually running. NOTE: os.kill(pid, 0) is
+            # not a reliable liveness probe on Windows (it can raise or even
+            # terminate the target), so use the platform-aware helper.
+            if is_process_alive(pid):
                 return pid
-            except (OSError, ProcessLookupError):
-                # Process doesn't exist, remove stale PID file
+            # PID file may be stale while the lock file names the live daemon
+            # (daemon writes daemon.lock but PID file rotation can lag).
+            if self.lock_file.exists():
+                with contextlib.suppress(OSError, ValueError):
+                    lock_pid = int(self.lock_file.read_text(encoding="utf-8").strip())
+                    if is_process_alive(lock_pid):
+                        return lock_pid
+            # Process doesn't exist, remove stale PID file
+            with contextlib.suppress(OSError):
                 self.pid_file.unlink()
-                return None
-            except Exception:
-                # Handle any other unexpected exceptions (Windows-specific issues)
-                # On Windows, os.kill() might raise exceptions with "exception set" errors
-                logger.debug(
-                    "Error checking process existence for PID %d, removing stale PID file",
-                    pid,
-                )
-                self.pid_file.unlink()
-                return None
+            return None
 
         except (ValueError, OSError) as e:
             logger.debug("Error reading PID file: %s", e)
@@ -447,11 +445,18 @@ class DaemonManager:
 
         """
         try:
-            return self.get_pid() is not None
+            if self.get_pid() is not None:
+                return True
         except Exception:
-            # Handle any unexpected exceptions from get_pid()
-            # On Windows, this can happen with os.kill() issues
             logger.debug("Error checking if daemon is running", exc_info=True)
+        # Fallback: a daemon that is serving IPC is running even if its
+        # PID/lock files are missing or stale (previously `btbt daemon
+        # status` reported "not running" while the API was healthy).
+        try:
+            port, _api_key, _path = resolve_daemon_connection_params()
+            return is_daemon_ipc_listening(port)
+        except Exception:
+            logger.debug("IPC liveness check failed", exc_info=True)
             return False
 
     def acquire_lock(self) -> bool:

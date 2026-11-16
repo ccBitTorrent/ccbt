@@ -519,4 +519,23 @@ Per-torrent configuration is persisted in:
 - **Tracker failures:** `network.tracker_payload_failure_quarantine_seconds` and `network.tracker_network_failure_quarantine_seconds` control backoff when announces return invalid payloads (for example HTML error pages) or network errors.
 - **Remote choke stall recovery:** `network.peer_choked_hard_timeout_seconds`, `network.peer_choked_anchor_timeout_seconds`, `network.peer_choked_solo_grace_seconds`, and optional `network.peer_choked_solo_grace_zero_bytes_cap_seconds` tune how long the client waits for a remote **UNCHOKE** before disconnecting and retrying other peers. Defaults favor keeping a single TCP path alive when discovery is weak; see [Network troubleshooting](network-troubleshooting.md).
 
+### Download performance defaults (retuned)
+
+Measured on a stalled public torrent (~16 KiB/s, 1–2 peers) and gated on the
+local synthetic-swarm harness (`ccbt/performance/swarm_sim.py`):
+
+- `network.peer_choked_solo_grace_zero_bytes_cap_seconds` **45** (was 0/disabled): a
+  peer that has delivered zero bytes is evicted after 45s of remote choke even
+  under solo grace, and a replacement is dialed immediately.
+- `network.choke_only_slot_replacement_enabled` **true** (was false), including a
+  small-swarm path when no peer is requestable and candidates are queued.
+- `network.pipeline_max_depth` **48** (was 128); adaptive depth is additionally
+  capped by measured per-peer throughput (BDP) so a slow peer cannot accumulate
+  an undrainable 48-deep pipeline at 22.5s timeouts.
+- `discovery.announce_max_trackers_per_round` **10** (was 0 = all ~36 at once),
+  rotating across rounds, with `discovery.announce_round_deadline_s` (20s)
+  cancelling hung trackers.
+- `disk.checkpoint_on_piece` **false** (was true); checkpoints are coalesced to
+  at most one per `disk.checkpoint_interval` and the periodic loop remains.
+
 For detailed performance tuning, see [Performance Tuning Guide](performance.md).

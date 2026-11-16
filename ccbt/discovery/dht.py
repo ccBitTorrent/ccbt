@@ -143,6 +143,14 @@ class KademliaRoutingTable:
         self.buckets: list[list[DHTNode]] = [[] for _ in range(160)]  # 160-bit keyspace
         self.nodes: dict[bytes, DHTNode] = {}
 
+    def __len__(self) -> int:
+        """Return the number of nodes in the routing table."""
+        return len(self.nodes)
+
+    def get_all_nodes(self) -> list[DHTNode]:
+        """Return a snapshot list of all nodes in the routing table."""
+        return list(self.nodes.values())
+
     def distance(self, node_id1: bytes, node_id2: bytes) -> int:
         """Calculate XOR distance between two node IDs (public API).
 
@@ -471,6 +479,7 @@ class AsyncDHTClient:
         # Network
         self.bind_ip = bind_ip
         self.bind_port = bind_port
+        self.bound_port = bind_port
         self.socket: Optional[asyncio.DatagramProtocol] = None
         self.transport: Optional[asyncio.DatagramTransport] = None
 
@@ -696,6 +705,24 @@ class AsyncDHTClient:
             # Re-raise other OSErrors as-is
             raise
 
+        # Record the actually-bound port (differs from bind_port when an
+        # ephemeral fallback was used upstream); diagnose reports this.
+        self.bound_port = self.bind_port
+        try:
+            sockname = self.transport.get_extra_info("sockname")  # type: ignore[attr-defined]
+            if sockname:
+                self.bound_port = int(sockname[1])
+        except Exception:
+            pass
+        if self.bound_port != self.bind_port:
+            self.logger.warning(
+                "DHT bound to ephemeral port %d (configured %d); "
+                "firewall/NAT rules for %d will not apply",
+                self.bound_port,
+                self.bind_port,
+                self.bind_port,
+            )
+
         # Start background tasks
         self._refresh_task = asyncio.create_task(self._refresh_loop())
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
@@ -703,7 +730,7 @@ class AsyncDHTClient:
         # Bootstrap in background so daemon startup is not blocked (up to 30s when nodes unreachable)
         self._bootstrap_task = asyncio.create_task(self._bootstrap())
 
-        self.logger.info("DHT client started on %s:%s", self.bind_ip, self.bind_port)
+        self.logger.info("DHT client started on %s:%s", self.bind_ip, self.bound_port)
 
     async def stop(self) -> None:
         """Stop the DHT client.
@@ -1228,7 +1255,23 @@ class AsyncDHTClient:
                 return False
 
             # Use query_timeout for _find_nodes (already has timeout via asyncio.wait_for)
+            nodes_before = len(self.routing_table.nodes)
             await self._find_nodes(addr, self.node_id)
+            nodes_added = len(self.routing_table.nodes) - nodes_before
+            self.logger.info(
+                "DHT bootstrap seed %s:%s outcome nodes_added=%d total=%d",
+                host,
+                port,
+                nodes_added,
+                len(self.routing_table.nodes),
+            )
+            if nodes_added <= 0:
+                # A completed find_node call that added nothing is NOT a
+                # successful bootstrap (previously counted as success,
+                # masking total bootstrap failure).
+                self.last_bootstrap_failure_reason = f"bootstrap_no_nodes:{host}:{port}"
+                self._mark_bootstrap_attempt_failed(bootstrap_key)
+                return False
 
             # Track successful bootstrap
             response_time = time.time() - start_time
@@ -1799,6 +1842,10 @@ class AsyncDHTClient:
             List of (ip, port) tuples
 
         """
+        # Cumulative lookup counter (all call paths and early returns);
+        # session-level metrics only counted one call site, so diagnose
+        # reported total_queries=0 while lookups were running.
+        self.total_queries = int(getattr(self, "total_queries", 0) or 0) + 1
         # BEP 27: Private torrents must not use DHT for peer discovery
         if self.is_private_torrent and self.is_private_torrent(info_hash):
             self.logger.debug(
@@ -2249,6 +2296,12 @@ class AsyncDHTClient:
             alpha,
             k,
             effective_max_depth,
+        )
+
+        # Cumulative peers counter (query count is incremented at
+        # get_peers entry so early returns count too).
+        self.total_peers_found = int(getattr(self, "total_peers_found", 0) or 0) + len(
+            peers
         )
 
         # Store query metrics for external access
@@ -2736,7 +2789,11 @@ class AsyncDHTClient:
             if wall_remaining <= 0:
                 query_timeout = min(query_timeout, 0.25)
             else:
-                query_timeout = min(query_timeout, max(0.25, wall_remaining))
+                # Dedicated per-seed bootstrap timeout: adaptive timeouts
+                # enter 30-60s desperation mode at 0 peers, which would
+                # starve the remaining seeds inside the 45s wall. Cap each
+                # bootstrap query at 5s so every seed is tried.
+                query_timeout = min(query_timeout, 5.0, max(0.25, wall_remaining))
 
         # Generate transaction ID
         tid = os.urandom(2)

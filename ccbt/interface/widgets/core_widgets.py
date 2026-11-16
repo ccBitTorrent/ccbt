@@ -519,29 +519,26 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         layout: vertical;
         border: solid $primary;
         overflow: hidden;
-        min-width: 80;
-        min-height: 20;
+        min-height: 8;
         display: block;
     }
-    
+
     #top-pane-content {
         height: 1fr;
         layout: vertical;
         padding: 0 1;
         overflow: hidden;
-        min-height: 15;
         display: block;
     }
-    
-    /* Note: Graphs pane always visible */
+
+    /* Note: Graphs pane always visible; no internal scrolling — widgets
+       must fit the pane (compact strips) instead of scrolling. */
     #top-pane-graphs {
         height: 1fr;
-        overflow-y: auto;
-        overflow-x: hidden;
-        min-height: 12;
+        overflow: hidden;
         display: block;
     }
-    
+
     /* Graph selector container - always visible */
     #graphs-selector-container {
         height: auto;
@@ -549,12 +546,10 @@ class GraphsSectionContainer(Container):  # type: ignore[misc]
         border-bottom: solid $primary;
         display: block;
     }
-    
+
     #graph-display-area {
         height: 1fr;
-        min-height: 20;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow: hidden;
         display: block;
     }
     """

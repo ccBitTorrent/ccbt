@@ -37,6 +37,7 @@ class SimResult:
     wasted_bytes: int
     useful_bytes: int
     duplicate_requests: int
+    cancelled_requests: int = 0
 
     @property
     def wasted_fraction(self) -> float:
@@ -53,6 +54,7 @@ class SimResult:
             "time_to_50pct_s": round(self.time_to_50pct_s, 3),
             "wasted_fraction": round(self.wasted_fraction, 4),
             "duplicate_requests": float(self.duplicate_requests),
+            "cancelled_requests": float(self.cancelled_requests),
         }
 
 
@@ -125,6 +127,7 @@ def simulate(
     next_block = 0
     wasted = 0
     dup_requests = 0
+    cancelled = 0
     first_piece_at = 0.0
     half_at = 0.0
     completed_pieces: set[int] = set()
@@ -200,6 +203,7 @@ def simulate(
                     continue
                 if now - min(holders.values()) < request_timeout_s:
                     continue
+                cancelled += len(holders)
                 for old_pid in holders:
                     busy[old_pid] = max(0, busy[old_pid] - 1)
                 del in_flight[b]
@@ -250,7 +254,73 @@ def simulate(
         wasted_bytes=wasted,
         useful_bytes=useful,
         duplicate_requests=dup_requests,
+        cancelled_requests=cancelled,
     )
+
+
+def make_stall_peers() -> list[SimPeer]:
+    """Build the peer set reproducing the measured live stall.
+
+    1 slow unreliable supplier, 1 peer that never unchokes, and a
+    handful of normal peers behind them.
+    """
+    peers = [
+        # Slow supplier that hangs ~30% of requests (the 48/48 pipeline peer)
+        SimPeer(
+            peer_id=0,
+            latency_s=0.6,
+            bandwidth_bps=50_000,
+            unchoke_delay_s=0.5,
+            reliability=0.7,
+        ),
+        # Permanently choked peer (never becomes requestable)
+        SimPeer(
+            peer_id=1,
+            latency_s=0.1,
+            bandwidth_bps=5_000_000,
+            unchoke_delay_s=1e9,
+            reliability=1.0,
+        ),
+    ]
+    peers.extend(
+        SimPeer(
+            peer_id=i,
+            latency_s=0.08,
+            bandwidth_bps=2_000_000,
+            unchoke_delay_s=3.0 + i,
+            reliability=1.0,
+        )
+        for i in range(2, 8)
+    )
+    return peers
+
+
+def run_stall_scenario(num_blocks: int = 400) -> dict[str, dict[str, float]]:
+    """Run baseline vs treatment configurations on the stall peer set.
+
+    Baseline: deep pipeline, long timeout, no duplication. Treatment:
+    capped pipeline, short timeout, straggler duplication.
+    """
+    peers = make_stall_peers()
+    baseline = simulate(
+        peers=peers,
+        num_blocks=num_blocks,
+        dial_parallelism=2,
+        duplicate_stragglers=False,
+        pipeline_per_peer=48,
+        request_timeout_s=22.5,
+    )
+    treatment = simulate(
+        peers=peers,
+        num_blocks=num_blocks,
+        dial_parallelism=8,
+        duplicate_stragglers=True,
+        straggler_after_s=1.0,
+        max_copies=3,
+        pipeline_per_peer=16,
+        request_timeout_s=15.0,
+    )
+    return {"baseline": baseline.as_dict(), "treatment": treatment.as_dict()}
 
 
 def run_scenario(

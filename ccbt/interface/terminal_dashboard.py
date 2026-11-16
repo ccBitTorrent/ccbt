@@ -59,7 +59,19 @@ from ccbt.interface.screens.config.torrent_config import (
     PerTorrentConfigMainScreen,
 )
 from ccbt.interface.screens.config.utp import UTPConfigScreen
-from ccbt.interface.screens.dialogs import AddTorrentScreen
+from ccbt.interface.bindings import footer_bindings
+from ccbt.interface.textual_guard import ensure_textual_version, textual_version
+from ccbt.interface.screens.dialogs import AddTorrentScreen, QuickAddTorrentScreen
+from ccbt.interface.screens.monitoring.domains import (
+    CasHubManagementScreen,
+    CheckpointsManagementScreen,
+    PeerDiagnosticsScreen,
+    QueueManagementScreen,
+    SecurityManagementScreen,
+    SessionManagementScreen,
+    TorrentAdvancedScreen,
+)
+from ccbt.interface.screens.monitoring.xet_share import XetShareScreen
 from ccbt.interface.screens.monitoring.alerts import AlertsDashboardScreen
 from ccbt.interface.screens.monitoring.disk_io import DiskIOMetricsScreen
 from ccbt.interface.screens.monitoring.historical import HistoricalTrendsScreen
@@ -362,6 +374,10 @@ class CustomFooter(Container):  # type: ignore[misc]
         if current_row:
             rows.append(current_row)
 
+        yield Static(
+            f"Textual {'.'.join(map(str, textual_version()))}",
+            id="footer-textual-version",
+        )
         # Create rows with horizontal layout
         with Container(id="footer-content"):
             for row in rows:
@@ -493,6 +509,8 @@ class PeersTable(ReusableDataTable):  # type: ignore[misc]
 class TerminalDashboard(App):  # type: ignore[misc]
     """Textual dashboard application."""
 
+    CSS_PATH = "dashboard.tcss"
+
     CSS = """
     Screen { 
         layout: vertical; 
@@ -510,8 +528,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
     
     /* Graphs section: 45% of main-content (9fr out of 20fr total) */
     #graphs-section {
-        height: 9fr;
-        min-height: 12;
+        height: 5fr;
+        min-height: 8;
         display: block;
     }
     
@@ -586,7 +604,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         border: solid $error;
     }
     .rainbow-7 {
-        border: solid #8B00FF;  /* Violet color - hardcoded since $info is not available as CSS variable */
+        border: solid $accent;
     }
     
     /* Note: Rainbow theme borders are applied programmatically via _apply_rainbow_borders() method
@@ -619,6 +637,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
     media_candidates: reactive = reactive([], layout=False, always_update=True)  # type: ignore[assignment]
     media_stream_status: reactive = reactive(None, layout=False, always_update=True)  # type: ignore[assignment]
     network_quality: reactive = reactive({}, layout=False, always_update=True)  # type: ignore[assignment]
+    peer_metrics: reactive = reactive({}, layout=False, always_update=True)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -637,6 +656,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
             ValueError: If session is not a DaemonInterfaceAdapter
         """
         super().__init__()
+        # Fail fast on unsupported Textual instead of a compose traceback.
+        self._textual_version = ensure_textual_version()
+        self._startup_t0 = time.monotonic()
 
         # CRITICAL: Dashboard ONLY works with daemon - no local sessions allowed
         from ccbt.interface.daemon_session_adapter import DaemonInterfaceAdapter
@@ -860,46 +882,8 @@ class TerminalDashboard(App):  # type: ignore[misc]
         # Comprehensive custom footer with all commands including Textual system bindings
         yield CustomFooter(self.ALL_FOOTER_BINDINGS)
 
-    # All footer bindings - comprehensive list including Textual system bindings
-    ALL_FOOTER_BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        # Core torrent actions
-        ("p", "pause_torrent", _("Pause")),
-        ("r", "resume_torrent", _("Resume")),
-        ("q", "quit", _("Quit")),
-        # Torrent addition
-        ("i", "quick_add_torrent", _("Quick Add")),
-        ("o", "advanced_add_torrent", _("Advanced Add")),
-        ("b", "browse_add_torrent", _("Browse")),
-        # Configuration
-        ("g", "global_config", _("Global Config")),
-        ("t", "torrent_config", _("Torrent Config")),
-        # Monitoring screens
-        ("s", "system_resources", _("System Resources")),
-        ("m", "performance_metrics", _("Performance")),
-        ("n", "network_quality", _("Network")),
-        ("h", "historical_trends", _("History")),
-        ("a", "alerts_dashboard", _("Alerts")),
-        ("e", "metrics_explorer", _("Explore")),
-        ("x", "security_scan", _("Security Scan")),
-        # Settings
-        ("l", "language_selection", _("Language")),
-        ("ctrl+shift+t", "theme_selection", _("Theme")),
-        ("?", "help", _("Help")),
-        # Protocol management (Ctrl+ combinations)
-        ("ctrl+x", "xet_management", _("Xet")),
-        ("ctrl+f", "xet_folder_sync", _("XET Folders")),
-        ("ctrl+i", "ipfs_management", _("IPFS")),
-        ("ctrl+s", "ssl_config", _("SSL Config")),
-        ("ctrl+p", "proxy_config", _("Proxy Config")),
-        ("ctrl+r", "scrape_results", _("Scrape Results")),
-        ("ctrl+n", "nat_management", _("NAT Management")),
-        ("ctrl+u", "utp_config", _("uTP Config")),
-        ("ctrl+m", "navigation_menu", _("Menu")),
-        # Textual system bindings
-        ("ctrl+t", "toggle_dark", _("Toggle Dark/Light")),
-        ("ctrl+d", "dark_mode", _("Dark Mode")),
-        ("ctrl+shift+d", "light_mode", _("Light Mode")),
-    ]
+    # All footer bindings - generated from ccbt.interface.bindings (single registry)
+    ALL_FOOTER_BINDINGS: ClassVar[list[tuple[str, str, str]]] = footer_bindings()
 
     # All bindings combined (for action routing)
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = ALL_FOOTER_BINDINGS
@@ -989,8 +973,20 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
     async def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the dashboard and start session polling."""
+        # Timing instrumentation: settles "slow startup vs slow navigation"
+        # reports with data (debug level; grep for dashboard_timing).
+        _t0 = getattr(self, "_startup_t0", time.monotonic())
+        logger.debug(
+            "dashboard_timing stage=on_mount_start elapsed=%.3fs textual=%s",
+            time.monotonic() - _t0,
+            ".".join(map(str, getattr(self, "_textual_version", ()))),
+        )
         # Textual lifecycle method - requires full app mount context to test
         await self._ensure_adapter_ready()
+        logger.debug(
+            "dashboard_timing stage=adapter_ready elapsed=%.3fs",
+            time.monotonic() - _t0,
+        )
 
         # Register rainbow theme
         try:
@@ -1609,7 +1605,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 self._log_handler = None
 
             # Write initial message to confirm logging is working
-            self.logs.write(
+            self._log_write(
                 style_policy.markup(
                     "Logging initialized - errors and warnings will appear here",
                     style_policy.SUCCESS_STYLE,
@@ -1621,7 +1617,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             # Still try to write initial message
             try:
                 if self.logs:
-                    self.logs.write(
+                    self._log_write(
                         style_policy.markup(
                             "Logging handler setup had issues, but basic logging should work",
                             style_policy.WARNING_STYLE,
@@ -2051,6 +2047,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 rate_samples,
                 network_quality,
                 swarm_samples,
+                peer_metrics_data,
             ) = await asyncio.gather(
                 _timed(data_provider.get_global_kpis()),
                 _timed(data_provider.get_dht_health_summary()),
@@ -2060,6 +2057,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 _timed(data_provider.get_rate_samples(60)),
                 _timed(data_provider.get_network_timing_metrics()),
                 _timed(data_provider.get_swarm_health_samples(limit=10)),
+                _timed(data_provider.get_peer_metrics()),
                 return_exceptions=True,
             )
             kpis = coalesce_gather_result(kpis, {})
@@ -2070,6 +2068,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             rate_samples = coalesce_gather_result(rate_samples, [])
             network_quality = coalesce_gather_result(network_quality, {})
             swarm_samples = coalesce_gather_result(swarm_samples, [])
+            peer_metrics_data = coalesce_gather_result(peer_metrics_data, {})
         except Exception as exc:  # pragma: no cover
             logger.debug("Failed to refresh aux metrics: %s", exc)
             return
@@ -2081,6 +2080,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         self._set_reactive("rate_samples", rate_samples)
         self._set_reactive("network_quality", network_quality)
         self._set_reactive("swarm_health_samples", swarm_samples)
+        self._set_reactive("peer_metrics", peer_metrics_data)
         with contextlib.suppress(Exception):
             fan_out_app_reactives(self)
 
@@ -2681,6 +2681,12 @@ class TerminalDashboard(App):  # type: ignore[misc]
         with contextlib.suppress(Exception):
             await self.metrics_collector.stop()
 
+    def _log_write(self, message: Any) -> None:
+        logs = getattr(self, "logs", None)
+        if logs is not None:
+            with contextlib.suppress(Exception):
+                logs.write(message)
+
     # Key bindings
     # Note: Using on_key() method instead of @on(events.Key) for flexibility
     # This allows handling multiple keys in one method and custom logic
@@ -2771,24 +2777,24 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 self._pending_delete = None  # type: ignore[attr-defined]
             return
         if event.key in ("p", "P"):
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
                     # CRITICAL: Use CommandExecutor for all write operations
                     await self._command_executor.execute_command(
                         "torrent.pause", info_hash=ih
                     )
-                    self.logs.write(f"Paused {ih}")
+                    self._log_write(f"Paused {ih}")
             return
         if event.key in ("r", "R"):
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
                     # CRITICAL: Use CommandExecutor for all write operations
                     await self._command_executor.execute_command(
                         "torrent.resume", info_hash=ih
                     )
-                    self.logs.write(f"Resumed {ih}")
+                    self._log_write(f"Resumed {ih}")
             return
         if event.key == "/":
             # Command palette lite: filter by name/status
@@ -2812,7 +2818,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return
         if event.key in ("a", "A"):
             # Force announce
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 try:
                     # CRITICAL: Use CommandExecutor for all write operations
@@ -2832,7 +2838,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                             title=_("Status"),
                         ),
                     )
-                    self.logs.write(f"Announce {'OK' if ok else 'Failed'} for {ih}")
+                    self._log_write(f"Announce {'OK' if ok else 'Failed'} for {ih}")
                 except Exception:
                     self.statusbar.update(
                         Panel(
@@ -2842,7 +2848,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return
         if event.key in ("s", "S"):
             # Force scrape
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 try:
                     # CRITICAL: Use CommandExecutor for all write operations
@@ -2862,7 +2868,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                             title=_("Status"),
                         ),
                     )
-                    self.logs.write(f"Scrape {'OK' if ok else 'Failed'} for {ih}")
+                    self._log_write(f"Scrape {'OK' if ok else 'Failed'} for {ih}")
                 except Exception:
                     self.statusbar.update(
                         Panel(
@@ -2872,7 +2878,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return
         if event.key in ("e", "E"):
             # Refresh PEX
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 try:
                     # CRITICAL: Use CommandExecutor for all write operations
@@ -2893,7 +2899,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                             title=_("Status"),
                         ),
                     )
-                    self.logs.write(f"PEX {'OK' if ok else 'Failed'} for {ih}")
+                    self._log_write(f"PEX {'OK' if ok else 'Failed'} for {ih}")
                 except Exception:
                     self.statusbar.update(
                         Panel(_("PEX: Failed"), title=_("Status"), border_style="red"),
@@ -2901,7 +2907,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             return
         if event.key in ("h", "H"):
             # Rehash
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 try:
                     # Use executor for rehash
@@ -2921,7 +2927,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                             title=_("Status"),
                         ),
                     )
-                    self.logs.write(f"Rehash {'OK' if ok else 'Failed'} for {ih}")
+                    self._log_write(f"Rehash {'OK' if ok else 'Failed'} for {ih}")
                 except Exception:
                     self.statusbar.update(
                         Panel(
@@ -2954,7 +2960,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         _("Snapshot saved to {path}").format(path=p), title=_("Status")
                     )
                 )
-                self.logs.write(f"Snapshot saved to {p}")
+                self._log_write(f"Snapshot saved to {p}")
             except Exception as e:
                 self.statusbar.update(
                     Panel(
@@ -2965,7 +2971,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 )
             return
         if event.key in ("1",):
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
                     # CRITICAL: Use CommandExecutor for all write operations
@@ -2978,10 +2984,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     self.statusbar.update(
                         Panel(_("Rate limits disabled"), title=_("Status"))
                     )
-                    self.logs.write(f"Rate limits disabled for {ih}")
+                    self._log_write(f"Rate limits disabled for {ih}")
             return
         if event.key in ("2",):
-            ih = self.torrents.get_selected_info_hash()
+            ih = self._get_selected_info_hash()
             if ih:
                 with contextlib.suppress(Exception):
                     # CRITICAL: Use executor for all write operations
@@ -2997,14 +3003,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 _("Rate limits set to 1024 KiB/s"), title=_("Status")
                             ),
                         )
-                        self.logs.write(f"Rate limits set to 1024/1024 KiB/s for {ih}")
+                        self._log_write(f"Rate limits set to 1024/1024 KiB/s for {ih}")
                     else:
                         error_msg = (
                             result.error
                             if result and hasattr(result, "error")
                             else _("Unknown error")
                         )
-                        self.logs.write(f"Failed to set rate limits: {error_msg}")
+                        self._log_write(f"Failed to set rate limits: {error_msg}")
             return
         if event.key in ("m", "M"):
             # Toggle metrics collection interval among 1, 5, 10 seconds
@@ -3021,7 +3027,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         title=_("Status"),
                     ),
                 )
-                self.logs.write(f"Metrics interval set to {new_iv}s")
+                self._log_write(f"Metrics interval set to {new_iv}s")
             return
         if event.key in ("R",):
             # Toggle dashboard refresh interval among 0.5, 1.0, 2.0
@@ -3107,7 +3113,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     getattr(self.alert_manager, "active_alerts", {}).keys(),
                 ):
                     await self.alert_manager.resolve_alert(aid)  # type: ignore[attr-defined]
-                self.logs.write("Acknowledged all alerts")
+                self._log_write("Acknowledged all alerts")
             return
 
     async def on_input_submitted(self, message: Input.Submitted) -> None:  # type: ignore[override]  # pragma: no cover
@@ -3134,13 +3140,13 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 pass
             # Validate input before processing
             if not path_or_magnet:
-                self.logs.write(
+                self._log_write(
                     f"{style_policy.markup('Error: No torrent path or magnet link provided', style_policy.ERROR_STYLE)}"
                 )
                 return
             # Basic validation: must be magnet link or non-empty path
             if not path_or_magnet.startswith("magnet:") and len(path_or_magnet) < 3:
-                self.logs.write(
+                self._log_write(
                     f"{style_policy.markup('Error: Invalid torrent path or magnet link', style_policy.ERROR_STYLE)}"
                 )
                 return
@@ -3439,7 +3445,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         ih: Optional[str] = None
         if getattr(self, "torrents", None) is not None:
             with contextlib.suppress(Exception):
-                ih = self.torrents.get_selected_info_hash()  # type: ignore[union-attr]
+                ih = self._get_selected_info_hash()  # type: ignore[union-attr]
         if not ih:
             try:
                 from ccbt.interface.widgets.tabbed_interface import MainTabsContainer
@@ -3496,7 +3502,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 border_style="green",
                             )
                         )
-                        self.logs.write(f"Command '{cmd}' executed: {message}")
+                        self._log_write(f"Command '{cmd}' executed: {message}")
                     except Exception:
                         # Fallback to simple text
                         self.statusbar.update(
@@ -3509,9 +3515,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 border_style="green",
                             )
                         )
-                        self.logs.write(f"Command '{cmd}' executed")
+                        self._log_write(f"Command '{cmd}' executed")
                 else:
-                    self.logs.write(f"Command '{cmd}' executed successfully")
+                    self._log_write(f"Command '{cmd}' executed successfully")
             else:
                 # Display error message
                 self.statusbar.update(
@@ -3521,7 +3527,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         border_style="red",
                     )
                 )
-                self.logs.write(f"Command '{cmd}' error: {message}")
+                self._log_write(f"Command '{cmd}' error: {message}")
             return
 
         # Check if this is a CLI command that should be handled by CommandExecutor
@@ -3555,7 +3561,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 border_style="green",
                             )
                         )
-                        self.logs.write(f"Command '{cmd}' executed: {message}")
+                        self._log_write(f"Command '{cmd}' executed: {message}")
                     except Exception:
                         # Fallback to simple text
                         self.statusbar.update(
@@ -3568,9 +3574,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                 border_style="green",
                             )
                         )
-                        self.logs.write(f"Command '{cmd}' executed")
+                        self._log_write(f"Command '{cmd}' executed")
                 else:
-                    self.logs.write(f"Command '{cmd}' executed successfully")
+                    self._log_write(f"Command '{cmd}' executed successfully")
             else:
                 # Display error message
                 self.statusbar.update(
@@ -3580,7 +3586,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         border_style="red",
                     )
                 )
-                self.logs.write(f"Command '{cmd}' error: {message}")
+                self._log_write(f"Command '{cmd}' error: {message}")
             return
 
         # Legacy command handlers (for backward compatibility)
@@ -3591,41 +3597,41 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     "torrent.pause", info_hash=ih
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Paused {ih}")
+                    self._log_write(f"Paused {ih}")
                 else:
-                    self.logs.write(f"Failed to pause {ih}")
+                    self._log_write(f"Failed to pause {ih}")
             elif cmd == "resume" and ih:
                 result = await self._command_executor.execute_command(
                     "torrent.resume", info_hash=ih
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Resumed {ih}")
+                    self._log_write(f"Resumed {ih}")
                 else:
-                    self.logs.write(f"Failed to resume {ih}")
+                    self._log_write(f"Failed to resume {ih}")
             elif cmd == "remove" and ih:
                 result = await self._command_executor.execute_command(
                     "torrent.remove", info_hash=ih
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Removed {ih}")
+                    self._log_write(f"Removed {ih}")
                 else:
-                    self.logs.write(f"Failed to remove {ih}")
+                    self._log_write(f"Failed to remove {ih}")
             elif cmd == "announce" and ih:
                 result = await self._command_executor.execute_command(
                     "torrent.force_announce", info_hash=ih
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Announce sent {ih}")
+                    self._log_write(f"Announce sent {ih}")
                 else:
-                    self.logs.write(f"Failed to announce {ih}")
+                    self._log_write(f"Failed to announce {ih}")
             elif cmd == "scrape" and ih:
                 result = await self._command_executor.execute_command(
                     "scrape.torrent", info_hash=ih, force=True
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Scrape requested {ih}")
+                    self._log_write(f"Scrape requested {ih}")
                 else:
-                    self.logs.write(f"Failed to scrape {ih}")
+                    self._log_write(f"Failed to scrape {ih}")
             elif cmd == "pex" and ih:
                 # CRITICAL: Use executor for all write operations
                 # Note: PEX refresh may not have executor command yet, but try executor first
@@ -3634,10 +3640,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     info_hash=ih,
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"PEX refresh {ih}")
+                    self._log_write(f"PEX refresh {ih}")
                 else:
                     # Fallback: executor command may not exist yet
-                    self.logs.write(
+                    self._log_write(
                         f"PEX refresh not yet available via executor for {ih}"
                     )
             elif cmd == "rehash" and ih:
@@ -3647,14 +3653,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     info_hash=ih,
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Rehash {ih}")
+                    self._log_write(f"Rehash {ih}")
                 else:
                     error_msg = (
                         result.error
                         if result and hasattr(result, "error")
                         else "Unknown error"
                     )
-                    self.logs.write(f"Failed to rehash: {error_msg}")
+                    self._log_write(f"Failed to rehash: {error_msg}")
             elif cmd == "limit" and ih and len(parts) >= 3:
                 result = await self._command_executor.execute_command(
                     "torrent.set_rate_limits",
@@ -3663,9 +3669,9 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     upload_kib=int(parts[2]),
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Set limits {parts[1]}/{parts[2]} KiB/s for {ih}")
+                    self._log_write(f"Set limits {parts[1]}/{parts[2]} KiB/s for {ih}")
                 else:
-                    self.logs.write(f"Failed to set limits for {ih}")
+                    self._log_write(f"Failed to set limits for {ih}")
             elif cmd == "backup" and ih and len(parts) >= 2:
                 from pathlib import Path
 
@@ -3677,10 +3683,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     backup_path=str(Path(parts[1])),
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Backup checkpoint to {parts[1]} for {ih}")
+                    self._log_write(f"Backup checkpoint to {parts[1]} for {ih}")
                 else:
                     # Fallback: executor command may not exist yet
-                    self.logs.write(
+                    self._log_write(
                         f"Checkpoint backup not yet available via executor for {ih}"
                     )
             elif cmd == "restore" and len(parts) >= 2:
@@ -3692,14 +3698,14 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     backup_path=str(Path(parts[1])),
                 )
                 if result and hasattr(result, "success") and result.success:
-                    self.logs.write(f"Restored checkpoint from {parts[1]}")
+                    self._log_write(f"Restored checkpoint from {parts[1]}")
                 else:
                     error_msg = (
                         result.error
                         if result and hasattr(result, "error")
                         else "Unknown error"
                     )
-                    self.logs.write(f"Failed to restore checkpoint: {error_msg}")
+                    self._log_write(f"Failed to restore checkpoint: {error_msg}")
             else:
                 self.statusbar.update(
                     Panel(
@@ -3708,7 +3714,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         border_style="yellow",
                     )
                 )
-                self.logs.write(f"Unknown command: {cmd}")
+                self._log_write(f"Unknown command: {cmd}")
         except Exception as e:
             self.statusbar.update(
                 Panel(
@@ -3717,7 +3723,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style="red",
                 )
             )
-            self.logs.write(f"Command error: {e}")
+            self._log_write(f"Command error: {e}")
 
     async def _quick_add_torrent(self) -> None:  # pragma: no cover
         # UI interaction method - requires Textual Input widget and mount context
@@ -3920,7 +3926,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         """
         # Basic validation
         if not path_or_magnet or not path_or_magnet.strip():
-            self.logs.write(
+            self._log_write(
                 f"{style_policy.markup('Error: Empty torrent path or magnet link', style_policy.ERROR_STYLE)}"
             )
             self.statusbar.update(
@@ -3941,7 +3947,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             path_or_magnet = path_or_magnet.strip('"').strip("'")
 
         # Log the addition attempt
-        self.logs.write(f"Adding torrent: {path_or_magnet[:50]}...")
+        self._log_write(f"Adding torrent: {path_or_magnet[:50]}...")
 
         # UI FEATURE: Check for checkpoint if resume not explicitly set
         # SKIP for magnet links - they can't be parsed as files
@@ -4026,10 +4032,10 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                             border_style="yellow",
                                         )
                                     )
-                                    self.logs.write(
+                                    self._log_write(
                                         f"⚠️ Checkpoint found for {torrent_name}: {verified}/{total} pieces ({progress_pct:.1f}%)"
                                     )
-                                    self.logs.write(
+                                    self._log_write(
                                         "Press 'y' to resume or 'n' to start fresh (will auto-resume in 5 seconds)"
                                     )
 
@@ -4051,7 +4057,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                                 )
                                                 == info_hash_bytes
                                             ):
-                                                self.logs.write(
+                                                self._log_write(
                                                     "Auto-resuming from checkpoint (no user response)"
                                                 )
                                                 options["resume"] = True
@@ -4109,7 +4115,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style="yellow",
                 )
             )
-            self.logs.write("Private torrent detected (BEP 27)")
+            self._log_write("Private torrent detected (BEP 27)")
 
         # Show progress message
         self.statusbar.update(
@@ -4125,7 +4131,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         # Note: Ensure command executor is available
         if not hasattr(self, "_command_executor") or not self._command_executor:
             error_msg = "Command executor not available. Cannot add torrent."
-            self.logs.write(
+            self._log_write(
                 f"{style_policy.markup(f'Error: {error_msg}', style_policy.ERROR_STYLE)}"
             )
             self.statusbar.update(
@@ -4141,7 +4147,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         try:
             output_dir = options.get("output")
             if output_dir:
-                self.logs.write(f"Using output directory: {output_dir}")
+                self._log_write(f"Using output directory: {output_dir}")
 
             # Use timeout similar to CLI (120s for magnets, 60s for files)
             timeout_seconds = 120.0 if path_or_magnet.startswith("magnet:") else 60.0
@@ -4160,7 +4166,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 )
             except asyncio.TimeoutError:
                 error_msg = f"Timeout adding torrent (exceeded {timeout_seconds}s). The torrent may be very large or the connection may be slow."
-                self.logs.write(
+                self._log_write(
                     f"{style_policy.markup(f'Error: {error_msg}', style_policy.ERROR_STYLE)}"
                 )
                 self.statusbar.update(
@@ -4174,7 +4180,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 return
             except Exception as e:
                 error_msg = f"Error executing torrent.add command: {e!s}"
-                self.logs.write(
+                self._log_write(
                     f"{style_policy.markup(f'Error: {error_msg}', style_policy.ERROR_STYLE)}"
                 )
                 self.statusbar.update(
@@ -4217,7 +4223,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style="green",
                 ),
             )
-            self.logs.write(f"✓ Successfully added torrent: {path_or_magnet}")
+            self._log_write(f"✓ Successfully added torrent: {path_or_magnet}")
 
             # CRITICAL: Force immediate announce to start download (like CLI does)
             try:
@@ -4225,7 +4231,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     "torrent.force_announce",
                     info_hash=info_hash,
                 )
-                self.logs.write("✓ Triggered immediate tracker announce")
+                self._log_write("✓ Triggered immediate tracker announce")
             except Exception as e:
                 logger.debug("Error forcing announce: %s", e)
 
@@ -4304,11 +4310,11 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                     info_hash=info_hash,
                                     file_indices=selected_indices,
                                 )
-                                self.logs.write(
+                                self._log_write(
                                     f"Selected {len(selected_indices)} file(s) for download"
                                 )
                             else:
-                                self.logs.write("No files selected for download")
+                                self._log_write("No files selected for download")
                     elif not files or len(files) <= 1:
                         # File list empty or single file - show dialog in background when metadata is ready
                         logger.debug(
@@ -4360,11 +4366,11 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                                     info_hash=info_hash,
                                                     file_indices=selected_indices,
                                                 )
-                                                self.logs.write(
+                                                self._log_write(
                                                     f"Selected {len(selected_indices)} file(s) for download"
                                                 )
                                             else:
-                                                self.logs.write(
+                                                self._log_write(
                                                     "No files selected for download"
                                                 )
                                         return
@@ -4419,11 +4425,11 @@ class TerminalDashboard(App):  # type: ignore[misc]
                                     info_hash=info_hash,
                                     file_indices=selected_indices,
                                 )
-                                self.logs.write(
+                                self._log_write(
                                     f"Selected {len(selected_indices)} file(s) for download"
                                 )
                             else:
-                                self.logs.write("No files selected for download")
+                                self._log_write("No files selected for download")
                 except asyncio.TimeoutError:
                     logger.debug(
                         "Timeout getting torrent files for file selection dialog"
@@ -4443,7 +4449,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         info_hash=info_hash,
                         file_indices=list(files_selection),
                     )
-                    self.logs.write(f"Selected {len(files_selection)} file(s)")
+                    self._log_write(f"Selected {len(files_selection)} file(s)")
                 except Exception as e:
                     logger.debug("Error applying file selection: %s", e)
 
@@ -4473,7 +4479,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         info_hash=info_hash,
                         priority=queue_priority.lower(),
                     )
-                    self.logs.write(f"Set queue priority to {queue_priority}")
+                    self._log_write(f"Set queue priority to {queue_priority}")
                 except Exception as e:
                     logger.debug("Error setting queue priority: %s", e)
 
@@ -4486,7 +4492,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                         download_kib=options.get("download_limit", 0),
                         upload_kib=options.get("upload_limit", 0),
                     )
-                    self.logs.write(
+                    self._log_write(
                         f"Set rate limits: {options.get('download_limit', 0)}/"
                         f"{options.get('upload_limit', 0)} KiB/s"
                     )
@@ -4506,7 +4512,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style=style_policy.WARNING_STYLE,
                 ),
             )
-            self.logs.write(
+            self._log_write(
                 style_policy.markup(f"Warning: {error_msg}", style_policy.WARNING_STYLE)
             )
             return
@@ -4521,7 +4527,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style=style_policy.WARNING_STYLE,
                 ),
             )
-            self.logs.write(
+            self._log_write(
                 style_policy.markup(f"Warning: {error_msg}", style_policy.WARNING_STYLE)
             )
             return
@@ -4537,7 +4543,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style=style_policy.ERROR_STYLE,
                 ),
             )
-            self.logs.write(
+            self._log_write(
                 style_policy.markup(f"Error: {add_error}", style_policy.ERROR_STYLE)
             )
             raise
@@ -4579,7 +4585,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
             # Also log to logs widget
             if hasattr(self, "logs") and self.logs:
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(
                         f"✓ Torrent completed: {name}", style_policy.SUCCESS_STYLE
                     )
@@ -4588,7 +4594,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             logger.warning("Failed to show completion dialog: %s", e, exc_info=True)
             # Fallback: just log to logs widget
             if hasattr(self, "logs") and self.logs:
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(
                         f"✓ Torrent completed: {name}", style_policy.SUCCESS_STYLE
                     )
@@ -4652,7 +4658,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style="red",
                 ),
             )
-            self.logs.write(f"Error processing advanced options: {e}")
+            self._log_write(f"Error processing advanced options: {e}")
 
     async def _handle_file_browser_selection(
         self, selected_key: str
@@ -4706,7 +4712,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
                     border_style="red",
                 ),
             )
-            self.logs.write(f"Error handling file browser selection: {e}")
+            self._log_write(f"Error handling file browser selection: {e}")
 
     async def _navigate_to_directory(self, new_dir: Path) -> None:  # pragma: no cover
         # File browser navigation - requires DataTable widget and mount context
@@ -4765,7 +4771,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
     async def action_pause_torrent(self) -> None:  # pragma: no cover
         """Pause the selected torrent."""
         # Textual action handler - triggered via key bindings, requires full app context
-        ih = self.torrents.get_selected_info_hash()
+        ih = self._get_selected_info_hash()
         if ih:
             try:
                 # CRITICAL: Use CommandExecutor for all write operations
@@ -4804,7 +4810,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
     async def action_resume_torrent(self) -> None:  # pragma: no cover
         """Resume the selected torrent."""
         # Textual action handler - triggered via key bindings, requires full app context
-        ih = self.torrents.get_selected_info_hash()
+        ih = self._get_selected_info_hash()
         if ih:
             try:
                 # CRITICAL: Use CommandExecutor for all write operations
@@ -4842,7 +4848,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
 
     async def action_scrape_selected(self) -> None:  # pragma: no cover
         """Scrape the selected torrent."""
-        ih = self.torrents.get_selected_info_hash()
+        ih = self._get_selected_info_hash()
         if ih:
             try:
                 success, msg, _ = await self._command_executor.execute_click_command(
@@ -4883,6 +4889,52 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 )
             )
 
+
+    async def action_quick_add_torrent(self) -> None:  # pragma: no cover
+        await self.push_screen(QuickAddTorrentScreen(self.session, self))  # type: ignore[attr-defined]
+
+    async def action_advanced_add_torrent(self) -> None:  # pragma: no cover
+        await self.push_screen(AddTorrentScreen(self.session, self))  # type: ignore[attr-defined]
+
+    async def action_browse_add_torrent(self) -> None:  # pragma: no cover
+        await self.push_screen(AddTorrentScreen(self.session, self))  # type: ignore[attr-defined]
+
+    async def action_remove_torrent(self) -> None:  # pragma: no cover
+        ih = self._get_selected_info_hash()
+        if ih:
+            result = await self._command_executor.execute_command("torrent.remove", info_hash=ih)
+            if result and getattr(result, "success", False):
+                self._schedule_poll()
+
+    async def action_force_announce_torrent(self) -> None:  # pragma: no cover
+        ih = self._get_selected_info_hash()
+        if ih:
+            await self._command_executor.execute_command("torrent.force_announce", info_hash=ih)
+
+    async def action_peer_diagnostics(self) -> None:  # pragma: no cover
+        await self.push_screen(PeerDiagnosticsScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_queue_management(self) -> None:  # pragma: no cover
+        await self.push_screen(QueueManagementScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_security_management(self) -> None:  # pragma: no cover
+        await self.push_screen(SecurityManagementScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_checkpoints_management(self) -> None:  # pragma: no cover
+        await self.push_screen(CheckpointsManagementScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_session_management(self) -> None:  # pragma: no cover
+        await self.push_screen(SessionManagementScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_cas_hub_management(self) -> None:  # pragma: no cover
+        await self.push_screen(CasHubManagementScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_torrent_advanced(self) -> None:  # pragma: no cover
+        await self.push_screen(TorrentAdvancedScreen(self.session))  # type: ignore[attr-defined]
+
+    async def action_xet_share(self) -> None:  # pragma: no cover
+        await self.push_screen(XetShareScreen(self.session))  # type: ignore[attr-defined]
+
     async def action_global_config(self) -> None:  # pragma: no cover
         """Open global configuration screen."""
         # Textual action handler - requires full app context
@@ -4890,7 +4942,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
         try:
             # Write to logs immediately
             if self.logs:
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(
                         "Opening global config screen...", style_policy.WARNING_STYLE
                     )
@@ -4905,7 +4957,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             error_msg = "Global config screen timed out after 5 seconds"
             logger.error(error_msg)
             if self.logs:
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(f"ERROR: {error_msg}", style_policy.ERROR_STYLE)
                 )
             if self.statusbar:
@@ -4928,18 +4980,18 @@ class TerminalDashboard(App):  # type: ignore[misc]
                 exc_info=True,
             )
             if self.logs:
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(
                         f"CRITICAL ERROR opening global config: {error_msg}",
                         style_policy.ERROR_STYLE,
                     )
                 )
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(
                         "Error type: AttributeError", style_policy.ERROR_STYLE
                     )
                 )
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(
                         "This may indicate a list was passed where a dict was expected",
                         style_policy.ERROR_STYLE,
@@ -4960,7 +5012,7 @@ class TerminalDashboard(App):  # type: ignore[misc]
             error_msg = f"Failed to open global config: {e}"
             logger.exception(error_msg)
             if self.logs:
-                self.logs.write(
+                self._log_write(
                     style_policy.markup(f"ERROR: {error_msg}", style_policy.ERROR_STYLE)
                 )
             if self.statusbar:

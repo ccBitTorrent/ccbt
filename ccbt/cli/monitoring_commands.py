@@ -446,6 +446,12 @@ def metrics(
 ) -> None:
     """Collect and export metrics (JSON or Prometheus)."""
     console = Console()
+    # These metrics come from a local MetricsCollector in this process,
+    # never from the daemon. Say so on stderr (stdout may carry JSON).
+    Console(stderr=True).print(
+        "[yellow]Note: 'btbt metrics' reports this local process only, "
+        "not the running daemon. Use 'btbt diagnose' for daemon-true data.[/yellow]"
+    )
     from pathlib import Path
 
     from ccbt.monitoring import MetricsCollector

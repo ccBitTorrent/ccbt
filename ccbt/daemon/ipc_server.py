@@ -1641,7 +1641,13 @@ class IPCServer:
 
                 # Get DHT setup if available
                 dht_setup = getattr(torrent_session, "_dht_setup", None)
-                dht_client = getattr(torrent_session, "dht_client", None)
+                # The live DHT client lives on the session manager, not the
+                # per-torrent session — reading it from the torrent session
+                # always yielded None, so routing_table_size reported 0
+                # even with 13+ nodes in the table.
+                dht_client = getattr(torrent_session, "dht_client", None) or getattr(
+                    self.session_manager, "dht_client", None
+                )
                 aggressive_mode = (
                     getattr(dht_setup, "_aggressive_mode", False)
                     if dht_setup
@@ -1732,6 +1738,7 @@ class IPCServer:
                     metrics["bootstrap_failure_count"] = int(
                         dht_metrics.get("bootstrap_failure_count", 0) or 0
                     )
+                    metrics["bound_port"] = int(dht_metrics.get("bound_port", 0) or 0)
                     metrics["bootstrap_recovery_attempts"] = int(
                         dht_metrics.get("bootstrap_recovery_attempts", 0) or 0
                     )
@@ -1789,6 +1796,20 @@ class IPCServer:
                     elif hasattr(routing_table, "get_all_nodes"):
                         nodes = routing_table.get_all_nodes()
                         metrics["routing_table_size"] = int(len(nodes) if nodes else 0)
+                    if not metrics.get("bound_port"):
+                        metrics["bound_port"] = int(
+                            getattr(dht_client, "bound_port", 0) or 0
+                        )
+                    # Client-level cumulative counters cover all lookup
+                    # call paths (session metrics counted only one).
+                    metrics["total_queries"] = max(
+                        int(metrics.get("total_queries", 0) or 0),
+                        int(getattr(dht_client, "total_queries", 0) or 0),
+                    )
+                    metrics["total_peers_found"] = max(
+                        int(metrics.get("total_peers_found", 0) or 0),
+                        int(getattr(dht_client, "total_peers_found", 0) or 0),
+                    )
 
                 # Get aggressive mode status from DHT setup
                 if dht_setup:
@@ -1837,8 +1858,20 @@ class IPCServer:
                     "bootstrap_recovery_attempts": int(
                         metrics.get("bootstrap_recovery_attempts", 0) or 0
                     ),
-                    "bootstrap_health_state": str(
-                        metrics.get("bootstrap_health_state", "unknown") or "unknown"
+                    # Invariant: an empty routing table is never "healthy"
+                    # (observed live: routing=0 with health=healthy).
+                    "bootstrap_health_state": (
+                        "stalled"
+                        if int(metrics.get("routing_table_size", 0) or 0) == 0
+                        and str(
+                            metrics.get("bootstrap_health_state", "unknown")
+                            or "unknown"
+                        )
+                        == "healthy"
+                        else str(
+                            metrics.get("bootstrap_health_state", "unknown")
+                            or "unknown"
+                        )
                     ),
                     "bootstrap_zero_state_count": int(
                         metrics.get("bootstrap_zero_state_count", 0) or 0
@@ -1880,6 +1913,7 @@ class IPCServer:
                     "last_zero_node_lookup_at": float(
                         metrics.get("last_zero_node_lookup_at", 0.0) or 0.0
                     ),
+                    "bound_port": int(metrics.get("bound_port", 0) or 0),
                 }
                 response = DHTQueryMetricsResponse(**typed_metrics)  # type: ignore[arg-type]
                 return web.json_response(response.model_dump())  # type: ignore[attr-defined]
@@ -3185,11 +3219,32 @@ class IPCServer:
                 if hasattr(tracker_client, "sessions"):
                     # Get tracker sessions
                     for url, tracker_session_obj in tracker_client.sessions.items():
-                        status = "working"
-                        if tracker_session_obj.failure_count > 0:
+                        # Truthful status: distinguish never-announced and
+                        # backoff/quarantine from a generic "updating"
+                        # (previously last_announce==0 mapped to "updating"
+                        # forever, so 25/33 trackers appeared stuck).
+                        _now = time.time()
+                        _quarantine_until = float(
+                            getattr(tracker_session_obj, "quarantine_until", 0.0) or 0.0
+                        )
+                        _last_failure = float(
+                            getattr(tracker_session_obj, "last_failure", 0.0) or 0.0
+                        )
+                        _backoff_delay = float(
+                            getattr(tracker_session_obj, "backoff_delay", 0.0) or 0.0
+                        )
+                        if (_quarantine_until and _now < _quarantine_until) or (
+                            tracker_session_obj.failure_count > 0
+                            and _last_failure > 0
+                            and _now < _last_failure + _backoff_delay
+                        ):
+                            status = "backoff"
+                        elif tracker_session_obj.failure_count > 0:
                             status = "error"
                         elif tracker_session_obj.last_announce == 0:
-                            status = "updating"
+                            status = "never-announced"
+                        else:
+                            status = "working"
 
                         # Get scrape results from tracker session
                         # Statistics are stored in TrackerSession from last tracker response (announce or scrape)
@@ -3264,7 +3319,7 @@ class IPCServer:
                     tracker_infos.append(
                         TrackerInfo(
                             url=url,
-                            status="updating",
+                            status="never-announced",
                             seeds=0,
                             peers=0,
                             downloaders=0,

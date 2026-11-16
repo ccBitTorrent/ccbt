@@ -1,0 +1,446 @@
+﻿{
+  "daemon_heartbeat": {
+    "pid": 24544,
+    "last_beat_epoch": 1794856249.0,
+    "age_seconds": 3.4,
+    "alive_recently": true
+  },
+  "daemon": {
+    "status": "running",
+    "pid": 24544,
+    "uptime": 612.7596600055695,
+    "version": "0.3.0",
+    "num_torrents": 1,
+    "ipc_url": "http://127.0.0.1:64124",
+    "inbound_unknown_info_hash_metrics_top": {}
+  },
+  "nat": {
+    "enabled": false,
+    "method": null,
+    "external_ip": null,
+    "mapped_port": null,
+    "mappings": []
+  },
+  "rates": {
+    "resolution": 1.0,
+    "seconds": 120,
+    "sample_count": 14,
+    "samples": [
+      {
+        "timestamp": 1794856190.715445,
+        "download_rate": 17175.793511331372,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856193.3718102,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856197.055852,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856199.2355435,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856201.4618113,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856202.5741708,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856203.5804505,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856205.1449077,
+        "download_rate": 40980.0358375289,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856211.6819742,
+        "download_rate": 55184.842310842716,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856254.623068,
+        "download_rate": 10249.401079025549,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856268.14903,
+        "download_rate": 12610.123118297359,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856282.3571749,
+        "download_rate": 12610.123118297359,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856294.8215556,
+        "download_rate": 31861.766883232627,
+        "upload_rate": 0.0
+      },
+      {
+        "timestamp": 1794856308.0657942,
+        "download_rate": 39768.08121601585,
+        "upload_rate": 0.0
+      }
+    ]
+  },
+  "daemon_log_tail": [
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.ccbt.utils.events: [#ff69b4]_handle_event[/#ff69b4] Handled event: peer_choking_optimized (id=9198e9ff, handlers=2, duration=14.297s)",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.ccbt.utils.events: [#ff69b4]_handle_event[/#ff69b4] Handled event: tracker_announce_error (id=8794177d, handlers=2, duration=14.387s)",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.ccbt.utils.events: [#ff69b4]_handle_event[/#ff69b4] Handled event: tracker_announce_error (id=14a2e1b8, handlers=2, duration=14.515s)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.utils.resilience: [#ff69b4]_on_failure[/#ff69b4] Circuit breaker opened after 6 failures",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_connect_to_peer[/#ff69b4] PeerConnectionError connecting to 194.5.83.65:10456: Circuit breaker is open (connection_state=None, was_in_dict=False). This error occurred during handshake or connection setup.",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.utils.resilience: [#ff69b4]_on_failure[/#ff69b4] Circuit breaker opened after 6 failures",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_connect_to_peer[/#ff69b4] PeerConnectionError connecting to 67.21.76.58:52596: Circuit breaker is open (connection_state=None, was_in_dict=False). This error occurred during handshake or connection setup.",
+    "Logging error (suppressed to prevent circular errors): INFO aiohttp.access: [#ff69b4]log[/#ff69b4] 127.0.0.1 [16/Nov/2026:20:11:46 +0100] \"GET /api/v1/nat/status [orange1]HTTP[/orange1]/1.1\" 200 270 \"-\" \"Python/3.12 aiohttp/3.13.2\"",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.ccbt.storage.disk_io: [#ff69b4]_detect_platform_capabilities[/#ff69b4] [orange1]HDD[/orange1] storage detected",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.ccbt.storage.disk_io: [#ff69b4]_detect_platform_capabilities[/#ff69b4] io_uring not available, using fallback I/O",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_warn_piece_manager[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Cleared stale active block request entries for piece 2544 from peers=62.165.252.117:51415",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.piece.async_piece_manager: [#ff69b4]_clear_stale_requested_pieces[/#ff69b4] [bright_cyan]PIECE_MANAGER:[/bright_cyan] Resetting unreceived blocks for stuck piece 2544 (state=[orange1]DOWNLOADING[/orange1], request_count=4, received: 15/32 blocks, last_activity=38.5s ago) - preserving received blocks",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_cleanup_timed_out_requests[/#ff69b4] Cancelled timed-out request 2546:475136:16384 from 62.165.252.117:51415 (age=24.3s, timeout=15.0s, pipeline now 47/48)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_cleanup_timed_out_requests[/#ff69b4] Cancelled timed-out request 2546:491520:16384 from 62.165.252.117:51415 (age=24.3s, timeout=15.0s, pipeline now 46/48)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_cleanup_timed_out_requests[/#ff69b4] Cancelled timed-out request 2546:507904:16384 from 62.165.252.117:51415 (age=24.3s, timeout=15.0s, pipeline now 45/48)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.connection_pool: [#ff69b4]_create_peer_connection[/#ff69b4] Connection failed to 102.129.145.142:31458: [Errno 10061] Connect call failed ('102.129.145.142', 31458)",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.utils.resilience: [#ff69b4]_on_failure[/#ff69b4] Circuit breaker opened after 6 failures",
+    "Logging error (suppressed to prevent circular errors): INFO ccbt.peer.async_peer_connection.can_request: [#ff69b4]can_request[/#ff69b4] can_request sustained block for 62.165.252.117:51415: reason=pipeline_saturated hits=2100 state=active",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.peer.async_peer_connection: [#ff69b4]_peer_evaluation_loop[/#ff69b4] Peer evaluation loop: Active peer count (1) is below minimum (50). This may cause downloads to stall. Consider triggering peer discovery.",
+    "Logging error (suppressed to prevent circular errors): WARNING ccbt.ccbt.session.session: [#ff69b4]_schedule_peer_count_low_recovery[/#ff69b4] Cancelling peer_count_low recovery for 9189e3498df64f4ee75f58262e4451b9d47fbcaf (missing start timestamp)"
+  ],
+  "torrents": [
+    {
+      "torrent": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "name": "Adobe InDesign 2027 v22.0 (x64) FINAL + Patch [AppDoze]",
+        "status": "downloading",
+        "progress": 0.18409236690186018,
+        "download_rate": 20919.172592326682,
+        "upload_rate": 0.0,
+        "num_peers": 1,
+        "num_seeds": 0,
+        "total_size": 0,
+        "downloaded": 300941312,
+        "uploaded": 0,
+        "is_private": false,
+        "output_dir": null,
+        "pieces_completed": 0,
+        "pieces_total": 0,
+        "tracker_status": null,
+        "last_tracker_error": null,
+        "last_error": null,
+        "productive_peers": 0,
+        "requestable_peers": 0,
+        "handshake_complete_peers": 0,
+        "extension_capable_peers": 0,
+        "metadata_capable_peers": 0,
+        "hash_verification_failures": 0
+      },
+      "peers": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "peers": [
+          {
+            "ip": "62.165.252.117",
+            "port": 51415,
+            "download_rate": 134287.4052166529,
+            "upload_rate": 0.0,
+            "choked": false,
+            "client": "Unknown"
+          }
+        ],
+        "count": 1
+      },
+      "trackers": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "trackers": [
+          {
+            "url": "udp://open.stealth.si:80/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker-udp.gbitt.info:80/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://ipv4announce.sktorrent.eu:6969/announce",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 1 times"
+          },
+          {
+            "url": "udp://tracker.torrent.eu.org:451/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://open.demonii.com:1337/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.qu.ax:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://evan.im:6969/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://bittorrent-tracker.e-n-c-r-y-p-t.net:1337/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.opentrackr.org:1337/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://tracker.openbittorrent.com:80/announce",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 1 times"
+          },
+          {
+            "url": "udp://open.stealth.si:80",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 1 times"
+          },
+          {
+            "url": "udp://tracker-udp.gbitt.info:80",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 1 times"
+          },
+          {
+            "url": "udp://tracker.torrent.eu.org:451",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 1 times"
+          },
+          {
+            "url": "udp://open.demonii.com:1337",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.qu.ax:6969",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://evan.im:6969",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://bittorrent-tracker.e-n-c-r-y-p-t.net:1337",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "udp://tracker.opentrackr.org:1337",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          },
+          {
+            "url": "http://tracker.dler.org:6969/announce",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 2 times"
+          },
+          {
+            "url": "http://tracker.renfei.net:8080/announce",
+            "status": "backoff",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 3 times"
+          },
+          {
+            "url": "https://tracker.nekomi.cn/announce",
+            "status": "backoff",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 3 times"
+          },
+          {
+            "url": "http://bt2.archive.org:6969/announce",
+            "status": "error",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": "Failed 2 times"
+          },
+          {
+            "url": "https://tr.nyacat.pw/announce",
+            "status": "never-announced",
+            "seeds": 0,
+            "peers": 0,
+            "downloaders": 0,
+            "last_update": 0.0,
+            "error": null
+          }
+        ],
+        "count": 23
+      },
+      "dht": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "peers_found_per_query": 0.0,
+        "query_depth_achieved": 0.0,
+        "nodes_queried_per_query": 0.0,
+        "total_queries": 0,
+        "total_peers_found": 0,
+        "aggressive_mode_enabled": false,
+        "last_query_duration": 0.0,
+        "last_query_peers_found": 0,
+        "last_query_depth": 0,
+        "last_query_nodes_queried": 0,
+        "routing_table_size": 0,
+        "bootstrap_success_count": 1,
+        "bootstrap_failure_count": 1,
+        "bootstrap_recovery_attempts": 1,
+        "bootstrap_health_state": "stalled",
+        "bootstrap_zero_state_count": 0,
+        "bootstrap_zero_nodes_last_reason": "",
+        "rebootstrap_attempt_count": 1,
+        "rebootstrap_success_count": 1,
+        "rebootstrap_failure_count": 0,
+        "rebootstrap_last_outcome": "success",
+        "rebootstrap_last_reason": "initial_query:Adobe InDesign 2027 v22.0 (x64) FINAL + Patch [AppDoze]:rebootstrap_success",
+        "rebootstrap_last_source": "rebootstrap",
+        "rebootstrap_health_state": "healthy",
+        "rebootstrap_consecutive_failures": 0,
+        "last_bootstrap_reason": "rebootstrap",
+        "last_bootstrap_failure_reason": "bootstrap_no_nodes:router.utorrent.com:6881",
+        "last_zero_node_lookup_at": 0.0,
+        "bound_port": 64120
+      },
+      "peer_quality": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "total_peers_ranked": 1,
+        "average_quality_score": 0.1086771282942459,
+        "high_quality_peers": 0,
+        "medium_quality_peers": 0,
+        "low_quality_peers": 1,
+        "top_quality_peers": [
+          {
+            "peer_key": "62.165.252.117:51415",
+            "ip": "62.165.252.117",
+            "port": 51415,
+            "quality_score": 0.1086771282942459,
+            "download_rate": 42201.46114974884,
+            "upload_rate": 0.0
+          }
+        ],
+        "quality_distribution": {
+          "high": 0,
+          "medium": 0,
+          "low": 1
+        }
+      },
+      "aggressive_discovery": {
+        "info_hash": "9189e3498df64f4ee75f58262e4451b9d47fbcaf",
+        "enabled": false,
+        "reason": "normal",
+        "current_peer_count": 1,
+        "current_download_rate_kib": 0.0,
+        "popular_threshold": 20,
+        "active_threshold_kib": 1.0,
+        "query_interval": 15.0,
+        "max_peers_per_query": 50
+      }
+    }
+  ]
+}

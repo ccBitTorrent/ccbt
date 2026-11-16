@@ -77,7 +77,11 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         layout: vertical;
         overflow-y: auto;
     }
-    
+
+    .config-editors-hidden {
+        display: none;
+    }
+
     #config-content {
         height: 1fr;
         overflow-y: auto;
@@ -188,14 +192,15 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
                 # For global config, show sections table
                 yield DataTable(id="config-sections", zebra_stripes=True)
                 yield Static(_("Select a section to configure"), id="config-info")
-                # Container for form editors (hidden initially)
-                with Vertical(id="config-editors", display=False):
+                # Container for form editors (hidden initially; visibility is
+                # applied in on_mount — Textual widgets have no display= kwarg)
+                with Vertical(id="config-editors", classes="config-editors-hidden"):
                     yield Static(id="config-editors-title")
                     yield Container(id="config-editors-container")
                     yield Static(id="config-editors-errors")
             elif self._config_type == "torrent" and self._info_hash:
                 # For per-torrent config, show editors container directly
-                with Vertical(id="config-editors", display=True):
+                with Vertical(id="config-editors"):
                     yield Static(_("Per-Torrent Configuration"), id="config-editors-title")
                     yield Container(id="config-editors-container")
                     yield Static(id="config-editors-errors")
@@ -206,10 +211,24 @@ class ConfigScreenWrapper(Container):  # type: ignore[misc]
         # Action buttons at bottom
         with Vertical(id="config-actions"):
             yield Button(_("Save Configuration"), id="save-button", variant="primary")
-            yield Button(_("Cancel Editing"), id="cancel-button", variant="default", display=False)
+            yield Button(
+                _("Cancel Editing"),
+                id="cancel-button",
+                variant="default",
+                classes="config-editors-hidden",
+            )
 
     def on_mount(self) -> None:  # type: ignore[override]  # pragma: no cover
         """Mount the config wrapper and populate content."""
+        # Initial visibility (compose() cannot pass display= to widgets):
+        # editors start hidden for global config, visible for per-torrent.
+        try:
+            editors = self.query_one("#config-editors", Vertical)  # type: ignore[attr-defined]
+            editors.display = self._config_type != "global"
+            cancel = self.query_one("#cancel-button", Button)  # type: ignore[attr-defined]
+            cancel.display = False
+        except Exception:
+            pass
         try:
             if self._config_type == "global":
                 self._sections_table = self.query_one("#config-sections", DataTable)  # type: ignore[attr-defined]

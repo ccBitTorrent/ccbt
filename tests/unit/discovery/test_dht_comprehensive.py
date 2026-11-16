@@ -358,13 +358,35 @@ class TestAsyncDHTClientBootstrap:
         def _addrinfo_ok(host, port, *_args, **_kwargs):
             return [(socket.AF_INET, socket.SOCK_DGRAM, 0, "", ("10.0.0.9", port))]
 
+        async def _find_nodes_adds_node(addr, target_id):
+            # Bootstrap success now requires nodes actually added
+            from ccbt.discovery.dht import DHTNode
+
+            node = DHTNode(b"\x01" * 20, addr[0], addr[1])
+            client.routing_table.add_node(node)
+            return [node]
+
         with patch("socket.getaddrinfo", side_effect=_addrinfo_ok):
-            with patch.object(client, "_find_nodes", new_callable=AsyncMock):
+            with patch.object(client, "_find_nodes", side_effect=_find_nodes_adds_node):
                 assert await client._bootstrap_step("ok.example.invalid", 6881) is True
         assert not client._is_dns_host_in_backoff("ok.example.invalid")
         assert client._normalize_dht_dns_host("ok.example.invalid") not in (
             client._dht_dns_host_fail_streak
         )
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_step_no_nodes_added_is_failure(self):
+        """A find_node that returns nothing must not count as success."""
+        client = AsyncDHTClient()
+
+        def _addrinfo_ok(host, port, *_args, **_kwargs):
+            return [(socket.AF_INET, socket.SOCK_DGRAM, 0, "", ("10.0.0.9", port))]
+
+        with patch("socket.getaddrinfo", side_effect=_addrinfo_ok):
+            with patch.object(client, "_find_nodes", new_callable=AsyncMock) as mock_find:
+                mock_find.return_value = []
+                assert await client._bootstrap_step("empty.example.invalid", 6881) is False
+        assert client.last_bootstrap_failure_reason.startswith("bootstrap_no_nodes")
 
 
 class TestAsyncDHTClientFindNodes:

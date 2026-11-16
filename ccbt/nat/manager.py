@@ -1316,8 +1316,22 @@ class NATManager:
             for mapping in await self.port_mapping_manager.get_all_mappings()
         ]
 
+        # Include the keys the IPC/adapter layer actually reads. Previously
+        # get_status omitted enabled/method/mapped_port, so nat.status
+        # always reported enabled=False ("NAT disabled") even while UPnP
+        # discovery was running — diagnose could not be trusted.
+        mapped_port = mappings[0]["external_port"] if mappings else None
+        nat_cfg = getattr(self.config, "nat", None)
+        configured_enabled = (
+            bool(getattr(nat_cfg, "enabled", True)) if nat_cfg else True
+        )
         return {
             "active_protocol": self.active_protocol,
+            "enabled": configured_enabled and self.active_protocol is not None,
+            "method": self.active_protocol,
             "external_ip": str(self.external_ip) if self.external_ip else None,
+            "mapped_port": mapped_port,
             "mappings": mappings,
+            "discovery_attempted": self._discovery_attempted,
+            "inbound_reachable": mapped_port is not None,
         }

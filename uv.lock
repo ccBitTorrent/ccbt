@@ -793,7 +793,7 @@ requires-dist = [
     { name = "rich", specifier = ">=14.2.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.2" },
     { name = "safety", marker = "extra == 'dev'", specifier = ">=2.0.0" },
-    { name = "textual", specifier = ">=8.0.0" },
+    { name = "textual", specifier = ">=8.2.8" },
     { name = "textual-dev", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a24" },

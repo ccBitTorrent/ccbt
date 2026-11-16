@@ -156,6 +156,11 @@ class PerPeerTabContent(Container):  # type: ignore[misc]
         except Exception as e:
             logger.error("Error mounting per-peer tab: %s", e, exc_info=True)
 
+    def watch_peer_metrics(self, value) -> None:  # pragma: no cover
+        """Bridge watcher: App peer_metrics reactive pushes here; no self-poll needed."""
+        if isinstance(value, dict) and value.get("peers") is not None:
+            self._cached_peer_metrics = value
+
     def _start_updates(self) -> None:  # pragma: no cover
         """Start the update loop."""
         try:

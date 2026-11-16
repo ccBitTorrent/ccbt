@@ -323,6 +323,11 @@ class AsyncTorrentSession:
         # These are sets to track asyncio tasks and prevent garbage collection
         self._piece_verified_tasks: set[asyncio.Task[None]] = set()
         self._download_complete_tasks: set[asyncio.Task[None]] = set()
+        # Bound concurrent piece-verified handlers (disk writes + HAVE
+        # broadcasts); without this, dozens of handlers ran at once during
+        # bursts and starved the event loop (measured in asyncio dumps).
+        self._piece_verified_semaphore = asyncio.Semaphore(4)
+        self._last_piece_checkpoint_monotonic: float = 0.0
 
         # Session state
         if isinstance(torrent_data, TorrentInfoModel):
@@ -5693,6 +5698,11 @@ class AsyncTorrentSession:
             await self.on_complete()
 
     async def _on_piece_verified(self, piece_index: int) -> None:
+        """Handle piece verification (bounded concurrency, see semaphore)."""
+        async with self._piece_verified_semaphore:
+            await self._on_piece_verified_inner(piece_index)
+
+    async def _on_piece_verified_inner(self, piece_index: int) -> None:
         """Handle piece verification."""
         with contextlib.suppress(Exception):
             self._touch_piece_progress_metrics()
@@ -5831,15 +5841,22 @@ class AsyncTorrentSession:
             # PEX manager will handle peer discovery
             pass
 
-        # Save checkpoint after piece verification if enabled
+        # Save checkpoint after piece verification if enabled, coalesced:
+        # at most one piece-triggered checkpoint per checkpoint_interval
+        # window (the periodic checkpoint loop covers the rest). Writing a
+        # full checkpoint per verified piece was pure disk churn at speed.
         if self.config.disk.checkpoint_enabled and self.config.disk.checkpoint_on_piece:
-            try:
-                await self._save_checkpoint()
-            except Exception as e:
-                self.logger.warning(
-                    "Failed to save checkpoint after piece verification: %s",
-                    e,
-                )
+            now_mono = time.monotonic()
+            interval = max(5.0, float(self.config.disk.checkpoint_interval or 30.0))
+            if now_mono - self._last_piece_checkpoint_monotonic >= interval:
+                self._last_piece_checkpoint_monotonic = now_mono
+                try:
+                    await self._save_checkpoint()
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to save checkpoint after piece verification: %s",
+                        e,
+                    )
 
     async def get_status(self) -> dict[str, Any]:
         """Get current torrent status."""
@@ -9124,90 +9141,90 @@ class AsyncSessionManager:
             self.logger.debug("Invalid info_hash format: %s", info_hash_hex)
             return False
 
+        # Snapshot the session under the lock, announce outside it: the
+        # announce is a multi-tracker network round and previously held
+        # the session-manager lock for its whole duration, causing 2s
+        # _acquire_lock timeouts on /api/v1/ui/snapshot during stalls.
         async with self.lock:
             session = self.torrents.get(info_hash)
-            if not session:
-                self.logger.debug("Torrent not found: %s", info_hash_hex)
-                return False
+        if not session:
+            self.logger.debug("Torrent not found: %s", info_hash_hex)
+            return False
 
-            # Trigger immediate announce
-            if hasattr(session, "tracker") and session.tracker:
-                try:
-                    # Get torrent_data for announce
-                    # Use _normalized_td if available, otherwise normalize torrent_data
-                    if hasattr(session, "_normalized_td"):
-                        normalized_td = session._normalized_td
-                    elif hasattr(session, "torrent_data"):
-                        # Normalize torrent_data on the fly
-                        if isinstance(session.torrent_data, dict):
-                            normalized_td = session.torrent_data
-                        else:
-                            # Convert model to dict
-                            normalized_td = {
-                                "info_hash": getattr(
-                                    session.torrent_data, "info_hash", None
-                                ),
-                                "name": getattr(session.torrent_data, "name", ""),
-                                "announce": getattr(
-                                    session.torrent_data, "announce", ""
-                                ),
-                            }
+        # Trigger immediate announce
+        if hasattr(session, "tracker") and session.tracker:
+            try:
+                # Get torrent_data for announce
+                # Use _normalized_td if available, otherwise normalize torrent_data
+                if hasattr(session, "_normalized_td"):
+                    normalized_td = session._normalized_td
+                elif hasattr(session, "torrent_data"):
+                    # Normalize torrent_data on the fly
+                    if isinstance(session.torrent_data, dict):
+                        normalized_td = session.torrent_data
                     else:
-                        # Fallback: create minimal dict from info
+                        # Convert model to dict
                         normalized_td = {
-                            "info_hash": getattr(session.info, "info_hash", info_hash),
-                            "name": getattr(session.info, "name", ""),
-                            "announce": "",
-                        }
-
-                    # Try to use AnnounceController if we have all required attributes
-                    # Otherwise, call tracker.announce() directly (for tests/mocks)
-                    has_all_attrs = all(
-                        hasattr(session, attr)
-                        for attr in [
-                            "config",
-                            "output_dir",
-                            "info",
-                            "logger",
-                            "piece_manager",
-                            "checkpoint_manager",
-                            "download_manager",
-                        ]
-                    )
-
-                    if has_all_attrs:
-                        ctx = SessionContext(
-                            config=session.config,
-                            torrent_data=normalized_td,
-                            output_dir=session.output_dir,
-                            info=session.info,
-                            session_manager=self,
-                            logger=session.logger,
-                            piece_manager=session.piece_manager,
-                            peer_manager=getattr(session, "peer_manager", None),
-                            tracker=session.tracker,
-                            dht_client=self.dht_client,
-                            checkpoint_manager=session.checkpoint_manager,
-                            download_manager=session.download_manager,
-                            file_selection_manager=getattr(
-                                session, "file_selection_manager", None
+                            "info_hash": getattr(
+                                session.torrent_data, "info_hash", None
                             ),
-                        )
-                        announce_controller = AnnounceController(
-                            ctx, cast("TrackerClientProtocol", session.tracker)
-                        )  # type: ignore[arg-type]
-                        await announce_controller.announce_initial()
-                    # For mock sessions or when attributes are missing, call tracker.announce() directly
-                    elif asyncio.iscoroutinefunction(session.tracker.announce):
-                        await session.tracker.announce(normalized_td)
-                    else:
-                        session.tracker.announce(normalized_td)
-                    return True
-                except Exception:
-                    self.logger.exception(
-                        "Error forcing announce for %s", info_hash_hex
+                            "name": getattr(session.torrent_data, "name", ""),
+                            "announce": getattr(session.torrent_data, "announce", ""),
+                        }
+                else:
+                    # Fallback: create minimal dict from info
+                    normalized_td = {
+                        "info_hash": getattr(session.info, "info_hash", info_hash),
+                        "name": getattr(session.info, "name", ""),
+                        "announce": "",
+                    }
+
+                # Try to use AnnounceController if we have all required attributes
+                # Otherwise, call tracker.announce() directly (for tests/mocks)
+                has_all_attrs = all(
+                    hasattr(session, attr)
+                    for attr in [
+                        "config",
+                        "output_dir",
+                        "info",
+                        "logger",
+                        "piece_manager",
+                        "checkpoint_manager",
+                        "download_manager",
+                    ]
+                )
+
+                if has_all_attrs:
+                    ctx = SessionContext(
+                        config=session.config,
+                        torrent_data=normalized_td,
+                        output_dir=session.output_dir,
+                        info=session.info,
+                        session_manager=self,
+                        logger=session.logger,
+                        piece_manager=session.piece_manager,
+                        peer_manager=getattr(session, "peer_manager", None),
+                        tracker=session.tracker,
+                        dht_client=self.dht_client,
+                        checkpoint_manager=session.checkpoint_manager,
+                        download_manager=session.download_manager,
+                        file_selection_manager=getattr(
+                            session, "file_selection_manager", None
+                        ),
                     )
-                    return False
+                    announce_controller = AnnounceController(
+                        ctx, cast("TrackerClientProtocol", session.tracker)
+                    )  # type: ignore[arg-type]
+                    await announce_controller.announce_initial()
+                # For mock sessions or when attributes are missing, call tracker.announce() directly
+                elif asyncio.iscoroutinefunction(session.tracker.announce):
+                    await session.tracker.announce(normalized_td)
+                else:
+                    session.tracker.announce(normalized_td)
+                return True
+            except Exception:
+                self.logger.exception("Error forcing announce for %s", info_hash_hex)
+                return False
 
         return False
 
@@ -9383,54 +9400,51 @@ class AsyncSessionManager:
             self.logger.debug("Invalid info_hash format: %s", info_hash_hex)
             return False
 
+        # Pop the session under the lock, then stop it outside the lock:
+        # session.stop() awaits tracker/DHT shutdown and previously held
+        # the session-manager lock for its whole duration, stalling
+        # /api/v1/ui/snapshot behind every torrent removal.
         async with self.lock:
-            session = self.torrents.get(info_hash)
-            if not session:
-                self.logger.debug("Torrent not found: %s", info_hash_hex)
-                return False
+            session = self.torrents.pop(info_hash, None)
+            if session is not None:
+                self._per_torrent_limits.pop(info_hash, None)
+        if not session:
+            self.logger.debug("Torrent not found: %s", info_hash_hex)
+            return False
 
-            # Stop the session
+        # Stop the session (outside the session-manager lock)
+        try:
+            await session.stop()
+        except Exception:
+            self.logger.warning(
+                "Error stopping torrent session %s",
+                info_hash_hex[:12],
+                exc_info=True,
+            )
+
+        # Clear scrape cache for this torrent
+        async with self.scrape_cache_lock:
+            self.scrape_cache.pop(info_hash, None)
+
+        # Remove from queue manager if enabled
+        if self.queue_manager:
             try:
-                await session.stop()
+                await self.queue_manager.remove_torrent(info_hash)
             except Exception:
-                self.logger.warning(
-                    "Error stopping torrent session %s",
-                    info_hash_hex[:12],
-                    exc_info=True,
-                )
+                self.logger.debug("Error removing torrent from queue", exc_info=True)
 
-            # Remove from torrents dict
-            del self.torrents[info_hash]
+        # Invoke callback if set
+        if self.on_torrent_removed:
+            try:
+                if asyncio.iscoroutinefunction(self.on_torrent_removed):
+                    await self.on_torrent_removed(info_hash)
+                else:
+                    self.on_torrent_removed(info_hash)
+            except Exception:
+                self.logger.exception("Error in on_torrent_removed callback")
 
-            # Clear per-torrent rate limits
-            self._per_torrent_limits.pop(info_hash, None)
-
-            # Clear scrape cache for this torrent
-            async with self.scrape_cache_lock:
-                self.scrape_cache.pop(info_hash, None)
-
-            # Remove from queue manager if enabled
-            if self.queue_manager:
-                try:
-                    await self.queue_manager.remove_torrent(info_hash)
-                except Exception:
-                    self.logger.debug(
-                        "Error removing torrent from queue", exc_info=True
-                    )
-
-            # Call callback if set
-            # Invoke callback if set
-            if self.on_torrent_removed:
-                try:
-                    if asyncio.iscoroutinefunction(self.on_torrent_removed):
-                        await self.on_torrent_removed(info_hash)
-                    else:
-                        self.on_torrent_removed(info_hash)
-                except Exception:
-                    self.logger.exception("Error in on_torrent_removed callback")
-
-            self.logger.info("Torrent removed: %s", info_hash_hex)
-            return True
+        self.logger.info("Torrent removed: %s", info_hash_hex)
+        return True
 
     async def start_media_stream(
         self,

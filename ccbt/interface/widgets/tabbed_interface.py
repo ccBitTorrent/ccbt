@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import time
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ccbt.i18n import _
@@ -65,14 +66,14 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         height: 1fr;
         layout: horizontal;
         overflow: hidden;
-        min-width: 100;
+        min-width: 40;
         display: block;
     }
     
     /* Left pane: Workflow (File Browser + Controls) - Note: Swapped to 2fr */
     #workflow-pane {
         width: 2fr;
-        min-width: 80;
+        min-width: 30;
         layout: vertical;
         border: solid $primary;
         overflow: hidden;
@@ -96,7 +97,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
     /* Right pane: Torrent Insight (Torrents + Per-Torrent) - Note: Swapped to 1fr */
     #torrent-insight-pane {
         width: 1fr;
-        min-width: 60;
+        min-width: 30;
         layout: vertical;
         border: solid $primary;
         overflow: hidden;
@@ -182,6 +183,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
         "tab-torrents": "torrents-content",
         "tab-per-torrent": "per-torrent-content",
         "tab-per-peer": "per-peer-content",
+        "tab-preferences": "preferences-content",
     }
 
     def compose(self) -> Any:  # pragma: no cover
@@ -211,6 +213,7 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     ("tab-torrents", _("Torrents")),
                     ("tab-per-torrent", _("Per-Torrent")),
                     ("tab-per-peer", _("Per-Peer")),
+                    ("tab-preferences", _("Preferences")),
                 ],
                 initial_selection="tab-torrents",
                 id="torrent-insight-selector",
@@ -423,6 +426,8 @@ class MainTabsContainer(Container):  # type: ignore[misc]
 
     def _load_insight_tab_content_impl(self, tab_id: str) -> None:  # pragma: no cover
         """Load insight pane content (serialized; do not call directly)."""
+        _tab_t0 = time.monotonic()
+        logger.debug("dashboard_timing stage=tab_load_start tab=%s", tab_id)
         if not self._torrent_insight_content:
             return
 
@@ -504,6 +509,15 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     Static,
                 )
             self._active_insight_tab_id = tab_id
+        elif tab_id == "tab-preferences":
+            from ccbt.interface.screens.preferences_tab import PreferencesTabContent
+            if self._command_executor:
+                content = PreferencesTabContent(self._command_executor, id="preferences-content")
+                self._torrent_insight_content.mount(content)  # type: ignore[attr-defined]
+                content.display = True  # type: ignore[attr-defined]
+            else:
+                mount_or_update_static(self._torrent_insight_content, "preferences-content", _("Preferences - executor not available"), Static)
+            self._active_insight_tab_id = tab_id
         elif tab_id == "tab-per-peer":
             # Load PerPeerTabContent
             from ccbt.interface.screens.per_peer_tab import PerPeerTabContent
@@ -524,6 +538,11 @@ class MainTabsContainer(Container):  # type: ignore[misc]
                     Static,
                 )
             self._active_insight_tab_id = tab_id
+        logger.debug(
+            "dashboard_timing stage=tab_load_done tab=%s elapsed=%.3fs",
+            tab_id,
+            time.monotonic() - _tab_t0,
+        )
 
     def _on_torrent_selected_from_controls(self, info_hash: str) -> None:  # pragma: no cover
         """Handle torrent selection from Controls tab.

@@ -35,6 +35,8 @@ except ImportError:
 
 from rich.panel import Panel
 
+from ccbt.interface.bindings import bindings_by_category
+
 
 class HelpScreen(Screen):  # type: ignore[misc]
     """Screen to display keyboard shortcuts and help information."""
@@ -76,10 +78,13 @@ class HelpScreen(Screen):  # type: ignore[misc]
             shortcuts_table = self.query_one("#shortcuts_table", Static)
 
             # Build help content
+            _cats = bindings_by_category()
+            _reg = "\n".join(f"{cat}: " + ", ".join(f"{s.key}={s.label}" for s in specs) for cat, specs in _cats.items())
             help_text = (
                 "[bold]ccBitTorrent Terminal Dashboard Help[/bold]\n\n"
                 "This dashboard provides a comprehensive interface for managing BitTorrent downloads.\n"
-                "Use keyboard shortcuts to quickly access features and manage torrents.\n"
+                "Use keyboard shortcuts to quickly access features and manage torrents.\n\n"
+                f"[dim]Bindings (generated from registry):\n{_reg}[/dim]\n"
             )
 
             content.update(Panel(help_text, title="Help"))
