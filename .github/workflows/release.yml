@@ -226,7 +226,8 @@ jobs:
       
       - name: Validate package
         run: |
-          uv run twine check dist/*
+          # twine is not a runtime project dep; pull it ephemerally for the check
+          uv run --with twine twine check dist/*
       
       - name: Test package installation
         run: |
